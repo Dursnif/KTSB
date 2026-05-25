@@ -1,6 +1,7 @@
 assistant_name: "Kåre"
 language: nb
 hotword: "Kåre"
+personality_mode: minimal
 location:
   city: ""
   postal_code: ""
