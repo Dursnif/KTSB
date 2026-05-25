@@ -616,8 +616,14 @@ async def get_model_size_b(model: str, base_url: str, provider: str = "ollama") 
             r.raise_for_status()
             data = r.json()
         size_str = data.get("details", {}).get("parameter_size", "")
-        m = re.search(r"([\d.]+)\s*[Bb]", size_str)
-        size_b = float(m.group(1)) if m else 7.0
+        m_b = re.search(r"([\d.]+)\s*[Bb]", size_str)
+        m_m = re.search(r"([\d.]+)\s*[Mm]", size_str)
+        if m_b:
+            size_b = float(m_b.group(1))
+        elif m_m:
+            size_b = float(m_m.group(1)) / 1000.0  # 873.44M → 0.87B
+        else:
+            size_b = 7.0
     except Exception as exc:
         logger.warning("get_model_size_b: could not detect size for %s (%s) — defaulting to 7.0B", model, exc)
         size_b = 7.0
