@@ -8,8 +8,7 @@
 smart home control via Home Assistant, local LLM inference via Ollama — running entirely on your
 own hardware.
 
-> **Primary language:** Norwegian. The assistant name, hot-word, and response language are all
-> configurable via the admin GUI.
+> The GUI supports Norwegian, English, and German. Voice language, assistant name, and hot-word are configurable via settings.
 
 ---
 
