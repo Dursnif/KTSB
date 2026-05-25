@@ -593,6 +593,39 @@ def _normalise_messages_for_vllm(messages: List[Dict[str, Any]]) -> List[Dict[st
     return normalised
 
 
+_model_size_cache: dict[str, float] = {}
+
+
+async def get_model_size_b(model: str, base_url: str, provider: str = "ollama") -> float:
+    """
+    Return the model size in billions of parameters.
+
+    For vLLM and cloud providers, returns 999.0 (no tool filtering).
+    For Ollama, queries /api/show and parses details.parameter_size.
+    Result is cached per (base_url, model) for the process lifetime.
+    Falls back to 7.0 on any error (tier-3 tools available, tier-9 blocked).
+    """
+    if provider not in ("ollama", "openvino"):
+        return 999.0
+    cache_key = f"{base_url}|{model}"
+    if cache_key in _model_size_cache:
+        return _model_size_cache[cache_key]
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.post(f"{base_url}/api/show", json={"name": model})
+            r.raise_for_status()
+            data = r.json()
+        size_str = data.get("details", {}).get("parameter_size", "")
+        m = re.search(r"([\d.]+)\s*[Bb]", size_str)
+        size_b = float(m.group(1)) if m else 7.0
+    except Exception as exc:
+        logger.warning("get_model_size_b: could not detect size for %s (%s) — defaulting to 7.0B", model, exc)
+        size_b = 7.0
+    _model_size_cache[cache_key] = size_b
+    logger.info("get_model_size_b: %s = %.1fB", model, size_b)
+    return size_b
+
+
 def _clean_ollama_options(options: dict) -> dict:
     """Remove num_ctx if 0 or absent — lets Ollama use the model's native context window."""
     if not options:

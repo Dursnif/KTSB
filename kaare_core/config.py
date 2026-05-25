@@ -1,6 +1,9 @@
+import logging
 import yaml
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+_log = logging.getLogger(__name__)
 
 CONFIG_DIR = Path("/kaare/configs")
 _DEFAULT_DIR = Path("/kaare/configs_default")
@@ -153,6 +156,32 @@ def save_tool_permissions(data: dict) -> None:
     with open(p, "w", encoding="utf-8") as f:
         yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
     _load_tool_permissions()
+
+
+def filter_tools_by_model(tools: list, size_b: float) -> list:
+    """
+    Remove tools the current model is too small to use reliably.
+
+    always_included tools are never filtered regardless of model size.
+    size_b=999.0 is used for vLLM/cloud to skip filtering entirely.
+    """
+    from kaare_core.tools.definitions import TOOL_MODEL_TIERS
+    always_names: set[str] = set(_TOOL_PERMISSIONS.get("always_included", []))
+    result = []
+    removed = []
+    for tool in tools:
+        name: str = tool["function"]["name"]
+        if name in always_names:
+            result.append(tool)
+            continue
+        min_size = TOOL_MODEL_TIERS.get(name, 0.0)
+        if size_b >= min_size:
+            result.append(tool)
+        else:
+            removed.append(name)
+    if removed:
+        _log.info("filter_tools_by_model: removed %s (model=%.1fB)", removed, size_b)
+    return result
 
 
 def get_tools_for_role(role: str) -> list:

@@ -21,8 +21,8 @@ from kaare_core.memory.short_term import ShortTermMemory
 from kaare_core.memory.long_term import get_ltm, USER_GLOBAL
 from kaare_core.memory.semantic_memory import search_memory, format_for_context
 from kaare_core.tools.executor import execute_tool
-from adapters.llm_adapter import ask_llm_with_tools
-from kaare_core.config import get_tools_for_role as _get_tools_for_role
+from adapters.llm_adapter import ask_llm_with_tools, get_model_size_b
+from kaare_core.config import get_tools_for_role as _get_tools_for_role, filter_tools_by_model, get_llm_config, get_model
 from kaare_core.users import store as _user_store
 from kaare_core.llm_fallback import is_fallback_active
 
@@ -268,6 +268,15 @@ async def handle_generate(
     _personality = (_user_rec or {}).get("personality", "standard") or "standard"
     _user_role = (_user_rec or {}).get("role", "admin")
     _tools = _get_tools_for_role(_user_role)
+
+    _kare_cfg   = get_llm_config("default")
+    _kare_model = get_model(_kare_cfg.get("model_role", "kare"))
+    _model_size_b = await get_model_size_b(
+        _kare_model,
+        _kare_cfg.get("base_url", ""),
+        _kare_cfg.get("provider", "ollama"),
+    )
+    _tools = filter_tools_by_model(_tools, _model_size_b)
 
     text_out      = ""
     used_tools    = []

@@ -1298,3 +1298,35 @@ KAARE_TOOLS = [
         },
     },
 ]
+
+# Minimum model size (billions of parameters) required to use each tool.
+# Tools not listed here default to tier 0 (any model).
+# always_included tools (selvbilde, verden, brukerprofil, les_indre_tanker, les_tankehistorikk)
+# are never filtered — handled in filter_tools_by_model().
+TOOL_MODEL_TIERS: dict[str, float] = {
+    # Tier 0 — any model (0.8B+)
+    "timer":           0.0,
+    "notat":           0.0,
+    "styr_enhet":      0.0,
+    "les_ha":          0.0,
+    "hent_yr_varsel":  0.0,
+    "announce":        0.0,
+    # Tier 3 — needs 3B+ to reason about context and search results
+    "søk_nett":        3.0,
+    "library":         3.0,
+    "minne":           3.0,
+    "kamera":          3.0,
+    "les_møte":        3.0,
+    "kare_image":      3.0,
+    "se_bilder":       3.0,
+    "media":           3.0,
+    # Tier 9 — needs 9B+ for multi-step reasoning, shell access, delegation
+    "pettersmart":              9.0,
+    "utforsk_kode":             9.0,
+    "inspiser_system":          9.0,
+    "ssh_kommando":             9.0,
+    "local_kommando":           9.0,
+    "restart_docker_container": 9.0,
+    "søk_i_vaktmester":         9.0,
+    "reason_freely":            9.0,
+}
