@@ -93,6 +93,7 @@ rsync -av --delete \
   --exclude='configs/aliases.yaml' \
   --exclude='configs/nodes.yaml' \
   --exclude='configs/services.yaml' \
+  --exclude='capability_map.yaml' \
   --exclude='configs/*.save' \
   --exclude='configs/*.save.*' \
   --exclude='configs/kare_ha_bridgealiases.yaml.txt' \

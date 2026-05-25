@@ -974,9 +974,35 @@ async def api_put_vpn_settings(payload: dict, _u=Depends(_require_admin)):
 def api_system_status():
     """
     Returnerer hvilke moduler Kåre har aktivert.
-    Leser capability_map.yaml.
+    Leser capability_map.yaml + services.yaml + ha_token.env.
+    Domain must be enabled AND actually configured to show as active.
     """
     domains = CAPABILITY_MAP.get("domains", {})
+
+    # Home Assistant: enabled in capability_map AND ha_token.env has a token
+    ha_domain_on = domains.get("home_assistant", {}).get("enabled", False)
+    ha_token = ""
+    try:
+        _ha_env = Path("/kaare/configs/ha_token.env")
+        if _ha_env.exists():
+            for ln in _ha_env.read_text(encoding="utf-8").splitlines():
+                ln = ln.strip()
+                if ln and not ln.startswith("#") and "=" in ln:
+                    ha_token = ln.partition("=")[2].strip()
+                    break
+    except Exception:
+        pass
+    ha_enabled = ha_domain_on and bool(ha_token)
+
+    # Frigate: enabled in capability_map AND a URL is configured in services.yaml
+    frigate_domain_on = domains.get("frigate", {}).get("enabled", False)
+    frigate_url = ""
+    try:
+        _svc = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
+        frigate_url = _svc.get("frigate", {}).get("url", "")
+    except Exception:
+        pass
+    frigate_enabled = frigate_domain_on and bool(frigate_url)
 
     try:
         from adapters.mqtt_adapter import get_status as mqtt_status
@@ -989,8 +1015,8 @@ def api_system_status():
         "modules": [
             {"name": "Local LLM", "enabled": True},
             {"name": "Memory Module", "enabled": True},
-            {"name": "Home Assistant Bridge", "enabled": domains.get("home_assistant", {}).get("enabled", False)},
-            {"name": "Frigate Adapter", "enabled": domains.get("frigate", {}).get("enabled", False)},
+            {"name": "Home Assistant Bridge", "enabled": ha_enabled},
+            {"name": "Frigate Adapter", "enabled": frigate_enabled},
             {"name": "MQTT", "enabled": mqtt_enabled},
         ]
     }
@@ -1023,34 +1049,64 @@ def _build_service_catalog() -> list[dict]:
 
 
 def _build_model_catalog() -> list[dict]:
-    """LLM/ML models being served. Model names read from models.yaml, URLs from services.yaml.
-    OpenVINO models on ainuc and Whisper are not Ollama-managed — checked via file age / voice-bridge."""
+    """LLM/ML models being served. Model names and platforms derived from llm.yaml + models.yaml.
+    OpenVINO models on ainuc and Whisper are checked via file age / voice-bridge."""
+    try:
+        _llm = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:
+        _llm = {}
     try:
         _svc = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
         _embed_model = _svc.get("embedding", {}).get("hf_model") or get_model("embed")
     except Exception:
         _embed_model = get_model("embed")
+
+    def _platform(role: str) -> str:
+        s = _llm.get(role, {})
+        provider = s.get("provider", "ollama")
+        if provider == "vllm":
+            return "vLLM"
+        if provider not in ("ollama",):
+            return "Cloud"
+        base_url = s.get("base_url", "")
+        if "ollama:11434" in base_url or not base_url:
+            return "Ollama (builtin)"
+        host = base_url.replace("http://", "").replace("https://", "").split(":")[0]
+        return f"Ollama ({host})"
+
+    def _model(role: str) -> str:
+        try:
+            model_role = _llm.get(role, {}).get("model_role", role)
+            return get_model(model_role)
+        except Exception:
+            return get_model(role)
+
+    def _ollama_check(role: str) -> str:
+        base = (_llm.get(role, {}).get("base_url") or "http://ollama:11434").rstrip("/")
+        host_port = base.replace("http://", "").replace("https://", "")
+        return f"ollama-model://{host_port}|{_model(role)}"
+
     return [
-        {"key": "llm_kare",      "name": "Kåre 27B",              "model": get_model("kare"),
-         "platform": "Blackwell 24 GB",      "color": "#646cff",
-         "check_url": get_service("ollama", "kare") + "/v1/models"},
-        {"key": "llm_miss_kare", "name": "Miss Kåre 9B",           "model": get_model("miss_kare"),
-         "platform": "5060 Ti 16 GB",        "color": "#c084fc",
-         "check_url": get_service("ollama", "miss_kare") + "/"},
-        {"key": "llm_library",   "name": "Library / Pettersmart",  "model": get_model("library"),
-         "platform": "5060 Ti 16 GB",        "color": "#5ba8a0",
-         "check_url": get_service("ollama", "library") + "/"},
-        {"key": "llm_jing",      "name": "Jing",                   "model": "qwen2.5-0.5b-openvino",
-         "platform": "ainuc CPU (OpenVINO)", "color": "#a78bfa",
+        {"key": "llm_kare",      "name": "Kåre",               "model": _model("kare"),
+         "platform": _platform("kare"),      "color": "#646cff",
+         "check_url": _ollama_check("kare")},
+        {"key": "llm_miss_kare", "name": "Miss Kåre",           "model": _model("miss_kare"),
+         "platform": _platform("miss_kare"), "color": "#c084fc",
+         "check_url": _ollama_check("miss_kare")},
+        {"key": "llm_library",   "name": "Library / Pettersmart", "model": _model("library"),
+         "platform": _platform("library"),   "color": "#5ba8a0",
+         "check_url": _ollama_check("library")},
+        {"key": "llm_jing",      "name": "Jing",                "model": "qwen2.5-0.5b-openvino",
+         "platform": "ainuc (OpenVINO)",     "color": "#a78bfa",
          "check_url": "file:///kaare/state/jing_thoughts.txt:600"},
-        {"key": "llm_jang",      "name": "Jang",                   "model": "qwen2.5-3b-openvino",
-         "platform": "ainuc CPU (OpenVINO)", "color": "#f472b6",
+        {"key": "llm_jang",      "name": "Jang",                "model": "qwen2.5-3b-openvino",
+         "platform": "ainuc (OpenVINO)",     "color": "#f472b6",
          "check_url": "file:///kaare/state/inner_thoughts.txt:2100"},
-        {"key": "whisper",       "name": "Whisper STT",            "model": "nb-whisper-large",
-         "platform": "Arc iGPU (OpenVINO)",  "color": "#60a5fa",
+        {"key": "whisper",       "name": "Whisper STT",         "model": "nb-whisper-large",
+         "platform": "Voice Bridge",         "color": "#60a5fa",
          "check_url": get_service("internal", "voice_bridge") + "/"},
         {"key": "bge_m3",        "name": _embed_model.split("/")[-1], "model": _embed_model,
-         "platform": "Intel NPU",            "color": "#fbbf24",
+         "platform": "Embedding service",    "color": "#fbbf24",
          "check_url": get_service("ollama", "embed") + "/health"},
     ]
 
@@ -2763,7 +2819,11 @@ async def api_admin_services(_u=Depends(_require_auth)):
 
 async def _check_url(url: str | None) -> bool:
     """Check if a service or model endpoint is reachable.
-    Supports HTTP (status < 500) and file:// (mtime < max_age_seconds)."""
+    Supports:
+      file://PATH:MAX_AGE_SECONDS — file must exist and be newer than max_age
+      ollama-model://HOST:PORT|MODEL_NAME — model must be present in /api/tags
+      http(s)://... — status < 500
+    """
     if not url:
         return False
     if url.startswith("file://"):
@@ -2775,6 +2835,24 @@ async def _check_url(url: str | None) -> bool:
             path_str, max_age = rest, 600
         try:
             return (time.time() - Path(path_str).stat().st_mtime) < max_age
+        except Exception:
+            return False
+    if url.startswith("ollama-model://"):
+        rest = url[len("ollama-model://"):]
+        host_port, _, model_name = rest.partition("|")
+        if not model_name or not host_port:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                r = await client.get(f"http://{host_port}/api/tags")
+                if r.status_code != 200:
+                    return False
+                available = [m.get("name", "") for m in r.json().get("models", [])]
+                # Match: exact, or model_name is a prefix of an available name
+                return any(
+                    av == model_name or av.startswith(model_name.split(":")[0])
+                    for av in available
+                )
         except Exception:
             return False
     try:

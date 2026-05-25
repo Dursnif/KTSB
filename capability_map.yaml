@@ -1,123 +1,48 @@
-aliases_ref:
-  notes: Alias er sannhetskilde for hva vi faktisk bruker
-  owner: admin
-  source: /mnt/ai_disk/kaare/aliases.yaml
 defaults:
   ambiguity_policy: ask_if_multiple
-  location_label: hjemme
-distribution_profile: full
+  location_label: home
+
+distribution_profile: medium
+
 services:
   embedding:
     enabled: true
-    notes: BGE-M3 vektorembedding (wiki-søk, vaktmester). Krever ~3-4 GB disk.
+    notes: BGE-M3 vector embedding (wiki search, vaktmester). Requires ~3-4 GB disk.
   agents:
     enabled: true
-    notes: Miss Library og Pettersmart. Krever LLM-modeller konfigurert.
+    notes: Miss Library and Pettersmart. Requires LLM models configured.
   voice:
-    enabled: true
-    notes: TTS/STT bro (Piper + Whisper). v1_unavailable i Docker v1 (rein CPU).
+    enabled: false
+    notes: TTS/STT bridge (Piper + Whisper). Requires voice profile.
   jing:
-    enabled: true
-    notes: Rask indre stemme (0.6B, OpenVINO). Kjøres på ainuc.
+    enabled: false
+    notes: Fast inner voice (0.6B, OpenVINO). Runs on external node.
   jang:
-    enabled: true
-    notes: Langsom refleksjon (4B, OpenVINO). Kjøres på ainuc.
+    enabled: false
+    notes: Slow reflection (4B, OpenVINO). Runs on external node.
+
 domains:
-  frigate:
-    enabled: true
-    notes: Frigate 0.17.x — snapshot, events, face recognition
-    url: http://192.168.0.100:5000
   home_assistant:
-    enabled: true
-    notes: Kontroll av enheter via HA-gateway/HA-service
+    enabled: false
+    notes: Device control via HA gateway. Configure HA URL and token in Settings.
     route: ha
+  frigate:
+    enabled: false
+    notes: Frigate NVR — snapshots, events, face recognition. Configure URL in Settings.
   time_date:
     enabled: true
-    notes: Klokke/dato/ukedag
+    notes: Clock / date / weekday
     route: time_date
   weather:
-    enabled: true
-    notes: Vær fra HA-sensorer (Netatmo ute)
+    enabled: false
+    notes: Weather from HA sensors. Requires Home Assistant.
     route: weather_ha_sensors
-environment:
-  outdoor:
-    label: ute
-    sensors:
-      humidity:
-        entity_id: sensor.netatmo_utendors_modul_luftfuktighet
-        notes: Netatmo ute luftfuktighet
-        unit: '%'
-      rain_last_hour:
-        entity_id: sensor.netatmo_regn_maler_precipitation_last_hour
-        notes: Nedbør siste time
-        unit: mm
-      rain_total:
-        entity_id: sensor.netatmo_regn_maler_nedbor
-        notes: Akkumulert nedbør / total (Netatmo)
-        unit: mm
-      temperature:
-        entity_id: sensor.netatmo_utendors_modul_temperatur
-        notes: Netatmo ute temp
-        unit: °C
-    source: home_assistant_sensors
+
 keyword_routes:
   time_date:
     any:
-    - klokka
-    - klokken
-    - tid
-    - dato
-    - ukedag
-    - hvilken dag
-  weather:
-    any:
-    - vær
-    - temperatur
-    - luftfuktighet
-    - regn
-    - nedbør
-last_updated: '2025-12-12'
-rooms:
-  verksted:
-    devices:
-      taklys:
-        alias_keys:
-        - taklys verksted
-        - taklys i verksted
-        - lys i verksted
-        constraints:
-        - single_primary_light
-        kind: light_or_switch
-        preferred_actions:
-        - turn_on
-        - turn_off
-    label: verksted
-rules:
-  action_words:
-    true:
-    - på
-    - skru på
-    - slå på
-    - start
-    - ha på
-    false:
-    - av
-    - skru av
-    - slå av
-    - stopp
-    - ha av
-    toggle:
-    - bytt
-    - toggle
-    - veksle
-  clarify_if_multiple_candidates: true
-  ha_rescue_enabled: true
-  missing_action_triggers:
-  - taklys
-  - lys
-  - lampe
-  - ovn
-  - varme
-  - radio
-  - musikk
-version: 1
+      - time
+      - clock
+      - date
+      - day
+      - what day
