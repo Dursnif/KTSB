@@ -162,9 +162,15 @@ def filter_tools_by_model(tools: list, size_b: float) -> list:
     """
     Remove tools the current model is too small to use reliably.
 
-    always_included tools are never filtered regardless of model size.
+    Hard rule: models under 9B get no tools — they can't handle tool-calling
+    schemas reliably and the JSON overhead inflates the prompt unnecessarily.
+    9B (e.g. qwen3.5-abliterated Q4_K_M, 6.6GB) is the minimum for tool use.
+
     size_b=999.0 is used for vLLM/cloud to skip filtering entirely.
     """
+    if size_b < 9.0:
+        _log.info("filter_tools_by_model: model=%.2fB < 9B — no tools", size_b)
+        return []
     from kaare_core.tools.definitions import TOOL_MODEL_TIERS
     always_names: set[str] = set(_TOOL_PERMISSIONS.get("always_included", []))
     result = []
