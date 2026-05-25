@@ -86,11 +86,9 @@ def load_room_entities(path: str) -> Dict[str, List[str]]:
     return result
 
 E = load_env(ENV_PATH)
-KARE_LOG_URL    = E.get("KARE_LOG_URL","").rstrip("/")
+KARE_LOG_URL    = E.get("KARE_LOG_URL","").rstrip("/") or "http://kaare-api:8000"
 KARE_HA_TIMEOUT = float(E.get("KARE_HA_TIMEOUT","5"))
 ALLOWED_ACTIONS = {a.strip() for a in (E.get("KARE_ALLOWED_ACTIONS","").split(",")) if a.strip()}
-if not KARE_LOG_URL:
-    raise RuntimeError("KARE_LOG_URL missing in kare_ha.env")
 
 # HA REST API — for direkte tilstandslesing
 def _load_ha_api_config():
