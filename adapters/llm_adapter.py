@@ -39,6 +39,8 @@ def _kare_is_busy() -> bool:
         with open(GPU_LOCK_PATH, "r") as f:
             fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
             return False   # Låsen var fri → kare er ledig
+    except FileNotFoundError:
+        return False       # Ingen lås-fil = ingen proxy kjører (f.eks. Docker) → ledig
     except (IOError, OSError):
         return True        # Låsen holdes → kare er opptatt
 
