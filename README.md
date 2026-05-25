@@ -1,6 +1,6 @@
 # Kåre The Smart Butler
 
-![Version](https://img.shields.io/badge/version-v1.0.0--beta-blue)
+![Version](https://img.shields.io/badge/version-v1.0.1--beta-blue)
 ![License](https://img.shields.io/badge/license-Personal%20Use-green)
 ![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fdursnif%2Fkaare-blue)
 
@@ -71,10 +71,17 @@ copy .env.example .env      # edit if needed
 docker compose up -d
 ```
 
-Then open **http://localhost** in your browser.
+Then open your browser and go to:
+
+```
+http://localhost:5173
+```
 
 The first start pulls Docker images (~5 GB) and initialises default configuration.
 Allow 2–3 minutes on first run.
+
+> **Port 5173** is the direct frontend address and works on all platforms.
+> If you set up a domain in `.env` (`KAARE_DOMAIN=...`), Caddy also serves Kåre on port 80/443.
 
 ---
 
@@ -85,8 +92,9 @@ When you open the UI for the first time, the onboarding wizard walks you through
 1. **Profile** — assistant name, hot-word, language, timezone, location
 2. **User** — create your admin account with a PIN
 3. **Distribution** — choose a service profile (see below)
-4. **Integrations** — connect Home Assistant, MQTT, and other services (optional, skip for now)
-5. **Done** — install your first LLM model and start chatting
+4. **LLM source** — use the built-in Ollama (~10 GB download) or point to your own LLM server
+5. **Integrations** — connect Home Assistant, MQTT, and other services (optional, skip for now)
+6. **Done** — start chatting
 
 All settings can be changed later in the admin GUI (Settings).
 
@@ -94,18 +102,24 @@ All settings can be changed later in the admin GUI (Settings).
 
 ## Profiles
 
-Set `COMPOSE_PROFILES` in `.env` to enable optional services:
+Set `COMPOSE_PROFILES` in `.env` to enable optional services (combine with commas):
 
-| Profile value | What starts | Typical use |
+| Profile | What it adds | Typical use |
 |---|---|---|
-| *(empty)* | API, HA gateway, agents, intent, frontend | Minimal / cloud LLM only |
-| `medium` | + BGE-M3 embedding (semantic memory, wiki search) | Most setups |
-| `full` | + Voice bridge (speech-to-text, text-to-speech) | Full voice control |
+| `ollama` | Built-in Ollama LLM server (~10 GB image) | Default for new users |
+| `medium` | BGE-M3 embedding (semantic memory, wiki search, ~3 GB) | Most setups |
+| `full` | Voice bridge — speech-to-text and text-to-speech | Full voice control |
 
 ```dotenv
-# .env
+# .env — default (built-in Ollama + embedding)
+COMPOSE_PROFILES=ollama,medium
+
+# If you have your own Ollama/vLLM running elsewhere:
 COMPOSE_PROFILES=medium
 ```
+
+> Run `setup.sh` (Linux/macOS) or `setup.ps1` (Windows) to auto-detect your hardware
+> and generate the right `.env` — including GPU support for Ollama.
 
 ---
 
@@ -183,7 +197,16 @@ Change cycle:
 
 ## Updating
 
+**Linux / macOS:**
 ```bash
+git pull
+docker compose pull
+docker compose up -d
+```
+
+**Windows (PowerShell):**
+```powershell
+git pull
 docker compose pull
 docker compose up -d
 ```
