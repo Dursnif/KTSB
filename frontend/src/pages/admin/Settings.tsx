@@ -2402,7 +2402,7 @@ function TabRefleksjon() {
   const { t } = useTranslation();
 
   // Schedule settings
-  const [cfg, setCfg] = useState<ReflectionConfig>({ enabled: true, interval_seconds: 600 });
+  const [cfg, setCfg] = useState<ReflectionConfig>({ enabled: false, interval_seconds: 600 });
   const [loadingCfg, setLoadingCfg] = useState(true);
   const ss = useSaveState();
 

@@ -94,7 +94,7 @@ services:
 
   kaare-reflection:
     image: ghcr.io/dursnif/kaare:latest
-    restart: unless-stopped
+    restart: on-failure
     command: python kaare_reflection_runner.py
     volumes:
       - ./configs:/kaare/configs

@@ -397,9 +397,9 @@ async def _start_mqtt():
 def _load_reflection_config() -> tuple[bool, int]:
     try:
         cfg = yaml.safe_load(Path("/kaare/configs/settings.yaml").read_text()).get("kare_reflection", {})
-        return bool(cfg.get("enabled", True)), int(cfg.get("interval_seconds", 600))
+        return bool(cfg.get("enabled", False)), int(cfg.get("interval_seconds", 600))
     except Exception:
-        return True, 600
+        return False, 600
 
 _REFLECTION_ENABLED: bool
 _JANG_INTERVAL_S: int
@@ -2213,7 +2213,7 @@ async def api_get_reflection(_u=Depends(_require_admin)):
     default_preset = _leder_preset_text("reflection", preset if preset != "egendefinert" else "standard")
     custom_text = _leder_preset_text("reflection", "egendefinert")
     return {
-        "enabled":              bool(cfg.get("enabled", True)),
+        "enabled":              bool(cfg.get("enabled", False)),
         "interval_seconds":     int(cfg.get("interval_seconds", 600)),
         "max_rounds":           int(cfg.get("max_rounds", 6)),
         "kare_max_tokens":      int(cfg.get("kare_max_tokens", 1000)),
