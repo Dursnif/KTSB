@@ -18,6 +18,7 @@ import yaml
 # --- Standard library ---
 import asyncio
 import os
+import sys
 import json
 import subprocess
 import time
@@ -738,7 +739,7 @@ async def api_health_check(_u=Depends(_require_admin)):
         result = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: subprocess.run(
-                ["/kaare/venv/bin/python", "/kaare/scripts/health_check.py", "--json"],
+                [sys.executable, "/kaare/scripts/health_check.py", "--json"],
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -3575,7 +3576,7 @@ async def api_reflections_start():
         _load_env_file("/kaare/configs/kare_llm.env", env)
         _MEETING_LOCK.touch()
         proc = await asyncio.create_subprocess_exec(
-            "/kaare/venv/bin/python3", "/kaare/kaare_reflection_runner.py",
+            sys.executable, "/kaare/kaare_reflection_runner.py",
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
             cwd="/kaare", env=env,
         )
@@ -3599,7 +3600,7 @@ async def api_dev_meetings_start():
         _load_env_file("/kaare/configs/kare_llm.env", env)
         _MEETING_LOCK.touch()
         proc = await asyncio.create_subprocess_exec(
-            "/kaare/venv/bin/python3", "/kaare/kaare_dev_meeting.py",
+            sys.executable, "/kaare/kaare_dev_meeting.py",
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
             cwd="/kaare", env=env,
         )
@@ -3622,7 +3623,7 @@ async def api_memory_compress():
         env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": "/kaare"}
         _load_env_file("/kaare/configs/kare_llm.env", env)
         proc = await asyncio.create_subprocess_exec(
-            "/kaare/venv/bin/python3", "/kaare/kaare_nightjob.py",
+            sys.executable, "/kaare/kaare_nightjob.py",
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
             cwd="/kaare", env=env,
         )
