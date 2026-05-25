@@ -85,6 +85,8 @@ tmp_systemd/
 
 # Old web GUI (replaced by React frontend)
 www/
+services/gui/
+intent_server
 
 # Legacy HA gateway (merged into kaare_ha_gateway.py)
 mini_kaareha/

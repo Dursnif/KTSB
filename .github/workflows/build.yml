@@ -48,6 +48,7 @@ jobs:
           file: Dockerfile
           push: true
           tags: ${{ steps.meta-kaare.outputs.tags }}
+          provenance: false
           cache-from: type=gha,scope=kaare
           cache-to: type=gha,mode=max,scope=kaare
 
@@ -69,6 +70,7 @@ jobs:
           file: Dockerfile.embedding
           push: true
           tags: ${{ steps.meta-embedding.outputs.tags }}
+          provenance: false
           cache-from: type=gha,scope=kaare-embedding
           cache-to: type=gha,mode=max,scope=kaare-embedding
 
@@ -90,6 +92,7 @@ jobs:
           file: Dockerfile.voice
           push: true
           tags: ${{ steps.meta-voice.outputs.tags }}
+          provenance: false
           cache-from: type=gha,scope=kaare-voice
           cache-to: type=gha,mode=max,scope=kaare-voice
 
@@ -111,5 +114,6 @@ jobs:
           file: Dockerfile.frontend
           push: true
           tags: ${{ steps.meta-frontend.outputs.tags }}
+          provenance: false
           cache-from: type=gha,scope=kaare-frontend
           cache-to: type=gha,mode=max,scope=kaare-frontend
