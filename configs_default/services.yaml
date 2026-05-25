@@ -24,6 +24,9 @@ internal:
   kaare_api: http://kaare-api:8000
   nl_parser: http://kaare-api:8000
   voice_bridge: http://kaare-voice:8011
+memory_embed:
+  enabled: false
+  model_dir: ""
 media:
   mpd:
     host: 127.0.0.1

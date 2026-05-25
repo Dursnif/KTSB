@@ -1832,6 +1832,10 @@ def api_get_services(_u=Depends(_require_auth)):
             "model_path":  emb.get("model_path", ""),
             "emb_enabled": emb.get("enabled", True),
         },
+        "memory_embed": {
+            "enabled":   bool(data.get("memory_embed", {}).get("enabled", False)),
+            "model_dir": data.get("memory_embed", {}).get("model_dir", ""),
+        },
         "voice": {
             "stt_backend":          voice_stt.get("backend", "openvino"),
             "faster_whisper_model": voice_stt.get("faster_whisper_model", "large-v3"),
@@ -1967,6 +1971,22 @@ async def api_put_services_embedding(payload: dict, _u=Depends(_require_admin)):
         emb["model_path"] = str(payload["model_path"])
     if "emb_enabled" in payload:
         emb["enabled"] = bool(payload["emb_enabled"])
+    _SERVICES_PATH.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False), encoding="utf-8")
+    return {"ok": True}
+
+
+@app.put("/api/settings/services/memory-embed")
+async def api_put_services_memory_embed(payload: dict, _u=Depends(_require_admin)):
+    allowed = {"enabled", "model_dir"}
+    unknown = set(payload) - allowed
+    if unknown:
+        raise HTTPException(400, f"Unknown field in payload: {unknown}")
+    data = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
+    me = data.setdefault("memory_embed", {})
+    if "enabled" in payload:
+        me["enabled"] = bool(payload["enabled"])
+    if "model_dir" in payload:
+        me["model_dir"] = str(payload["model_dir"])
     _SERVICES_PATH.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False), encoding="utf-8")
     return {"ok": True}
 

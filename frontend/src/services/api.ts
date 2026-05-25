@@ -455,6 +455,14 @@ export async function apiPutEmbeddingBackend(payload: {
   return data as { ok: boolean };
 }
 
+export async function apiPutMemoryEmbedBackend(payload: {
+  enabled?: boolean;
+  model_dir?: string;
+}) {
+  const { data } = await api.put("/api/settings/services/memory-embed", payload);
+  return data as { ok: boolean };
+}
+
 export async function apiPutVoiceBackend(payload: {
   stt_backend?: string;
   faster_whisper_model?: string;

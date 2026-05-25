@@ -64,9 +64,9 @@ services:
 
   kaare-memory-embed:
     image: ghcr.io/dursnif/kaare:latest
-    restart: unless-stopped
+    restart: on-failure
     ports: ["11500:11500"]
-    command: uvicorn server:app --host 0.0.0.0 --port 11500
+    command: python server.py
     working_dir: /kaare/memory_embed_server
     volumes:
       - ./configs:/kaare/configs
