@@ -19,6 +19,7 @@ import yaml
 import asyncio
 import os
 import sys
+import signal
 import json
 import subprocess
 import time
@@ -2644,18 +2645,31 @@ _RESTARTABLE_SERVICES = {
     "ha-log-bridge":   "kaare-ha-log-bridge.service",
 }
 
+_IN_DOCKER = os.path.exists("/.dockerenv")
+
 @app.post("/api/admin/restart/{service_key}")
 async def api_restart_service(service_key: str, background_tasks: BackgroundTasks, _u=Depends(_require_admin)):
     if service_key not in _RESTARTABLE_SERVICES:
         raise HTTPException(400, f"Unknown service: {service_key}")
     unit = _RESTARTABLE_SERVICES[service_key]
+
+    if _IN_DOCKER:
+        if service_key == "kaare":
+            # Send SIGTERM to self — Docker compose (restart: unless-stopped) brings it back
+            def _docker_self_restart():
+                time.sleep(0.8)
+                os.kill(os.getpid(), signal.SIGTERM)
+            background_tasks.add_task(_docker_self_restart)
+            return {"ok": True, "unit": unit, "docker": True}
+        # Other services are separate containers — can't restart from inside
+        return {"ok": False, "docker": True, "error": f"In Docker: restart '{service_key}' with 'docker compose restart {service_key}'"}
+
+    # Bare-metal / systemd path
     import subprocess as _sp
 
-    # Self-restart: respond first, then trigger restart via background task
     if service_key == "kaare":
         def _self_restart():
-            import time as _time
-            _time.sleep(0.6)
+            time.sleep(0.6)
             _sp.run(["sudo", "/bin/systemctl", "restart", unit], capture_output=True)
         background_tasks.add_task(_self_restart)
         return {"ok": True, "unit": unit}
@@ -2827,8 +2841,15 @@ async def api_settings_rollback(_u=Depends(_require_admin)):
 @app.get("/api/admin/services")
 async def api_admin_services(_u=Depends(_require_auth)):
     """Return list of restartable services with current status."""
-    import subprocess as _sp
     statuses = {}
+    if _IN_DOCKER:
+        # In Docker each service is a separate container — can't use systemctl.
+        # Assume running (docker compose restart: unless-stopped manages this).
+        for key, unit in _RESTARTABLE_SERVICES.items():
+            statuses[key] = {"unit": unit, "active": True, "docker": True}
+        return statuses
+
+    import subprocess as _sp
     for key, unit in _RESTARTABLE_SERVICES.items():
         try:
             r = _sp.run(["systemctl", "is-active", unit], capture_output=True, text=True, timeout=3)

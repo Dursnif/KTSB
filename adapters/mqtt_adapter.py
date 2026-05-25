@@ -173,6 +173,10 @@ async def run_mqtt_listener() -> None:
         return
 
     cfg = _load_mqtt_config()
+    if not cfg["host"]:
+        log.info("MQTT: no host configured — listener disabled")
+        return
+
     log.info(
         "Starting MQTT listener: %s:%s topic=%s",
         cfg["host"], cfg["port"], cfg["topic_events"],
