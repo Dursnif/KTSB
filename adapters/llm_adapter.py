@@ -593,6 +593,16 @@ def _normalise_messages_for_vllm(messages: List[Dict[str, Any]]) -> List[Dict[st
     return normalised
 
 
+def _clean_ollama_options(options: dict) -> dict:
+    """Remove num_ctx if 0 or absent — lets Ollama use the model's native context window."""
+    if not options:
+        return options
+    opts = dict(options)
+    if not opts.get("num_ctx"):
+        opts.pop("num_ctx", None)
+    return opts
+
+
 def _build_vllm_options(options: dict) -> dict:
     """Convert Ollama-style options to OpenAI API top-level parameters."""
     mapping = {
@@ -739,7 +749,7 @@ async def _call_ollama(
         payload["think"] = think
 
     if options:
-        payload["options"] = options
+        payload["options"] = _clean_ollama_options(options)
 
     if images:
         payload["images"] = images
@@ -989,7 +999,7 @@ async def ask_llm_with_tools(
                     "messages": full_messages,
                     "tools":    tools,
                     "stream":   False,
-                    "options":  cfg.get("options", {}),
+                    "options":  _clean_ollama_options(cfg.get("options", {})),
                     "think":    think_val,
                 }
 
@@ -1104,7 +1114,7 @@ async def ask_llm_with_tools(
                     "messages": fb_messages,
                     "tools":    tools,
                     "stream":   cfg_fb.get("stream", False),
-                    "options":  fb_options,
+                    "options":  _clean_ollama_options(fb_options),
                     "think":    cfg_fb.get("think", False),
                 }
                 async with httpx.AsyncClient(timeout=fb_timeout) as client:

@@ -12,7 +12,6 @@ default:
   base_url: http://ollama:11434
   model_role: kare
   options:
-    num_ctx: 16384
     num_predict: 2048
     temperature: 1
     top_p: 0.75
@@ -99,7 +98,6 @@ reason_freely:
   base_url: http://ollama:11434
   model_role: kare
   options:
-    num_ctx: 16384
     num_predict: 2048
     temperature: 0.7
   provider: ollama
