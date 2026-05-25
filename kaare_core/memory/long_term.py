@@ -159,7 +159,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
 
     changed = False
-    if "user_id" not in cols("interactions"):
+    existing_int = cols("interactions")
+    if existing_int and "user_id" not in existing_int:
         conn.execute("ALTER TABLE interactions ADD COLUMN user_id TEXT NOT NULL DEFAULT 'global'")
         changed = True
 

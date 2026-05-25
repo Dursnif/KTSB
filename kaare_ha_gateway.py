@@ -17,6 +17,8 @@ TOKEN_PATH    = "/kaare/configs/ha_token.env"
 GUI_PATH      = "/kaare/www/gui.html"
 
 def load_env(path: str) -> Dict[str, str]:
+    if not os.path.exists(path):
+        return {}
     out = {}
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
