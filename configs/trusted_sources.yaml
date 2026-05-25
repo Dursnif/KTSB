@@ -1,0 +1,62 @@
+sources:
+  film_og_serier:
+  - beskrivelse: Internasjonal film og serie database, med rating
+    domain: imdb.com
+  kode_og_utvikling:
+  - beskrivelse: Kildekode og eksempler
+    domain: github.com
+  - beskrivelse: Problemløsning
+    domain: stackoverflow.com
+  - beskrivelse: Home Assistant forum – integrasjoner og feilsøking
+    domain: community.home-assistant.io
+  - beskrivelse: MDN – Standard for webutvikling
+    domain: developer.mozilla.org
+  - beskrivelse: Python-dokumentasjon
+    domain: docs.python.org
+  - beskrivelse: Rust-dokumentasjon
+    domain: rust-lang.org
+  - beskrivelse: Go-dokumentasjon
+    domain: go.dev
+  - beskrivelse: Python-pakkeoversikt
+    domain: pypi.org
+  - beskrivelse: Node-pakkeoversikt
+    domain: npmjs.com
+  - beskrivelse: Modeller, datasett og AI-dokumentasjon
+    domain: huggingface.co
+  kunnskap_og_forskning:
+  - beskrivelse: Store norske leksikon
+    domain: snl.no
+  - beskrivelse: NTNU – akademisk innhold
+    domain: ntnu.no
+  - beskrivelse: Norsk forskningsformidling
+    domain: forskning.no
+  mat_og_oppskrifter:
+  - beskrivelse: Gjennomtestede norske oppskrifter
+    domain: matprat.no
+  - beskrivelse: Bredde fra VG
+    domain: godt.no
+  - beskrivelse: Matvitenskap og ekstremt nøyaktige teknikker
+    domain: seriouseats.com
+  - beskrivelse: Internasjonal standard
+    domain: bbcgoodfood.com
+  - beskrivelse: Norsk kulinarisk ressurs
+    domain: kulinarisk.no
+  norsk_lov_og_offentlig:
+  - beskrivelse: Norges lover – helt essensiell
+    domain: lovdata.no
+  - beskrivelse: Offentlige utredninger og pressemeldinger
+    domain: regjeringen.no
+  - beskrivelse: Skatt og avgifter
+    domain: skatteetaten.no
+  nyheter_og_faktasjekk:
+  - beskrivelse: Lisensbetalt og nøytralt
+    domain: nrk.no
+  - beskrivelse: Verifisering av påstander
+    domain: faktisk.no
+  - beskrivelse: Internasjonalt nyhetsbyrå med lite bias
+    domain: reuters.com
+  - beskrivelse: Internasjonalt nyhetsbyrå med lite bias
+    domain: apnews.com
+  vær_og_natur:
+  - beskrivelse: Norsk værtjeneste (Meteorologisk institutt + NRK)
+    domain: yr.no

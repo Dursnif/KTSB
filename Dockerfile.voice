@@ -1,0 +1,21 @@
+FROM python:3.12-slim
+
+# ffmpeg for WebM→WAV conversion (/transcribe endpoint)
+# libsndfile1 required by soundfile
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /kaare/services/voice
+
+COPY services/voice/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY kaare_core/ /kaare/kaare_core/
+COPY configs_default/ /kaare/configs_default/
+COPY services/voice/ .
+
+ENV PYTHONPATH=/kaare
+
+CMD ["uvicorn", "voice_bridge:app", "--host", "0.0.0.0", "--port", "8011"]

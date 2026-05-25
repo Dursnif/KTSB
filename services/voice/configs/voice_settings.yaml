@@ -1,0 +1,105 @@
+# ============================================================
+# KÅRE VOICE – INNSTILLINGER
+# ============================================================
+# Alle innstillinger for voice-systemet samlet på ett sted.
+# Kan justeres fra fremtidig admin-GUI.
+# ============================================================
+
+# --- Kåre-tilkobling ---
+kaare:
+  # Kåre sin hovedinngang (alt går gjennom denne)
+  api_url: "http://127.0.0.1:8000/api/generate"
+  # WebSocket for sanntidskommunikasjon
+  ws_url: "ws://127.0.0.1:8000/ws/voice"
+  # Timeout for API-kall (sekunder)
+  timeout: 60
+
+# --- Whisper STT ---
+stt:
+  # OpenVINO Whisper Large V3 (modellmappe: models/whisper-large-v3-ov/)
+  # Autodetekterer språk – ingen language-lås
+  device: "openvino"
+  # Maks varighet per opptak (sekunder)
+  max_record_seconds: 10
+  # Stillhet-deteksjon: hvor mange sekunder stillhet før vi stopper
+  silence_threshold_seconds: 1.5
+  # Stillhet-terskel (volum under dette = stillhet)
+  # Justert 2026-04-13: gain ble senket (boost=2, capture=63), terskel økt tilsvarende
+  silence_amplitude_threshold: 0.05
+
+# --- Piper TTS ---
+tts:
+  # Norsk stemme – absolutt sti til modeller på ai_disk (for stor til /kaare)
+  voice: "/mnt/ai_disk/models/voice/piper/no_NO-talesyntese-medium.onnx"
+  # Talehastighet (1.0 = normal)
+  speed: 1.0
+  # Utdata-format
+  sample_rate: 22050
+
+# --- openWakeWord ---
+wakeword:
+  # Modell å bruke (standard: "hey_jarvis", byttes til "hei_kaare" når trent)
+  model: "hey_jarvis"
+  # Sensitivitet (0.0-1.0, høyere = lettere å trigge, men mer falske positiver)
+  sensitivity: 0.5
+  # Aktiveringsord som vises i logg
+  display_name: "Hei Kåre"
+
+# --- Fast responses (ferdiglagde fraser) ---
+fast_responses:
+  # Mappe med ferdig-rendrede wav-filer
+  cache_dir: "cache/fast_responses"
+  # Fraser som genereres ved installasjon
+  phrases:
+    wake_ack:        # Etter wakeword detektert
+      - "Ja?"
+      - "Hm?"
+      - "Jeg hører."
+    processing:      # Mens Kåre jobber
+      - "Et øyeblikk."
+      - "Jeg sjekker."
+      - "La meg se."
+    error:           # Ved feil
+      - "Beklager, det gikk ikke."
+      - "Noe gikk galt, prøv igjen."
+    clarification:   # Når Kåre trenger mer info
+      - "Hvilket rom mener du?"
+      - "Kan du si det igjen?"
+    confirm:         # Bekreftelse
+      - "Gjort!"
+      - "Ferdig."
+      - "Det er fikset."
+
+# --- Lydinnstillinger ---
+audio:
+  # Samplerate for mikrofonopptak
+  input_sample_rate: 16000
+  # Kanaler (1 = mono, best for talegjenkjenning)
+  input_channels: 1
+  # Chunk-størrelse for lydstrøm (samples per chunk)
+  chunk_size: 1280
+  # Utgangsvolum (0.0-1.0)
+  output_volume: 0.8
+  # sounddevice-indeks for mikrofon (sjekk med: python3 -c "import sounddevice; print(sounddevice.query_devices())")
+  # 8 = HDA Intel PCH: ALC897 Analog (hw:2,0) — bakpanel-jack
+  mic_device: 8
+  # Opptakshastighet fra mikrofon (resamples til 16000 Hz for Whisper)
+  mic_sample_rate: 44100
+
+# --- Logging ---
+logging:
+  level: "INFO"
+  log_dir: "logs"
+  log_transcriptions: true
+  log_wakeword: true
+
+# --- Voice Bridge (for ESP32-noder) ---
+bridge:
+  # UDP-port for lydstrøm fra ESP32
+  udp_port: 8010
+  # HTTP-port for knapptrykk + wav-serving
+  http_port: 8011
+  # IP-adressen AI-PC-en er nåbar på fra ESP32-nodene
+  serve_host: "192.168.0.232"
+  # Avspillingsmodus: "local" = Kåre sine høytalere, "esp32" = node-høyttaler
+  playback_mode: "local"

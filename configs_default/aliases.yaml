@@ -1,0 +1,51 @@
+# KTSB – Alias configuration
+# Maps Norwegian spoken names to Home Assistant entity IDs.
+# Edit this file through the admin GUI (Settings → Aliases) or directly here.
+#
+# How it works:
+#   When a user says "turn on the living room light", KTSB looks up
+#   "living room light" (or the Norwegian equivalent) in this file
+#   and maps it to the correct entity_id in Home Assistant.
+#
+# rooms:         spoken room names (any word maps to the canonical room key)
+# room_entities: canonical room name → list of entity_ids in that room
+# aliases:       spoken phrase → single entity_id (direct lookup)
+# -------------------------------------------------------
+
+rooms:
+  living_room:       [living room, stue, stua]
+  kitchen:           [kitchen, kjøkken, kjøkkenet]
+  bedroom:           [bedroom, soverom]
+  bathroom:          [bathroom, bad, badet]
+  hallway:           [hallway, gang, gangen]
+  garage:            [garage, garasje, garasjen]
+  office:            [office, kontor, kontoret]
+  basement:          [basement, kjeller, kjelleren]
+
+room_entities:
+  living_room:
+    - light.living_room_ceiling
+    - light.living_room_lamp
+  kitchen:
+    - light.kitchen_ceiling
+  bedroom:
+    - light.bedroom_ceiling
+  bathroom:
+    - light.bathroom_ceiling
+    - climate.bathroom_floor_heat
+  hallway:
+    - light.hallway_ceiling
+  garage:
+    - light.garage_ceiling
+    - switch.garage_door
+  office:
+    - light.office_ceiling
+  basement:
+    - light.basement_ceiling
+
+aliases:
+  # Add your custom aliases here.
+  # Example:
+  #   "floor lamp":      light.living_room_floor_lamp
+  #   "coffee maker":    switch.kitchen_coffee_maker
+  #   "front door lock": lock.front_door

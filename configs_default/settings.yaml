@@ -1,0 +1,45 @@
+assistant_name: "Kåre"
+language: nb
+hotword: "Kåre"
+location:
+  city: ""
+  postal_code: ""
+  country: ""
+  lat: 0.0
+  lon: 0.0
+  timezone: "Europe/Berlin"
+
+ha_token_file: "/kaare/configs/ha_token.env"
+ha_url: ""
+log_level: "INFO"
+
+stm:
+  dialog_max_turns: 40
+  dialog_max_text: 600
+  actions_max: 80
+  actions_max_text: 300
+  state_max_keys: 2000
+  context_max_chars: 20000
+  context_last_dialog_turns: 30
+  context_last_actions: 10
+  context_last_state_keys: 24
+  snapshot_path: "/kaare/state/stm_snapshot.json"
+  history_dir: "/kaare/state/stm_history"
+  history_days: 7
+  snapshot_interval_seconds: 300
+
+semantic_memory:
+  fallback_max_entries: 500
+  trim_margin: 50
+think_cache:
+  path: "/kaare/state/think_cache.jsonl"
+  max_entries: 150
+  trim_margin: 30
+
+jang:
+  reflection_interval_seconds: 600
+  inner_thoughts_retention_hours: 48
+
+face_events:
+  session_timeout_seconds: 60
+  retention_hours: 48

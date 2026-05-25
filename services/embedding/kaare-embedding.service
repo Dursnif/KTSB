@@ -1,0 +1,14 @@
+[Unit]
+Description=Kåre BGE-M3 Embedding Service (NPU, port 11446)
+After=network.target
+
+[Service]
+User=kaare
+WorkingDirectory=/kaare/services/embedding
+ExecStart=/kaare/services/argus/convert_venv/bin/python /kaare/services/embedding/server.py
+Restart=always
+RestartSec=10
+Environment=PYTHONPATH=/kaare
+
+[Install]
+WantedBy=multi-user.target

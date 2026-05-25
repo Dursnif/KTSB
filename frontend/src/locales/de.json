@@ -1,0 +1,1138 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "users": "Benutzer",
+    "system": "Wartung",
+    "agents": "Agenten",
+    "reflections": "Reflexionen",
+    "tools": "Werkzeuge",
+    "cameras": "Kameras",
+    "aliases": "Aliase",
+    "nodes": "Knoten",
+    "settings": "Einstellungen",
+    "back_to_kare": "Zurück zu Kåre",
+    "logout": "Abmelden",
+    "sidebar_expand": "Seitenleiste erweitern",
+    "sidebar_collapse": "Seitenleiste einklappen"
+  },
+  "common": {
+    "save": "Speichern",
+    "save_all": "Alle Änderungen speichern",
+    "saving": "Speichert...",
+    "saved": "Gespeichert",
+    "error": "Fehler",
+    "enabled": "Aktiv",
+    "disabled": "Inaktiv",
+    "on": "Ein",
+    "off": "Aus",
+    "enable": "Aktivieren",
+    "disable": "Deaktivieren",
+    "loading": "Lädt...",
+    "cancel": "Abbrechen",
+    "delete": "Löschen",
+    "edit": "Bearbeiten",
+    "add": "Hinzufügen",
+    "add_domain": "Domain hinzufügen",
+    "new_category": "+ Neue Kategorie",
+    "update": "Aktualisieren",
+    "update_token": "Token aktualisieren",
+    "yes": "Ja",
+    "no": "Nein",
+    "unknown": "Unbekannt",
+    "optional": "Optional",
+    "show": "Anzeigen",
+    "hide": "Verbergen",
+    "not_set": "Nicht gesetzt",
+    "set_masked": "Gesetzt: {{masked}}",
+    "no_model_set": "kein Modell gesetzt",
+    "restart_docker": "Docker-Container neu starten",
+    "restarting": "Startet neu...",
+    "container_restarted": "Container neugestartet",
+    "restart_failed": "Neustart fehlgeschlagen",
+    "test": "Testen",
+    "testing": "Testet...",
+    "no_images": "Noch keine Bilder gespeichert.",
+    "no_domains": "Keine Domains — klicken Sie auf «Domain hinzufügen»",
+    "no_websites": "Noch keine Webseiten konfiguriert.",
+    "count_label": "Anzahl",
+    "space_label": "Speicher",
+    "hot_reload_hint": "Hot-reload in Wartung ausführen, damit Änderungen aktiv werden"
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "tabs": {
+      "generelt": "Allgemein",
+      "ha": "Home Assistant",
+      "mqtt": "MQTT / VPN",
+      "llm": "LLM / Modelle",
+      "refleksjon": "Reflexion",
+      "nettsok": "Websuche & Wetter",
+      "bilder": "Bilder/Kamera",
+      "kare": "Kåre-Einstellungen",
+      "integrasjoner": "Integrationen",
+      "distribusjon": "Distribution",
+      "agenter": "Agenten-Einstellungen"
+    },
+    "generelt": {
+      "location": {
+        "title": "Standort",
+        "description": "Wird von Kåre für Wetter, Uhrzeit und geografischen Kontext verwendet. Nie fest kodiert — gespeichert in configs/settings.yaml.",
+        "fields": {
+          "city": {
+            "label": "Stadt",
+            "hint": "Name des Ortes, an dem Sie wohnen"
+          },
+          "postal_code": {
+            "label": "Postleitzahl",
+            "hint": "Ihre Postleitzahl"
+          },
+          "country": {
+            "label": "Land",
+            "hint": "Das Land, in dem Sie sich befinden"
+          },
+          "lat": {
+            "label": "Breitengrad",
+            "hint": "GPS-Breitengrad (z.B. 62.21652)"
+          },
+          "lon": {
+            "label": "Längengrad",
+            "hint": "GPS-Längengrad (z.B. 5.64304)"
+          },
+          "timezone": {
+            "label": "Zeitzone",
+            "hint": "IANA-Zeitzone (z.B. Europe/Oslo)"
+          }
+        }
+      },
+      "language": {
+        "title": "Sprache",
+        "description": "Wählen Sie die Sprache für die Admin-Oberfläche und die Sprache, in der Kåre antwortet. Gilt sofort.",
+        "gui_label": "Oberflächensprache",
+        "gui_hint": "Steuert die Sprache dieser Verwaltungsoberfläche",
+        "kare_label": "Kåre antwortet auf",
+        "kare_hint": "Steuert die Sprache von Kåres Antworten",
+        "options": {
+          "nb": "Norwegisch (Bokmål)",
+          "en": "Englisch",
+          "de": "Deutsch"
+        }
+      }
+    },
+    "ha": {
+      "gateway": {
+        "title": "HA Gateway",
+        "description": "Kåres HA-Brücke (kaare_ha_gateway.py) — führt Smart-Home-Befehle aus. URL in configs/services.yaml gespeichert.",
+        "url_label": "Home Assistant URL",
+        "url_hint": "Z.B. http://192.168.0.100:8123",
+        "timeout_label": "Timeout (Sekunden)",
+        "timeout_hint": "Maximale Wartezeit pro HA-Aufruf"
+      },
+      "token": {
+        "title": "Home Assistant Token",
+        "description": "Langlebiges Zugriffstoken. In configs/ha_token.env gespeichert — nicht im Code.",
+        "new_label": "Neues Token",
+        "new_hint": "Token einfügen aus HA → Profil → Sicherheit → Langlebige Token"
+      },
+      "advanced": {
+        "title": "HA Gateway — Erweiterte Einstellungen",
+        "description": "Timeout, Log-URL und Sicherheitsliste erlaubter HA-Aktionen. Gespeichert in configs/kare_ha.env.",
+        "log_url_label": "Log URL",
+        "log_url_hint": "Endpunkt, auf dem Kåre HA-Logs empfängt",
+        "timeout_label": "Timeout (Sekunden)",
+        "allowed_label": "Erlaubte Aktionen",
+        "allowed_hint": "Kommagetrennte Liste (turn_on, turn_off, …)"
+      }
+    },
+    "mqtt": {
+      "card": {
+        "title": "MQTT",
+        "description": "Wird für Frigate-Ereignisse und Smart-Home-Events verwendet. In configs/services.yaml und configs/mqtt.env gespeichert.",
+        "host_label": "Broker-Host",
+        "host_hint": "IP oder Hostname des MQTT-Brokers (z.B. Home Assistant)",
+        "port_label": "Port",
+        "port_hint": "Standard-MQTT-Port ist 1883",
+        "username_label": "Benutzername",
+        "username_hint": "MQTT-Benutzername (optional). In configs/mqtt.env gespeichert.",
+        "password_label": "Passwort",
+        "password_hint": "Feld leer lassen, um das bestehende Passwort beizubehalten.",
+        "tls_label": "TLS / SSL",
+        "tls_hint": "Verschlüsselte Verbindung aktivieren (Port 8883). Erfordert TLS-Unterstützung beim Broker.",
+        "tls_enable": "TLS aktivieren",
+        "topic_label": "Topic-Präfix",
+        "topic_hint": "Frigate-Präfix für MQTT-Abonnement. Standard: frigate (lauscht auf frigate/events).",
+        "client_label": "Client-ID",
+        "client_hint": "Eindeutige MQTT-Client-ID. Leer lassen für automatisch generierte ID.",
+        "reconnect_label": "Reconnect (Sek.)",
+        "reconnect_hint": "Sekunden zwischen Verbindungsversuchen bei Trennung."
+      },
+      "vpn": {
+        "title": "WireGuard VPN",
+        "description": "Endpunkt, zu dem sich VPN-Clients verbinden. In configs/settings.yaml gespeichert.",
+        "host_label": "DuckDNS-Host",
+        "host_hint": "Ihre DuckDNS-Domain (z.B. mein-name.duckdns.org). Leer lassen, wenn VPN nicht konfiguriert ist.",
+        "port_label": "WireGuard-Port",
+        "port_hint": "Standard-Port ist 51820"
+      }
+    },
+    "llm": {
+      "description": "Ein Abschnitt pro LLM-Rolle. In configs/llm.yaml gespeichert. Betroffenen Dienst nach Änderungen neu starten.",
+      "ctx_warning": "Alle Aufrufe derselben Ollama-Instanz MÜSSEN identisches num_ctx verwenden — Fehlanpassung erzwingt vollständiges Modell-Neuladen (~3,5 Min.).",
+      "provider_label": "Anbieter",
+      "provider_hint": "Art des LLM-Dienstes",
+      "base_url_hint_ollama": "Lokale Ollama-URL (z.B. http://127.0.0.1:11441)",
+      "base_url_hint_api": "API-Endpunkt (z.B. https://integrate.api.nvidia.com/v1)",
+      "api_key_label": "API-Schlüssel",
+      "api_key_set_hint": "Gesetzt ({{masked}}) — neu eingeben zum Aktualisieren",
+      "api_key_unset_hint": "Nicht gesetzt — für diesen Anbieter erforderlich",
+      "think_label": "Think-Modus",
+      "think_hint_ollama": "Aktiviert sichtbares Reasoning (<think>-Blöcke). Qwen3-spezifisch.",
+      "think_hint_vllm": "Aktiviert Reasoning. Im Reasoning-Feld von vLLM angezeigt.",
+      "timeout_label": "Timeout (Sekunden)",
+      "timeout_hint": "Maximale Wartezeit. Leer = kein Limit.",
+      "model_label": "Modellname",
+      "model_hint": "Modellname für diese Rolle (in configs/models.yaml gespeichert)",
+      "gen_model_label": "Generierungsmodell",
+      "gen_model_hint": "Modell zur Bilderzeugung aus Text (in configs/models.yaml gespeichert)",
+      "edit_model_label": "Bearbeitungsmodell",
+      "edit_model_hint": "Modell zur Bearbeitung bestehender Bilder (in configs/models.yaml gespeichert)",
+      "image_provider_hint": "Art des Bildgenerierungsdienstes",
+      "image_timeout_hint": "Maximale Wartezeit pro Bildgenerierung. Leer = kein Limit.",
+      "ollama_params": "Ollama Inferenz-Parameter",
+      "vllm_params": "vLLM Inferenz-Parameter",
+      "vllm_docker_params": "vLLM Docker-Parameter — erfordern Container-Neustart zum Aktivieren",
+      "gen_params": "Bildgenerierungs-Parameter",
+      "cloud_params": "Generierungs-Parameter",
+      "ctx_locked_hint": "Gesperrt — geteilt mit {{shared}}. Dort ändern zum Anpassen.",
+      "think_unset": "Nicht gesetzt",
+      "think_enabled": "Aktiviert (vollständiges Reasoning)",
+      "think_disabled": "Deaktiviert",
+      "role_fallback_desc": "Schritt 2 von 3 — aktiviert wenn 27B fehlschlägt, Cloud-LLM ist letzter Ausweg",
+      "providers": {
+        "ollama": "Ollama (lokal)",
+        "vllm": "vLLM (lokal, OpenAI-kompatibel)",
+        "openai": "OpenAI / OpenAI-kompatibel",
+        "nvidia": "NVIDIA NIM",
+        "huggingface": "HuggingFace Inference API",
+        "openvino": "OpenVINO (lokal)",
+        "other": "Sonstige"
+      },
+      "role_labels": {
+        "default": "Kåre (Haupt)",
+        "miss_kare": "Miss Kåre",
+        "pettersmart": "Pettersmart",
+        "library": "Miss Library",
+        "fallback": "Fallback",
+        "cloud": "Cloud-LLM",
+        "image_edit": "Kåre-image_edit"
+      },
+      "ollama_fields": {
+        "num_ctx": {
+          "label": "Kontextfenster",
+          "hint": "Tokens, die das LLM merken kann (z.B. 65536). Alle Aufrufe desselben Modells MÜSSEN identischen Wert verwenden."
+        },
+        "num_predict": {
+          "label": "Max. Tokens aus",
+          "hint": "Max. Tokens in der Antwort (z.B. 8192). Niedrig für schnelle Agenten einstellen."
+        },
+        "temperature": {
+          "label": "Temperatur",
+          "hint": "Kreativität (0.0–2.0). 1.0 = empfohlen für Qwen3."
+        },
+        "presence_penalty": {
+          "label": "Presence Penalty",
+          "hint": "Verhindert Wiederholungen (empfohlen 1.5 für Qwen3)."
+        },
+        "top_k": {
+          "label": "Top-K",
+          "hint": "Begrenzt Kandidaten-Tokens (z.B. 20)."
+        },
+        "top_p": {
+          "label": "Top-P",
+          "hint": "Nucleus-Sampling (z.B. 0.75)."
+        }
+      },
+      "vllm_fields": {
+        "max_tokens": {
+          "label": "Max. Tokens aus",
+          "hint": "Max. Tokens in der Antwort (z.B. 8192)."
+        },
+        "temperature": {
+          "label": "Temperatur",
+          "hint": "Kreativität (0.0–2.0). 1.0 = empfohlen für Qwen3."
+        },
+        "top_p": {
+          "label": "Top-P",
+          "hint": "Nucleus-Sampling (z.B. 0.75)."
+        },
+        "presence_penalty": {
+          "label": "Presence Penalty",
+          "hint": "Verhindert Wiederholungen (z.B. 1.5)."
+        },
+        "frequency_penalty": {
+          "label": "Frequency Penalty",
+          "hint": "Verhindert Token-Wiederholungen (z.B. 0.0)."
+        }
+      },
+      "docker_fields": {
+        "max_model_len": {
+          "label": "Max. Kontextlänge",
+          "hint": "max_model_len: Max. Tokens, die das Modell verarbeiten kann (z.B. 32768)."
+        },
+        "gpu_memory_utilization": {
+          "label": "GPU-Speichernutzung",
+          "hint": "gpu_memory_utilization: 0.0–1.0. 0.97 = empfohlen für Blackwell mit FP8."
+        },
+        "kv_cache_dtype": {
+          "label": "KV-Cache dtype",
+          "hint": "kv_cache_dtype: fp8 halbiert KV-Cache-Größe. fp16 = volle Präzision. auto = vLLM entscheiden lassen."
+        },
+        "max_num_seqs": {
+          "label": "Max. parallele Sequenzen",
+          "hint": "max_num_seqs: Anzahl gleichzeitiger Anfragen. 2 = empfohlen für Einzelnutzer (ergibt kompakte CUDA-Graphen)."
+        }
+      },
+      "cloud_fields": {
+        "temperature": {
+          "label": "Temperatur",
+          "hint": "Kreativität (0.0–2.0)"
+        },
+        "top_p": {
+          "label": "Top-P",
+          "hint": "Nucleus-Sampling"
+        },
+        "max_tokens": {
+          "label": "Max. Tokens",
+          "hint": "Max. Tokens in der Antwort"
+        }
+      },
+      "manage_section_label": "Modell verwalten",
+      "manage_section_hint": "Modelle herunterladen und GPU für diese Instanz konfigurieren",
+      "manage_gpu_label": "GPU",
+      "manage_gpu_hint": "Welche GPU diese Ollama-Instanz verwendet. Gilt nach dem nächsten docker compose restart.",
+      "manage_gpu_cpu": "CPU (keine GPU)",
+      "manage_gpu_save_btn": "GPU-Einstellung speichern",
+      "manage_gpu_restart_note": "GPU-Änderung gilt nach dem nächsten docker compose restart",
+      "manage_pull_label": "Modell herunterladen",
+      "manage_pull_hint": "Modellnamen von ollama.com kopieren und hier einfügen",
+      "manage_pull_placeholder": "z.B. qwen3:8b",
+      "manage_pull_btn": "Herunterladen",
+      "manage_installed_label": "Installierte Modelle",
+      "manage_installed_empty": "Noch keine Modelle installiert",
+      "manage_delete_btn": "Löschen",
+      "manage_perf_label": "Leistungseinstellungen (Ollama)",
+      "manage_perf_save_btn": "Leistungseinstellungen speichern",
+      "manage_auto": "auto",
+      "manage_num_threads_label": "CPU-Threads",
+      "manage_num_threads_hint": "Anzahl der CPU-Threads für Ollama. Leer = automatisch (alle Kerne). Gilt nach docker compose restart.",
+      "manage_num_parallel_label": "Parallele Anfragen",
+      "manage_num_parallel_hint": "Gleichzeitige Anfragen pro Instanz. Standard: 1. Höhere Werte verbessern den Durchsatz, nutzen aber mehr VRAM.",
+      "manage_max_loaded_label": "Max. geladene Modelle",
+      "manage_max_loaded_hint": "Gleichzeitig im VRAM gehaltene Modelle. Standard: 1. Erhöhen wenn die Instanz mehrere Agenten mit verschiedenen Modellen bedient.",
+      "manage_kv_cache_label": "KV-Cache-Präzision",
+      "manage_kv_cache_hint": "f16 = volle Präzision. q8_0 = halbiert KV-Cache-Größe. q4_0 = Viertel, gibt am meisten VRAM frei.",
+      "manage_flash_attn_label": "Flash Attention",
+      "manage_flash_attn_hint": "Schnellere Inferenz und geringerer Speicherverbrauch. Erfordert kompatibles GPU-Setup. Empfohlen."
+    },
+    "nettsok": {
+      "weather": {
+        "title": "Wetter-Anbieter",
+        "description": "Welchen Dienst Kåre zum Abrufen von Wetterdaten verwendet. Standort wird im Allgemein-Tab konfiguriert. In configs/settings.yaml und configs/weather.env gespeichert.",
+        "provider_label": "Anbieter",
+        "provider_hint": "Wetter-API auswählen. met.no und Open-Meteo sind kostenlos und benötigen keinen Schlüssel.",
+        "days_label": "Vorhersage-Tage",
+        "days_hint": "Anzahl der Tage, die Kåre zeigt (1–7). Heute zählt als Tag 1.",
+        "needs_key_warning": "Dieser Anbieter erfordert einen API-Schlüssel. Ohne Schlüssel gibt Kåre eine Fehlermeldung bei Wettervorhersagen aus."
+      },
+      "websearch": {
+        "title": "Websuche",
+        "description": "Suchanbieter wählen. DDG erfordert keine Konfiguration und ist Standard. SearXNG erfordert eine laufende Instanz. Brave erfordert einen API-Schlüssel. In configs/services.yaml gespeichert.",
+        "provider_label": "Anbieter",
+        "provider_hint": "Primärer Suchanbieter. DDG funktioniert ohne Schlüssel.",
+        "fallback_label": "Fallback",
+        "fallback_hint": "Wird automatisch verwendet, wenn der primäre Anbieter fehlschlägt oder 0 Ergebnisse zurückgibt.",
+        "searxng_url_label": "SearXNG URL",
+        "searxng_url_hint": "URL zu Ihrer SearXNG-Instanz (z.B. http://localhost:8888).",
+        "fetch_count_label": "Ergebnisse abrufen",
+        "fetch_count_hint": "Gesamtanzahl der vom Anbieter abzurufenden Ergebnisse",
+        "max_results_label": "Max. verwendete Quellen",
+        "max_results_hint": "Max. Anzahl der abgerufenen und an Miss Library gesendeten URLs",
+        "content_max_label": "Max. Zeichen pro Quelle",
+        "content_max_hint": "Anzahl der von jeder Website abgerufenen Zeichen",
+        "brave_country_label": "Land (Brave)",
+        "brave_country_hint": "ISO 3166-1 alpha-2 (NO, US, GB, …).",
+        "brave_lang_label": "Suchsprache (Brave)",
+        "brave_lang_hint": "BCP 47-Sprachcode (no, en, de, …).",
+        "brave_key_label": "Brave API-Schlüssel",
+        "brave_key_unset_hint": "Nicht gesetzt — nur erforderlich, wenn Brave als Anbieter gewählt ist",
+        "hot_reload_hint": "Hot-reload in Wartung ausführen, damit Änderungen aktiv werden"
+      },
+      "trusted": {
+        "title": "Whitelist-Webseiten",
+        "description": "Nur diese Domains werden verwendet, wenn Kåre online nach Informationen sucht. In configs/trusted_sources.yaml gespeichert. Erfordert Hot-reload zum Aktivieren.",
+        "hot_reload_hint": "Änderungen an Whitelist-Webseiten werden durch Ausführen von «Hot-reload» im Wartungs-Tab aktiviert.",
+        "short_desc_placeholder": "Kurzbeschreibung",
+        "domain_format_hint": "Ohne http:// und www."
+      }
+    },
+    "refleksjon": {
+      "title": "Kåre-Reflexion",
+      "description": "Kåre liest regelmäßig Jangs destillierte Gedanken und überlegt, ob etwas ins Selbstbild oder auf den Notizblock geschrieben werden sollte. Die Reflexion läuft still im Hintergrund — keine Benutzerausgabe, kein TTS. Pausiert automatisch während Nachtmeetings. In configs/settings.yaml gespeichert.",
+      "enabled_label": "Aktiviert",
+      "enabled_hint": "Deaktivieren, um den Reflexionszyklus vollständig zu stoppen. Gilt sofort.",
+      "interval_label": "Intervall (Minuten)",
+      "interval_hint": "Wie oft Kåre Jangs Gedanken prüft. Mindestens 1 Minute. Standard: 10 Min.",
+      "seconds_suffix": "= {{seconds}} Sekunden"
+    },
+    "bilder": {
+      "storage": {
+        "title": "Bildspeicher pro Benutzer",
+        "description": "Alle Bilder, die Benutzer einsenden und Kåre generiert, werden in state/images/{benutzer}/ gespeichert. Älteste Bilder werden automatisch gelöscht, wenn ein Limit überschritten wird. In configs/settings.yaml gespeichert.",
+        "count_label": "Max. Bilder pro Benutzer",
+        "count_hint": "Eingabe + Ausgabe zusammen gezählt. Älteste werden gelöscht, wenn Limit erreicht.",
+        "mb_label": "Max. Speicher pro Benutzer (MB)",
+        "mb_hint": "Älteste Bilder werden auch gelöscht, wenn die Gesamtgröße dieses Limit überschreitet."
+      },
+      "usage": {
+        "title": "Nutzung pro Benutzer",
+        "description": "Übersicht über den gespeicherten Bildspeicher. Wird beim Laden der Seite aktualisiert.",
+        "images_suffix": "Bilder"
+      }
+    },
+    "kare": {
+      "personality_mode": {
+        "title": "Kernpersönlichkeit",
+        "description": "Wählen Sie den Detailgrad der Kernpersönlichkeit. Höhere Stufen bieten mehr Kontext und bessere Antworten, verbrauchen aber mehr Tokens.",
+        "minimal_label": "Minimal",
+        "minimal_desc": "Nur Name, Sprache und 3 absolute Regeln. ~80 Tokens. Für sehr ressourcenbeschränkte Hardware.",
+        "letvekt_label": "Leichtgewicht",
+        "letvekt_desc": "Kurzversion mit Kernregeln. Internes Wissen wird mit [Internes Wissen – nicht verifiziert] markiert. ~150 Tokens.",
+        "standard_label": "Standard",
+        "standard_desc": "Vollständige Kernpersönlichkeit mit happy go lucky, drei Säulen und Wissensstufen. Empfohlen. ~420 Tokens.",
+        "full_label": "Voll",
+        "full_desc": "Standard + Verhaltensregeln (Kommunikationsstil, Gesprächsfortschritt, Tool-Disziplin). ~650 Tokens.",
+        "komplett_label": "Komplett",
+        "komplett_desc": "Voll + Selbstbild + Welt. Die Weltkarte des Assistenten wird immer injiziert. ~900 Tokens.",
+        "egendefinert_label": "Benutzerdefiniert",
+        "egendefinert_desc": "Schreiben Sie Ihre eigene Kernpersönlichkeit. Der Standardtext wird als Ausgangspunkt verwendet.",
+        "custom_placeholder": "Geben Sie Ihre benutzerdefinierte Kernpersönlichkeit ein...",
+        "custom_hint": "Dieser Text ersetzt die gesamte personality_core.md. personality_self.md (das Selbstbild) wird immer zusätzlich injiziert.",
+        "hot_reload_hint": "Die Änderung tritt sofort nach dem Speichern in Kraft (Hot-Reload).",
+        "load_default_btn": "Standard als Vorlage laden"
+      },
+      "selfimage": {
+        "title": "Kåres Selbstbild",
+        "description": "Kåre kann Beobachtungen über sich selbst in personality_self.md schreiben — eine Datei, die im Laufe der Zeit formt, wer es ist. Hier steuern Sie, welche Benutzer dieses Selbstbild beeinflussen können. Gilt sofort.",
+        "name_label": "Assistentenname",
+        "name_hint": "Der Name, mit dem sich der Assistent vorstellt. Wird beim Hot-reload in den System-Prompt eingefügt.",
+        "hotword_label": "Hotword",
+        "hotword_hint": "Aktivierungswort für Sprachbefehle. Hinweis: Änderung erfordert erneutes Training des Sprachmodells.",
+        "who_shapes": "Wer kann Kåres Selbstbild prägen?",
+        "allowed_users_label": "Erlaubte Benutzer",
+        "no_users": "Keine regulären Benutzer gefunden.",
+        "admin_note": "Das Systemkonto «admin» wird hier nicht angezeigt.",
+        "modes": {
+          "all_label": "Alle Benutzer",
+          "all_desc": "Jedes Gespräch kann zum Selbstbild beitragen, unabhängig davon, mit wem Kåre spricht.",
+          "selected_label": "Ausgewählte Benutzer",
+          "selected_desc": "Nur Gespräche mit den unten ausgewählten Benutzern können das Selbstbild prägen.",
+          "admin_only_label": "Nur Admin",
+          "admin_only_desc": "Das Selbstbild wird nur in Gesprächen mit Admin-Benutzern geprägt."
+        }
+      }
+    },
+    "integrasjoner": {
+      "frigate": {
+        "title": "Frigate",
+        "description": "Kameraanalyse über Frigate NVR. In configs/services.yaml gespeichert.",
+        "enabled_label": "Aktiviert",
+        "enabled_hint": "Frigate-Integration ein-/ausschalten",
+        "url_label": "Frigate URL",
+        "url_hint": "URL zu Frigate NVR (z.B. http://192.168.0.100:5000)",
+        "timeout_label": "Timeout (Sekunden)",
+        "timeout_hint": "Maximale Wartezeit pro Frigate-Aufruf",
+        "snap_label": "Snapshot-Timeout (Sekunden)",
+        "snap_hint": "Maximale Wartezeit für Bild-Download"
+      },
+      "plex": {
+        "title": "Plex",
+        "description": "Plex-Medienserver. In configs/services.yaml und configs/plex.env gespeichert.",
+        "url_label": "Plex-Server URL",
+        "url_hint": "URL zu Plex (z.B. http://192.168.0.156:32400)",
+        "timeout_label": "Timeout (Sekunden)",
+        "timeout_hint": "Maximale Wartezeit pro Plex-Aufruf",
+        "token_label": "Plex-Token",
+        "token_placeholder": "Neues Plex-Token einfügen",
+        "token_warning": "Dienstneustart (kaare.service) erforderlich, damit das neue Plex-Token aktiviert wird."
+      }
+    },
+    "distribusjon": {
+      "profile": {
+        "title": "Distributionsprofil",
+        "description": "Wählen Sie, welches Service-Bundle Kåre installiert hat. Beeinflusst nicht die Domains — diese werden separat unten konfiguriert.",
+        "domains_label": "Domains",
+        "hot_reload_hint": "Empfohlen: «Hot-reload alle Konfigurationsdateien» im Wartungs-Tab nach dem Speichern ausführen."
+      },
+      "presets": {
+        "full": {
+          "label": "Voll",
+          "description": "Alles enthalten: Jing+Jang, BGE-M3 Embedding, Wiki-Suche, Sprache, Agenten."
+        },
+        "medium": {
+          "label": "Mittel",
+          "description": "Ohne Jing+Jang. BGE-M3 und Wiki enthalten. Sprache und Agenten enthalten."
+        },
+        "letvekt": {
+          "label": "Leicht",
+          "description": "Ohne Jing+Jang und Wiki. Nur Intent-Embedding. Sprache und Agenten enthalten."
+        }
+      },
+      "services": {
+        "title": "Dienste",
+        "v1_unavailable": "In Docker v1 nicht verfügbar"
+      }
+    },
+    "agenter": {
+      "section_tools": "Werkzeugberechtigungen",
+      "section_role_dev": "Rolle im Dev-Meeting",
+      "section_role_reflection": "Rolle im Reflexions-Meeting",
+      "role_save": "Rolle speichern",
+      "save_tools": "Werkzeugberechtigungen speichern",
+      "role_load_default": "Standardinhalt laden",
+      "role_custom_placeholder": "Schreibe hier, welche Rolle der Agent im Meeting spielen soll...",
+      "role_custom_hint": "Benutzerdefinierter Text wird als Agentenanweisung im Meeting-System-Prompt verwendet.",
+      "role_hot_reload_hint": "Änderungen gelten ab dem nächsten Meeting.",
+      "pettersmart": {
+        "label": "Pettersmart",
+        "description": "Technischer Assistent und Problemlöser. Wird in Dev-Meetings und für technische Fragen verwendet.",
+        "roles": {
+          "undersøker_label": "Ermittler",
+          "undersøker_desc": "Gräbt mit Werkzeugen ins System – faktenbasiert und methodisch. Standardverhalten.",
+          "kritiker_label": "Kritiker",
+          "kritiker_desc": "Stellt kritische Fragen zu Kåres Befunden. Keine Antworten – nur Fragen.",
+          "analytiker_label": "Analytiker",
+          "analytiker_desc": "Analysiert Muster über Meeting-Berichte und Verlauf hinweg.",
+          "egendefinert_label": "Benutzerdefiniert",
+          "egendefinert_desc": "Schreibe deine eigene Anweisung für Pettersmarts Rolle im Meeting."
+        }
+      },
+      "miss_kare": {
+        "label": "Miss Kåre",
+        "description": "Evaluator – sitzt am Spielfeldrand und kommentiert das Gespräch. Kann Fakten bei Frøken Library nachschlagen.",
+        "roles": {
+          "empatisk_label": "Empathisch",
+          "empatisk_desc": "Warm und fürsorglich – Fokus auf das Gefühlsleben und die menschliche Seite des Nutzers. Standardverhalten.",
+          "analytiker_label": "Analytikerin",
+          "analytiker_desc": "Strukturierte Mustererkennung – zieht Verbindungen zwischen Beobachtungen.",
+          "utfordrende_label": "Herausfordernd",
+          "utfordrende_desc": "Hinterfragt Annahmen über den Nutzer mit offenen, kritischen Fragen.",
+          "egendefinert_label": "Benutzerdefiniert",
+          "egendefinert_desc": "Schreibe deine eigene Anweisung für Miss Kåres Rolle im Meeting."
+        }
+      },
+      "miss_library": {
+        "label": "Frøken Library",
+        "description": "Bibliothekarin und Wissenswächterin. Websuche ist immer an – lokales Wiki erfordert den Download der Datenbank."
+      },
+      "tools": {
+        "utforsk": "utforsk",
+        "utforsk_desc": "Dateien lesen, Verzeichnisse auflisten und Code unter /kaare durchsuchen.",
+        "inspiser": "inspiser",
+        "inspiser_desc": "Logs lesen, Dienste und Ressourcen prüfen, git diff/log anzeigen.",
+        "nettsøk": "nettsøk",
+        "nettsøk_desc": "Im Internet suchen über den konfigurierten Suchanbieter.",
+        "søk_vaktmester": "søk_vaktmester",
+        "søk_vaktmester_desc": "Im Vaktmester-Ereignisprotokoll suchen (Qdrant).",
+        "shell": "shell",
+        "shell_desc": "Shell-Befehle lokal oder auf verbundenen Knoten ausführen. Nur bei Bedarf aktivieren.",
+        "hukommelse": "hukommelse",
+        "hukommelse_desc": "Pettersmarts persönliches Gedächtnis – bleibt zwischen Meetings erhalten.",
+        "spør_frøken_library": "spør_frøken_library",
+        "spør_frøken_library_desc": "Miss Kåre erlauben, bei Frøken Library Fakten zu prüfen.",
+        "wiki": "wiki (lokal)",
+        "wiki_desc": "Lokale Wikipedia-Datenbank (Qdrant). Erfordert den Download der wiki_no-Sammlung."
+      }
+    }
+  },
+  "onboarding": {
+    "step_label": "Einrichtung — Schritt {{step}} von {{total}}",
+    "steps": {
+      "profil": "Profil",
+      "bruker": "Benutzer",
+      "distribusjon": "Distribution",
+      "integrasjoner": "Integrationen",
+      "ferdig": "Fertig"
+    },
+    "back": "Zurück",
+    "profil": {
+      "save_continue": "Speichern und weiter",
+      "error_save": "Standort konnte nicht gespeichert werden."
+    },
+    "bruker": {
+      "title": "Ersten Benutzer erstellen",
+      "description": "Fügen Sie mindestens einen Benutzer außer Admin hinzu. Sie können dies auch überspringen und später erledigen.",
+      "display_name": "Anzeigename",
+      "display_name_ph": "Vorname",
+      "username": "Benutzername",
+      "username_ph": "benutzername (keine Leerzeichen)",
+      "pin": "PIN (min. 4 Ziffern)",
+      "role": "Rolle",
+      "roles": {
+        "adult": "Erwachsener",
+        "young_adult": "Junger Erwachsener",
+        "teen": "Teenager",
+        "child": "Kind"
+      },
+      "create": "Benutzer erstellen",
+      "skip": "Überspringen",
+      "error_create": "Benutzer konnte nicht erstellt werden."
+    },
+    "distribusjon": {
+      "save_continue": "Speichern und weiter",
+      "error_save": "Distributionsprofil konnte nicht gespeichert werden."
+    },
+    "integrasjoner": {
+      "title": "Integrationen",
+      "optional_badge": "Optional",
+      "description": "Kåre funktioniert ohne alle diese. Füllen Sie aus, was Sie haben — oder überspringen Sie und konfigurieren Sie später über Einstellungen → Integrationen.",
+      "save_finish": "Speichern und beenden",
+      "skip": "Überspringen"
+    },
+    "ferdig": {
+      "title": "Kåre ist bereit!",
+      "description": "Grundeinrichtung abgeschlossen. Sie können jederzeit mehr über das Admin-Panel konfigurieren.",
+      "next_steps_label": "Nächste Schritte (optional)",
+      "hints": [
+        "Aliase für norwegische HA-Entitätsnamen hinzufügen (Aliase im Menü)",
+        "Lautsprecher und Medienknoten konfigurieren (Knoten im Menü)",
+        "Plex-Token, Kameraeinstellungen und mehr in Einstellungen einrichten"
+      ],
+      "go_dashboard": "Zum Dashboard"
+    }
+  },
+  "system": {
+    "title": "Wartung",
+    "hot_reload": {
+      "title": "Hot-reload Konfig",
+      "description": "Lädt YAML-Dateien in laufenden Prozessen neu — ohne Neustart. Umfasst: aliases, sprakvask, capability_map, llm.yaml, models.yaml, services.yaml, settings.yaml, Persönlichkeit.",
+      "button": "Alle Konfigurationsdateien hot-reloaden",
+      "loading": "Lädt…",
+      "ok": "{{count}} Dateien geladen — {{aliases}} Aliase",
+      "error_api": "Fehler — API nicht erreichbar",
+      "note": "Hinweis: MQTT-Verbindung, API-Schlüssel (Brave/NVIDIA) und ha-log-bridge bleiben nach dem Hot-reload im RAM gecacht — diese benötigen einen Dienstneustart unten."
+    },
+    "health_check": {
+      "title": "Systemprüfung",
+      "description": "Prüft Imports, Konfigurationsdateien und ob alle Dienste antworten.",
+      "button": "Systemprüfung ausführen",
+      "loading": "Prüfe…",
+      "ok": "Alles OK",
+      "errors": "{{count}} Fehler gefunden",
+      "imports": "Imports",
+      "configs": "Konfig",
+      "services": "Dienste",
+      "skipped": "übersprungen",
+      "failed": "fehlgeschlagen",
+      "ok_short": "ok"
+    },
+    "services": {
+      "title": "Dienstneustart",
+      "description": "Einen Dienst nach Konfigurationsänderungen neu starten, die nicht durch Hot-reload erfasst werden. Grüner Punkt = Dienst läuft.",
+      "loading": "Dienstliste wird geladen…",
+      "restarting": "Startet…",
+      "restarted": "Neugestartet ✓",
+      "restart": "Neustart",
+      "error": "Fehler",
+      "labels": {
+        "kaare": {
+          "label": "Kåre (Haupt-API)",
+          "hint": "Port 8000. Neustart für neue LLM-Einstellungen und Konfig."
+        },
+        "gateway": {
+          "label": "HA Gateway",
+          "hint": "Port 8002. Neustart nach HA-URL/Token-Änderung."
+        },
+        "semantic_embed": {
+          "label": "Semantic Embed",
+          "hint": "Port 11500. 384-dim Embedding für semantisches Gedächtnis."
+        },
+        "agents": {
+          "label": "Agenten (Library + Pettersmart)",
+          "hint": "Port 11450. Neustart nach LLM-Änderung für diese Rollen."
+        },
+        "embedding": {
+          "label": "Embedding (BGE-M3)",
+          "hint": "Port 11446. Neustart nach Embedding-Konfig-Änderung."
+        },
+        "vaktmester": {
+          "label": "Vaktmester",
+          "hint": "Log-Daemon. Neustart wenn Log-Sammlung stoppt."
+        },
+        "voice": {
+          "label": "Voice Bridge",
+          "hint": "Port 8011. STT/TTS. Neustart nach Sprach-Konfig-Änderung."
+        },
+        "ha-log-bridge": {
+          "label": "HA Log Bridge",
+          "hint": "Neustart nach kare_ha.env-Änderung."
+        },
+        "frontend": {
+          "label": "Frontend (React/Vite)",
+          "hint": "Port 5173. Neustart nach Frontend-Build."
+        }
+      }
+    },
+    "memory": {
+      "title": "Speicher",
+      "description": "Kåre zwingen, Kurzzeitgedächtnis (STM) → Langzeitgedächtnis (LTM) jetzt zu komprimieren.",
+      "last_run": "Zuletzt ausgeführt: {{ts}}",
+      "never": "nie",
+      "button": "STM → LTM jetzt erzwingen",
+      "running": "Läuft…",
+      "starting": "Startet…",
+      "ok": "{{episodes}} Episode(n), {{compressed}} Interaktionen",
+      "error_prefix": "Fehler: "
+    },
+    "rollback": {
+      "title": "Auf Standard zurücksetzen",
+      "description": "Stellt die vier Haupt-Konfigurationsdateien aus dem eingefrorenen Snapshot in configs_default/ wieder her. Verwenden Sie dies, wenn Sie die Konfiguration beschädigt haben und neu beginnen möchten.",
+      "confirm": "Dies setzt settings.yaml, llm.yaml, models.yaml und services.yaml auf die eingefrorene Standardversion zurück. Fortfahren?",
+      "button": "Auf Standard zurücksetzen",
+      "loading": "Wird zurückgesetzt…",
+      "ok": "Wiederhergestellt: {{files}}",
+      "error_suffix": "Fehler: ",
+      "error": "Fehler — konnte nicht zurücksetzen"
+    },
+    "github": {
+      "title": "GitHub-Veröffentlichung",
+      "description": "Kåre wird auf GitHub veröffentlicht. Niemals Benutzernamen, Ortsnamen, Home Assistant-URL, API-Schlüssel oder Zeitzone direkt im Code hardcoden. Alle solche Werte werden in configs/settings.yaml oder .env-Dateien gespeichert, die nicht eingecheckt werden."
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "not_configured": "Kåre ist nicht vollständig konfiguriert",
+    "missing": "Fehlt: {{items}}",
+    "finish_setup": "Einrichtung abschließen →",
+    "optional": "Optional: {{label}} nicht gesetzt",
+    "users_card": "Benutzer",
+    "users_stat": "jetzt online · {{active}} von {{total}} aktiv",
+    "services_card": "Dienste",
+    "services_stat": "von {{total}} online",
+    "models_card": "Modelle",
+    "models_stat": "von {{total}} geladen",
+    "modules_card": "Systemmodule",
+    "active": "Aktiv",
+    "inactive": "Inaktiv",
+    "online_now": "Jetzt",
+    "refresh": "Aktualisieren",
+    "checking": "Prüfe…",
+    "ok": "OK",
+    "last_checked": "Zuletzt geprüft:",
+    "ago": "vor",
+    "roles": {
+      "child": "Kind",
+      "teen": "Teenager",
+      "young_adult": "Junger Erwachsener",
+      "adult": "Erwachsener",
+      "admin": "Admin"
+    }
+  },
+  "login": {
+    "title": "Kåre",
+    "subtitle": "Anmelden um fortzufahren",
+    "username": "Benutzername",
+    "pin": "PIN",
+    "logging_in": "Anmelden…",
+    "login": "Anmelden",
+    "choose_pin": "Neue PIN wählen",
+    "choose_pin_sub": "Hallo, {{name}}! Sie müssen eine persönliche PIN festlegen, bevor Sie fortfahren.",
+    "set_pin": "PIN setzen und anmelden",
+    "new_pin": "Neue PIN (min. 4 Ziffern)",
+    "repeat_pin": "PIN wiederholen",
+    "saving": "Speichert…",
+    "error_login": "Falscher Benutzername oder PIN.",
+    "error_generic": "Etwas ist schiefgelaufen.",
+    "error_pin_short": "PIN muss mindestens 4 Ziffern haben.",
+    "error_pin_mismatch": "PINs stimmen nicht überein."
+  },
+  "users": {
+    "title": "Benutzer",
+    "new_user": "+ Neuer Benutzer",
+    "table": {
+      "user": "Benutzer",
+      "username": "Benutzername",
+      "role": "Rolle",
+      "personality": "Persönlichkeit",
+      "vpn_access": "Externer Zugriff",
+      "status": "Status",
+      "actions": "Aktionen"
+    },
+    "actions": {
+      "edit": "Bearbeiten",
+      "pin": "PIN",
+      "vpn": "VPN",
+      "voice": "Stimme",
+      "delete": "Löschen"
+    },
+    "status": {
+      "active": "Aktiv",
+      "inactive": "Deaktiviert"
+    },
+    "vpn_access": {
+      "local_only": "Nur lokal",
+      "ai_only": "Nur KI",
+      "full_access": "Vollzugriff"
+    },
+    "create": {
+      "title": "Neuer Benutzer",
+      "display_name": "Anzeigename",
+      "username": "Benutzername",
+      "role": "Rolle",
+      "avatar": "Avatar",
+      "pin": "PIN (min. 4 Ziffern)",
+      "submit": "Erstellen",
+      "cancel": "Abbrechen",
+      "error_generic": "Etwas ist schiefgelaufen."
+    },
+    "edit": {
+      "title": "Bearbeiten — {{name}}",
+      "display_name": "Anzeigename",
+      "role": "Rolle",
+      "personality": "Persönlichkeit",
+      "avatar": "Avatar",
+      "vpn_label": "Externer Zugriff (VPN)",
+      "vpn_local_only": "Nur lokal — kein externer Zugriff",
+      "vpn_ai_only": "Nur KI — nur KI-Chat extern, nicht Smart Home",
+      "vpn_full_access": "Vollzugriff — alles extern verfügbar",
+      "active_label": "Aktiv",
+      "save": "Speichern",
+      "cancel": "Abbrechen",
+      "error_generic": "Etwas ist schiefgelaufen."
+    },
+    "pin_modal": {
+      "title": "PIN ändern — {{name}}",
+      "new_pin": "Neue PIN (min. 4 Ziffern)",
+      "submit": "PIN ändern",
+      "cancel": "Abbrechen",
+      "error_generic": "Etwas ist schiefgelaufen."
+    },
+    "delete_modal": {
+      "title": "Benutzer löschen",
+      "confirm": "Sind Sie sicher, dass Sie {{name}} löschen möchten? Dies kann nicht rückgängig gemacht werden.",
+      "submit": "Ja, löschen",
+      "cancel": "Abbrechen",
+      "error_generic": "Etwas ist schiefgelaufen."
+    },
+    "vpn_modal": {
+      "title": "VPN — {{name}}",
+      "active_profiles": "Aktive Profile",
+      "delete": "Löschen",
+      "new_device_label": "Neues Gerät (z.B. «Telefon» oder «Tablet»)",
+      "new_device_ph": "Telefon",
+      "generating": "Generiert…",
+      "generate_qr": "QR generieren",
+      "scan_hint": "Mit WireGuard-App scannen — wird nur jetzt angezeigt.",
+      "show_config": "Konfig-Text anzeigen",
+      "close": "Schließen",
+      "error_remove": "Entfernen fehlgeschlagen.",
+      "error_generic": "Etwas ist schiefgelaufen."
+    },
+    "voice_modal": {
+      "title": "Stimme — {{name}}",
+      "status": "Status",
+      "checking": "Prüft…",
+      "enrolled": "✓ Stimmprofil registriert",
+      "not_enrolled": "Kein Stimmprofil registriert",
+      "delete": "Löschen",
+      "instructions_title": "Stimme registrieren:",
+      "instruction_1": "Klicken Sie auf «Aufnahme starten»",
+      "instruction_2": "Lesen Sie die Sätze laut und deutlich vor",
+      "instruction_3": "Klicken Sie auf «Stopp» oder warten Sie bis der Timer abläuft",
+      "recording": "⏺ Aufnahme… {{elapsed}}s / {{max}}s",
+      "processing": "Audio wird verarbeitet…",
+      "start": "Aufnahme starten",
+      "re_record": "Neue Stimme aufnehmen",
+      "stop": "Stopp",
+      "registered": "Stimme registriert!",
+      "close": "Schließen",
+      "error_mic": "Fehler: Mikrofon konnte nicht geöffnet werden. Überprüfen Sie die Browser-Berechtigung.",
+      "error_record": "Aufnahme fehlgeschlagen. Erneut versuchen oder Voice Bridge neu starten.",
+      "error_delete": "Stimmprofil konnte nicht gelöscht werden."
+    },
+    "tools": {
+      "title": "Tool-Berechtigungen pro Rolle",
+      "description": "Steuern Sie, welche Werkzeuge Kåre pro Benutzerrolle verwenden kann. Änderungen treten sofort in Kraft.",
+      "col_tool": "Werkzeug",
+      "always_included": "Immer enthalten (Kåres eigene): Selbstbild, Welt, Benutzerprofil, innere_Gedanken_lesen, Gedankenhistorie_lesen",
+      "loading": "Tool-Berechtigungen werden geladen…",
+      "save": "Änderungen speichern",
+      "rollback": "Auf Standard zurücksetzen",
+      "saved": "Gespeichert.",
+      "error_save": "Fehler beim Speichern.",
+      "rolled_back": "Auf Standard zurückgesetzt.",
+      "labels": {
+        "styr_enhet": "Gerät steuern (HA)",
+        "les_ha": "HA-Status lesen",
+        "timer": "Timer / Uhr",
+        "hent_yr_varsel": "Wetter (met.no)",
+        "library": "Miss Library (Wiki)",
+        "library_online": "Online LLM",
+        "søk_nett": "Websuche",
+        "kare_image": "Bildgenerierung",
+        "se_bilder": "Bilder anzeigen",
+        "media": "Medien (Plex / Radio)",
+        "notat": "Notizen",
+        "announce": "Ankündigung (Sprache)",
+        "reason_freely": "Freies Denken",
+        "minne": "Speicher (LTM)",
+        "kamera": "Kamera (Frigate)",
+        "søk_i_vaktmester": "Vaktmester-Suche",
+        "les_møte": "Besprechungsberichte lesen",
+        "pettersmart": "Pettersmart",
+        "utforsk_kode": "Code erkunden",
+        "inspiser_system": "System inspizieren",
+        "ssh_kommando": "SSH-Befehl",
+        "local_kommando": "Lokaler Befehl",
+        "restart_docker_container": "Docker neu starten"
+      }
+    }
+  },
+  "user": {
+    "change_pin": "PIN ändern",
+    "pin_changed": "PIN geändert!",
+    "admin_panel": "Admin-Panel",
+    "logout": "Abmelden",
+    "new_pin": "Neue PIN",
+    "repeat_pin": "PIN wiederholen",
+    "save": "Speichern",
+    "saving": "Speichert…",
+    "close": "Schließen",
+    "cancel": "Abbrechen",
+    "error": "Etwas ist schiefgelaufen.",
+    "error_pin_short": "PIN muss mindestens 4 Ziffern haben.",
+    "error_pin_mismatch": "PINs stimmen nicht überein."
+  },
+  "aliases": {
+    "title": "Aliasse",
+    "description": "Norwegische Namen, die Kåre für Home Assistant-Geräte und Räume erkennt. Änderungen werden sofort wirksam.",
+    "card_description": "Drei Abschnitte: Aliasse (Text → entity_id), Räume (Raumname → Synonyme), Raumgeräte (Raum → entity_id-Liste).",
+    "tab_aliases": "Aliasse",
+    "tab_rooms": "Räume",
+    "tab_room_entities": "Raumgeräte",
+    "search_ph": "Aliasse suchen…",
+    "col_key": "Norwegischer Text",
+    "col_entity": "Entity ID",
+    "empty": "Keine Aliasse gefunden.",
+    "save_btn": "Aliasse speichern",
+    "hot_reload_note": "Änderungen werden sofort wirksam (Hot-Reload) — kein Neustart erforderlich.",
+    "room_col_room": "Raumname",
+    "room_col_synonyms": "Synonyme (kommagetrennt)",
+    "room_new_ph": "Neuer Raumname…",
+    "room_save_btn": "Räume speichern",
+    "entities_save_btn": "Gerätelisten speichern"
+  },
+  "nodes": {
+    "title": "Knoten",
+    "card_title": "Medienknoten und Lautsprecher",
+    "card_description": "Konfiguration aller TTS-Geräte (Nest Hub, Chromecast, ESP32). Gespeichert in configs/nodes.yaml.",
+    "new_node": "Neuer Knoten",
+    "empty": "Noch keine Knoten konfiguriert.",
+    "delete_confirm": "Knoten «{{key}}» löschen?",
+    "edit": "Bearbeiten",
+    "delete": "Löschen",
+    "enabled": "Aktiviert",
+    "disabled": "Deaktiviert",
+    "modal": {
+      "edit_title": "Knoten bearbeiten",
+      "new_title": "Neuer Knoten",
+      "node_id": "Knoten-ID (eindeutiger Schlüssel)",
+      "room": "Raumname",
+      "description": "Beschreibung",
+      "type": "Typ",
+      "entity_id": "Entity ID",
+      "host": "Host (IP)",
+      "api_port": "API-Port",
+      "default_user": "Standardbenutzer (optional)",
+      "cancel": "Abbrechen",
+      "save": "Speichern",
+      "mic_enabled": "Mikrofon (Eingang)"
+    }
+  },
+  "tools": {
+    "title": "Werkzeuge",
+    "timers_title": "Aktive Timer",
+    "timers_empty": "Keine aktiven Timer",
+    "repeat": {
+      "hourly": "stündlich",
+      "daily": "täglich",
+      "weekdays": "Wochentage",
+      "weekend": "Wochenende",
+      "weekly": "wöchentlich"
+    },
+    "timer_fires": "löst aus",
+    "timer_notify": "benachrichtigt",
+    "firing_soon": "löst bald aus…",
+    "log_title": "Ausführungsprotokoll",
+    "log_loading": "Lädt…",
+    "log_empty": "Noch keine Werkzeugaufrufe",
+    "unknown_event": "unbekannt"
+  },
+  "cameras": {
+    "title": "Kameraeinstellungen",
+    "description": "Wählen Sie aus, welche Kameras und Objekte Kåre automatisch analysieren soll.",
+    "global_title": "Automatische Ereignisanalyse aktivieren",
+    "global_off_hint": "Wenn aus: Kåre analysiert keine Kameraereignisse automatisch.",
+    "storage_title": "Speicherlimits",
+    "storage_snapshot": "Snapshot-Ordner (MB)",
+    "storage_log": "Analyseprotokoll (MB)",
+    "storage_snapshot_hint": "0 = deaktiviert · min 100 · max 10 000",
+    "storage_log_hint": "0 = deaktiviert · min 10 · max 1 000",
+    "storage_save": "Speicherlimits speichern",
+    "storage_saving": "Speichert…",
+    "storage_saved": "Gespeichert ✓",
+    "storage_error_invalid": "Ungültige Werte. Snapshot: 0 oder 100–10000 MB. Protokoll: 0 oder 10–1000 MB.",
+    "loading": "Kameras werden geladen…",
+    "role_label": "Rolle",
+    "roles": {
+      "front_door": "Haustür",
+      "driveway": "Einfahrt",
+      "road_facing": "Straße zugewandt",
+      "garden": "Garten",
+      "garage": "Garage",
+      "indoor": "Innen",
+      "custom_prefix": "Benutzerdefiniert"
+    },
+    "col_object": "Objekt",
+    "col_analyze": "Analysieren",
+    "col_min_confidence": "Min. Konfidenz",
+    "col_min_duration": "Min. Dauer (Sek)",
+    "col_announce": "Ankündigen",
+    "save": "Speichern",
+    "saving": "Speichert…",
+    "saved": "Gespeichert ✓",
+    "error_load": "Kameraeinstellungen konnten nicht abgerufen werden.",
+    "error_save": "Kamera {{id}} konnte nicht gespeichert werden.",
+    "error_save_global": "Globale Einstellung konnte nicht gespeichert werden: {{msg}}"
+  },
+  "home": {
+    "img_alt": "Generiertes Bild",
+    "close": "Schließen",
+    "download": "Herunterladen",
+    "trace_steps": "{{count}} Schritte",
+    "voice_start": "Sprache starten",
+    "voice_stop": "Aufnahme stoppen",
+    "voice_transcribing": "Transkribiert…",
+    "voice_disabled": "Sprache deaktiviert (STT ist unter Einstellungen ausgeschaltet)",
+    "greeting": "Hallo! Wie kann ich helfen?",
+    "error": "Entschuldigung, etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.",
+    "placeholder": "Etwas eingeben… (Shift+Enter für neue Zeile)",
+    "attach_title": "Bild anhängen",
+    "drop_hint": "Ablegen zum Anhängen eines Bildes",
+    "miss_kare_hint": "Mit <0>Miss Kåre</0> beginnen, um direkt mit ihr zu sprechen",
+    "send": "Senden"
+  },
+  "reflections": {
+    "reflection_tab": "Reflexionssitzung",
+    "dev_tab": "Entwicklungssitzung",
+    "reflection_tab_sub": "04:00 · Miss Kåre",
+    "dev_tab_sub": "05:30 · Pettersmart",
+    "meetings_label": "Sitzungen",
+    "no_dates": "Noch keine",
+    "loading": "Lädt…",
+    "empty_reflection_no_meetings": "Noch keine Reflexionssitzungen. Verwenden Sie die Start-Schaltfläche oben oder warten Sie bis 04:00 Uhr.",
+    "empty_reflection_select": "Wählen Sie eine Sitzung und geben Sie die PIN ein, um den Inhalt anzuzeigen.",
+    "empty_dev_no_meetings": "Noch keine Entwicklungssitzungen.",
+    "topic_title": "Thema für die nächste Sitzung",
+    "topic_ph": "Thema oder Schwerpunkt für die nächste Sitzung vorschlagen…",
+    "topic_save": "Speichern",
+    "comment_title": "Admin-Kommentar",
+    "comment_ph": "Kommentar zu dieser Sitzung hinzufügen…",
+    "comment_save": "Speichern",
+    "pin_subtitle": "PIN von {{username}} eingeben, um die Sitzung anzuzeigen",
+    "pin_error_short": "PIN muss mindestens 4 Zeichen lang sein",
+    "pin_cancel": "Abbrechen",
+    "pin_open": "Öffnen",
+    "pin_wrong": "Falsche PIN – erneut versuchen",
+    "pin_retry": "↩",
+    "start_reflection": "Reflexionssitzung jetzt starten",
+    "start_dev": "Entwicklungssitzung jetzt starten",
+    "running": "Läuft",
+    "source_auto": "automatisch (Timer)",
+    "source_manual": "manuell",
+    "started_at": "gestartet um {{time}}",
+    "round": "Runde {{round}}/{{max}}",
+    "waiting_model": "Warte auf Modell…",
+    "settings_title": "Einstellungen",
+    "settings_toggle": "Einstellungen anzeigen",
+    "settings_hide": "Einstellungen ausblenden",
+    "settings_save": "Speichern",
+    "settings_saved": "Gespeichert",
+    "settings_enabled": "Reflexionstreffen aktiviert",
+    "settings_interval": "Jang-Reflexionsintervall (Sekunden)",
+    "settings_max_rounds": "Max. Runden",
+    "settings_kare_tokens": "Kåre — max. Tokens",
+    "settings_miss_kare_tokens": "Miss Kåre — max. Tokens",
+    "settings_kare_invest_tokens": "Kåre — Untersuchungs-Tokens",
+    "settings_max_invest_rounds": "Max. Untersuchungsrunden",
+    "settings_leder_preset": "Moderatorstil",
+    "settings_leder_custom": "Benutzerdefinierter Moderator-Prompt",
+    "settings_leder_custom_ph": "Moderatoranweisungen hier eingeben…",
+    "settings_leder_default_label": "Vorschau des gewählten Stils:",
+    "leder_preset_standard": "Standard",
+    "leder_preset_streng": "Streng",
+    "leder_preset_utforskende": "Erkundend",
+    "leder_preset_analytisk": "Analytisch",
+    "leder_preset_utfordrende": "Herausfordernd",
+    "leder_preset_egendefinert": "Benutzerdefiniert"
+  },
+  "user_sidebar": {
+    "home": "Kåre",
+    "reflections": "Reflexionen",
+    "settings": "Einstellungen",
+    "change_pin": "PIN ändern",
+    "admin_panel": "Adminbereich",
+    "logout": "Abmelden"
+  },
+  "user_reflections": {
+    "title": "Reflexionssitzungen",
+    "subtitle": "Nächtliche Gespräche zwischen Kåre und Miss Kåre über deinen Tag",
+    "meetings_label": "Sitzungen",
+    "no_reflections": "Noch keine Reflexionssitzungen",
+    "select_reflection": "Wähle links eine Sitzung aus",
+    "loading": "Lädt…",
+    "pin_title": "Sitzung entsperren",
+    "pin_hint": "Gib deine PIN ein, um den Inhalt zu sehen",
+    "pin_cancel": "Abbrechen",
+    "pin_open": "Öffnen",
+    "pin_error": "Falsche PIN — erneut versuchen",
+    "pin_cached": "PIN für diese Sitzung gespeichert"
+  },
+  "user_settings": {
+    "title": "Einstellungen",
+    "subtitle": "Passe das Aussehen und Verhalten von Kåre für dich an",
+    "section_appearance": "Erscheinungsbild",
+    "accent_label": "Themenfarbe",
+    "accent_hint": "Wähle eine Akzentfarbe für Blasen und Schaltflächen. × setzt auf Rollen-Standard zurück.",
+    "accent_default": "Standard",
+    "font_size_label": "Textgröße",
+    "font_size_hint": "Beeinflusst die Textgröße in Chat-Blasen und im Eingabefeld",
+    "font_small": "Klein",
+    "font_normal": "Normal",
+    "font_large": "Groß",
+    "animations_label": "Animationen",
+    "animations_hint": "Standard = Einblenden und Glow-Effekte. Minimal = sauber und schnell.",
+    "animations_standard": "Standard",
+    "animations_minimal": "Minimal",
+    "section_chat": "Chat-Verhalten",
+    "tts_autoplay_label": "Automatische Wiedergabe",
+    "tts_autoplay_hint": "Kåres Antworten automatisch nach jeder Nachricht als Audio abspielen",
+    "show_trace_label": "Schrittinfo anzeigen",
+    "show_trace_hint": "Tool-Aufruf-Schritte unter Kåres Antworten standardmäßig anzeigen",
+    "section_misskare": "Miss Kåre",
+    "mk_panel_label": "Miss Kåres Kommentare",
+    "mk_panel_hint": "Miss Kåres Seitenkommentare nach Gesprächen in einem Panel anzeigen",
+    "section_preview": "Vorschau",
+    "preview_user": "So sehen deine Nachrichten jetzt aus",
+    "preview_kare": "Und so antwortet dir Kåre",
+    "reset": "Auf Standard zurücksetzen"
+  }
+}

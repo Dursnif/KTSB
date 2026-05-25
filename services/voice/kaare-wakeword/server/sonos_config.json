@@ -1,0 +1,21 @@
+{
+  "speakers": {
+    "living_room": {
+      "entity_id": "media_player.living_room"
+    },
+    "garage": {
+      "entity_id": "media_player.garage"
+    },
+    "basement": {
+      "entity_id": "media_player.basement"
+    },
+    "kids_bedroom": {
+      "entity_id": "media_player.kids_bedroom",
+      "quiet_after": "21:00",
+      "quiet_before": "07:00"
+    }
+  },
+  "satellites": {
+    "default": "living_room"
+  }
+}

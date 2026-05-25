@@ -1,0 +1,37 @@
+Kåre The Smart Butler — Personal Use License
+Copyright (c) 2026 Stian Finsrud (github.com/Dursnif)
+
+PERSONAL AND NON-COMMERCIAL USE — FREE
+
+Permission is granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"),
+to use, copy, modify, merge, and distribute the Software for personal,
+educational, or non-commercial purposes, provided that:
+
+1. This copyright notice and license text are included in all copies or
+   substantial portions of the Software.
+
+2. The Software is not used to provide services to others for payment,
+   incorporated into a commercial product, or used within a business for
+   operational purposes.
+
+COMMERCIAL USE — REQUIRES A LICENSE
+
+Any use of the Software in a commercial context requires a separate
+written commercial license. This includes, but is not limited to:
+
+- Deploying Kåre as a hosted or managed service for customers
+- Bundling Kåre into a product sold or licensed to others
+- Using Kåre within a company or organisation for business operations
+
+To obtain a commercial license, contact: stianfinsrud@gmail.com
+
+DISCLAIMER
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

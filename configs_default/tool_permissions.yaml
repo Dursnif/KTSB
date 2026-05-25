@@ -1,0 +1,78 @@
+always_included:
+- selvbilde
+- verden
+- brukerprofil
+- les_indre_tanker
+- les_tankehistorikk
+roles:
+  child:
+  - styr_enhet
+  - les_ha
+  - timer
+  - hent_yr_varsel
+  - library
+  - kare_image
+  - se_bilder
+  - media
+  - notat
+  - announce
+  - reason_freely
+  teen:
+  - styr_enhet
+  - les_ha
+  - timer
+  - hent_yr_varsel
+  - library
+  - library_online
+  - søk_nett
+  - kare_image
+  - se_bilder
+  - media
+  - notat
+  - announce
+  - reason_freely
+  young_adult:
+  - styr_enhet
+  - les_ha
+  - timer
+  - hent_yr_varsel
+  - library
+  - library_online
+  - søk_nett
+  - kare_image
+  - se_bilder
+  - media
+  - notat
+  - announce
+  - reason_freely
+  - minne
+  adult:
+  - styr_enhet
+  - les_ha
+  - timer
+  - hent_yr_varsel
+  - library
+  - library_online
+  - søk_nett
+  - kare_image
+  - se_bilder
+  - media
+  - notat
+  - announce
+  - reason_freely
+  - minne
+  - kamera
+  admin:
+  - all
+agent_tools:
+  pettersmart:
+    utforsk: true
+    inspiser: true
+    nettsøk: true
+    søk_vaktmester: true
+    shell: false
+    hukommelse: true
+  miss_kare:
+    spør_frøken_library: true
+  miss_library:
+    wiki: true

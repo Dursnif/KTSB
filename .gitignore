@@ -1,0 +1,113 @@
+# Secrets and personal configuration — never commit
+configs/*.env
+configs/settings.yaml
+configs/aliases.yaml
+configs/nodes.yaml
+configs/services.yaml
+configs/*.save
+configs/*.save.*
+configs/kare_ha_bridgealiases.yaml.txt
+configs/prism/
+docs/
+.env
+
+# Runtime state — instance-specific, recreated on first run
+state/
+
+# Databases — created at runtime
+data/
+
+# Logs
+logs/
+
+# Runtime flags
+runtime/
+
+# Backups
+backups/
+
+# Python virtual environments
+venv/
+.venv/
+memory_embed_server/venv/
+services/voice/venv/
+services/embedding/convert_venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+# Frontend build output (rebuilt in CI)
+frontend/node_modules/
+frontend/dist/
+
+# Model weights (too large for git — download separately)
+models/
+*.onnx
+*.bin
+*.safetensors
+*.pt
+*.ot
+
+# Screenshots and images (may contain personal data)
+*.png
+*.jpg
+*.jpeg
+*.gif
+.playwright-mcp/
+
+# Claude Code — personal settings and memory
+.claude/
+claude_memory
+
+# Vaktmester runtime state (recreated at runtime)
+vaktmester_report.json
+vaktmester_state.json
+vaktmester_delta.json
+vaktmester_inbox/
+
+# npm logs
+.npm/
+
+# Old Docker volumes (model configs from previous setup)
+volumes/
+
+# Intel OpenVINO telemetry
+intel/
+
+# Databases at root level (belong in data/)
+ltm.db
+*.db
+
+# Temporary systemd unit files
+tmp_systemd/
+
+# Old web GUI (replaced by React frontend)
+www/
+
+# Legacy HA gateway (merged into kaare_ha_gateway.py)
+mini_kaareha/
+
+# Old standalone vaktmester scripts (superseded by kaare_vaktmester.py)
+vaktmester_halfyear.py
+vaktmester_monthly.py
+
+# Internal developer files
+CLAUDE.md
+CURRENT.md
+
+# System directories owned by kaare user
+.ssh/
+.cache/
+
+# Backup files
+*.bak
+*.bak_*
+
+# macOS / editor artifacts
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.tmp

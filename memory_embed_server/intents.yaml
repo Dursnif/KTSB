@@ -1,0 +1,171 @@
+intents:
+  - intent_type: ha.light.toggle
+    description: Skru av/på lys i et rom eller på en enhet.
+    examples:
+      - "slå på lyset i stua"
+      - "skru av lyset på kjøkkenet"
+      - "toggle taklys gang"
+      - "lys på i verkstedet"
+      - "lys av i badet"
+      - "tenn lyset i gangen"
+      - "slukk lyset i kjøkkenet"
+      - "skru på taklyset i stua"
+      - "skru av taklyset i verkstedet"
+      - "ha på lyset i jakkerommet"
+      - "ha av lyset i spisestua"
+      - "lys på i kjellergang"
+      - "lys av i yttergang"
+      - "skru på lyset i soverom patrick"
+      - "slå av lyset i kjellerstua"
+    slots: [room, entity]
+
+  - intent_type: ha.light.set_level
+    description: Sett lysstyrke/dimming til et bestemt nivå.
+    examples:
+      - "sett lyset i stua til 50 prosent"
+      - "dimm lyset i gangen til 30"
+      - "fullt lys i kjøkkenet"
+      - "sett lysstyrken i badet til 80 prosent"
+      - "dim ned lyset i stua til 20"
+      - "maks lys i verkstedet"
+      - "sett lyset til 70% i spisestua"
+      - "svakt lys i soverom patrick"
+    slots: [room, entity, level]
+
+  - intent_type: ha.climate.set_temperature
+    description: Sett temperatur på varmekabel eller klimaanlegg.
+    examples:
+      - "sett temperaturen i badet til 23 grader"
+      - "varm opp badet til 24"
+      - "sett varmekabelen i vaskerommet til 21 grader"
+      - "sett temperaturen til 22 grader i badet"
+      - "20 grader i vaskerommet"
+      - "skru opp varmen i badet til 25"
+    slots: [room, entity, temperature]
+
+  - intent_type: ha.climate.get_temperature
+    description: Hent temperatur i et rom.
+    examples:
+      - "hvor varmt er det i stua"
+      - "hva er temperaturen i badet"
+      - "temperatur i verkstedet"
+      - "hvor mange grader er det i kjøkkenet"
+      - "hva er det for temperatur i vaskerommet"
+    slots: [room, entity]
+
+  - intent_type: ha.device.get_state
+    description: Sjekk status/tilstand på en enhet eller i et rom.
+    examples:
+      - "er lyset på i stua"
+      - "er panelovnen på i verkstedet"
+      - "hva er status på støvsugeren"
+      - "er varmekabelen på i badet"
+      - "sjekk om lyset er av i gangen"
+      - "er radioen på i verkstedet"
+    slots: [room, entity]
+
+  - intent_type: ha.device.turn_on
+    description: Skru på en bestemt enhet.
+    examples:
+      - "skru på panelovn verksted"
+      - "slå på radio i verkstedet"
+      - "skru på batterilader i verkstedet"
+      - "start støvsugeren"
+      - "skru på varmekabelen i badet"
+      - "slå på usb i verkstedet"
+      - "skru på panelovnen"
+    slots: [room, entity]
+
+  - intent_type: ha.device.turn_off
+    description: Skru av en bestemt enhet.
+    examples:
+      - "skru av panelovn verksted"
+      - "slå av radio i verkstedet"
+      - "skru av batterilader bosch"
+      - "stopp støvsugeren"
+      - "skru av varmekabelen i badet"
+      - "slå av usb i verkstedet"
+    slots: [room, entity]
+
+  - intent_type: ha.cover.open
+    description: Åpne gardin, rullgardin eller port.
+    examples:
+      - "åpne garasjeporten"
+      - "åpne gardinen i stua"
+      - "åpne rullgardinen i soverommet"
+    slots: [room, entity]
+
+  - intent_type: ha.cover.close
+    description: Lukk gardin, rullgardin eller port.
+    examples:
+      - "lukk garasjeporten"
+      - "lukk gardinen i stua"
+      - "lukk rullgardinen i soverommet"
+    slots: [room, entity]
+
+  - intent_type: ha.media.play_station
+    description: Spill radio eller musikk.
+    examples:
+      - "spill P4 i verkstedet"
+      - "sett på radio på kjøkkenet"
+      - "spill musikk i stua"
+      - "sett på P7 i kjøkkenet"
+    slots: [station, room]
+
+  - intent_type: ha.media.stop
+    description: Stopp radio/musikk.
+    examples:
+      - "stopp radioen"
+      - "skru av musikken"
+      - "stopp musikk i verkstedet"
+    slots: [room, entity]
+
+  - intent_type: memory.add
+    description: Legg til et personlig eller systemminne.
+    examples:
+      - "noter at jeg hentet posten"
+      - "skriv ned at barna kom hjem"
+      - "husk at jeg tok medisin"
+    slots: [note]
+
+  - intent_type: memory.query
+    description: Hent frem et minne.
+    examples:
+      - "hva skjedde sist jeg sa jeg var sliten"
+      - "hva skrev jeg om posten"
+      - "hva husker du om medisin"
+    slots: [query]
+
+  - intent_type: pettersmart.idea
+    description: Bruk Pettersmart til ideer og optimalisering.
+    examples:
+      - "hvordan kan jeg forbedre nettverket"
+      - "hvordan kan jeg bygge bedre kjøling til coral"
+      - "gi meg ideer til automatisering"
+    slots: [topic]
+
+  - intent_type: kare.system.status
+    description: Status på systemene til Kåre.
+    examples:
+      - "hvordan går det med deg"
+      - "vis systemstatus"
+      - "hva kjører nå"
+      - "er alle systemene oppe"
+    slots: []
+
+  - intent_type: ui.action
+    description: Handling i GUI/Kåre-kontroller.
+    examples:
+      - "åpne dashboard"
+      - "vis loggene"
+      - "vis metrics"
+    slots: [command]
+
+  - intent_type: smalltalk.greeting
+    description: Uformell prat.
+    examples:
+      - "hei Kåre"
+      - "god morgen"
+      - "hei"
+      - "god kveld"
+    slots: []

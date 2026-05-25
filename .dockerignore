@@ -1,0 +1,46 @@
+# Python virtualenvs
+venv/
+intent_server/venv/
+services/voice/venv/
+services/embedding/convert_venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# Frontend build artifacts (rebuilt in Dockerfile.frontend)
+frontend/node_modules/
+frontend/dist/
+
+# Runtime and user data (mounted as volumes in docker-compose)
+state/
+data/
+logs/
+runtime/
+backups/
+
+# Secrets and personal config (user provides these via configs/ volume)
+configs/*.env
+configs/settings.yaml
+configs/ha_token.env
+configs/llm_keys.env
+configs/plex.env
+configs/mqtt.env
+
+# Large model files (stored on disk, not in image)
+models/
+*.onnx
+*.bin
+*.safetensors
+*.pt
+
+# Development and CI artifacts
+.git/
+.gitignore
+.github/
+CLAUDE.md
+CURRENT.md
+
+# Logs and temp files
+*.log
+*.tmp
+.DS_Store

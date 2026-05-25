@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Wake Word Maker</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0f0f1a">
+</head>
+<body>
+  <!-- Permission screen -->
+  <div id="permission-screen" class="permission-screen">
+    <h2>Wake Word Maker</h2>
+    <p style="color: var(--text-dim)">Trenger mikrofontilgang for opptak</p>
+    <button onclick="initAudio()">Aktiver mikrofon</button>
+  </div>
+
+  <!-- Main app (hidden until mic granted) -->
+  <div id="app" class="hidden">
+    <header>
+      <div class="top-row">
+        <h1>Wake Word Maker</h1>
+        <select id="speaker-select">
+          <option value="mikal">Mikal</option>
+          <option value="partner">Partner</option>
+          <option value="olav">Olav</option>
+          <option value="sverre">Sverre</option>
+        </select>
+      </div>
+      <div class="tabs">
+        <button class="active" data-mode="wakeword">Wake Word</button>
+        <button disabled data-mode="ambient">Ambient</button>
+        <button disabled data-mode="tts">TTS</button>
+      </div>
+    </header>
+
+    <main>
+      <!-- Type toggle -->
+      <div class="mode-toggle" id="type-toggle">
+        <button class="active positive" data-type="positive">Positiv</button>
+        <button data-type="negative">Negativ</button>
+      </div>
+
+      <!-- Waveform -->
+      <div class="waveform-container">
+        <canvas id="waveform"></canvas>
+      </div>
+
+      <!-- dB meter -->
+      <div class="db-section">
+        <div class="db-meter">
+          <div class="db-bar" id="db-bar"></div>
+        </div>
+        <span class="db-value" id="db-value">-- dB</span>
+      </div>
+
+      <!-- Timer -->
+      <div class="record-timer" id="record-timer"></div>
+
+      <!-- Record button -->
+      <button class="record-btn" id="record-btn" onclick="toggleRecord()">
+        <div class="inner"></div>
+      </button>
+
+      <!-- Session stats -->
+      <div class="session-stats">
+        <span class="pos" id="stat-pos">0 positive</span>
+        <span class="neg" id="stat-neg">0 negative</span>
+      </div>
+
+      <!-- Review panel (hidden during recording) -->
+      <div class="review-panel hidden" id="review-panel">
+        <canvas id="playback-waveform"></canvas>
+        <div class="review-actions">
+          <button class="btn-play" id="play-btn" onclick="playRecording()">&#9654;</button>
+          <button class="btn-discard" onclick="discardRecording()">Forkast</button>
+          <button class="btn-approve" onclick="approveRecording()">Godkjenn</button>
+        </div>
+      </div>
+
+      <!-- Status message -->
+      <div class="status" id="status"></div>
+
+      <!-- Global stats -->
+      <div class="global-stats" id="global-stats"></div>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

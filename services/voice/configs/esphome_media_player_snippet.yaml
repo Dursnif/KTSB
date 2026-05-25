@@ -1,0 +1,42 @@
+# ============================================================
+# ESPHome - legg til i ESP32-S3 (M5Stack Atom Echo) konfigen
+# ============================================================
+# Legg disse seksjonene til eksisterende .yaml-fil for enheten.
+# Sjekk pinnene mot din faktiske hardware-variant.
+#
+# M5Stack Atom Echo (original ESP32):
+#   bclk: GPIO19, lrclk: GPIO33, dout: GPIO22
+#
+# M5Stack Atom Echo S3:
+#   bclk: GPIO5,  lrclk: GPIO6,  dout: GPIO7
+#   (verifiser mot https://docs.m5stack.com/en/atom/atomecho_s3)
+# ============================================================
+
+# Sørg for at framework er esp-idf (støtter WAV-avspilling fra HTTP)
+# esp32:
+#   framework:
+#     type: esp-idf
+
+i2s_audio:
+  - id: i2s_out
+    i2s_lrclk_pin: GPIO6    # LRCLK/WS  – juster etter din variant
+    i2s_bclk_pin: GPIO5     # BCLK/SCK  – juster etter din variant
+
+media_player:
+  - platform: i2s_audio
+    id: atom_media_player
+    name: "Atom Echo Media Player"
+    i2s_audio_id: i2s_out
+    dac_type: external
+    i2s_dout_pin: GPIO7     # Data til NS4168-forsterker – juster etter din variant
+    mode: mono
+
+# Hvis du allerede har et speaker-komponent på samme i2s-bus,
+# kan du dele i2s_audio-instansen:
+#
+# speaker:
+#   - platform: i2s_audio
+#     id: atom_speaker
+#     i2s_audio_id: i2s_out   # <-- samme id som media_player
+#     dac_type: external
+#     i2s_dout_pin: GPIO7

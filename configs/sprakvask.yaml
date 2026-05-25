@@ -1,0 +1,34 @@
+# Språkvask / normalisering
+# Brukes FØR alias-oppslag og HA-routing
+
+normalize:
+  # bestemt -> ubestemt form
+  words:
+    taklyset: taklys
+    lyset: lys
+    lampen: lampe
+    lampa: lampe
+    vifta: vifte
+    viften: vifte
+    verkstedet: verksted
+
+  # flertydige former vi vil stabilisere
+  synonyms:
+    - ["tak lys", "taklys"]
+    - ["tak lyset", "taklys"]
+    - ["taklyset", "taklys"]
+    - ["taklampe", "taklys"]
+
+  # vanlige talemåter → standard verb (valgfritt, men nyttig)
+  verbs:
+    "skru på": "slå på"
+    "skru av": "slå av"
+    "slå på": "slå på"
+    "slå av": "slå av"
+
+  # rydde litt støy i tale
+  noise:
+    - "hei kåre"
+    - "kan du"
+    - "gidder du"
+    - "vær så snill"

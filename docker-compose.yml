@@ -1,0 +1,153 @@
+name: kaare
+
+volumes:
+  ollama_models:
+  bge_model:
+
+services:
+
+  # ── Infrastructure ────────────────────────────────────────────────────────────
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    ports: ["6333:6333"]
+    volumes:
+      - ./state/qdrant:/qdrant/storage
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports: ["11434:11434"]
+    volumes:
+      - ollama_models:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  caddy:
+    image: caddy:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      KAARE_DOMAIN: ${KAARE_DOMAIN:-localhost}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./state/caddy_data:/data
+      - ./state/caddy_config:/config
+
+  # ── Main API image (all kaare-* services use the same image) ─────────────────
+
+  kaare-api:
+    image: ghcr.io/dursnif/kaare:latest
+    restart: unless-stopped
+    ports: ["8000:8000"]
+    volumes:
+      - ./configs:/kaare/configs
+      - ./state:/kaare/state
+      - ./data:/kaare/data
+      - ./logs:/kaare/logs
+    depends_on: [qdrant, ollama]
+
+  kaare-ha-gateway:
+    image: ghcr.io/dursnif/kaare:latest
+    restart: unless-stopped
+    ports: ["8002:8002"]
+    command: uvicorn kaare_ha_gateway:app --host 0.0.0.0 --port 8002
+    volumes:
+      - ./configs:/kaare/configs
+      - ./state:/kaare/state
+      - ./logs:/kaare/logs
+
+  kaare-memory-embed:
+    image: ghcr.io/dursnif/kaare:latest
+    restart: unless-stopped
+    ports: ["11500:11500"]
+    command: uvicorn server:app --host 0.0.0.0 --port 11500
+    working_dir: /kaare/memory_embed_server
+    volumes:
+      - ./configs:/kaare/configs
+      - ./state:/kaare/state
+
+  kaare-agents:
+    image: ghcr.io/dursnif/kaare:latest
+    restart: unless-stopped
+    ports: ["11450:11450"]
+    command: uvicorn services.agents.server:app --host 0.0.0.0 --port 11450
+    volumes:
+      - ./configs:/kaare/configs
+      - ./state:/kaare/state
+    depends_on: [qdrant, kaare-memory-embed]
+
+  kaare-vaktmester:
+    image: ghcr.io/dursnif/kaare:latest
+    restart: unless-stopped
+    command: python kaare_vaktmester.py
+    volumes:
+      - ./configs:/kaare/configs
+      - ./state:/kaare/state
+      - ./logs:/kaare/logs
+    depends_on: [qdrant]
+
+  kaare-reflection:
+    image: ghcr.io/dursnif/kaare:latest
+    restart: unless-stopped
+    command: python kaare_reflection_runner.py
+    volumes:
+      - ./configs:/kaare/configs
+      - ./state:/kaare/state
+    depends_on: [kaare-api]
+
+  kaare-ha-log-bridge:
+    image: ghcr.io/dursnif/kaare:latest
+    restart: unless-stopped
+    command: python services/ha_log_bridge/ha_log_bridge.py
+    volumes:
+      - ./configs:/kaare/configs
+      - ./logs:/kaare/logs
+
+  kaare-frontend:
+    image: ghcr.io/dursnif/kaare-frontend:latest
+    restart: unless-stopped
+    ports: ["5173:80"]
+
+  # Night job — run manually: docker compose run --rm kaare-nightjob
+  kaare-nightjob:
+    image: ghcr.io/dursnif/kaare:latest
+    restart: "no"
+    command: python kaare_nightjob.py
+    volumes:
+      - ./configs:/kaare/configs
+      - ./state:/kaare/state
+      - ./data:/kaare/data
+      - ./logs:/kaare/logs
+    profiles: [manual]
+
+  # ── Optional services (activate via COMPOSE_PROFILES in .env) ────────────────
+
+  # profiles: [medium, full]
+  kaare-embedding:
+    image: ghcr.io/dursnif/kaare-embedding:latest
+    restart: unless-stopped
+    ports: ["11446:11446"]
+    volumes:
+      - ./configs:/kaare/configs
+      - bge_model:/kaare/models/bge-m3
+    profiles: [medium, full]
+
+  # profiles: [full]
+  kaare-voice:
+    image: ghcr.io/dursnif/kaare-voice:latest
+    restart: unless-stopped
+    ports: ["8011:8011"]
+    volumes:
+      - ./configs:/kaare/configs
+      - ./state:/kaare/state
+      - ./models:/kaare/models
+    profiles: [full]

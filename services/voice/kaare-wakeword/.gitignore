@@ -1,0 +1,40 @@
+.DS_Store
+.serena
+Thumbs.db
+*.pyo
+*.pyc
+__pycache__
+
+
+# Data & models (large/binary)
+data/
+models/
+*.npy
+*.tflite
+*.keras
+*.wav
+*.img
+*.zip
+
+# Build artifacts
+home_kaare.egg-info/
+.venv/
+*.egg-info/
+
+# Logs
+logs/
+
+# SSL certs (generated)
+recorder/cert.pem
+recorder/key.pem
+
+# Old/archive
+old.homevoice-dev/
+edgetpu_runtime/
+edgetpu_runtime_20221024.zip
+Armbian_*.img
+Simple_Bluetooth_Speaker_ESP32/
+
+# Misc
+hm.txt
+.specs/

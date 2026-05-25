@@ -1,0 +1,123 @@
+aliases_ref:
+  notes: Alias er sannhetskilde for hva vi faktisk bruker
+  owner: admin
+  source: /mnt/ai_disk/kaare/aliases.yaml
+defaults:
+  ambiguity_policy: ask_if_multiple
+  location_label: hjemme
+distribution_profile: full
+services:
+  embedding:
+    enabled: true
+    notes: BGE-M3 vektorembedding (wiki-søk, vaktmester). Krever ~3-4 GB disk.
+  agents:
+    enabled: true
+    notes: Miss Library og Pettersmart. Krever LLM-modeller konfigurert.
+  voice:
+    enabled: true
+    notes: TTS/STT bro (Piper + Whisper). v1_unavailable i Docker v1 (rein CPU).
+  jing:
+    enabled: true
+    notes: Rask indre stemme (0.6B, OpenVINO). Kjøres på ainuc.
+  jang:
+    enabled: true
+    notes: Langsom refleksjon (4B, OpenVINO). Kjøres på ainuc.
+domains:
+  frigate:
+    enabled: true
+    notes: Frigate 0.17.x — snapshot, events, face recognition
+    url: http://192.168.0.100:5000
+  home_assistant:
+    enabled: true
+    notes: Kontroll av enheter via HA-gateway/HA-service
+    route: ha
+  time_date:
+    enabled: true
+    notes: Klokke/dato/ukedag
+    route: time_date
+  weather:
+    enabled: true
+    notes: Vær fra HA-sensorer (Netatmo ute)
+    route: weather_ha_sensors
+environment:
+  outdoor:
+    label: ute
+    sensors:
+      humidity:
+        entity_id: sensor.netatmo_utendors_modul_luftfuktighet
+        notes: Netatmo ute luftfuktighet
+        unit: '%'
+      rain_last_hour:
+        entity_id: sensor.netatmo_regn_maler_precipitation_last_hour
+        notes: Nedbør siste time
+        unit: mm
+      rain_total:
+        entity_id: sensor.netatmo_regn_maler_nedbor
+        notes: Akkumulert nedbør / total (Netatmo)
+        unit: mm
+      temperature:
+        entity_id: sensor.netatmo_utendors_modul_temperatur
+        notes: Netatmo ute temp
+        unit: °C
+    source: home_assistant_sensors
+keyword_routes:
+  time_date:
+    any:
+    - klokka
+    - klokken
+    - tid
+    - dato
+    - ukedag
+    - hvilken dag
+  weather:
+    any:
+    - vær
+    - temperatur
+    - luftfuktighet
+    - regn
+    - nedbør
+last_updated: '2025-12-12'
+rooms:
+  verksted:
+    devices:
+      taklys:
+        alias_keys:
+        - taklys verksted
+        - taklys i verksted
+        - lys i verksted
+        constraints:
+        - single_primary_light
+        kind: light_or_switch
+        preferred_actions:
+        - turn_on
+        - turn_off
+    label: verksted
+rules:
+  action_words:
+    true:
+    - på
+    - skru på
+    - slå på
+    - start
+    - ha på
+    false:
+    - av
+    - skru av
+    - slå av
+    - stopp
+    - ha av
+    toggle:
+    - bytt
+    - toggle
+    - veksle
+  clarify_if_multiple_candidates: true
+  ha_rescue_enabled: true
+  missing_action_triggers:
+  - taklys
+  - lys
+  - lampe
+  - ovn
+  - varme
+  - radio
+  - musikk
+version: 1

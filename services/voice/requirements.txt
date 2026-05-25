@@ -1,0 +1,40 @@
+# ── Web / API ──────────────────────────────────────────────────────────────────
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+httpx>=0.25.0
+pyyaml>=6.0
+python-multipart>=0.0.9
+
+# ── Audio I/O ──────────────────────────────────────────────────────────────────
+numpy>=1.24.0,<2.0
+sounddevice>=0.4.6
+soundfile>=0.12.1
+
+# ── STT: faster-whisper (CPU — universal) ─────────────────────────────────────
+faster-whisper>=1.0.0
+
+# ── STT: OpenVINO GenAI (Intel Arc GPU only — comment in to enable) ───────────
+# openvino>=2026.1.0
+# openvino-genai>=2026.1.0
+# openvino-tokenizers>=2026.1.0
+
+# ── TTS: Piper ─────────────────────────────────────────────────────────────────
+piper-tts>=1.2.0
+
+# ── ESP32 / ESPHome ────────────────────────────────────────────────────────────
+aioesphomeapi>=44.0.0
+
+# ── Wyoming protocol (voice satellites) ───────────────────────────────────────
+wyoming>=1.9.0
+
+# ── Chromecast ─────────────────────────────────────────────────────────────────
+pychromecast>=14.0.0
+
+# ── AirPlay (RAOP) ─────────────────────────────────────────────────────────────
+pyatv>=0.17.0
+
+# ── DLNA / UPnP ────────────────────────────────────────────────────────────────
+async-upnp-client>=0.47.0
+
+# ── Speaker recognition (WeSpeaker ResNet34 via ONNX) ─────────────────────────
+wespeakerruntime>=0.0.3

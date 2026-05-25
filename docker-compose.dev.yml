@@ -1,0 +1,80 @@
+# Development override — code mounted directly from disk (no rebuild on code changes)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Change cycle:
+#   1. Edit code on disk
+#   2. docker compose restart kaare-api   (~5 seconds)
+#   3. Done — no rebuild needed
+
+services:
+
+  kaare-api:
+    build: .
+    image: kaare-dev
+    volumes:
+      - .:/kaare
+      - ./configs:/kaare/configs
+      - ./state:/kaare/state
+      - ./data:/kaare/data
+      - ./logs:/kaare/logs
+
+  kaare-ha-gateway:
+    build: .
+    image: kaare-dev
+    volumes:
+      - .:/kaare
+      - ./configs:/kaare/configs
+      - ./state:/kaare/state
+      - ./logs:/kaare/logs
+
+  kaare-memory-embed:
+    build: .
+    image: kaare-dev
+    volumes:
+      - .:/kaare
+      - ./configs:/kaare/configs
+      - ./state:/kaare/state
+
+  kaare-agents:
+    build: .
+    image: kaare-dev
+    volumes:
+      - .:/kaare
+      - ./configs:/kaare/configs
+      - ./state:/kaare/state
+
+  kaare-vaktmester:
+    build: .
+    image: kaare-dev
+    volumes:
+      - .:/kaare
+      - ./configs:/kaare/configs
+      - ./state:/kaare/state
+      - ./logs:/kaare/logs
+
+  kaare-reflection:
+    build: .
+    image: kaare-dev
+    volumes:
+      - .:/kaare
+      - ./configs:/kaare/configs
+      - ./state:/kaare/state
+
+  kaare-ha-log-bridge:
+    build: .
+    image: kaare-dev
+    volumes:
+      - .:/kaare
+      - ./configs:/kaare/configs
+      - ./logs:/kaare/logs
+
+  kaare-embedding:
+    build:
+      context: .
+      dockerfile: Dockerfile.embedding
+    image: kaare-embedding-dev
+    volumes:
+      - .:/kaare
+      - ./configs:/kaare/configs
+      - bge_model:/kaare/models/bge-m3
+    profiles: [medium, full]

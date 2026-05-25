@@ -1,0 +1,72 @@
+# Norwegian internet radio stations for Kåre.
+# Add/remove stations here. Admin GUI will write to this file in the future.
+# Stream URLs can change over time — verify if a station stops working.
+
+stations:
+  # P4-gruppen
+  - name: "P4"
+    aliases: ["p4", "p fire"]
+    url: "https://p4.p4groupaudio.com/P04_AH"
+    group: "P4-gruppen"
+
+  - name: "P5 Hits"
+    aliases: ["p5", "p fem", "p5 hits"]
+    url: "https://p4.p4groupaudio.com/P05_AH"
+    group: "P4-gruppen"
+
+  - name: "P6 Rock"
+    aliases: ["p6", "p seks", "p6 rock"]
+    url: "https://p4.p4groupaudio.com/P06_AH"
+    group: "P4-gruppen"
+
+  - name: "NRJ"
+    aliases: ["nrj", "energy"]
+    url: "https://p4.p4groupaudio.com/NRJ_AH"
+    group: "P4-gruppen"
+
+  # NRK
+  - name: "NRK P1"
+    aliases: ["nrk p1", "p1", "nrk"]
+    url: "https://lyd.nrk.no/nrk_radio_p1_ostlandssendingen_aac_h"
+    group: "NRK"
+
+  - name: "NRK P2"
+    aliases: ["nrk p2", "p2"]
+    url: "https://lyd.nrk.no/nrk_radio_p2_aac_h"
+    group: "NRK"
+
+  - name: "NRK P3"
+    aliases: ["nrk p3", "p3"]
+    url: "https://lyd.nrk.no/nrk_radio_p3_aac_h"
+    group: "NRK"
+
+  - name: "NRK mP3"
+    aliases: ["mp3", "nrk mp3", "mP3"]
+    url: "https://lyd.nrk.no/nrk_radio_mp3_aac_h"
+    group: "NRK"
+
+  - name: "NRK Jazz"
+    aliases: ["nrk jazz", "jazz"]
+    url: "https://lyd.nrk.no/nrk_radio_jazz_aac_h"
+    group: "NRK"
+
+  - name: "NRK Klassisk"
+    aliases: ["nrk klassisk", "klassisk", "klassisk musikk"]
+    url: "https://lyd.nrk.no/nrk_radio_klassisk_aac_h"
+    group: "NRK"
+
+  - name: "NRK Folkemusikk"
+    aliases: ["folkemusikk", "nrk folkemusikk"]
+    url: "https://lyd.nrk.no/nrk_radio_folkemusikk_aac_h"
+    group: "NRK"
+
+  - name: "NRK Super"
+    aliases: ["nrk super", "super", "barneradio"]
+    url: "https://lyd.nrk.no/nrk_radio_super_aac_h"
+    group: "NRK"
+
+  # Bauer Media — URLs need verification, add when confirmed working
+  # - name: "Radio Norge"
+  #   aliases: ["radio norge"]
+  #   url: ""
+  #   group: "Bauer Media"

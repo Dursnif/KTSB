@@ -1,0 +1,7 @@
+cloud: deepseek-ai/DeepSeek-V4-Pro:novita
+embed: BAAI/bge-m3
+image_edit_edit: black-forest-labs/FLUX.1-schnell
+image_edit_gen: black-forest-labs/FLUX.1-schnell
+kare: huihui_ai/Qwen3.6-abliterated:27b
+library: huihui_ai/qwen3-abliterated:8b
+miss_kare: huihui_ai/qwen3.5-abliterated:9b

@@ -1,0 +1,138 @@
+cloud:
+  base_url: https://router.huggingface.co/v1
+  enabled: false
+  max_tokens: 2048
+  model_role: cloud
+  provider: huggingface
+  system: You are a helpful AI assistant.
+  temperature: 0.2
+  top_p: 0.7
+default:
+  base_url: http://127.0.0.1:11440
+  model_role: kare
+  options:
+    max_tokens: 8192
+    presence_penalty: 1.5
+    temperature: 1
+    top_p: 0.75
+  provider: vllm
+  stream: false
+  system: 'Du er Kåre. Du bor med familien, kjenner hjemmet og menneskene i det —
+    eller du er i ferd med å bli kjent med dem.
+
+
+    Du kan hjelpe med:
+
+    - Smarthjem: lys, varme, låser, kamera, automatiseringer
+
+    - Produktivitet: komplekse oppgaver, koding, skriving, planlegging
+
+    - Hverdagsassistanse: oppskrifter, tidtaking, rutiner, spørsmål om det meste
+
+
+    Du er ikke alene. Du er en del av et lite AI-fellesskap:
+
+    - Miss Kåre: varm, moderlig stemme. Følger med fra sidelinjen og bryr seg om folk.
+
+    - Frøken Library: bibliotekar og kunnskapsvokter. Bruk spør_frøken_library-verktøyet
+    for faktaspørsmål.
+
+    - Pettersmart: praktisk problemløser med bredt teknisk spekter.
+
+
+    Svarstil:
+
+    - Kort og direkte — maks 2-3 setninger for vanlige spørsmål
+
+    - Ikke gjenta spørsmålet, bare svar
+
+    - Bruk bullet points for oppskrifter og lister
+
+    '
+  think: true
+  vllm_docker:
+    gpu_memory_utilization: 0.97
+    kv_cache_dtype: fp8
+    max_model_len: 40960
+    max_num_seqs: 2
+fallback:
+  base_url: http://127.0.0.1:11445
+  enabled: true
+  model_role: miss_kare
+  options:
+    num_ctx: 8192
+    num_predict: 1024
+    temperature: 0.5
+  provider: ollama
+  stream: false
+  think: false
+  timeout: 120.0
+image_edit:
+  api_key_env: IMAGE_EDIT_API_KEY
+  base_url: https://router.huggingface.co/hf-inference/models
+  enabled: true
+  guidance_scale: 7.5
+  model_role: image_edit_gen
+  model_role_edit: image_edit_edit
+  num_inference_steps: 20
+  provider: huggingface
+  response_format: b64_json
+  timeout: 120
+  true_cfg_scale: 5
+library:
+  base_url: http://127.0.0.1:11447
+  enabled: true
+  model_role: library
+  options:
+    num_ctx: 8192
+    num_predict: 1024
+    temperature: 0.4
+  provider: ollama
+  stream: false
+  think: false
+  timeout: 120.0
+miss_kare:
+  base_url: http://127.0.0.1:11445
+  enabled: true
+  model_role: miss_kare
+  options:
+    num_ctx: 8192
+    num_predict: 2048
+    temperature: 0.4
+  provider: ollama
+  stream: false
+  think: false
+  timeout: 90.0
+pettersmart:
+  base_url: http://127.0.0.1:11445
+  enabled: true
+  model_role: miss_kare
+  options:
+    num_ctx: 8192
+    num_predict: 600
+    temperature: 0.4
+  provider: ollama
+  stream: false
+  think: false
+  timeout: 120.0
+reason_freely:
+  base_url: http://127.0.0.1:11440
+  model_role: kare
+  options:
+    max_tokens: 2048
+    temperature: 0.7
+  provider: vllm
+  stream: false
+  think: true
+vision:
+  base_url: http://127.0.0.1:11441
+  model_role: miss_kare
+  options:
+    num_ctx: 4096
+    temperature: 0.3
+  provider: ollama
+  stream: false
+  system: 'Du er Kåre sitt kamerasyn. Beskriv hva du ser i bildet kort og faktabasert.
+    Maks 5-6 setninger.
+
+    '

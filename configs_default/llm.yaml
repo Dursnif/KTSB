@@ -1,0 +1,119 @@
+cloud:
+  # Configure cloud LLM via admin GUI: Settings → LLM → Cloud
+  enabled: false
+  provider: ""
+  base_url: ""
+  model_role: cloud
+  temperature: 0.2
+  top_p: 0.7
+  max_tokens: 2048
+  system: ""
+default:
+  base_url: http://ollama:11434
+  model_role: kare
+  options:
+    num_ctx: 16384
+    num_predict: 2048
+    temperature: 1
+    top_p: 0.75
+    presence_penalty: 1.5
+  provider: ollama
+  stream: false
+  system: 'Du er Kåre, en smart hjemmeassistent. Du kan hjelpe med smarthjem (lys,
+    varme, låser, kamera), produktivitet (koding, skriving, planlegging) og hverdagsassistanse
+    (oppskrifter, tidtaking, spørsmål).
+
+
+    Svarstil: Kort og direkte — maks 2-3 setninger for vanlige spørsmål. Ikke gjenta
+    spørsmålet, bare svar. Bruk bullet points for oppskrifter og lister.
+
+    '
+  think: false
+  vllm_docker:
+    # Advanced: uncomment and set provider: vllm to use vLLM instead of Ollama
+    gpu_memory_utilization: 0.97
+    kv_cache_dtype: fp8
+    max_model_len: 32768
+    max_num_seqs: 2
+fallback:
+  base_url: http://ollama:11434
+  enabled: false
+  model_role: miss_kare
+  options:
+    num_ctx: 8192
+    num_predict: 1024
+    temperature: 0.5
+  provider: ollama
+  stream: false
+  think: false
+  timeout: 120.0
+image_edit:
+  api_key_env: IMAGE_EDIT_API_KEY
+  base_url: https://router.huggingface.co/hf-inference/models
+  enabled: false
+  guidance_scale: 7.5
+  model_role: image_edit_gen
+  model_role_edit: image_edit_edit
+  num_inference_steps: 20
+  provider: huggingface
+  response_format: b64_json
+  timeout: 120
+  true_cfg_scale: 5
+library:
+  base_url: http://ollama:11434
+  enabled: true
+  model_role: library
+  options:
+    num_ctx: 8192
+    num_predict: 1024
+    temperature: 0.4
+  provider: ollama
+  stream: false
+  think: false
+  timeout: 120.0
+miss_kare:
+  base_url: http://ollama:11434
+  enabled: true
+  model_role: miss_kare
+  options:
+    num_ctx: 8192
+    num_predict: 2048
+    temperature: 0.4
+  provider: ollama
+  stream: false
+  think: false
+  timeout: 90.0
+pettersmart:
+  base_url: http://ollama:11434
+  enabled: true
+  model_role: miss_kare
+  options:
+    num_ctx: 8192
+    num_predict: 600
+    temperature: 0.4
+  provider: ollama
+  stream: false
+  think: false
+  timeout: 120.0
+reason_freely:
+  base_url: http://ollama:11434
+  model_role: kare
+  options:
+    num_ctx: 16384
+    num_predict: 2048
+    temperature: 0.7
+  provider: ollama
+  stream: false
+  think: false
+vision:
+  base_url: http://ollama:11434
+  model_role: miss_kare
+  options:
+    num_ctx: 4096
+    temperature: 0.3
+  provider: ollama
+  stream: false
+  system: 'Du er Kåre sitt kamerasyn. Beskriv hva du ser i bildet kort og faktabasert.
+    Maks 5-6 setninger.
+
+    '

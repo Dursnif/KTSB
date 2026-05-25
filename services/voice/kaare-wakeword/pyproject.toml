@@ -1,0 +1,65 @@
+[project]
+name = "home-kaare"
+version = "0.1.0"
+description = "Norwegian wake word detector for 'Kåre' - local training and inference on Coral Edge TPU and VIM3 NPU"
+requires-python = ">=3.10"
+dependencies = [
+    "ai-edge-litert>=2.1.2",
+    "aiohttp>=3.13.3",
+    "numpy>=1.26",
+    "websockets>=12.0",
+    "zeroconf>=0.148.0",
+]
+
+[tool.setuptools]
+packages = ["scripts", "training", "inference", "satellite", "server"]
+
+[project.optional-dependencies]
+training = [
+    "tensorflow>=2.16,<3",
+    "tensorflow-model-optimization>=0.8",
+    "tensorflow-metal>=1.2.0; sys_platform == 'darwin'",
+    "librosa>=0.10",
+    "sounddevice>=0.4",
+    "soundfile>=0.12",
+    "scipy>=1.12",
+    "keyboard>=0.13",
+    "torch>=2.10.0",
+]
+tts = ["piper-tts>=1.2"]
+coral = ["tflite-runtime>=2.14"]
+vim3 = ["tflite2onnx>=0.4", "onnx>=1.15"]
+satellite = ["onnxruntime>=1.17", "sounddevice>=0.4", "soundfile>=0.12", "librosa>=0.10", "aiohttp>=3.9"]
+server = [
+    "faster-whisper>=1.0",
+    "anthropic>=0.40",
+    "requests>=2.31",
+    "gtts>=2.5",
+    "pydub>=0.25",
+    "nvidia-cublas-cu12>=12.4; sys_platform == 'linux'",
+    "nvidia-cudnn-cu12>=9.0; sys_platform == 'linux'",
+]
+dev = ["matplotlib>=3.8", "ipython>=8.0", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+kaare-record = "scripts.record:main"
+kaare-record-neg = "scripts.record_negative:main"
+kaare-generate = "scripts.generate_tts:main"
+kaare-augment = "scripts.augment:main"
+kaare-preprocess = "scripts.preprocess:main"
+kaare-train = "training.train:main"
+kaare-export = "training.export_tflite:main"
+kaare-coral = "inference.run_coral:main"
+kaare-vim3 = "inference.run_vim3:main"
+kaare-satellite = "satellite.pipeline:main"
+kaare-server = "server.server:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+]

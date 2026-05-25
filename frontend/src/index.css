@@ -1,0 +1,310 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #242424;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+a {
+  font-weight: 500;
+  color: #646cff;
+  text-decoration: inherit;
+}
+a:hover {
+  color: #535bf2;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+}
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: 'Geist Variable', sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+.dark {
+  /* Matches the existing admin palette: #0d0d0d bg, #1a1a1a cards, #111 inputs, #333 borders */
+  --background: oklch(0.08 0 0);
+  --foreground: oklch(0.89 0 0);
+  --card: oklch(0.12 0 0);
+  --card-foreground: oklch(0.89 0 0);
+  --popover: oklch(0.12 0 0);
+  --popover-foreground: oklch(0.89 0 0);
+  --primary: oklch(0.89 0 0);
+  --primary-foreground: oklch(0.12 0 0);
+  --secondary: oklch(0.16 0 0);
+  --secondary-foreground: oklch(0.89 0 0);
+  --muted: oklch(0.155 0 0);
+  --muted-foreground: oklch(0.54 0 0);
+  --accent: oklch(0.16 0 0);
+  --accent-foreground: oklch(0.89 0 0);
+  --destructive: oklch(0.65 0.18 22);
+  --border: oklch(0.22 0 0);
+  --input: oklch(0.27 0 0);
+  --ring: oklch(0.48 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.08 0 0);
+  --sidebar-foreground: oklch(0.89 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.89 0 0);
+  --sidebar-accent: oklch(0.16 0 0);
+  --sidebar-accent-foreground: oklch(0.89 0 0);
+  --sidebar-border: oklch(0.16 0 0);
+  --sidebar-ring: oklch(0.48 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* Admin dark overrides — match existing admin palette (#1a1a1a cards, #111 inputs, #333 borders) */
+.dark [data-slot="card"] {
+  background-color: #1a1a1a;
+  border: 1px solid #222;
+  border-radius: 12px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.dark [data-slot="card"]:hover {
+  border-color: #333;
+  box-shadow: 0 2px 16px rgba(124, 106, 255, 0.07);
+}
+.dark [data-slot="card-header"] {
+  padding: 20px 24px 0;
+}
+.dark [data-slot="card-content"] {
+  padding: 16px 24px 20px;
+}
+.dark [data-slot="card-title"] {
+  color: #ddd;
+  font-size: 15px;
+  font-weight: 600;
+}
+.dark [data-slot="card-description"] {
+  color: #666;
+  font-size: 13px;
+}
+.dark [data-slot="input"] {
+  background-color: #111 !important;
+  border-color: #333 !important;
+  color: #ddd !important;
+}
+.dark [data-slot="select-trigger"] {
+  background-color: #111;
+  border-color: #333;
+  color: #ddd;
+}
+.dark [data-slot="select-content"] {
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+}
+.dark [data-slot="tabs-list"] {
+  background-color: #1a1a1a;
+}
+.dark [data-slot="tabs-trigger"] {
+  color: #888;
+  background-color: transparent !important;
+  flex: none;
+}
+.dark [data-slot="tabs-trigger"][data-active] {
+  background-color: #2a2a2a !important;
+  color: #fff;
+}
+
+/* Buttons: use admin accent color (#2a2a4a) instead of white */
+.dark [data-slot="button"] {
+  background-color: #2a2a4a;
+  color: #ddd;
+  border-color: #3a3a5a;
+}
+.dark [data-slot="button"]:hover {
+  background-color: #333360;
+}
+/* Outline variant: transparent with visible border */
+.dark [data-slot="button"][data-variant="outline"] {
+  background-color: transparent;
+  color: #aaa;
+  border-color: #444;
+}
+.dark [data-slot="button"][data-variant="outline"]:hover {
+  background-color: #2a2a2a;
+  color: #ddd;
+}
+/* Ghost variant: fully transparent */
+.dark [data-slot="button"][data-variant="ghost"] {
+  background-color: transparent;
+  color: #888;
+  border-color: transparent;
+}
+.dark [data-slot="button"][data-variant="ghost"]:hover {
+  background-color: #222;
+  color: #ccc;
+}
+
+/* Admin main content: generous padding on desktop, compact on mobile */
+.admin-main {
+  padding: 32px 40px;
+}
+@media (max-width: 767px) {
+  .admin-main {
+    padding: 20px 16px;
+  }
+}
+
+/* Consistent h1 style across all admin pages */
+.admin-main h1 {
+  font-size: 22px !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+  margin: 0 0 28px !important;
+  padding-bottom: 14px !important;
+  border-bottom: 1px solid #1e1e1e !important;
+  letter-spacing: -0.3px !important;
+}
+
+/* Reusable dark card with hover glow */
+.admin-card {
+  background: #1a1a1a;
+  border-radius: 12px;
+  border: 1px solid #222;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.admin-card:hover {
+  border-color: #333 !important;
+  box-shadow: 0 2px 16px rgba(124, 106, 255, 0.07);
+}
+
+/* Settings: colored top border per tab — matches the dot color in TabsTrigger */
+.dark [data-tab="generelt"]     [data-slot="card"] { border-top: 2px solid #9c8d5e; }
+.dark [data-tab="ha"]           [data-slot="card"] { border-top: 2px solid #4db67a; }
+.dark [data-tab="mqtt"]         [data-slot="card"] { border-top: 2px solid #ff9f43; }
+.dark [data-tab="llm"]          [data-slot="card"] { border-top: 2px solid #a29bfe; }
+.dark [data-tab="refleksjon"]   [data-slot="card"] { border-top: 2px solid #fd79a8; }
+.dark [data-tab="nettsok"]      [data-slot="card"] { border-top: 2px solid #00cec9; }
+.dark [data-tab="bilder"]       [data-slot="card"] { border-top: 2px solid #e17055; }
+.dark [data-tab="kare"]         [data-slot="card"] { border-top: 2px solid #b8c6db; }
+.dark [data-tab="integrasjoner"] [data-slot="card"] { border-top: 2px solid #55efc4; }
+.dark [data-tab="distribusjon"] [data-slot="card"] { border-top: 2px solid #fdcb6e; }
+.dark [data-tab="agenter"]      [data-slot="card"] { border-top: 2px solid #74b9ff; }
+
+@keyframes dashboard-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.dashboard-spin { animation: dashboard-spin 0.8s linear infinite; }

@@ -1,0 +1,17 @@
+FROM python:3.12-slim
+
+WORKDIR /kaare/services/embedding
+
+# torch CPU-only (~200 MB vs ~2 GB for the default CUDA build)
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+COPY services/embedding/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY kaare_core/ /kaare/kaare_core/
+COPY configs_default/ /kaare/configs_default/
+COPY services/embedding/server.py .
+
+ENV PYTHONPATH=/kaare
+
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "11446"]

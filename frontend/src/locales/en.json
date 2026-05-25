@@ -1,0 +1,1138 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "users": "Users",
+    "system": "Maintenance",
+    "agents": "Agents",
+    "reflections": "Reflections",
+    "tools": "Tools",
+    "cameras": "Cameras",
+    "aliases": "Aliases",
+    "nodes": "Nodes",
+    "settings": "Settings",
+    "back_to_kare": "Back to Kåre",
+    "logout": "Log out",
+    "sidebar_expand": "Expand sidebar",
+    "sidebar_collapse": "Collapse sidebar"
+  },
+  "common": {
+    "save": "Save",
+    "save_all": "Save all changes",
+    "saving": "Saving...",
+    "saved": "Saved",
+    "error": "Error",
+    "enabled": "Active",
+    "disabled": "Inactive",
+    "on": "On",
+    "off": "Off",
+    "enable": "Enable",
+    "disable": "Disable",
+    "loading": "Loading...",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "add_domain": "Add domain",
+    "new_category": "+ New category",
+    "update": "Update",
+    "update_token": "Update token",
+    "yes": "Yes",
+    "no": "No",
+    "unknown": "Unknown",
+    "optional": "Optional",
+    "show": "Show",
+    "hide": "Hide",
+    "not_set": "Not set",
+    "set_masked": "Set: {{masked}}",
+    "no_model_set": "no model set",
+    "restart_docker": "Restart Docker container",
+    "restarting": "Restarting...",
+    "container_restarted": "Container restarted",
+    "restart_failed": "Restart failed",
+    "test": "Test",
+    "testing": "Testing...",
+    "no_images": "No images saved yet.",
+    "no_domains": "No domains — click 'Add domain'",
+    "no_websites": "No websites configured yet.",
+    "count_label": "Count",
+    "space_label": "Space",
+    "hot_reload_hint": "Run hot-reload in Maintenance for changes to take effect"
+  },
+  "settings": {
+    "title": "Settings",
+    "tabs": {
+      "generelt": "General",
+      "ha": "Home Assistant",
+      "mqtt": "MQTT / VPN",
+      "llm": "LLM / Models",
+      "refleksjon": "Reflection",
+      "nettsok": "Web Search & Weather",
+      "bilder": "Images/Camera",
+      "kare": "Kåre Settings",
+      "integrasjoner": "Integrations",
+      "distribusjon": "Distribution",
+      "agenter": "Agent Settings"
+    },
+    "generelt": {
+      "location": {
+        "title": "Location",
+        "description": "Used by Kåre for weather, time and geographic context. Never hardcoded — stored in configs/settings.yaml.",
+        "fields": {
+          "city": {
+            "label": "City",
+            "hint": "Name of the place you live"
+          },
+          "postal_code": {
+            "label": "Postal code",
+            "hint": "Your postal code"
+          },
+          "country": {
+            "label": "Country",
+            "hint": "The country you are in"
+          },
+          "lat": {
+            "label": "Latitude",
+            "hint": "GPS latitude (e.g. 62.21652)"
+          },
+          "lon": {
+            "label": "Longitude",
+            "hint": "GPS longitude (e.g. 5.64304)"
+          },
+          "timezone": {
+            "label": "Timezone",
+            "hint": "IANA timezone (e.g. Europe/Oslo)"
+          }
+        }
+      },
+      "language": {
+        "title": "Language",
+        "description": "Choose the language for the admin GUI and what language Kåre responds in. Takes effect immediately.",
+        "gui_label": "GUI language",
+        "gui_hint": "Controls the language of this administration interface",
+        "kare_label": "Kåre responds in",
+        "kare_hint": "Controls the language of Kåre's responses",
+        "options": {
+          "nb": "Norwegian (Bokmål)",
+          "en": "English",
+          "de": "German"
+        }
+      }
+    },
+    "ha": {
+      "gateway": {
+        "title": "HA Gateway",
+        "description": "Kåre's HA bridge (kaare_ha_gateway.py) — executes smart home commands. URL stored in configs/services.yaml.",
+        "url_label": "Home Assistant URL",
+        "url_hint": "E.g. http://192.168.0.100:8123",
+        "timeout_label": "Timeout (seconds)",
+        "timeout_hint": "Max wait time per HA call"
+      },
+      "token": {
+        "title": "Home Assistant Token",
+        "description": "Long-lived access token. Stored in configs/ha_token.env — not in code.",
+        "new_label": "New token",
+        "new_hint": "Paste token from HA → Profile → Security → Long-lived tokens"
+      },
+      "advanced": {
+        "title": "HA Gateway — Advanced Settings",
+        "description": "Timeout, log URL and security list of allowed HA actions. Stored in configs/kare_ha.env.",
+        "log_url_label": "Log URL",
+        "log_url_hint": "Endpoint Kåre receives HA logs on",
+        "timeout_label": "Timeout (seconds)",
+        "allowed_label": "Allowed actions",
+        "allowed_hint": "Comma-separated list (turn_on, turn_off, …)"
+      }
+    },
+    "mqtt": {
+      "card": {
+        "title": "MQTT",
+        "description": "Used for Frigate events and smart home events. Stored in configs/services.yaml and configs/mqtt.env.",
+        "host_label": "Broker host",
+        "host_hint": "IP or hostname of the MQTT broker (e.g. Home Assistant)",
+        "port_label": "Port",
+        "port_hint": "Standard MQTT port is 1883",
+        "username_label": "Username",
+        "username_hint": "MQTT username (optional). Stored in configs/mqtt.env.",
+        "password_label": "Password",
+        "password_hint": "Leave field empty to keep existing password.",
+        "tls_label": "TLS / SSL",
+        "tls_hint": "Enable encrypted connection (port 8883). Requires broker to support TLS.",
+        "tls_enable": "Enable TLS",
+        "topic_label": "Topic prefix",
+        "topic_hint": "Frigate prefix for MQTT subscription. Default: frigate (listens on frigate/events).",
+        "client_label": "Client ID",
+        "client_hint": "Unique MQTT client ID. Leave empty for auto-generated ID.",
+        "reconnect_label": "Reconnect (sec)",
+        "reconnect_hint": "Seconds to wait between reconnection attempts on disconnect."
+      },
+      "vpn": {
+        "title": "WireGuard VPN",
+        "description": "Endpoint that VPN clients connect to. Stored in configs/settings.yaml.",
+        "host_label": "DuckDNS host",
+        "host_hint": "Your DuckDNS domain (e.g. my-name.duckdns.org). Leave empty if VPN is not configured.",
+        "port_label": "WireGuard port",
+        "port_hint": "Standard port is 51820"
+      }
+    },
+    "llm": {
+      "description": "One section per LLM role. Stored in configs/llm.yaml. Restart the affected service after changes.",
+      "ctx_warning": "All calls to the same Ollama instance MUST use identical num_ctx — mismatch forces full model reload (~3.5 min).",
+      "provider_label": "Provider",
+      "provider_hint": "What type of LLM service",
+      "base_url_hint_ollama": "Local Ollama URL (e.g. http://127.0.0.1:11441)",
+      "base_url_hint_api": "API endpoint (e.g. https://integrate.api.nvidia.com/v1)",
+      "api_key_label": "API key",
+      "api_key_set_hint": "Set ({{masked}}) — type new to update",
+      "api_key_unset_hint": "Not set — required for this provider",
+      "think_label": "Think mode",
+      "think_hint_ollama": "Enables visible reasoning (<think> blocks). Qwen3-specific.",
+      "think_hint_vllm": "Enables reasoning. Shown in the reasoning field from vLLM.",
+      "timeout_label": "Timeout (seconds)",
+      "timeout_hint": "Max wait time. Empty = no limit.",
+      "model_label": "Model name",
+      "model_hint": "Model name used by this role (stored in configs/models.yaml)",
+      "gen_model_label": "Generation model",
+      "gen_model_hint": "Model for generating images from text (stored in configs/models.yaml)",
+      "edit_model_label": "Edit model",
+      "edit_model_hint": "Model for editing existing images (stored in configs/models.yaml)",
+      "image_provider_hint": "What type of image generation service",
+      "image_timeout_hint": "Max wait time per image generation. Empty = no limit.",
+      "ollama_params": "Ollama inference parameters",
+      "vllm_params": "vLLM inference parameters",
+      "vllm_docker_params": "vLLM Docker parameters — requires container restart to take effect",
+      "gen_params": "Image generation parameters",
+      "cloud_params": "Generation parameters",
+      "ctx_locked_hint": "Locked — shared with {{shared}}. Change there to adjust.",
+      "think_unset": "Not set",
+      "think_enabled": "Enabled (full reasoning)",
+      "think_disabled": "Disabled",
+      "role_fallback_desc": "Step 2 of 3 — activated if 27B fails, cloud LLM is last resort",
+      "providers": {
+        "ollama": "Ollama (local)",
+        "vllm": "vLLM (local, OpenAI-compatible)",
+        "openai": "OpenAI / OpenAI-compatible",
+        "nvidia": "NVIDIA NIM",
+        "huggingface": "HuggingFace Inference API",
+        "openvino": "OpenVINO (local)",
+        "other": "Other"
+      },
+      "role_labels": {
+        "default": "Kåre (main)",
+        "miss_kare": "Miss Kåre",
+        "pettersmart": "Pettersmart",
+        "library": "Miss Library",
+        "fallback": "Fallback",
+        "cloud": "Cloud LLM",
+        "image_edit": "Kåre-image_edit"
+      },
+      "ollama_fields": {
+        "num_ctx": {
+          "label": "Context window",
+          "hint": "Tokens the LLM can remember (e.g. 65536). All calls to the same model MUST use identical value."
+        },
+        "num_predict": {
+          "label": "Max tokens out",
+          "hint": "Max tokens in reply (e.g. 8192). Set low for fast agents."
+        },
+        "temperature": {
+          "label": "Temperature",
+          "hint": "Creativity (0.0–2.0). 1.0 = recommended for Qwen3."
+        },
+        "presence_penalty": {
+          "label": "Presence penalty",
+          "hint": "Counteracts repetition (recommended 1.5 for Qwen3)."
+        },
+        "top_k": {
+          "label": "Top-K",
+          "hint": "Limits candidate tokens (e.g. 20)."
+        },
+        "top_p": {
+          "label": "Top-P",
+          "hint": "Nucleus sampling (e.g. 0.75)."
+        }
+      },
+      "vllm_fields": {
+        "max_tokens": {
+          "label": "Max tokens out",
+          "hint": "Max tokens in reply (e.g. 8192)."
+        },
+        "temperature": {
+          "label": "Temperature",
+          "hint": "Creativity (0.0–2.0). 1.0 = recommended for Qwen3."
+        },
+        "top_p": {
+          "label": "Top-P",
+          "hint": "Nucleus sampling (e.g. 0.75)."
+        },
+        "presence_penalty": {
+          "label": "Presence penalty",
+          "hint": "Counteracts repetition (e.g. 1.5)."
+        },
+        "frequency_penalty": {
+          "label": "Frequency penalty",
+          "hint": "Counteracts token repetition (e.g. 0.0)."
+        }
+      },
+      "docker_fields": {
+        "max_model_len": {
+          "label": "Max context length",
+          "hint": "max_model_len: max tokens the model can process (e.g. 32768)."
+        },
+        "gpu_memory_utilization": {
+          "label": "GPU memory utilization",
+          "hint": "gpu_memory_utilization: 0.0–1.0. 0.97 = recommended for Blackwell with FP8."
+        },
+        "kv_cache_dtype": {
+          "label": "KV-cache dtype",
+          "hint": "kv_cache_dtype: fp8 halves KV-cache size. fp16 = full precision. auto = let vLLM decide."
+        },
+        "max_num_seqs": {
+          "label": "Max parallel sequences",
+          "hint": "max_num_seqs: number of concurrent requests. 2 = recommended for single user (gives compact CUDA graphs)."
+        }
+      },
+      "cloud_fields": {
+        "temperature": {
+          "label": "Temperature",
+          "hint": "Creativity (0.0–2.0)"
+        },
+        "top_p": {
+          "label": "Top-P",
+          "hint": "Nucleus sampling"
+        },
+        "max_tokens": {
+          "label": "Max tokens",
+          "hint": "Max tokens in reply"
+        }
+      },
+      "manage_section_label": "Manage model",
+      "manage_section_hint": "Download models and configure GPU for this instance",
+      "manage_gpu_label": "GPU",
+      "manage_gpu_hint": "Which GPU this Ollama instance runs on. Takes effect on next docker compose restart.",
+      "manage_gpu_cpu": "CPU (no GPU)",
+      "manage_gpu_save_btn": "Save GPU setting",
+      "manage_gpu_restart_note": "GPU change takes effect on next docker compose restart",
+      "manage_pull_label": "Pull model",
+      "manage_pull_hint": "Copy the model name from ollama.com and paste it here",
+      "manage_pull_placeholder": "e.g. qwen3:8b",
+      "manage_pull_btn": "Pull model",
+      "manage_installed_label": "Installed models",
+      "manage_installed_empty": "No models installed yet",
+      "manage_delete_btn": "Delete",
+      "manage_perf_label": "Performance settings (Ollama)",
+      "manage_perf_save_btn": "Save performance settings",
+      "manage_auto": "auto",
+      "manage_num_threads_label": "CPU threads",
+      "manage_num_threads_hint": "Number of CPU threads Ollama uses. Empty = automatic (all cores). Takes effect on docker compose restart.",
+      "manage_num_parallel_label": "Parallel requests",
+      "manage_num_parallel_hint": "Concurrent requests per instance. Default: 1. Higher improves throughput but uses more VRAM.",
+      "manage_max_loaded_label": "Max loaded models",
+      "manage_max_loaded_hint": "Models kept in VRAM simultaneously. Default: 1. Increase if the instance serves multiple agents with different models.",
+      "manage_kv_cache_label": "KV-cache precision",
+      "manage_kv_cache_hint": "f16 = full precision. q8_0 = halves KV-cache size. q4_0 = quarter, frees most VRAM.",
+      "manage_flash_attn_label": "Flash Attention",
+      "manage_flash_attn_hint": "Faster inference and lower memory usage. Requires compatible GPU setup. Recommended to enable."
+    },
+    "nettsok": {
+      "weather": {
+        "title": "Weather provider",
+        "description": "Which service Kåre uses to fetch weather data. Location is configured in the General tab. Stored in configs/settings.yaml and configs/weather.env.",
+        "provider_label": "Provider",
+        "provider_hint": "Choose weather API. met.no and Open-Meteo are free and require no key.",
+        "days_label": "Forecast days",
+        "days_hint": "Number of days ahead Kåre shows (1–7). Today counts as day 1.",
+        "needs_key_warning": "This provider requires an API key. Without a key Kåre will return an error for weather requests."
+      },
+      "websearch": {
+        "title": "Web search",
+        "description": "Choose search provider. DDG requires no configuration and is the default. SearXNG requires a running instance. Brave requires an API key. Stored in configs/services.yaml.",
+        "provider_label": "Provider",
+        "provider_hint": "Primary search provider. DDG works without a key.",
+        "fallback_label": "Fallback",
+        "fallback_hint": "Used automatically if the primary provider fails or returns 0 results.",
+        "searxng_url_label": "SearXNG URL",
+        "searxng_url_hint": "URL to your SearXNG instance (e.g. http://localhost:8888).",
+        "fetch_count_label": "Results to fetch",
+        "fetch_count_hint": "Total number of results to request from provider",
+        "max_results_label": "Max sources used",
+        "max_results_hint": "Max number of URLs fetched and sent to Miss Library",
+        "content_max_label": "Max characters per source",
+        "content_max_hint": "Number of characters fetched from each website",
+        "brave_country_label": "Country (Brave)",
+        "brave_country_hint": "ISO 3166-1 alpha-2 (NO, US, GB, …).",
+        "brave_lang_label": "Search language (Brave)",
+        "brave_lang_hint": "BCP 47 language code (no, en, de, …).",
+        "brave_key_label": "Brave API key",
+        "brave_key_unset_hint": "Not set — only required if Brave is chosen as provider",
+        "hot_reload_hint": "Run hot-reload in Maintenance for changes to take effect"
+      },
+      "trusted": {
+        "title": "Whitelisted websites",
+        "description": "Only these domains are used when Kåre searches for information online. Stored in configs/trusted_sources.yaml. Requires hot-reload to activate.",
+        "hot_reload_hint": "Changes to whitelisted websites take effect by running 'Hot-reload' in the Maintenance tab.",
+        "short_desc_placeholder": "Short description",
+        "domain_format_hint": "Without http:// or www."
+      }
+    },
+    "refleksjon": {
+      "title": "Kåre reflection",
+      "description": "Kåre regularly reads Jang's distilled thoughts and considers whether something should be written in the self-image or on the notepad. The reflection runs silently in the background — no user output, no TTS. Pauses automatically during night meetings. Stored in configs/settings.yaml.",
+      "enabled_label": "Enabled",
+      "enabled_hint": "Turn off to stop the reflection cycle entirely. Takes effect immediately.",
+      "interval_label": "Interval (minutes)",
+      "interval_hint": "How often Kåre checks Jang's thoughts. Minimum 1 minute. Default: 10 min.",
+      "seconds_suffix": "= {{seconds}} seconds"
+    },
+    "bilder": {
+      "storage": {
+        "title": "Image storage per user",
+        "description": "All images users send in and Kåre generates are stored in state/images/{user}/. Oldest images are automatically deleted when a limit is exceeded. Stored in configs/settings.yaml.",
+        "count_label": "Max images per user",
+        "count_hint": "Input + output counted together. Oldest deleted when limit reached.",
+        "mb_label": "Max storage per user (MB)",
+        "mb_hint": "Oldest images are also deleted if total size exceeds this limit."
+      },
+      "usage": {
+        "title": "Usage per user",
+        "description": "Overview of stored image space. Updated when the page loads.",
+        "images_suffix": "images"
+      }
+    },
+    "kare": {
+      "personality_mode": {
+        "title": "Core Personality",
+        "description": "Choose the detail level for the core personality. Higher levels provide more context and better responses, but use more tokens.",
+        "minimal_label": "Minimal",
+        "minimal_desc": "Name, language and 3 absolute rules only. ~80 tokens. For very resource-limited hardware.",
+        "letvekt_label": "Lightweight",
+        "letvekt_desc": "Short version with core rules. Internal knowledge is tagged with [Internal knowledge – not verified]. ~150 tokens.",
+        "standard_label": "Standard",
+        "standard_desc": "Full core personality with happy go lucky, three pillars and knowledge levels. Recommended. ~420 tokens.",
+        "full_label": "Full",
+        "full_desc": "Standard + behavior rules (communication style, conversation progression, tool discipline). ~650 tokens.",
+        "komplett_label": "Complete",
+        "komplett_desc": "Full + self-image + world. The assistant's map of its own world is always injected. ~900 tokens.",
+        "egendefinert_label": "Custom",
+        "egendefinert_desc": "Write your own core personality. The default text is used as a starting point.",
+        "custom_placeholder": "Enter your custom core personality...",
+        "custom_hint": "This text replaces the entire personality_core.md. personality_self.md (the assistant's self-image) is always injected in addition.",
+        "hot_reload_hint": "The change takes effect immediately after saving (hot-reload).",
+        "load_default_btn": "Load default as template"
+      },
+      "selfimage": {
+        "title": "Kåre's self-image",
+        "description": "Kåre can write observations about itself to personality_self.md — a file that shapes who it is over time. Here you control which users can influence this self-image. Takes effect immediately.",
+        "name_label": "Assistant name",
+        "name_hint": "The name the assistant introduces itself with. Injected into system prompt on hot-reload.",
+        "hotword_label": "Hotword",
+        "hotword_hint": "Activation word for voice commands. Note: changing this requires retraining the voice model.",
+        "who_shapes": "Who can shape Kåre's self-image?",
+        "allowed_users_label": "Allowed users",
+        "no_users": "No regular users found.",
+        "admin_note": "The 'admin' system account is not shown here.",
+        "modes": {
+          "all_label": "All users",
+          "all_desc": "Any conversation can contribute to the self-image, regardless of who Kåre is talking to.",
+          "selected_label": "Selected users",
+          "selected_desc": "Only conversations with the users you select below can shape the self-image.",
+          "admin_only_label": "Admin only",
+          "admin_only_desc": "The self-image is only shaped in conversations with admin users."
+        }
+      }
+    },
+    "integrasjoner": {
+      "frigate": {
+        "title": "Frigate",
+        "description": "Camera analysis via Frigate NVR. Stored in configs/services.yaml.",
+        "enabled_label": "Enabled",
+        "enabled_hint": "Toggle the Frigate integration on/off",
+        "url_label": "Frigate URL",
+        "url_hint": "URL to Frigate NVR (e.g. http://192.168.0.100:5000)",
+        "timeout_label": "Timeout (seconds)",
+        "timeout_hint": "Max wait time per Frigate call",
+        "snap_label": "Snapshot timeout (seconds)",
+        "snap_hint": "Max wait time for image download"
+      },
+      "plex": {
+        "title": "Plex",
+        "description": "Plex media server. Stored in configs/services.yaml and configs/plex.env.",
+        "url_label": "Plex server URL",
+        "url_hint": "URL to Plex (e.g. http://192.168.0.156:32400)",
+        "timeout_label": "Timeout (seconds)",
+        "timeout_hint": "Max wait time per Plex call",
+        "token_label": "Plex token",
+        "token_placeholder": "Paste new Plex token",
+        "token_warning": "Service restart (kaare.service) required for new Plex token to activate."
+      }
+    },
+    "distribusjon": {
+      "profile": {
+        "title": "Distribution profile",
+        "description": "Choose which service bundle Kåre is installed with. Does not affect domains — those are configured separately below.",
+        "domains_label": "Domains",
+        "hot_reload_hint": "Recommended: run 'Hot-reload all config files' in the Maintenance tab after saving."
+      },
+      "presets": {
+        "full": {
+          "label": "Full",
+          "description": "All included: Jing+Jang, BGE-M3 embedding, wiki search, voice, agents."
+        },
+        "medium": {
+          "label": "Medium",
+          "description": "Without Jing+Jang. BGE-M3 and wiki included. Voice and agents included."
+        },
+        "letvekt": {
+          "label": "Lightweight",
+          "description": "Without Jing+Jang and wiki. Intent embedding only. Voice and agents included."
+        }
+      },
+      "services": {
+        "title": "Services",
+        "v1_unavailable": "Not available in Docker v1"
+      }
+    },
+    "agenter": {
+      "section_tools": "Tool permissions",
+      "section_role_dev": "Role in dev meeting",
+      "section_role_reflection": "Role in reflection meeting",
+      "role_save": "Save role",
+      "save_tools": "Save tool permissions",
+      "role_load_default": "Load default content",
+      "role_custom_placeholder": "Write the role this agent should play in the meeting...",
+      "role_custom_hint": "Custom text is used as the agent's instruction in the meeting system prompt.",
+      "role_hot_reload_hint": "Changes take effect from the next meeting.",
+      "pettersmart": {
+        "label": "Pettersmart",
+        "description": "Technical assistant and problem solver. Used in dev meetings and for technical questions.",
+        "roles": {
+          "undersøker_label": "Investigator",
+          "undersøker_desc": "Digs into the system using tools – fact-based and methodical. Default behaviour.",
+          "kritiker_label": "Critic",
+          "kritiker_desc": "Asks critical questions about Kåre's findings. No answers – only questions.",
+          "analytiker_label": "Analyst",
+          "analytiker_desc": "Analyses patterns across meeting reports and history.",
+          "egendefinert_label": "Custom",
+          "egendefinert_desc": "Write your own instruction for Pettersmart's role in the meeting."
+        }
+      },
+      "miss_kare": {
+        "label": "Miss Kåre",
+        "description": "Evaluator – sits on the sideline and comments on the conversation. Can look up facts from Frøken Library.",
+        "roles": {
+          "empatisk_label": "Empathic",
+          "empatisk_desc": "Warm and caring – focus on the user's emotional life and human side. Default behaviour.",
+          "analytiker_label": "Analyst",
+          "analytiker_desc": "Structured pattern recogniser – draws lines between observations.",
+          "utfordrende_label": "Challenger",
+          "utfordrende_desc": "Challenges assumptions about the user with open, critical questions.",
+          "egendefinert_label": "Custom",
+          "egendefinert_desc": "Write your own instruction for Miss Kåre's role in the meeting."
+        }
+      },
+      "miss_library": {
+        "label": "Frøken Library",
+        "description": "Librarian and knowledge keeper. Web search is always on – local wiki requires the database to be downloaded."
+      },
+      "tools": {
+        "utforsk": "utforsk",
+        "utforsk_desc": "Read files, list directories and search code under /kaare.",
+        "inspiser": "inspiser",
+        "inspiser_desc": "Read logs, check services and resources, show git diff/log.",
+        "nettsøk": "nettsøk",
+        "nettsøk_desc": "Search the internet via the configured search provider.",
+        "søk_vaktmester": "søk_vaktmester",
+        "søk_vaktmester_desc": "Search the Vaktmester event log (Qdrant).",
+        "shell": "shell",
+        "shell_desc": "Run shell commands locally or on connected nodes. Enable only when needed.",
+        "hukommelse": "hukommelse",
+        "hukommelse_desc": "Pettersmart's personal memory – persists between meetings.",
+        "spør_frøken_library": "spør_frøken_library",
+        "spør_frøken_library_desc": "Allow Miss Kåre to fact-check with Frøken Library during evaluation.",
+        "wiki": "wiki (local)",
+        "wiki_desc": "Local Wikipedia database (Qdrant). Requires the wiki_no collection to be downloaded."
+      }
+    }
+  },
+  "onboarding": {
+    "step_label": "Setup — step {{step}} of {{total}}",
+    "steps": {
+      "profil": "Profile",
+      "bruker": "User",
+      "distribusjon": "Distribution",
+      "integrasjoner": "Integrations",
+      "ferdig": "Done"
+    },
+    "back": "Back",
+    "profil": {
+      "save_continue": "Save and continue",
+      "error_save": "Could not save location."
+    },
+    "bruker": {
+      "title": "Create first user",
+      "description": "Add at least one user besides admin. You can also skip and do this later.",
+      "display_name": "Display name",
+      "display_name_ph": "First name",
+      "username": "Username",
+      "username_ph": "username (no spaces)",
+      "pin": "PIN (min. 4 digits)",
+      "role": "Role",
+      "roles": {
+        "adult": "Adult",
+        "young_adult": "Young adult",
+        "teen": "Teen",
+        "child": "Child"
+      },
+      "create": "Create user",
+      "skip": "Skip",
+      "error_create": "Could not create user."
+    },
+    "distribusjon": {
+      "save_continue": "Save and continue",
+      "error_save": "Could not save distribution profile."
+    },
+    "integrasjoner": {
+      "title": "Integrations",
+      "optional_badge": "Optional",
+      "description": "Kåre works without all of these. Fill in what you have — or skip and configure via Settings → Integrations later.",
+      "save_finish": "Save and finish",
+      "skip": "Skip"
+    },
+    "ferdig": {
+      "title": "Kåre is ready!",
+      "description": "Basic setup complete. You can configure more via the Admin panel at any time.",
+      "next_steps_label": "Next steps (optional)",
+      "hints": [
+        "Add aliases for Norwegian HA entity names (Aliases in menu)",
+        "Configure speakers and media nodes (Nodes in menu)",
+        "Set up Plex token, camera settings and more in Settings"
+      ],
+      "go_dashboard": "Go to Dashboard"
+    }
+  },
+  "system": {
+    "title": "Maintenance",
+    "hot_reload": {
+      "title": "Hot-reload config",
+      "description": "Reloads YAML files in running processes — without restart. Covers: aliases, sprakvask, capability_map, llm.yaml, models.yaml, services.yaml, settings.yaml, personality.",
+      "button": "Hot-reload all config files",
+      "loading": "Loading…",
+      "ok": "{{count}} files loaded — {{aliases}} aliases",
+      "error_api": "Error — could not reach API",
+      "note": "Note: MQTT connection, API keys (Brave/NVIDIA) and ha-log-bridge remain cached in RAM after hot-reload — these need service restart below."
+    },
+    "health_check": {
+      "title": "System check",
+      "description": "Checks imports, config files and that all services respond.",
+      "button": "Run system check",
+      "loading": "Checking…",
+      "ok": "All OK",
+      "errors": "{{count}} error(s) found",
+      "imports": "Imports",
+      "configs": "Config",
+      "services": "Services",
+      "skipped": "skipped",
+      "failed": "failed",
+      "ok_short": "ok"
+    },
+    "services": {
+      "title": "Service restart",
+      "description": "Restart one service after config changes not caught by hot-reload. Green dot = service is running.",
+      "loading": "Loading service list…",
+      "restarting": "Starting…",
+      "restarted": "Restarted ✓",
+      "restart": "Restart",
+      "error": "Error",
+      "labels": {
+        "kaare": {
+          "label": "Kåre (main API)",
+          "hint": "Port 8000. Restart for new LLM settings and config."
+        },
+        "gateway": {
+          "label": "HA Gateway",
+          "hint": "Port 8002. Restart after HA URL/token change."
+        },
+        "semantic_embed": {
+          "label": "Semantic Embed",
+          "hint": "Port 11500. 384-dim embedding for semantic memory."
+        },
+        "agents": {
+          "label": "Agents (Library + Pettersmart)",
+          "hint": "Port 11450. Restart after LLM change for these roles."
+        },
+        "embedding": {
+          "label": "Embedding (BGE-M3)",
+          "hint": "Port 11446. Restart after embedding config change."
+        },
+        "vaktmester": {
+          "label": "Vaktmester",
+          "hint": "Log daemon. Restart if log collection stops."
+        },
+        "voice": {
+          "label": "Voice Bridge",
+          "hint": "Port 8011. STT/TTS. Restart after voice config change."
+        },
+        "ha-log-bridge": {
+          "label": "HA Log Bridge",
+          "hint": "Restart after kare_ha.env change."
+        },
+        "frontend": {
+          "label": "Frontend (React/Vite)",
+          "hint": "Port 5173. Restart after frontend build."
+        }
+      }
+    },
+    "memory": {
+      "title": "Memory",
+      "description": "Force Kåre to compress short-term memory (STM) → long-term memory (LTM) now.",
+      "last_run": "Last run: {{ts}}",
+      "never": "never",
+      "button": "Force STM → LTM now",
+      "running": "Running…",
+      "starting": "Starting…",
+      "ok": "{{episodes}} episode(s), {{compressed}} interactions",
+      "error_prefix": "Error: "
+    },
+    "rollback": {
+      "title": "Reset to defaults",
+      "description": "Restores the four main config files from frozen snapshot in configs_default/. Use this if you have broken the configuration and want to start over.",
+      "confirm": "This resets settings.yaml, llm.yaml, models.yaml and services.yaml to the frozen default version. Continue?",
+      "button": "Reset to defaults",
+      "loading": "Resetting…",
+      "ok": "Restored: {{files}}",
+      "error_suffix": "Error: ",
+      "error": "Error — could not reset"
+    },
+    "github": {
+      "title": "GitHub publishing",
+      "description": "Kåre will be published on GitHub. Never hardcode usernames, place names, Home Assistant URL, API keys or timezone directly in code. All such values are stored in configs/settings.yaml or .env files that are not checked in."
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "not_configured": "Kåre is not fully configured",
+    "missing": "Missing: {{items}}",
+    "finish_setup": "Complete setup →",
+    "optional": "Optional: {{label}} not set",
+    "users_card": "Users",
+    "users_stat": "online now · {{active}} of {{total}} active",
+    "services_card": "Services",
+    "services_stat": "of {{total}} online",
+    "models_card": "Models",
+    "models_stat": "of {{total}} loaded",
+    "modules_card": "System modules",
+    "active": "Active",
+    "inactive": "Inactive",
+    "online_now": "Now",
+    "refresh": "Refresh",
+    "checking": "Checking…",
+    "ok": "OK",
+    "last_checked": "Last checked:",
+    "ago": "ago",
+    "roles": {
+      "child": "Child",
+      "teen": "Teen",
+      "young_adult": "Young adult",
+      "adult": "Adult",
+      "admin": "Admin"
+    }
+  },
+  "login": {
+    "title": "Kåre",
+    "subtitle": "Log in to continue",
+    "username": "Username",
+    "pin": "PIN",
+    "logging_in": "Logging in…",
+    "login": "Log in",
+    "choose_pin": "Choose new PIN",
+    "choose_pin_sub": "Hi, {{name}}! You need to set a personal PIN before you continue.",
+    "set_pin": "Set PIN and log in",
+    "new_pin": "New PIN (min. 4 digits)",
+    "repeat_pin": "Repeat PIN",
+    "saving": "Saving…",
+    "error_login": "Wrong username or PIN.",
+    "error_generic": "Something went wrong.",
+    "error_pin_short": "PIN must be at least 4 digits.",
+    "error_pin_mismatch": "PINs do not match."
+  },
+  "users": {
+    "title": "Users",
+    "new_user": "+ New user",
+    "table": {
+      "user": "User",
+      "username": "Username",
+      "role": "Role",
+      "personality": "Personality",
+      "vpn_access": "External access",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "actions": {
+      "edit": "Edit",
+      "pin": "PIN",
+      "vpn": "VPN",
+      "voice": "Voice",
+      "delete": "Delete"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "vpn_access": {
+      "local_only": "Local only",
+      "ai_only": "AI only",
+      "full_access": "Full access"
+    },
+    "create": {
+      "title": "New user",
+      "display_name": "Display name",
+      "username": "Username",
+      "role": "Role",
+      "avatar": "Avatar",
+      "pin": "PIN (min. 4 digits)",
+      "submit": "Create",
+      "cancel": "Cancel",
+      "error_generic": "Something went wrong."
+    },
+    "edit": {
+      "title": "Edit — {{name}}",
+      "display_name": "Display name",
+      "role": "Role",
+      "personality": "Personality",
+      "avatar": "Avatar",
+      "vpn_label": "External access (VPN)",
+      "vpn_local_only": "Local only — no external access",
+      "vpn_ai_only": "AI only — AI chat externally, not smart home",
+      "vpn_full_access": "Full access — everything available externally",
+      "active_label": "Active",
+      "save": "Save",
+      "cancel": "Cancel",
+      "error_generic": "Something went wrong."
+    },
+    "pin_modal": {
+      "title": "Change PIN — {{name}}",
+      "new_pin": "New PIN (min. 4 digits)",
+      "submit": "Change PIN",
+      "cancel": "Cancel",
+      "error_generic": "Something went wrong."
+    },
+    "delete_modal": {
+      "title": "Delete user",
+      "confirm": "Are you sure you want to delete {{name}}? This cannot be undone.",
+      "submit": "Yes, delete",
+      "cancel": "Cancel",
+      "error_generic": "Something went wrong."
+    },
+    "vpn_modal": {
+      "title": "VPN — {{name}}",
+      "active_profiles": "Active profiles",
+      "delete": "Delete",
+      "new_device_label": "New device (e.g. \"phone\" or \"tablet\")",
+      "new_device_ph": "phone",
+      "generating": "Generating…",
+      "generate_qr": "Generate QR",
+      "scan_hint": "Scan with WireGuard app — shown only now.",
+      "show_config": "Show config text",
+      "close": "Close",
+      "error_remove": "Removal failed.",
+      "error_generic": "Something went wrong."
+    },
+    "voice_modal": {
+      "title": "Voice — {{name}}",
+      "status": "Status",
+      "checking": "Checking…",
+      "enrolled": "✓ Voice profile registered",
+      "not_enrolled": "No voice profile registered",
+      "delete": "Delete",
+      "instructions_title": "How to register voice:",
+      "instruction_1": "Click «Start recording»",
+      "instruction_2": "Read the sentences below loudly and clearly",
+      "instruction_3": "Click «Stop» or wait for the timer to finish",
+      "recording": "⏺ Recording… {{elapsed}}s / {{max}}s",
+      "processing": "Processing audio…",
+      "start": "Start recording",
+      "re_record": "Record new voice",
+      "stop": "Stop",
+      "registered": "Voice registered!",
+      "close": "Close",
+      "error_mic": "Error: Could not open microphone. Check that the browser has permission.",
+      "error_record": "Recording failed. Try again or restart voice bridge.",
+      "error_delete": "Could not delete voice profile."
+    },
+    "tools": {
+      "title": "Tool permissions per role",
+      "description": "Control which tools Kåre can use per user role. Changes take effect immediately.",
+      "col_tool": "Tool",
+      "always_included": "Always included (Kåre's own): self-image, world, user profile, read_inner_thoughts, read_thought_history",
+      "loading": "Loading tool permissions…",
+      "save": "Save changes",
+      "rollback": "Reset to defaults",
+      "saved": "Saved.",
+      "error_save": "Error saving.",
+      "rolled_back": "Reset to defaults.",
+      "labels": {
+        "styr_enhet": "Control device (HA)",
+        "les_ha": "Read HA status",
+        "timer": "Timer / clock",
+        "hent_yr_varsel": "Weather (met.no)",
+        "library": "Miss Library (wiki)",
+        "library_online": "Online LLM",
+        "søk_nett": "Web search",
+        "kare_image": "Image generation",
+        "se_bilder": "View images",
+        "media": "Media (Plex / radio)",
+        "notat": "Notes",
+        "announce": "Announcement (voice)",
+        "reason_freely": "Free reasoning",
+        "minne": "Memory (LTM)",
+        "kamera": "Camera (Frigate)",
+        "søk_i_vaktmester": "Vaktmester search",
+        "les_møte": "Read meeting reports",
+        "pettersmart": "Pettersmart",
+        "utforsk_kode": "Explore code",
+        "inspiser_system": "Inspect system",
+        "ssh_kommando": "SSH command",
+        "local_kommando": "Local command",
+        "restart_docker_container": "Restart Docker"
+      }
+    }
+  },
+  "user": {
+    "change_pin": "Change PIN",
+    "pin_changed": "PIN changed!",
+    "admin_panel": "Admin panel",
+    "logout": "Log out",
+    "new_pin": "New PIN",
+    "repeat_pin": "Repeat PIN",
+    "save": "Save",
+    "saving": "Saving…",
+    "close": "Close",
+    "cancel": "Cancel",
+    "error": "Something went wrong.",
+    "error_pin_short": "PIN must be at least 4 digits.",
+    "error_pin_mismatch": "PINs do not match."
+  },
+  "aliases": {
+    "title": "Aliases",
+    "description": "Norwegian names Kåre recognises for Home Assistant devices and rooms. Changes take effect immediately.",
+    "card_description": "Three sections: Aliases (text → entity_id), Rooms (room names → synonyms), Room entities (room → entity_id list).",
+    "tab_aliases": "Aliases",
+    "tab_rooms": "Rooms",
+    "tab_room_entities": "Room entities",
+    "search_ph": "Search aliases…",
+    "col_key": "Norwegian text",
+    "col_entity": "Entity ID",
+    "empty": "No aliases found.",
+    "save_btn": "Save aliases",
+    "hot_reload_note": "Changes take effect immediately (hot-reload) — no restart required.",
+    "room_col_room": "Room name",
+    "room_col_synonyms": "Synonyms (comma-separated)",
+    "room_new_ph": "New room name…",
+    "room_save_btn": "Save rooms",
+    "entities_save_btn": "Save entity lists"
+  },
+  "nodes": {
+    "title": "Nodes",
+    "card_title": "Media nodes and speakers",
+    "card_description": "Configuration of all TTS devices (Nest Hub, Chromecast, ESP32). Stored in configs/nodes.yaml.",
+    "new_node": "New node",
+    "empty": "No nodes configured yet.",
+    "delete_confirm": "Delete node «{{key}}»?",
+    "edit": "Edit",
+    "delete": "Delete",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "modal": {
+      "edit_title": "Edit node",
+      "new_title": "New node",
+      "node_id": "Node ID (unique key)",
+      "room": "Room name",
+      "description": "Description",
+      "type": "Type",
+      "entity_id": "Entity ID",
+      "host": "Host (IP)",
+      "api_port": "API port",
+      "default_user": "Default user (optional)",
+      "cancel": "Cancel",
+      "save": "Save",
+      "mic_enabled": "Microphone (mic input)"
+    }
+  },
+  "tools": {
+    "title": "Tools",
+    "timers_title": "Active timers",
+    "timers_empty": "No active timers",
+    "repeat": {
+      "hourly": "every hour",
+      "daily": "daily",
+      "weekdays": "weekdays",
+      "weekend": "weekend",
+      "weekly": "weekly"
+    },
+    "timer_fires": "fires",
+    "timer_notify": "notifies",
+    "firing_soon": "firing soon…",
+    "log_title": "Run log",
+    "log_loading": "Loading…",
+    "log_empty": "No tool calls yet",
+    "unknown_event": "unknown"
+  },
+  "cameras": {
+    "title": "Camera settings",
+    "description": "Choose which cameras and objects Kåre should analyse automatically.",
+    "global_title": "Enable automatic event analysis",
+    "global_off_hint": "When off: Kåre does not automatically analyse any camera events.",
+    "storage_title": "Storage limits",
+    "storage_snapshot": "Snapshot folder (MB)",
+    "storage_log": "Analysis log (MB)",
+    "storage_snapshot_hint": "0 = disabled · min 100 · max 10 000",
+    "storage_log_hint": "0 = disabled · min 10 · max 1 000",
+    "storage_save": "Save storage limits",
+    "storage_saving": "Saving…",
+    "storage_saved": "Saved ✓",
+    "storage_error_invalid": "Invalid values. Snapshot: 0 or 100–10000 MB. Log: 0 or 10–1000 MB.",
+    "loading": "Loading cameras…",
+    "role_label": "Role",
+    "roles": {
+      "front_door": "Front door",
+      "driveway": "Driveway",
+      "road_facing": "Road facing",
+      "garden": "Garden",
+      "garage": "Garage",
+      "indoor": "Indoor",
+      "custom_prefix": "Custom"
+    },
+    "col_object": "Object",
+    "col_analyze": "Analyse",
+    "col_min_confidence": "Min. confidence",
+    "col_min_duration": "Min. duration (sec)",
+    "col_announce": "Announce",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Saved ✓",
+    "error_load": "Could not fetch camera settings.",
+    "error_save": "Could not save camera {{id}}.",
+    "error_save_global": "Could not save global setting: {{msg}}"
+  },
+  "home": {
+    "img_alt": "Generated image",
+    "close": "Close",
+    "download": "Download",
+    "trace_steps": "{{count}} steps",
+    "voice_start": "Start voice",
+    "voice_stop": "Stop recording",
+    "voice_transcribing": "Transcribing…",
+    "voice_disabled": "Voice disabled (STT is turned off under Settings)",
+    "greeting": "Hi! What can I help you with?",
+    "error": "Sorry, something went wrong. Please try again.",
+    "placeholder": "Type something… (Shift+Enter for new line)",
+    "attach_title": "Attach image",
+    "drop_hint": "Drop to attach image",
+    "miss_kare_hint": "Start with <0>Miss Kåre</0> to speak directly with her",
+    "send": "Send"
+  },
+  "reflections": {
+    "reflection_tab": "Reflection meeting",
+    "dev_tab": "Dev meeting",
+    "reflection_tab_sub": "04:00 · Miss Kåre",
+    "dev_tab_sub": "05:30 · Pettersmart",
+    "meetings_label": "Meetings",
+    "no_dates": "None yet",
+    "loading": "Loading…",
+    "empty_reflection_no_meetings": "No reflection meetings yet. Use the Start button above or wait until 04:00.",
+    "empty_reflection_select": "Select a meeting and enter the PIN to view its content.",
+    "empty_dev_no_meetings": "No dev meetings yet.",
+    "topic_title": "Topic for next meeting",
+    "topic_ph": "Suggest a topic or focus point for the next meeting…",
+    "topic_save": "Save",
+    "comment_title": "Admin comment",
+    "comment_ph": "Add a comment to this meeting…",
+    "comment_save": "Save",
+    "pin_subtitle": "Enter {{username}}'s PIN to view the meeting",
+    "pin_error_short": "PIN must be at least 4 characters",
+    "pin_cancel": "Cancel",
+    "pin_open": "Open",
+    "pin_wrong": "Wrong PIN – try again",
+    "pin_retry": "↩",
+    "start_reflection": "Start reflection meeting now",
+    "start_dev": "Start dev meeting now",
+    "running": "Running",
+    "source_auto": "automatic (timer)",
+    "source_manual": "manual",
+    "started_at": "started {{time}}",
+    "round": "Round {{round}}/{{max}}",
+    "waiting_model": "Waiting for model…",
+    "settings_title": "Settings",
+    "settings_toggle": "Show settings",
+    "settings_hide": "Hide settings",
+    "settings_save": "Save",
+    "settings_saved": "Saved",
+    "settings_enabled": "Reflection meeting enabled",
+    "settings_interval": "Jang reflection interval (seconds)",
+    "settings_max_rounds": "Max rounds",
+    "settings_kare_tokens": "Kåre — max tokens",
+    "settings_miss_kare_tokens": "Miss Kåre — max tokens",
+    "settings_kare_invest_tokens": "Kåre — investigation tokens",
+    "settings_max_invest_rounds": "Max investigation rounds",
+    "settings_leder_preset": "Meeting leader style",
+    "settings_leder_custom": "Custom meeting leader prompt",
+    "settings_leder_custom_ph": "Write the meeting leader instructions here…",
+    "settings_leder_default_label": "Preview of selected style:",
+    "leder_preset_standard": "Standard",
+    "leder_preset_streng": "Strict",
+    "leder_preset_utforskende": "Exploratory",
+    "leder_preset_analytisk": "Analytical",
+    "leder_preset_utfordrende": "Challenging",
+    "leder_preset_egendefinert": "Custom"
+  },
+  "user_sidebar": {
+    "home": "Kåre",
+    "reflections": "Reflections",
+    "settings": "Settings",
+    "change_pin": "Change PIN",
+    "admin_panel": "Admin panel",
+    "logout": "Log out"
+  },
+  "user_reflections": {
+    "title": "Reflection meetings",
+    "subtitle": "Nightly conversations between Kåre and Miss Kåre about your day",
+    "meetings_label": "Meetings",
+    "no_reflections": "No reflection meetings yet",
+    "select_reflection": "Select a meeting on the left to read it",
+    "loading": "Loading…",
+    "pin_title": "Unlock meeting",
+    "pin_hint": "Enter your PIN to view the contents",
+    "pin_cancel": "Cancel",
+    "pin_open": "Open",
+    "pin_error": "Wrong PIN — try again",
+    "pin_cached": "PIN saved for this session"
+  },
+  "user_settings": {
+    "title": "Settings",
+    "subtitle": "Customise the look and feel of Kåre for you",
+    "section_appearance": "Appearance",
+    "accent_label": "Theme colour",
+    "accent_hint": "Choose an accent colour for bubbles and buttons. × resets to role default.",
+    "accent_default": "Default",
+    "font_size_label": "Text size",
+    "font_size_hint": "Affects text size in chat bubbles and the input field",
+    "font_small": "Small",
+    "font_normal": "Normal",
+    "font_large": "Large",
+    "animations_label": "Animations",
+    "animations_hint": "Standard = bubble fade-in and glow effects. Minimal = clean and fast.",
+    "animations_standard": "Standard",
+    "animations_minimal": "Minimal",
+    "section_chat": "Chat behaviour",
+    "tts_autoplay_label": "Auto-play speech",
+    "tts_autoplay_hint": "Automatically play Kåre's replies as audio after each message",
+    "show_trace_label": "Show step info",
+    "show_trace_hint": "Show tool-call steps below Kåre's replies by default",
+    "section_misskare": "Miss Kåre",
+    "mk_panel_label": "Miss Kåre's comments",
+    "mk_panel_hint": "Show Miss Kåre's side comments in a panel after conversations",
+    "section_preview": "Preview",
+    "preview_user": "This is how your messages look now",
+    "preview_kare": "And this is how Kåre replies to you",
+    "reset": "Reset to defaults"
+  }
+}

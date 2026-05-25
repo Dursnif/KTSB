@@ -1,0 +1,1138 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "users": "Brukere",
+    "system": "Vedlikehold",
+    "agents": "Agenter",
+    "reflections": "Refleksjoner",
+    "tools": "Verktøy",
+    "cameras": "Kameraer",
+    "aliases": "Aliaser",
+    "nodes": "Noder",
+    "settings": "Innstillinger",
+    "back_to_kare": "Tilbake til Kåre",
+    "logout": "Logg ut",
+    "sidebar_expand": "Utvid sidebar",
+    "sidebar_collapse": "Minimer sidebar"
+  },
+  "common": {
+    "save": "Lagre",
+    "save_all": "Lagre alle endringer",
+    "saving": "Lagrer...",
+    "saved": "Lagret",
+    "error": "Feil",
+    "enabled": "Aktiv",
+    "disabled": "Deaktivert",
+    "on": "På",
+    "off": "Av",
+    "enable": "Aktiver",
+    "disable": "Deaktiver",
+    "loading": "Laster…",
+    "cancel": "Avbryt",
+    "delete": "Slett",
+    "edit": "Rediger",
+    "add": "Legg til",
+    "add_domain": "Legg til domene",
+    "new_category": "+ Ny kategori",
+    "update": "Oppdater",
+    "update_token": "Oppdater token",
+    "yes": "Ja",
+    "no": "Nei",
+    "unknown": "Ukjent",
+    "optional": "Valgfritt",
+    "show": "Vis",
+    "hide": "Skjul",
+    "not_set": "Ikke satt",
+    "set_masked": "Satt: {{masked}}",
+    "no_model_set": "ingen modell satt",
+    "restart_docker": "Omstart Docker-konteiner",
+    "restarting": "Starter om...",
+    "container_restarted": "Konteiner restartet",
+    "restart_failed": "Restart feilet",
+    "test": "Test",
+    "testing": "Tester…",
+    "no_images": "Ingen bilder lagret ennå.",
+    "no_domains": "Ingen domener — klikk «Legg til domene»",
+    "no_websites": "Ingen nettsider konfigurert ennå.",
+    "count_label": "Antall",
+    "space_label": "Plass",
+    "hot_reload_hint": "Kjør hot-reload i Vedlikehold for at endringer skal aktiveres"
+  },
+  "settings": {
+    "title": "Innstillinger",
+    "tabs": {
+      "generelt": "Generelt",
+      "ha": "Home Assistant",
+      "mqtt": "MQTT / VPN",
+      "llm": "LLM/Modeller",
+      "refleksjon": "Refleksjon",
+      "nettsok": "Nettsøk og vær",
+      "bilder": "Bilder/Kamera",
+      "kare": "Kåre-innstillinger",
+      "integrasjoner": "Integrasjoner",
+      "distribusjon": "Distribusjon",
+      "agenter": "Agent-instillinger"
+    },
+    "generelt": {
+      "location": {
+        "title": "Lokasjon",
+        "description": "Brukes av Kåre for vær, tidspunkt og geografisk kontekst. Aldri hardkodet — lagres i configs/settings.yaml.",
+        "fields": {
+          "city": {
+            "label": "Stedsnavn",
+            "hint": "Navn på stedet du bor"
+          },
+          "postal_code": {
+            "label": "Postnummer",
+            "hint": "Ditt postnummer"
+          },
+          "country": {
+            "label": "Land",
+            "hint": "Landet du er i"
+          },
+          "lat": {
+            "label": "Breddegrad",
+            "hint": "GPS-breddegrad (f.eks. 62.21652)"
+          },
+          "lon": {
+            "label": "Lengdegrad",
+            "hint": "GPS-lengdegrad (f.eks. 5.64304)"
+          },
+          "timezone": {
+            "label": "Tidssone",
+            "hint": "IANA tidssone (f.eks. Europe/Oslo)"
+          }
+        }
+      },
+      "language": {
+        "title": "Språk",
+        "description": "Velg språk for admin-GUI og hva Kåre svarer på. Endringen trer i kraft umiddelbart.",
+        "gui_label": "GUI-språk",
+        "gui_hint": "Styrer språket i dette administrasjonsgrensesnittet",
+        "kare_label": "Kåre svarer på",
+        "kare_hint": "Styrer språket i Kåres svar",
+        "options": {
+          "nb": "Norsk (bokmål)",
+          "en": "English",
+          "de": "Deutsch"
+        }
+      }
+    },
+    "ha": {
+      "gateway": {
+        "title": "HA Gateway",
+        "description": "Kåre sin HA-bro (kaare_ha_gateway.py) — utfører smarthuskommandoer. URL lagres i configs/services.yaml.",
+        "url_label": "Home Assistant URL",
+        "url_hint": "F.eks. http://192.168.0.100:8123",
+        "timeout_label": "Timeout (sekunder)",
+        "timeout_hint": "Maks ventetid per HA-kall"
+      },
+      "token": {
+        "title": "Home Assistant Token",
+        "description": "Long-lived access token. Lagres i configs/ha_token.env — ikke i kode.",
+        "new_label": "Nytt token",
+        "new_hint": "Lim inn token fra HA → Profil → Sikkerhet → Long-lived tokens"
+      },
+      "advanced": {
+        "title": "HA Gateway — Avanserte innstillinger",
+        "description": "Timeout, logg-URL og sikkerhetsliste for tillatte HA-handlinger. Lagres i configs/kare_ha.env.",
+        "log_url_label": "Log URL",
+        "log_url_hint": "Endepunkt Kåre mottar HA-logger på",
+        "timeout_label": "Timeout (sekunder)",
+        "allowed_label": "Tillatte handlinger",
+        "allowed_hint": "Kommaseparert liste (turn_on, turn_off, …)"
+      }
+    },
+    "mqtt": {
+      "card": {
+        "title": "MQTT",
+        "description": "Brukes for Frigate-hendelser og smarthus-events. Lagres i configs/services.yaml og configs/mqtt.env.",
+        "host_label": "Broker host",
+        "host_hint": "IP eller hostname til MQTT-brokeren (f.eks. Home Assistant)",
+        "port_label": "Port",
+        "port_hint": "Standard MQTT-port er 1883",
+        "username_label": "Brukernavn",
+        "username_hint": "MQTT-brukernavn (valgfritt). Lagres i configs/mqtt.env.",
+        "password_label": "Passord",
+        "password_hint": "La feltet stå tomt for å beholde eksisterende passord.",
+        "tls_label": "TLS / SSL",
+        "tls_hint": "Aktiver kryptert tilkobling (port 8883). Krever at brokeren støtter TLS.",
+        "tls_enable": "Aktiver TLS",
+        "topic_label": "Topic-prefiks",
+        "topic_hint": "Frigate-prefix for MQTT-abonnement. Standard: frigate (lytter på frigate/events).",
+        "client_label": "Klient-ID",
+        "client_hint": "Unik MQTT-klient-ID. La feltet stå tomt for automatisk generert ID.",
+        "reconnect_label": "Reconnect (sek)",
+        "reconnect_hint": "Antall sekunder å vente mellom tilkoblingsforsøk ved frakobling."
+      },
+      "vpn": {
+        "title": "WireGuard VPN",
+        "description": "Endpoint som VPN-klienter kobler til. Lagres i configs/settings.yaml.",
+        "host_label": "DuckDNS host",
+        "host_hint": "Ditt DuckDNS-domene (f.eks. mitt-navn.duckdns.org). Sett tomt hvis VPN ikke er konfigurert.",
+        "port_label": "WireGuard port",
+        "port_hint": "Standard port er 51820"
+      }
+    },
+    "llm": {
+      "description": "Én seksjon per LLM-rolle. Lagres i configs/llm.yaml. Restart berørt tjeneste etter endring.",
+      "ctx_warning": "Alle kall til samme Ollama-instans MÅ bruke identisk num_ctx — mismatch tvinger full modell-reload (~3,5 min).",
+      "provider_label": "Provider",
+      "provider_hint": "Hvilken type LLM-tjeneste",
+      "base_url_hint_ollama": "Lokal Ollama-URL (f.eks. http://127.0.0.1:11441)",
+      "base_url_hint_api": "API-endepunkt (f.eks. https://integrate.api.nvidia.com/v1)",
+      "api_key_label": "API-nøkkel",
+      "api_key_set_hint": "Satt ({{masked}}) — skriv ny for å oppdatere",
+      "api_key_unset_hint": "Ikke satt — kreves for denne provideren",
+      "think_label": "Think-modus",
+      "think_hint_ollama": "Aktiverer synlig resonering (<think>-blokker). Qwen3-spesifikt.",
+      "think_hint_vllm": "Aktiverer resonering. Vises i reasoning-feltet fra vLLM.",
+      "timeout_label": "Timeout (sekunder)",
+      "timeout_hint": "Maks ventetid. Tom = ingen grense.",
+      "model_label": "Modellnavn",
+      "model_hint": "Modellnavn brukt av denne rollen (lagres i configs/models.yaml)",
+      "gen_model_label": "Genereringsmodell",
+      "gen_model_hint": "Modell for å generere bilder fra tekst (lagres i configs/models.yaml)",
+      "edit_model_label": "Redigeringsmodell",
+      "edit_model_hint": "Modell for å redigere eksisterende bilder (lagres i configs/models.yaml)",
+      "image_provider_hint": "Hvilken type bildegenererings-tjeneste",
+      "image_timeout_hint": "Maks ventetid per bildegenerering. Tom = ingen grense.",
+      "ollama_params": "Ollama inference-parametere",
+      "vllm_params": "vLLM inference-parametere",
+      "vllm_docker_params": "vLLM Docker-parametere — krever omstart av containeren for å tre i kraft",
+      "gen_params": "Bildegenererings-parametere",
+      "cloud_params": "Genererings-parametere",
+      "ctx_locked_hint": "Låst — deles med {{shared}}. Endre der for å justere.",
+      "think_unset": "Ikke satt",
+      "think_enabled": "Aktivert (full tenking)",
+      "think_disabled": "Deaktivert",
+      "role_fallback_desc": "Steg 2 av 3 — aktiveres om 27B feiler, sky-LLM er siste utvei",
+      "providers": {
+        "ollama": "Ollama (lokal)",
+        "vllm": "vLLM (lokal, OpenAI-kompatibel)",
+        "openai": "OpenAI / OpenAI-kompatibel",
+        "nvidia": "NVIDIA NIM",
+        "huggingface": "HuggingFace Inference API",
+        "openvino": "OpenVINO (lokal)",
+        "other": "Annet"
+      },
+      "role_labels": {
+        "default": "Kåre (hoved)",
+        "miss_kare": "Miss Kåre",
+        "pettersmart": "Pettersmart",
+        "library": "Frøken Library",
+        "fallback": "Fallback",
+        "cloud": "Sky-LLM",
+        "image_edit": "Kåre-image_edit"
+      },
+      "ollama_fields": {
+        "num_ctx": {
+          "label": "Kontekstvindu",
+          "hint": "Tokens LLM-en kan huske (f.eks. 65536). Alle kall til samme modell MÅ bruke identisk verdi."
+        },
+        "num_predict": {
+          "label": "Maks tokens ut",
+          "hint": "Maks tokens i svaret (f.eks. 8192). Sett lavt for raske agenter."
+        },
+        "temperature": {
+          "label": "Temperatur",
+          "hint": "Kreativitet (0.0–2.0). 1.0 = anbefalt for Qwen3."
+        },
+        "presence_penalty": {
+          "label": "Presence penalty",
+          "hint": "Motvirker gjentakelse (anbefalt 1.5 for Qwen3)."
+        },
+        "top_k": {
+          "label": "Top-K",
+          "hint": "Begrenser kandidat-tokens (f.eks. 20)."
+        },
+        "top_p": {
+          "label": "Top-P",
+          "hint": "Nucleus sampling (f.eks. 0.75)."
+        }
+      },
+      "vllm_fields": {
+        "max_tokens": {
+          "label": "Maks tokens ut",
+          "hint": "Maks tokens i svaret (f.eks. 8192)."
+        },
+        "temperature": {
+          "label": "Temperatur",
+          "hint": "Kreativitet (0.0–2.0). 1.0 = anbefalt for Qwen3."
+        },
+        "top_p": {
+          "label": "Top-P",
+          "hint": "Nucleus sampling (f.eks. 0.75)."
+        },
+        "presence_penalty": {
+          "label": "Presence penalty",
+          "hint": "Motvirker gjentakelse (f.eks. 1.5)."
+        },
+        "frequency_penalty": {
+          "label": "Frequency penalty",
+          "hint": "Motvirker repetisjon av tokens (f.eks. 0.0)."
+        }
+      },
+      "docker_fields": {
+        "max_model_len": {
+          "label": "Maks kontekstlengde",
+          "hint": "max_model_len: maks tokens modellen kan behandle (f.eks. 32768)."
+        },
+        "gpu_memory_utilization": {
+          "label": "GPU-minneutnyttelse",
+          "hint": "gpu_memory_utilization: 0.0–1.0. 0.97 = anbefalt for Blackwell med FP8."
+        },
+        "kv_cache_dtype": {
+          "label": "KV-cache dtype",
+          "hint": "kv_cache_dtype: fp8 halverer KV-cache-størrelse. fp16 = full presisjon. auto = la vLLM bestemme."
+        },
+        "max_num_seqs": {
+          "label": "Maks parallelle sekvenser",
+          "hint": "max_num_seqs: antall samtidige forespørsler. 2 = anbefalt for enkeltbruker (gir kompakte CUDA-grafer)."
+        }
+      },
+      "cloud_fields": {
+        "temperature": {
+          "label": "Temperatur",
+          "hint": "Kreativitet (0.0–2.0)"
+        },
+        "top_p": {
+          "label": "Top-P",
+          "hint": "Nucleus sampling"
+        },
+        "max_tokens": {
+          "label": "Maks tokens",
+          "hint": "Maks tokens i svaret"
+        }
+      },
+      "manage_section_label": "Administrer modell",
+      "manage_section_hint": "Last ned modeller og konfigurer GPU for denne instansen",
+      "manage_gpu_label": "GPU",
+      "manage_gpu_hint": "Hvilken GPU denne Ollama-instansen kjører på. Endring trer i kraft ved neste docker compose restart.",
+      "manage_gpu_cpu": "CPU (ingen GPU)",
+      "manage_gpu_save_btn": "Lagre GPU-valg",
+      "manage_gpu_restart_note": "GPU-endring trer i kraft ved neste docker compose restart",
+      "manage_pull_label": "Hent modell",
+      "manage_pull_hint": "Kopier modellnavn fra ollama.com og lim inn her",
+      "manage_pull_placeholder": "eks: qwen3:8b",
+      "manage_pull_btn": "Hent modell",
+      "manage_installed_label": "Installerte modeller",
+      "manage_installed_empty": "Ingen modeller installert ennå",
+      "manage_delete_btn": "Slett",
+      "manage_perf_label": "Ytelsesinnstillinger (Ollama)",
+      "manage_perf_save_btn": "Lagre ytelsesinnstillinger",
+      "manage_auto": "auto",
+      "manage_num_threads_label": "CPU-tråder",
+      "manage_num_threads_hint": "Antall CPU-tråder Ollama bruker. Tom = automatisk (alle kjerner). Trer i kraft ved docker compose restart.",
+      "manage_num_parallel_label": "Parallelle forespørsler",
+      "manage_num_parallel_hint": "Antall samtidige forespørsler per instans. Standard: 1. Høyere gir bedre gjennomstrømming men bruker mer VRAM.",
+      "manage_max_loaded_label": "Maks lastede modeller",
+      "manage_max_loaded_hint": "Antall modeller som holdes i VRAM samtidig. Standard: 1. Øk hvis instansen betjener flere agenter med ulike modeller.",
+      "manage_kv_cache_label": "KV-cache presisjon",
+      "manage_kv_cache_hint": "f16 = full presisjon. q8_0 = halverer KV-cache-størrelse. q4_0 = kvartet, frigjør mest VRAM.",
+      "manage_flash_attn_label": "Flash Attention",
+      "manage_flash_attn_hint": "Raskere inferens og lavere minnebruk. Krever kompatibelt GPU-oppsett. Anbefalt å aktivere."
+    },
+    "nettsok": {
+      "weather": {
+        "title": "Vær-leverandør",
+        "description": "Hvilken tjeneste Kåre bruker for å hente værdata. Lokasjon konfigureres i Generelt-fanen. Lagres i configs/settings.yaml og configs/weather.env.",
+        "provider_label": "Leverandør",
+        "provider_hint": "Velg vær-API. met.no og Open-Meteo er gratis og krever ingen nøkkel.",
+        "days_label": "Prognose-dager",
+        "days_hint": "Antall dager frem Kåre viser (1–7). I dag teller som dag 1.",
+        "needs_key_warning": "Denne leverandøren krever API-nøkkel. Uten nøkkel vil Kåre gi en feilmelding ved værmeldinger."
+      },
+      "websearch": {
+        "title": "Nettsøk",
+        "description": "Velg søkeprovider. DDG krever ingen konfigurasjon og er standard. SearXNG krever en kjørende instans. Brave krever API-nøkkel. Lagres i configs/services.yaml.",
+        "provider_label": "Provider",
+        "provider_hint": "Primær søkeleverandør. DDG fungerer uten nøkkel.",
+        "fallback_label": "Fallback",
+        "fallback_hint": "Brukes automatisk hvis primær-provideren feiler eller returnerer 0 treff.",
+        "searxng_url_label": "SearXNG URL",
+        "searxng_url_hint": "URL til din SearXNG-instans (f.eks. http://localhost:8888).",
+        "fetch_count_label": "Antall treff å hente",
+        "fetch_count_hint": "Totalt antall resultater å be om fra provider",
+        "max_results_label": "Maks kilder brukt",
+        "max_results_hint": "Maks antall URL-er som hentes og sendes til Frøken Library",
+        "content_max_label": "Maks tegn per kilde",
+        "content_max_hint": "Antall tegn som hentes fra hvert nettsted",
+        "brave_country_label": "Land (Brave)",
+        "brave_country_hint": "ISO 3166-1 alpha-2 (NO, US, GB, …).",
+        "brave_lang_label": "Søkespråk (Brave)",
+        "brave_lang_hint": "BCP 47-språkkode (no, en, de, …).",
+        "brave_key_label": "Brave API-nøkkel",
+        "brave_key_unset_hint": "Ikke satt — kreves kun om Brave er valgt som provider",
+        "hot_reload_hint": "Kjør hot-reload i Vedlikehold for at endringer skal aktiveres"
+      },
+      "trusted": {
+        "title": "Vitlistede nettsider",
+        "description": "Kun disse domenene brukes når Kåre søker etter informasjon på nett. Lagres i configs/trusted_sources.yaml. Krever hot-reload for å aktiveres.",
+        "hot_reload_hint": "Endringer i vitlistede nettsider aktiveres ved å kjøre «Hot-reload» i Vedlikehold-fanen.",
+        "short_desc_placeholder": "Kort beskrivelse",
+        "domain_format_hint": "Uten http:// og www."
+      }
+    },
+    "refleksjon": {
+      "title": "Kåre refleksjon",
+      "description": "Kåre leser jevnlig Jangs destillerte tanker og vurderer om noe bør skrives i selvbildet eller på notisblokken. Refleksjonen kjører stille i bakgrunnen — ingen brukeroutput, ingen TTS. Pauses automatisk under nattmøtene. Lagres i configs/settings.yaml.",
+      "enabled_label": "Aktivert",
+      "enabled_hint": "Slå av for å stoppe refleksjonssyklusen helt. Trer i kraft umiddelbart.",
+      "interval_label": "Intervall (minutter)",
+      "interval_hint": "Hvor ofte Kåre sjekker Jangs tanker. Minimum 1 minutt. Standard: 10 min.",
+      "seconds_suffix": "= {{seconds}} sekunder"
+    },
+    "bilder": {
+      "storage": {
+        "title": "Bildelagring per bruker",
+        "description": "Alle bilder brukere sender inn og Kåre genererer lagres i state/images/{bruker}/. Eldste bilder slettes automatisk når en grense overskrides. Lagres i configs/settings.yaml.",
+        "count_label": "Maks antall bilder per bruker",
+        "count_hint": "Input + output telles samlet. Eldste slettes når grensen nås.",
+        "mb_label": "Maks lagringsplass per bruker (MB)",
+        "mb_hint": "Eldste bilder slettes også om total størrelse overstiger denne grensen."
+      },
+      "usage": {
+        "title": "Bruk per bruker",
+        "description": "Oversikt over lagret bildeplass. Oppdateres ved innlasting av siden.",
+        "images_suffix": "bilder"
+      }
+    },
+    "kare": {
+      "personality_mode": {
+        "title": "Kjernepersonlighet",
+        "description": "Velg detaljnivå for kjernepersonligheten. Høyere nivå gir mer kontekst og bedre svar, men bruker flere tokens.",
+        "minimal_label": "Minimal",
+        "minimal_desc": "Kun navn, språk og 3 absolutte regler. ~80 tokens. For svært ressursbegrenset maskinvare.",
+        "letvekt_label": "Letvekt",
+        "letvekt_desc": "Kortversjon med kjerneregler. Intern kunnskap merkes med [Intern kunnskap – ikke verifisert]. ~150 tokens.",
+        "standard_label": "Standard",
+        "standard_desc": "Full kjernepersonlighet med happy go lucky, tre pilarer og kunnskapsnivåer. Anbefalt. ~420 tokens.",
+        "full_label": "Full",
+        "full_desc": "Standard + adferdsregler (kommunikasjonsstil, samtaleprogresjon, tool-disiplin). ~650 tokens.",
+        "komplett_label": "Komplett",
+        "komplett_desc": "Full + selvbilde + verden. Kåres kart over sin tilværelse injiseres alltid. ~900 tokens.",
+        "egendefinert_label": "Egendefinert",
+        "egendefinert_desc": "Skriv din egen kjernepersonlighet. Standardteksten brukes som utgangspunkt.",
+        "custom_placeholder": "Skriv inn din egendefinerte kjernepersonlighet...",
+        "custom_hint": "Denne teksten erstatter hele personality_core.md. personality_self.md (Kåres selvbilde) injiseres alltid i tillegg.",
+        "hot_reload_hint": "Endringen trer i kraft umiddelbart etter lagring (hot-reload).",
+        "load_default_btn": "Last inn standard som mal"
+      },
+      "selfimage": {
+        "title": "Kåres selvbilde",
+        "description": "Kåre kan skrive observasjoner om seg selv til personality_self.md — en fil som former hvem han er over tid. Her styrer du hvilke brukere som kan påvirke dette selvbildet. Endringen trer i kraft umiddelbart.",
+        "name_label": "Assistentnavn",
+        "name_hint": "Navnet assistenten presenterer seg med. Injiseres i systemprompt ved hot-reload.",
+        "hotword_label": "Hotword",
+        "hotword_hint": "Aktiveringsord for stemmekommandoer. NB: Endring her krever ny opplæring av stemmemodellen.",
+        "who_shapes": "Hvem kan forme Kåres selvbilde?",
+        "allowed_users_label": "Tillatte brukere",
+        "no_users": "Ingen vanlige brukere funnet.",
+        "admin_note": "Systemkontoen «admin» vises ikke her.",
+        "modes": {
+          "all_label": "Alle brukere",
+          "all_desc": "Enhver samtale kan bidra til selvbildet, uansett hvem Kåre snakker med.",
+          "selected_label": "Valgte brukere",
+          "selected_desc": "Kun samtaler med brukerne du velger under kan forme selvbildet.",
+          "admin_only_label": "Kun admin",
+          "admin_only_desc": "Selvbildet formes kun i samtaler med admin-brukere."
+        }
+      }
+    },
+    "integrasjoner": {
+      "frigate": {
+        "title": "Frigate",
+        "description": "Kamera-analyse via Frigate NVR. Lagres i configs/services.yaml.",
+        "enabled_label": "Aktivert",
+        "enabled_hint": "Slå Frigate-integrasjonen av/på",
+        "url_label": "Frigate URL",
+        "url_hint": "URL til Frigate NVR (f.eks. http://192.168.0.100:5000)",
+        "timeout_label": "Timeout (sekunder)",
+        "timeout_hint": "Maks ventetid per Frigate-kall",
+        "snap_label": "Snapshot-timeout (sekunder)",
+        "snap_hint": "Maks ventetid for bilde-nedlasting"
+      },
+      "plex": {
+        "title": "Plex",
+        "description": "Plex-medieserver. Lagres i configs/services.yaml og configs/plex.env.",
+        "url_label": "Plex server URL",
+        "url_hint": "URL til Plex (f.eks. http://192.168.0.156:32400)",
+        "timeout_label": "Timeout (sekunder)",
+        "timeout_hint": "Maks ventetid per Plex-kall",
+        "token_label": "Plex-token",
+        "token_placeholder": "Lim inn nytt Plex-token",
+        "token_warning": "Tjenesterestart (kaare.service) kreves for at nytt Plex-token aktiveres."
+      }
+    },
+    "distribusjon": {
+      "profile": {
+        "title": "Distribusjonsprofil",
+        "description": "Velg hvilken service-bundle Kåre er installert med. Påvirker ikke domenene — de konfigureres separat under.",
+        "domains_label": "Domains",
+        "hot_reload_hint": "Anbefalt: kjør «Hot-reload alle konfig-filer» i Vedlikehold-fanen etter lagring."
+      },
+      "presets": {
+        "full": {
+          "label": "Full",
+          "description": "Alt inkludert: Jing+Jang, BGE-M3 embedding, wiki-søk, voice, agenter."
+        },
+        "medium": {
+          "label": "Medium",
+          "description": "Uten Jing+Jang. BGE-M3 og wiki inkludert. Voice og agenter med."
+        },
+        "letvekt": {
+          "label": "Letvekt",
+          "description": "Uten Jing+Jang og wiki. Kun intent-embedding. Voice og agenter med."
+        }
+      },
+      "services": {
+        "title": "Tjenester",
+        "v1_unavailable": "Ikke tilgjengelig i Docker v1"
+      }
+    },
+    "agenter": {
+      "section_tools": "Verktøytillatelser",
+      "section_role_dev": "Rolle i dev-møtet",
+      "section_role_reflection": "Rolle i refleksjonsmøtet",
+      "role_save": "Lagre rolle",
+      "save_tools": "Lagre verktøytillatelser",
+      "role_load_default": "Last standardinnhold",
+      "role_custom_placeholder": "Skriv her hvilken rolle agenten skal ha i møtet...",
+      "role_custom_hint": "Egendefinert tekst brukes som instruksjon i møtets systemprompt.",
+      "role_hot_reload_hint": "Endringer gjelder fra neste møte.",
+      "pettersmart": {
+        "label": "Pettersmart",
+        "description": "Teknisk assistent og problemløser. Brukes i dev-møtet og for tekniske spørsmål.",
+        "roles": {
+          "undersøker_label": "Undersøker",
+          "undersøker_desc": "Graver i systemet med verktøy – faktabasert og metodisk. Standard opptreden.",
+          "kritiker_label": "Kritiker",
+          "kritiker_desc": "Stiller kritiske spørsmål til Kåres funn. Ingen svar – bare spørsmål.",
+          "analytiker_label": "Analytiker",
+          "analytiker_desc": "Analyserer mønstre på tvers av møterapporter og historikk.",
+          "egendefinert_label": "Egendefinert",
+          "egendefinert_desc": "Skriv din egen instruksjon for Pettersmarts rolle i møtet."
+        }
+      },
+      "miss_kare": {
+        "label": "Miss Kåre",
+        "description": "Evaluator – sitter i sidelinjen og kommenterer samtalen. Kan slå opp fakta hos Frøken Library.",
+        "roles": {
+          "empatisk_label": "Empatisk",
+          "empatisk_desc": "Varm og moderlig – fokus på brukerens følelsesliv og menneskelige side. Standard opptreden.",
+          "analytiker_label": "Analytiker",
+          "analytiker_desc": "Strukturert mønstergjenkjenner – trekker linjer mellom observasjoner.",
+          "utfordrende_label": "Utfordrende",
+          "utfordrende_desc": "Utfordrer antagelsene om brukeren med åpne, kritiske spørsmål.",
+          "egendefinert_label": "Egendefinert",
+          "egendefinert_desc": "Skriv din egen instruksjon for Miss Kåres rolle i møtet."
+        }
+      },
+      "miss_library": {
+        "label": "Frøken Library",
+        "description": "Bibliotekar og kunnskapsvokter. Nettsøk er alltid på – lokal wiki krever at databasen er lastet ned."
+      },
+      "tools": {
+        "utforsk": "utforsk",
+        "utforsk_desc": "Les filer, list mapper og søk i kode under /kaare.",
+        "inspiser": "inspiser",
+        "inspiser_desc": "Les logger, sjekk tjenester og ressurser, vis git diff/log.",
+        "nettsøk": "nettsøk",
+        "nettsøk_desc": "Søk på internett via konfigurert søkeleverandør.",
+        "søk_vaktmester": "søk_vaktmester",
+        "søk_vaktmester_desc": "Søk i Vaktmesterens hendelseslogg (Qdrant).",
+        "shell": "shell",
+        "shell_desc": "Kjør shell-kommandoer lokalt eller på tilkoblede noder. Skru kun på hvis nødvendig.",
+        "hukommelse": "hukommelse",
+        "hukommelse_desc": "Pettersmarts personlige minne – beholdes mellom møter.",
+        "spør_frøken_library": "spør_frøken_library",
+        "spør_frøken_library_desc": "Tillat Miss Kåre å faktasjekke hos Frøken Library under evaluering.",
+        "wiki": "wiki (lokal)",
+        "wiki_desc": "Lokal Wikipedia-database (Qdrant). Krever at wiki_no-samlingen er lastet ned."
+      }
+    }
+  },
+  "onboarding": {
+    "step_label": "Grunnoppsett — steg {{step}} av {{total}}",
+    "steps": {
+      "profil": "Profil",
+      "bruker": "Bruker",
+      "distribusjon": "Distribusjon",
+      "integrasjoner": "Integrasjoner",
+      "ferdig": "Ferdig"
+    },
+    "back": "Tilbake",
+    "profil": {
+      "save_continue": "Lagre og fortsett",
+      "error_save": "Kunne ikke lagre lokasjon."
+    },
+    "bruker": {
+      "title": "Opprett første bruker",
+      "description": "Legg til minst én bruker utenom admin. Du kan også hoppe over og gjøre dette senere.",
+      "display_name": "Visningsnavn",
+      "display_name_ph": "Fornavn",
+      "username": "Brukernavn",
+      "username_ph": "brukernavn (ingen mellomrom)",
+      "pin": "PIN (min. 4 siffer)",
+      "role": "Rolle",
+      "roles": {
+        "adult": "Voksen",
+        "young_adult": "Ungdom",
+        "teen": "Tenåring",
+        "child": "Barn"
+      },
+      "create": "Opprett bruker",
+      "skip": "Hopp over",
+      "error_create": "Kunne ikke opprette bruker."
+    },
+    "distribusjon": {
+      "save_continue": "Lagre og fortsett",
+      "error_save": "Kunne ikke lagre distribusjonsprofil."
+    },
+    "integrasjoner": {
+      "title": "Integrasjoner",
+      "optional_badge": "Valgfritt",
+      "description": "Kåre fungerer uten alle disse. Fyll inn det du har — eller hopp over og konfigurer via Innstillinger → Integrasjoner senere.",
+      "save_finish": "Lagre og fullfør",
+      "skip": "Hopp over"
+    },
+    "ferdig": {
+      "title": "Kåre er klar!",
+      "description": "Grunnoppsettet er fullført. Du kan konfigurere mer via Admin-panelet når som helst.",
+      "next_steps_label": "Neste steg (valgfritt)",
+      "hints": [
+        "Legg til aliaser for norske HA-enhetsnavn (Aliaser i menyen)",
+        "Konfigurer høyttalere og medienoder (Noder i menyen)",
+        "Sett opp Plex-token, kamera-innstillinger og mer i Innstillinger"
+      ],
+      "go_dashboard": "Gå til Dashboard"
+    }
+  },
+  "system": {
+    "title": "Vedlikehold",
+    "hot_reload": {
+      "title": "Hot-reload konfig",
+      "description": "Laster inn YAML-filer på nytt i kjørende prosesser — uten restart. Dekker: aliases, sprakvask, capability_map, llm.yaml, models.yaml, services.yaml, settings.yaml, personlighet.",
+      "button": "Hot-reload alle konfig-filer",
+      "loading": "Laster inn…",
+      "ok": "{{count}} filer lastet — {{aliases}} aliaser",
+      "error_api": "Feil — kunne ikke nå API",
+      "note": "Merk: MQTT-tilkobling, API-nøkler (Brave/NVIDIA) og ha-log-bridge forblir cachet i RAM etter hot-reload — disse trenger tjenesterestart nedenfor."
+    },
+    "health_check": {
+      "title": "Systemsjekk",
+      "description": "Sjekker imports, konfig-filer og at alle tjenester svarer.",
+      "button": "Kjør systemsjekk",
+      "loading": "Sjekker…",
+      "ok": "Alt OK",
+      "errors": "{{count}} feil funnet",
+      "imports": "Imports",
+      "configs": "Konfig",
+      "services": "Tjenester",
+      "skipped": "hoppet over",
+      "failed": "feil",
+      "ok_short": "ok"
+    },
+    "services": {
+      "title": "Tjenesterestart",
+      "description": "Start én tjeneste på nytt etter konfig-endringer som ikke fanges av hot-reload. Grønn prikk = tjenesten kjører nå.",
+      "loading": "Laster tjenesteliste…",
+      "restarting": "Starter…",
+      "restarted": "Restartet ✓",
+      "restart": "Restart",
+      "error": "Feil",
+      "labels": {
+        "kaare": {
+          "label": "Kåre (hoved-API)",
+          "hint": "Port 8000. Restart for nye LLM-innstillinger og konfig."
+        },
+        "gateway": {
+          "label": "HA Gateway",
+          "hint": "Port 8002. Restart etter HA-URL/token-endring."
+        },
+        "semantic_embed": {
+          "label": "Semantic Embed",
+          "hint": "Port 11500. 384-dim embedding for semantisk minne."
+        },
+        "agents": {
+          "label": "Agents (Library + Pettersmart)",
+          "hint": "Port 11450. Restart etter LLM-endring for disse rollene."
+        },
+        "embedding": {
+          "label": "Embedding (BGE-M3)",
+          "hint": "Port 11446. Restart etter embedding-konfig-endring."
+        },
+        "vaktmester": {
+          "label": "Vaktmester",
+          "hint": "Logg-daemon. Restart om logg-innsamling stopper."
+        },
+        "voice": {
+          "label": "Voice Bridge",
+          "hint": "Port 8011. STT/TTS. Restart etter stemme-konfig-endring."
+        },
+        "ha-log-bridge": {
+          "label": "HA Log Bridge",
+          "hint": "Restart etter kare_ha.env-endring."
+        },
+        "frontend": {
+          "label": "Frontend (React/Vite)",
+          "hint": "Port 5173. Restart etter frontend-bygg."
+        }
+      }
+    },
+    "memory": {
+      "title": "Hukommelse",
+      "description": "Tving Kåre til å komprimere korttidsminne (STM) → langtidsminne (LTM) nå.",
+      "last_run": "Sist kjørt: {{ts}}",
+      "never": "aldri",
+      "button": "Tving STM → LTM nå",
+      "running": "Kjører…",
+      "starting": "Starter…",
+      "ok": "{{episodes}} episode(r), {{compressed}} interaksjoner",
+      "error_prefix": "Feil: "
+    },
+    "rollback": {
+      "title": "Tilbakestill til standard",
+      "description": "Gjenoppretter de fire hoved-konfigfilene fra fryst snapshot i configs_default/. Bruk dette om du har rotet til konfigurasjonen og vil starte på nytt.",
+      "confirm": "Dette tilbakestiller settings.yaml, llm.yaml, models.yaml og services.yaml til fryst standardversjon. Fortsette?",
+      "button": "Tilbakestill til standard",
+      "loading": "Tilbakestiller…",
+      "ok": "Gjenopprettet: {{files}}",
+      "error_suffix": "Feil: ",
+      "error": "Feil — kunne ikke tilbakestille"
+    },
+    "github": {
+      "title": "GitHub-publisering",
+      "description": "Kåre skal publiseres på GitHub. Aldri hardkod brukernavn, stedsnavn, Home Assistant-URL, API-nøkler eller tidssone direkte i kode. Alle slike verdier lagres i configs/settings.yaml eller .env-filer som ikke sjekkes inn."
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "not_configured": "Kåre er ikke ferdig konfigurert",
+    "missing": "Mangler: {{items}}",
+    "finish_setup": "Fullfør grunnoppsett →",
+    "optional": "Valgfritt: {{label}} ikke satt",
+    "users_card": "Brukere",
+    "users_stat": "online nå · {{active}} av {{total}} aktive",
+    "services_card": "Tjenester",
+    "services_stat": "av {{total}} er online",
+    "models_card": "Modeller",
+    "models_stat": "av {{total}} er lastet",
+    "modules_card": "Systemmoduler",
+    "active": "Aktiv",
+    "inactive": "Inaktiv",
+    "online_now": "Nå",
+    "refresh": "Oppdater",
+    "checking": "Sjekker…",
+    "ok": "OK",
+    "last_checked": "Sist sjekket:",
+    "ago": "siden",
+    "roles": {
+      "child": "Barn",
+      "teen": "Ungdom",
+      "young_adult": "Ung voksen",
+      "adult": "Voksen",
+      "admin": "Admin"
+    }
+  },
+  "login": {
+    "title": "Kåre",
+    "subtitle": "Logg inn for å fortsette",
+    "username": "Brukernavn",
+    "pin": "PIN",
+    "logging_in": "Logger inn…",
+    "login": "Logg inn",
+    "choose_pin": "Velg ny PIN",
+    "choose_pin_sub": "Hei, {{name}}! Du må sette en personlig PIN før du fortsetter.",
+    "set_pin": "Sett PIN og logg inn",
+    "new_pin": "Ny PIN (min. 4 siffer)",
+    "repeat_pin": "Gjenta PIN",
+    "saving": "Lagrer…",
+    "error_login": "Feil brukernavn eller PIN.",
+    "error_generic": "Noe gikk galt.",
+    "error_pin_short": "PIN må være minst 4 siffer.",
+    "error_pin_mismatch": "PIN-kodene er ikke like."
+  },
+  "users": {
+    "title": "Brukere",
+    "new_user": "+ Ny bruker",
+    "table": {
+      "user": "Bruker",
+      "username": "Brukernavn",
+      "role": "Rolle",
+      "personality": "Personlighet",
+      "vpn_access": "Ekstern tilgang",
+      "status": "Status",
+      "actions": "Handlinger"
+    },
+    "actions": {
+      "edit": "Rediger",
+      "pin": "PIN",
+      "vpn": "VPN",
+      "voice": "Stemme",
+      "delete": "Slett"
+    },
+    "status": {
+      "active": "Aktiv",
+      "inactive": "Deaktivert"
+    },
+    "vpn_access": {
+      "local_only": "Kun lokal",
+      "ai_only": "Bare AI",
+      "full_access": "Full tilgang"
+    },
+    "create": {
+      "title": "Ny bruker",
+      "display_name": "Visningsnavn",
+      "username": "Brukernavn",
+      "role": "Rolle",
+      "avatar": "Avatar",
+      "pin": "PIN (min. 4 siffer)",
+      "submit": "Opprett",
+      "cancel": "Avbryt",
+      "error_generic": "Noe gikk galt."
+    },
+    "edit": {
+      "title": "Rediger — {{name}}",
+      "display_name": "Visningsnavn",
+      "role": "Rolle",
+      "personality": "Personlighet",
+      "avatar": "Avatar",
+      "vpn_label": "Ekstern tilgang (VPN)",
+      "vpn_local_only": "Kun lokal — ingen ekstern tilgang",
+      "vpn_ai_only": "Bare AI — kun AI-samtale eksternt, ikke smarthus",
+      "vpn_full_access": "Full tilgang — alt tilgjengelig eksternt",
+      "active_label": "Aktiv",
+      "save": "Lagre",
+      "cancel": "Avbryt",
+      "error_generic": "Noe gikk galt."
+    },
+    "pin_modal": {
+      "title": "Bytt PIN — {{name}}",
+      "new_pin": "Ny PIN (min. 4 siffer)",
+      "submit": "Bytt PIN",
+      "cancel": "Avbryt",
+      "error_generic": "Noe gikk galt."
+    },
+    "delete_modal": {
+      "title": "Slett bruker",
+      "confirm": "Er du sikker på at du vil slette {{name}}? Dette kan ikke angres.",
+      "submit": "Ja, slett",
+      "cancel": "Avbryt",
+      "error_generic": "Noe gikk galt."
+    },
+    "vpn_modal": {
+      "title": "VPN — {{name}}",
+      "active_profiles": "Aktive profiler",
+      "delete": "Slett",
+      "new_device_label": "Ny enhet (f.eks. «telefon» eller «nettbrett»)",
+      "new_device_ph": "telefon",
+      "generating": "Genererer…",
+      "generate_qr": "Generer QR",
+      "scan_hint": "Scan med WireGuard-appen — vises kun nå.",
+      "show_config": "Vis konfig-tekst",
+      "close": "Lukk",
+      "error_remove": "Fjerning feilet.",
+      "error_generic": "Noe gikk galt."
+    },
+    "voice_modal": {
+      "title": "Stemme — {{name}}",
+      "status": "Status",
+      "checking": "Sjekker…",
+      "enrolled": "✓ Stemmeprofil registrert",
+      "not_enrolled": "Ingen stemmeprofil registrert",
+      "delete": "Slett",
+      "instructions_title": "Slik registrerer du stemme:",
+      "instruction_1": "Klikk «Start opptak»",
+      "instruction_2": "Les setningene under høyt og tydelig",
+      "instruction_3": "Klikk «Stopp» eller vent til timeren er ferdig",
+      "recording": "⏺ Tar opp… {{elapsed}}s / {{max}}s",
+      "processing": "Behandler lyd…",
+      "start": "Start opptak",
+      "re_record": "Ta opp ny stemme",
+      "stop": "Stopp",
+      "registered": "Stemme registrert!",
+      "close": "Lukk",
+      "error_mic": "Feil: Kunne ikke åpne mikrofonen. Sjekk at nettleseren har tillatelse.",
+      "error_record": "Innspilling feilet. Prøv igjen eller restart voice bridge.",
+      "error_delete": "Kunne ikke slette stemmeprofil."
+    },
+    "tools": {
+      "title": "Tool-tillatelser per rolle",
+      "description": "Styr hvilke verktøy Kåre kan bruke per brukerrolle. Endringer trer i kraft umiddelbart.",
+      "col_tool": "Verktøy",
+      "always_included": "Alltid inkludert (Kåres egne): selvbilde, verden, brukerprofil, les_indre_tanker, les_tankehistorikk",
+      "loading": "Laster tool-tillatelser…",
+      "save": "Lagre endringer",
+      "rollback": "Tilbakestill til standard",
+      "saved": "Lagret.",
+      "error_save": "Feil ved lagring.",
+      "rolled_back": "Tilbakestilt til standard.",
+      "labels": {
+        "styr_enhet": "Styr enhet (HA)",
+        "les_ha": "Les HA-status",
+        "timer": "Timer / klokke",
+        "hent_yr_varsel": "Vær (met.no)",
+        "library": "Frk. Library (wiki)",
+        "library_online": "Online LLM",
+        "søk_nett": "Nettsøk",
+        "kare_image": "Bildegenerering",
+        "se_bilder": "Se bilder",
+        "media": "Media (Plex / radio)",
+        "notat": "Notater",
+        "announce": "Kunngjøring (tale)",
+        "reason_freely": "Fri resonnering",
+        "minne": "Hukommelse (LTM)",
+        "kamera": "Kamera (Frigate)",
+        "søk_i_vaktmester": "Vaktmester-søk",
+        "les_møte": "Les møtereferater",
+        "pettersmart": "Pettersmart",
+        "utforsk_kode": "Utforsk kode",
+        "inspiser_system": "Inspiser system",
+        "ssh_kommando": "SSH-kommando",
+        "local_kommando": "Lokal kommando",
+        "restart_docker_container": "Restart Docker"
+      }
+    }
+  },
+  "user": {
+    "change_pin": "Bytt PIN",
+    "pin_changed": "PIN byttet!",
+    "admin_panel": "Adminpanel",
+    "logout": "Logg ut",
+    "new_pin": "Ny PIN",
+    "repeat_pin": "Gjenta PIN",
+    "save": "Lagre",
+    "saving": "Lagrer…",
+    "close": "Lukk",
+    "cancel": "Avbryt",
+    "error": "Noe gikk galt.",
+    "error_pin_short": "PIN må være minst 4 siffer.",
+    "error_pin_mismatch": "PIN-kodene er ikke like."
+  },
+  "aliases": {
+    "title": "Aliaser",
+    "description": "Norske navn som Kåre gjenkjenner for Home Assistant-enheter og rom. Endringer aktiveres umiddelbart.",
+    "card_description": "Tre seksjoner: Aliaser (fritekst → entity_id), Rom (romnavn → synonymer), Romenheter (rom → entity_id-liste).",
+    "tab_aliases": "Aliaser",
+    "tab_rooms": "Rom",
+    "tab_room_entities": "Romenheter",
+    "search_ph": "Søk i aliaser…",
+    "col_key": "Norsk tekst",
+    "col_entity": "Entity ID",
+    "empty": "Ingen aliaser funnet.",
+    "save_btn": "Lagre aliaser",
+    "hot_reload_note": "Endringer aktiveres umiddelbart (hot-reload) — ingen restart nødvendig.",
+    "room_col_room": "Romnavn",
+    "room_col_synonyms": "Synonymer (kommaseparert)",
+    "room_new_ph": "Nytt romnavn…",
+    "room_save_btn": "Lagre rom",
+    "entities_save_btn": "Lagre enhetslister"
+  },
+  "nodes": {
+    "title": "Noder",
+    "card_title": "Medienoder og høyttalere",
+    "card_description": "Konfigurasjon av alle TTS-enheter (Nest Hub, Chromecast, ESP32). Lagres i configs/nodes.yaml.",
+    "new_node": "Ny node",
+    "empty": "Ingen noder konfigurert ennå.",
+    "delete_confirm": "Slett node «{{key}}»?",
+    "edit": "Rediger",
+    "delete": "Slett",
+    "enabled": "Aktivert",
+    "disabled": "Deaktivert",
+    "modal": {
+      "edit_title": "Rediger node",
+      "new_title": "Ny node",
+      "node_id": "Node-ID (unik nøkkel)",
+      "room": "Romnavn",
+      "description": "Beskrivelse",
+      "type": "Type",
+      "entity_id": "Entity ID",
+      "host": "Host (IP)",
+      "api_port": "API-port",
+      "default_user": "Standard bruker (valgfritt)",
+      "cancel": "Avbryt",
+      "save": "Lagre",
+      "mic_enabled": "Mikrofon (mic inn)"
+    }
+  },
+  "tools": {
+    "title": "Verktøy",
+    "timers_title": "Aktive timere",
+    "timers_empty": "Ingen aktive timere",
+    "repeat": {
+      "hourly": "hver time",
+      "daily": "daglig",
+      "weekdays": "hverdager",
+      "weekend": "helg",
+      "weekly": "ukentlig"
+    },
+    "timer_fires": "fyrer",
+    "timer_notify": "varsler",
+    "firing_soon": "fyrer snart…",
+    "log_title": "Kjøringslogg",
+    "log_loading": "Laster…",
+    "log_empty": "Ingen tool-kall ennå",
+    "unknown_event": "ukjent"
+  },
+  "cameras": {
+    "title": "Kamera-innstillinger",
+    "description": "Velg hvilke kameraer og objekter Kåre skal analysere automatisk.",
+    "global_title": "Aktiver automatisk hendelsesanalyse",
+    "global_off_hint": "Når av: Kåre analyserer ingen kamerahendelser automatisk.",
+    "storage_title": "Lagringsgrenser",
+    "storage_snapshot": "Snapshot-mappe (MB)",
+    "storage_log": "Analyse-logg (MB)",
+    "storage_snapshot_hint": "0 = deaktivert · min 100 · maks 10 000",
+    "storage_log_hint": "0 = deaktivert · min 10 · maks 1 000",
+    "storage_save": "Lagre lagringsgrenser",
+    "storage_saving": "Lagrer…",
+    "storage_saved": "Lagret ✓",
+    "storage_error_invalid": "Ugyldige verdier. Snapshot: 0 eller 100–10000 MB. Logg: 0 eller 10–1000 MB.",
+    "loading": "Laster kameraer…",
+    "role_label": "Rolle",
+    "roles": {
+      "front_door": "Inngangsdør",
+      "driveway": "Innkjørsel",
+      "road_facing": "Mot vei",
+      "garden": "Hage",
+      "garage": "Garasje",
+      "indoor": "Innendørs",
+      "custom_prefix": "Egendefinert"
+    },
+    "col_object": "Objekt",
+    "col_analyze": "Analyser",
+    "col_min_confidence": "Min. sikkerhet",
+    "col_min_duration": "Min. varighet (sek)",
+    "col_announce": "Kunngjør",
+    "save": "Lagre",
+    "saving": "Lagrer…",
+    "saved": "Lagret ✓",
+    "error_load": "Kunne ikke hente kamerainnstillinger.",
+    "error_save": "Kunne ikke lagre kamera {{id}}.",
+    "error_save_global": "Kunne ikke lagre global innstilling: {{msg}}"
+  },
+  "home": {
+    "img_alt": "Generert bilde",
+    "close": "Lukk",
+    "download": "Last ned",
+    "trace_steps": "{{count}} steg",
+    "voice_start": "Start tale",
+    "voice_stop": "Stopp opptak",
+    "voice_transcribing": "Transkriberer…",
+    "voice_disabled": "Tale er deaktivert (STT er skrudd av under Innstillinger)",
+    "greeting": "Hei! Hva kan jeg hjelpe deg med?",
+    "error": "Beklager, noe gikk galt. Prøv igjen.",
+    "placeholder": "Skriv noe… (Shift+Enter for ny linje)",
+    "attach_title": "Legg ved bilde",
+    "drop_hint": "Slipp for å legge ved bilde",
+    "miss_kare_hint": "Start med <0>Miss Kåre</0> for å snakke direkte med henne",
+    "send": "Send"
+  },
+  "reflections": {
+    "reflection_tab": "Refleksjonsmøte",
+    "dev_tab": "Utviklingsmøte",
+    "reflection_tab_sub": "04:00 · Miss Kåre",
+    "dev_tab_sub": "05:30 · Pettersmart",
+    "meetings_label": "Møter",
+    "no_dates": "Ingen ennå",
+    "loading": "Laster…",
+    "empty_reflection_no_meetings": "Ingen refleksjonsmøter ennå. Bruk Start-knappen over eller vent til kl. 04:00.",
+    "empty_reflection_select": "Velg et møte og skriv inn PIN for å se innholdet.",
+    "empty_dev_no_meetings": "Ingen utviklingsmøter ennå.",
+    "topic_title": "Tema for neste møte",
+    "topic_ph": "Foreslå et tema eller fokuspunkt til neste møte…",
+    "topic_save": "Lagre",
+    "comment_title": "Admin-kommentar",
+    "comment_ph": "Legg til en kommentar til dette møtet…",
+    "comment_save": "Lagre",
+    "pin_subtitle": "Skriv inn {{username}} sin PIN for å se møtet",
+    "pin_error_short": "PIN må være minst 4 tegn",
+    "pin_cancel": "Avbryt",
+    "pin_open": "Åpne",
+    "pin_wrong": "Feil PIN – prøv igjen",
+    "pin_retry": "↩",
+    "start_reflection": "Start refleksjonsmøter nå",
+    "start_dev": "Start utviklingsmøte nå",
+    "running": "Kjører",
+    "source_auto": "automatisk (timer)",
+    "source_manual": "manuell",
+    "started_at": "startet {{time}}",
+    "round": "Runde {{round}}/{{max}}",
+    "waiting_model": "Venter på modell…",
+    "settings_title": "Innstillinger",
+    "settings_toggle": "Vis innstillinger",
+    "settings_hide": "Skjul innstillinger",
+    "settings_save": "Lagre",
+    "settings_saved": "Lagret",
+    "settings_enabled": "Refleksjonsmøte aktivert",
+    "settings_interval": "Jang-refleksjonsintervall (sekunder)",
+    "settings_max_rounds": "Maks runder",
+    "settings_kare_tokens": "Kåre — maks tokens",
+    "settings_miss_kare_tokens": "Miss Kåre — maks tokens",
+    "settings_kare_invest_tokens": "Kåre — undersøkelsestokens",
+    "settings_max_invest_rounds": "Maks undersøkelsesrunder",
+    "settings_leder_preset": "Møteleder-stil",
+    "settings_leder_custom": "Egendefinert møteleder-prompt",
+    "settings_leder_custom_ph": "Skriv møtelederens instruksjoner her…",
+    "settings_leder_default_label": "Forhåndsvisning av valgt stil:",
+    "leder_preset_standard": "Standard",
+    "leder_preset_streng": "Streng",
+    "leder_preset_utforskende": "Utforskende",
+    "leder_preset_analytisk": "Analytisk",
+    "leder_preset_utfordrende": "Utfordrende",
+    "leder_preset_egendefinert": "Egendefinert"
+  },
+  "user_sidebar": {
+    "home": "Kåre",
+    "reflections": "Refleksjoner",
+    "settings": "Innstillinger",
+    "change_pin": "Bytt PIN",
+    "admin_panel": "Adminpanel",
+    "logout": "Logg ut"
+  },
+  "user_reflections": {
+    "title": "Refleksjonsmøter",
+    "subtitle": "Nattlige samtaler mellom Kåre og Miss Kåre om din dag",
+    "meetings_label": "Møter",
+    "no_reflections": "Ingen refleksjonsmøter ennå",
+    "select_reflection": "Velg et møte til venstre for å lese det",
+    "loading": "Laster…",
+    "pin_title": "Lås opp møtet",
+    "pin_hint": "Skriv inn din PIN for å se innholdet",
+    "pin_cancel": "Avbryt",
+    "pin_open": "Åpne",
+    "pin_error": "Feil PIN — prøv igjen",
+    "pin_cached": "PIN lagret for denne sesjonen"
+  },
+  "user_settings": {
+    "title": "Innstillinger",
+    "subtitle": "Tilpass utseendet og atferden til Kåre for deg",
+    "section_appearance": "Utseende",
+    "accent_label": "Temafarger",
+    "accent_hint": "Velg en aksentfarge for meldingsbobler og knapper. × tilbakestiller til rolle-standard.",
+    "accent_default": "Standard",
+    "font_size_label": "Tekststørrelse",
+    "font_size_hint": "Påvirker tekststørrelsen i chat-bobler og tekstfeltet",
+    "font_small": "Liten",
+    "font_normal": "Normal",
+    "font_large": "Stor",
+    "animations_label": "Animasjoner",
+    "animations_hint": "Standard = boble-innfading og glow-effekter. Minimal = rent og raskt.",
+    "animations_standard": "Standard",
+    "animations_minimal": "Minimal",
+    "section_chat": "Chat-atferd",
+    "tts_autoplay_label": "Automatisk avspilling",
+    "tts_autoplay_hint": "Spill av Kåres svar som tale automatisk etter hver melding",
+    "show_trace_label": "Vis trinn-info",
+    "show_trace_hint": "Vis utvidede steg (tool-kall) under Kåres svar som standard",
+    "section_misskare": "Miss Kåre",
+    "mk_panel_label": "Miss Kåres kommentarer",
+    "mk_panel_hint": "Vis Miss Kåres sidekommentarer i et panel etter samtaler",
+    "section_preview": "Forhåndsvisning",
+    "preview_user": "Slik ser meldingene dine ut nå",
+    "preview_kare": "Og slik svarer Kåre deg",
+    "reset": "Tilbakestill til standard"
+  }
+}

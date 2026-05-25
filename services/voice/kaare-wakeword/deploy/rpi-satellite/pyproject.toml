@@ -1,0 +1,30 @@
+[project]
+name = "kaare-satellite"
+version = "2.0.0"
+description = "Kåre voice satellite — RPi deployment with ReSpeaker HAT"
+requires-python = ">=3.11"
+dependencies = [
+    "websockets>=13.0",
+    "numpy>=1.24,<2",
+    "sounddevice>=0.4",
+    "ai-edge-litert>=1.0",
+    "librosa>=0.10",
+    "soxr>=1.0",
+    "webrtcvad-wheels>=2.0",
+    "aiohttp>=3.9",
+    "zeroconf>=0.100",
+]
+
+[project.optional-dependencies]
+rpi = ["rpi-lgpio>=0.4"]
+silero = ["onnxruntime>=1.17"]
+
+[project.scripts]
+kaare-satellite = "satellite.pipeline:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["satellite"]

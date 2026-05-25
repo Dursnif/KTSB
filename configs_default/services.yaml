@@ -1,0 +1,69 @@
+embedding:
+  device: torch
+  hf_model: BAAI/bge-m3
+  max_length: 512
+  model_path: /kaare/models/bge-m3
+  port: 11446
+frigate:
+  camera_names: {}
+  snapshot_timeout: 15
+  timeout: 10
+  url: ""
+home_assistant:
+  log_bridge:
+    reconnect_delay: 10
+    subscribe_events:
+    - state_changed
+    - call_service
+  timeout: 5
+  url: ""
+internal:
+  agents: http://kaare-agents:11450
+  ha_gateway: http://kaare-ha-gateway:8002
+  semantic_embed: http://kaare-memory-embed:11500
+  kaare_api: http://kaare-api:8000
+  nl_parser: http://kaare-api:8000
+  voice_bridge: http://kaare-voice:8011
+media:
+  mpd:
+    host: 127.0.0.1
+    port: 6600
+  plex:
+    timeout: 10
+    url: ""
+mqtt:
+  client_id: ''
+  host: ""
+  port: 1883
+  reconnect_interval: 30
+  tls_enabled: false
+  topic_prefix: frigate
+ollama:
+  embed: http://kaare-embedding:11446
+  kare: http://ollama:11434
+  library: http://ollama:11434
+  miss_kare: http://ollama:11434
+  proxy: http://ollama:11434
+storage:
+  qdrant: http://qdrant:6333
+voice:
+  stt:
+    backend: faster_whisper
+    backup_model: /kaare/models/voice/whisper-v3
+    device: cpu
+    faster_whisper_compute_type: int8
+    faster_whisper_model: large-v3
+    model_dir: /kaare/models/voice/nb-whisper-large-ov
+  tts:
+    sample_rate: 22050
+    voice: /kaare/models/voice/piper/no_NO-talesyntese-medium.onnx
+  venv_python: python3
+web_search:
+  brave_country: 'NO'
+  brave_search_lang: nb
+  content_max: 3000
+  fallback: ddg
+  fetch_count: 10
+  max_results: 3
+  provider: ddg
+  searxng_url: ''

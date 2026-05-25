@@ -1,0 +1,475 @@
+"""
+Kåre agent-server – Miss.Library og Pettersmart
+Port 11450.
+
+Miss Library: queue-based LLM + Qdrant wiki search (uses library model, port 11447)
+Pettersmart:  tool-using agent (uses miss_kare model, port 11445 — shared with Miss Kåre)
+"""
+
+import asyncio
+import logging
+import sys
+import time
+import uuid
+from pathlib import Path
+
+import httpx
+from fastapi import FastAPI
+from pydantic import BaseModel
+from qdrant_client import QdrantClient
+from qdrant_client.models import (
+    FieldCondition, Filter, Fusion, FusionQuery, MatchValue,
+    Prefetch, SparseVector as QSparseVector,
+)
+
+sys.path.insert(0, "/kaare")
+from kaare_core.agents.pettersmart.tools import (
+    ask_with_tools, PETTERSMART_URL, PETTERSMART_MODEL,
+    PETTERSMART_TOOLS, UNDERSØKER_TOOLS, KRITIKER_TOOLS, ANALYTIKER_TOOLS,
+    MEMORY_PATH as PETTERSMART_MEMORY_PATH,
+)
+from kaare_core.config import get_model as _cfg_model, get_llm_config as _llm, is_agent_tool_enabled
+from kaare_core.llm_fallback import is_fallback_active
+from adapters.llm_adapter import ask_llm_cloud
+
+# ── Konfig ───────────────────────────────────────────────────────────────────
+
+from kaare_core.config import get_service as _svc
+
+_lib_cfg    = _llm("library")
+OLLAMA_URL  = _lib_cfg["base_url"] + "/api/chat"
+AGENT_MODEL = _cfg_model("library")
+EMBED_URL        = _svc("ollama", "embed") + "/api/embed"
+EMBED_HYBRID_URL = _svc("ollama", "embed") + "/api/embed/hybrid"
+EMBED_MODEL = _cfg_model("embed")
+QDRANT_URL  = _svc("storage", "qdrant")
+WIKI_COLL   = "wiki_no"
+WIKI_TOP_K  = 8
+TIMEOUT     = _lib_cfg["timeout"]
+
+AGENTS_DIR   = Path(__file__).parent.parent.parent / "kaare_core" / "agents"
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)-7s %(message)s")
+log = logging.getLogger("agents")
+
+# ── Kø og app ────────────────────────────────────────────────────────────────
+
+_queue: asyncio.Queue = asyncio.Queue()
+app = FastAPI(title="Kåre agents", version="2.0")
+
+# ── Pettersmart job store (in-memory, ephemeral) ──────────────────────────────
+# job_id → {"status": "running"|"done"|"error", "result": str|None, "created_at": float}
+_JOB_TTL = 1800  # 30 minutes
+_jobs: dict[str, dict] = {}
+
+# ── Personligheter ───────────────────────────────────────────────────────────
+
+def _load_personality(agent: str, role: str = "standard") -> str:
+    if role and role != "standard":
+        path = AGENTS_DIR / agent / f"personlighet_{role}.md"
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+    path = AGENTS_DIR / agent / "personlighet.md"
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    return f"Du er {agent}."
+
+
+def _load_pettersmart_memory() -> str:
+    try:
+        content = PETTERSMART_MEMORY_PATH.read_text(encoding="utf-8").strip()
+        return content if content else ""
+    except Exception:
+        return ""
+
+
+def _tools_for_role(role: str) -> list:
+    return {
+        "undersøker": UNDERSØKER_TOOLS,
+        "kritiker":   KRITIKER_TOOLS,
+        "analytiker": ANALYTIKER_TOOLS,
+    }.get(role, PETTERSMART_TOOLS)
+
+# ── Qdrant / embedding ───────────────────────────────────────────────────────
+
+_qdrant = QdrantClient(url=QDRANT_URL)
+
+async def _embed(text: str) -> list[float]:
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        r = await client.post(EMBED_URL, json={"model": EMBED_MODEL, "input": text})
+        r.raise_for_status()
+        return r.json()["embeddings"][0]
+
+
+async def _embed_hybrid(text: str) -> tuple[list[float], dict]:
+    """Returns (dense_vector, sparse_dict) from the BGE-M3 hybrid endpoint."""
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        r = await client.post(EMBED_HYBRID_URL, json={"model": EMBED_MODEL, "input": text})
+        r.raise_for_status()
+        data = r.json()
+        return data["dense"][0], data["sparse"][0]
+
+
+async def _wiki_search(query: str) -> list[dict]:
+    dense, sparse = await _embed_hybrid(query)
+    sparse_vec = QSparseVector(indices=sparse["indices"], values=sparse["values"])
+    hits = await asyncio.to_thread(
+        _qdrant.query_points,
+        collection_name=WIKI_COLL,
+        prefetch=[
+            Prefetch(query=dense,       using="dense",  limit=WIKI_TOP_K * 4),
+            Prefetch(query=sparse_vec,  using="sparse", limit=WIKI_TOP_K * 4),
+        ],
+        query=FusionQuery(fusion=Fusion.RRF),
+        limit=WIKI_TOP_K,
+        with_payload=True,
+    )
+    return [
+        {"title": h.payload.get("title", ""), "text": h.payload.get("text", "")}
+        for h in hits.points
+    ]
+
+
+async def _wiki_fetch_article(title: str, max_chars: int = 8000) -> dict:
+    """Fetch all chunks for a wiki article title, sorted by point ID."""
+    scroll_filter = Filter(must=[FieldCondition(key="title", match=MatchValue(value=title))])
+    points, _ = await asyncio.to_thread(
+        _qdrant.scroll,
+        collection_name=WIKI_COLL,
+        scroll_filter=scroll_filter,
+        limit=300,
+        with_payload=True,
+        with_vectors=False,
+    )
+    if not points:
+        return {"title": title, "text": "", "chunk_count": 0}
+    points.sort(key=lambda p: p.payload.get("chunk_index", p.id))
+    full_text = "\n\n".join(p.payload.get("text", "") for p in points)
+    if len(full_text) > max_chars:
+        full_text = full_text[:max_chars] + "…"
+    return {"title": title, "text": full_text, "chunk_count": len(points)}
+
+# ── Miss Library LLM-kall (serialisert via kø) ───────────────────────────────
+
+async def _llm_call(system: str, user: str) -> str:
+    future: asyncio.Future = asyncio.get_event_loop().create_future()
+    await _queue.put((system, user, future))
+    return await future
+
+async def _queue_worker():
+    while True:
+        system, user, future = await _queue.get()
+        try:
+            payload = {
+                "model": AGENT_MODEL,
+                "stream": _lib_cfg.get("stream", False),
+                "options": {"temperature": 0.3, "num_ctx": 8192, "num_predict": 600},
+                "messages": [
+                    {"role": "system", "content": f"/no_think\n{system}"},
+                    {"role": "user",   "content": user},
+                ],
+            }
+            if "think" in _lib_cfg:
+                payload["think"] = _lib_cfg["think"]
+            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+                r = await client.post(OLLAMA_URL, json=payload)
+                r.raise_for_status()
+                content = r.json().get("message", {}).get("content", "").strip()
+                future.set_result(content)
+        except Exception as e:
+            log.error("LLM-kall feilet: %s", e)
+            future.set_result(f"[Agent utilgjengelig: {e}]")
+        finally:
+            _queue.task_done()
+
+async def _job_cleanup():
+    """Remove completed/errored jobs older than _JOB_TTL seconds."""
+    while True:
+        await asyncio.sleep(300)
+        cutoff = time.monotonic() - _JOB_TTL
+        expired = [jid for jid, j in _jobs.items() if j["created_at"] < cutoff]
+        for jid in expired:
+            del _jobs[jid]
+        if expired:
+            log.info("[jobs] Cleaned up %d expired jobs", len(expired))
+
+
+@app.on_event("startup")
+async def _startup():
+    asyncio.create_task(_queue_worker())
+    asyncio.create_task(_job_cleanup())
+    log.info("Agent-server ready. Miss Library queue worker and job cleanup started.")
+
+# ── API-modeller ──────────────────────────────────────────────────────────────
+
+class AskRequest(BaseModel):
+    question: str
+
+class WebSource(BaseModel):
+    title: str
+    url: str
+    content: str = ""
+
+class WebAskRequest(BaseModel):
+    question: str
+    sources: list[WebSource]
+
+class TaskRequest(BaseModel):
+    task: str
+    role: str = "standard"    # "standard" | "undersøker" | "kritiker" | "analytiker"
+    context: str = ""         # optional extra context injected before the task
+
+class AskResponse(BaseModel):
+    answer: str
+    agent: str
+
+class ArticleRequest(BaseModel):
+    title: str
+    max_chars: int = 8000
+
+class ArticleResponse(BaseModel):
+    title: str
+    text: str
+    chunk_count: int
+
+class JobResponse(BaseModel):
+    job_id: str
+    status: str          # "running" | "done" | "error" | "cancelled"
+    result: str | None = None
+
+class InjectRequest(BaseModel):
+    comment: str
+
+# ── Miss Library ──────────────────────────────────────────────────────────────
+
+@app.post("/ask/miss_library", response_model=AskResponse)
+async def ask_miss_library(req: AskRequest):
+    log.info("[Miss.Library] %s", req.question[:80])
+    system = _load_personality("miss_library")
+
+    chunks = await _wiki_search(req.question) if is_agent_tool_enabled("miss_library", "wiki", default=False) else []
+    if chunks:
+        # Find the most-cited article in top-K results, with keyword overlap as tiebreaker.
+        # Chunks from the same article can be spread across the ranking, so frequency signals
+        # true relevance better than a single chunk's rank position.
+        title_freq: dict[str, int] = {}
+        for c in chunks:
+            title_freq[c["title"]] = title_freq.get(c["title"], 0) + 1
+
+        query_words = set(req.question.lower().split())
+
+        def _article_score(title: str) -> tuple[int, int]:
+            freq = title_freq[title]
+            kw = sum(1 for w in query_words if len(w) > 3 and w in title.lower())
+            return (freq, kw)
+
+        best_title = max(title_freq, key=_article_score)
+        best_article = await _wiki_fetch_article(best_title, max_chars=4000)
+
+        # Best article goes first so the LLM sees the most relevant content immediately.
+        ctx_parts: list[str] = []
+        if best_article["text"]:
+            ctx_parts.append(f"[{best_title}]\n{best_article['text']}")
+
+        seen: set[str] = {best_title}
+        for c in chunks:
+            if c["title"] not in seen:
+                ctx_parts.append(f"[{c['title']}]\n{c['text']}")
+                seen.add(c["title"])
+
+        wiki_ctx = "\n\n".join(ctx_parts)
+        user_msg = f"Wiki-utdrag:\n{wiki_ctx}\n\nSpørsmål: {req.question}"
+    else:
+        user_msg = f"Spørsmål: {req.question}\n\n(Ingen wiki-utdrag funnet.)"
+
+    answer = await _llm_call(system, user_msg)
+    log.info("[Miss.Library] svar: %s", answer[:80])
+    return AskResponse(answer=answer, agent="miss_library")
+
+
+@app.post("/ask/miss_library/web", response_model=AskResponse)
+async def ask_miss_library_web(req: WebAskRequest):
+    """Web search synthesis — Library answers from fetched web sources, no wiki lookup."""
+    log.info("[Miss.Library/web] %s", req.question[:80])
+    system = _load_personality("miss_library")
+
+    lines = []
+    for i, s in enumerate(req.sources, 1):
+        content = s.content.strip()
+        if content:
+            lines.append(f"[{i}] {s.title} — {s.url}\n{content}")
+        else:
+            lines.append(f"[{i}] {s.title} — {s.url}\n(Innhold utilgjengelig.)")
+
+    sources_text = "\n\n".join(lines) if lines else "(Ingen kilder hentet.)"
+    user_msg = (
+        f"Nettkilder:\n{sources_text}\n\n"
+        f"Spørsmål: {req.question}\n\n"
+        "Svar KUN basert på kildene over. "
+        "Hvis svaret ikke finnes, si det klart og oppgi URL-ene."
+    )
+
+    answer = await _llm_call(system, user_msg)
+    log.info("[Miss.Library/web] svar: %s", answer[:80])
+    return AskResponse(answer=answer, agent="miss_library")
+
+@app.post("/ask/miss_library/cloud", response_model=AskResponse)
+async def ask_miss_library_cloud(req: AskRequest):
+    """Library asks the configured cloud LLM — for questions beyond local wiki/web."""
+    log.info("[Miss.Library/cloud] %s", req.question[:80])
+    system = _load_personality("miss_library")
+    prompt = f"{system.strip()}\n\nSpørsmål: {req.question}"
+    result = await ask_llm_cloud(prompt)
+    if not result.get("ok"):
+        answer = f"Online-modellen svarte ikke ({result.get('error', 'ukjent feil')})."
+    else:
+        answer = result["text"]
+    log.info("[Miss.Library/cloud] svar: %s", answer[:80])
+    return AskResponse(answer=answer, agent="miss_library")
+
+# ── Wiki article fetch ────────────────────────────────────────────────────────
+
+@app.post("/wiki/article", response_model=ArticleResponse)
+async def wiki_article(req: ArticleRequest):
+    """Return all chunks of a wiki article concatenated in order."""
+    result = await _wiki_fetch_article(req.title, req.max_chars)
+    return result
+
+# ── Pettersmart ───────────────────────────────────────────────────────────────
+
+@app.post("/ask/pettersmart", response_model=AskResponse)
+async def ask_pettersmart(req: TaskRequest):
+    """
+    Receives a task from Kåre and lets Pettersmart solve it step by step.
+    Returns unavailable while Kåre is in 9B fallback mode (shared GPU).
+    """
+    if is_fallback_active():
+        log.info("[Pettersmart] reservemodus aktiv — avviser forespørsel")
+        return AskResponse(
+            answer="[Pettersmart er ikke tilgjengelig akkurat nå — Kåre bruker reservemodellen. Prøv igjen om litt.]",
+            agent="pettersmart",
+        )
+
+    log.info("[Pettersmart] rolle=%s oppgave: %s", req.role, req.task[:120])
+    system = _load_personality("pettersmart", req.role)
+    memory = _load_pettersmart_memory()
+    if memory:
+        system = system + f"\n\n--- DIN HUKOMMELSE ---\n{memory}"
+    task_content = f"{req.context}\n\n{req.task}".strip() if req.context else req.task
+
+    messages = [
+        {"role": "system", "content": f"/no_think\n{system}"},
+        {"role": "user",   "content": task_content},
+    ]
+
+    answer = await ask_with_tools(
+        messages=messages,
+        url=PETTERSMART_URL,
+        model=PETTERSMART_MODEL,
+        tools=_tools_for_role(req.role),
+    )
+    log.info("[Pettersmart] svar: %s", answer[:80])
+    return AskResponse(answer=answer, agent="pettersmart")
+
+# ── Pettersmart async jobs ────────────────────────────────────────────────────
+
+async def _run_pettersmart_job(job_id: str, task: str, role: str = "standard", context: str = "") -> None:
+    """Background task — runs Pettersmart and stores result in _jobs."""
+    system = _load_personality("pettersmart", role)
+    memory = _load_pettersmart_memory()
+    if memory:
+        system = system + f"\n\n--- DIN HUKOMMELSE ---\n{memory}"
+    task_content = f"{context}\n\n{task}".strip() if context else task
+    messages = [
+        {"role": "system", "content": f"/no_think\n{system}"},
+        {"role": "user",   "content": task_content},
+    ]
+    job_state = _jobs.get(job_id, {})
+    try:
+        answer = await ask_with_tools(
+            messages=messages,
+            url=PETTERSMART_URL,
+            model=PETTERSMART_MODEL,
+            job_state=job_state,
+            tools=_tools_for_role(role),
+        )
+        if job_id in _jobs:
+            _jobs[job_id]["status"] = "done"
+            _jobs[job_id]["result"] = answer
+        log.info("[Pettersmart job %s] done: %s", job_id[:8], answer[:80])
+    except asyncio.CancelledError:
+        if job_id in _jobs:
+            _jobs[job_id]["status"] = "cancelled"
+            _jobs[job_id]["result"] = "[Job cancelled by user]"
+        log.info("[Pettersmart job %s] cancelled", job_id[:8])
+        raise
+    except Exception as e:
+        if job_id in _jobs:
+            _jobs[job_id]["status"] = "error"
+            _jobs[job_id]["result"] = f"[Job failed: {e}]"
+        log.error("[Pettersmart job %s] error: %s", job_id[:8], e)
+
+
+@app.post("/jobs/pettersmart", response_model=JobResponse)
+async def start_pettersmart_job(req: TaskRequest):
+    """
+    Fire-and-forget: start a Pettersmart job and return job_id immediately.
+    Kåre can monitor with GET /jobs/pettersmart/{job_id} while using its own tools.
+    """
+    if is_fallback_active():
+        return JobResponse(
+            job_id="",
+            status="error",
+            result="[Pettersmart unavailable — Kåre is in fallback mode]",
+        )
+    job_id = str(uuid.uuid4())
+    _jobs[job_id] = {"status": "running", "result": None, "created_at": time.monotonic()}
+    task = asyncio.create_task(_run_pettersmart_job(job_id, req.task, req.role, req.context))
+    _jobs[job_id]["task"] = task  # stored for cancellation via task.cancel()
+    log.info("[Pettersmart job %s] started: %s", job_id[:8], req.task[:80])
+    return JobResponse(job_id=job_id, status="running")
+
+
+@app.get("/jobs/pettersmart/{job_id}", response_model=JobResponse)
+async def get_pettersmart_job(job_id: str):
+    """Poll job status. Returns status=running until done/error/cancelled."""
+    job = _jobs.get(job_id)
+    if job is None:
+        return JobResponse(job_id=job_id, status="error", result="[Job not found — may have expired]")
+    return JobResponse(job_id=job_id, status=job["status"], result=job["result"])
+
+
+@app.delete("/jobs/pettersmart/{job_id}", response_model=JobResponse)
+async def cancel_pettersmart_job(job_id: str):
+    """Cancel a running job. Cancels the asyncio Task — closes httpx connection — Ollama stops generating."""
+    job = _jobs.get(job_id)
+    if job is None:
+        return JobResponse(job_id=job_id, status="error", result="[Job not found — may have expired]")
+    task = job.get("task")
+    if task and not task.done():
+        task.cancel()
+        log.info("[Pettersmart job %s] cancellation requested via DELETE", job_id[:8])
+    return JobResponse(job_id=job_id, status=job["status"], result=job.get("result"))
+
+
+@app.patch("/jobs/pettersmart/{job_id}", response_model=JobResponse)
+async def inject_pettersmart_comment(job_id: str, req: InjectRequest):
+    """Inject a user comment into a running job. Pettersmart sees it at the next tool round."""
+    job = _jobs.get(job_id)
+    if job is None:
+        return JobResponse(job_id=job_id, status="error", result="[Job not found — may have expired]")
+    if job.get("status") != "running":
+        return JobResponse(job_id=job_id, status=job["status"], result="[Job is not running — cannot inject comment]")
+    job["injected"] = req.comment
+    log.info("[Pettersmart job %s] comment injected: %s", job_id[:8], req.comment[:60])
+    return JobResponse(job_id=job_id, status="running", result=f"[Comment queued: {req.comment[:60]}]")
+
+
+# ── Heartbeat ─────────────────────────────────────────────────────────────────
+
+@app.get("/")
+async def heartbeat():
+    running = sum(1 for j in _jobs.values() if j["status"] == "running")
+    return {"status": "ok", "agents": ["miss_library", "pettersmart"], "active_jobs": running, "total_jobs": len(_jobs)}

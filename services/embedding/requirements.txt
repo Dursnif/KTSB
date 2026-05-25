@@ -1,0 +1,11 @@
+# Install torch CPU-only first (see Dockerfile.embedding for --index-url):
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+fastapi>=0.115.0
+uvicorn>=0.30.0
+pydantic>=2.5.0
+pyyaml>=6.0
+numpy>=1.26.0
+FlagEmbedding>=1.2.0
+transformers>=4.36.0
+huggingface_hub>=0.20.0
+tokenizers>=0.15.0

@@ -1,0 +1,12 @@
+# Kåre HA Gateway – konfig
+
+# Mini-Kåre HA Parser:
+nl_parser_url: "http://127.0.0.1:8001/parse"
+
+# Default metadata
+default_source: "kare"
+default_request_id_prefix: "ha-"
+
+# Timeout og retry
+timeout: 5
+max_retries: 2

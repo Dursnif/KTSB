@@ -1,0 +1,151 @@
+/* ktsb-logo.css — Kåre The Smart Butler
+ *
+ * Import once in your app's global styles:
+ *   import './ktsb-logo.css';            (Vite / webpack)
+ *   <link rel="stylesheet" href="./ktsb-logo.css">  (plain HTML)
+ *
+ * Optional: load Google Fonts for the wordmark + tagline:
+ *   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+ *
+ * Theme & control via CSS variables on :root or any wrapper.
+ * ─────────────────────────────────────────────────────────── */
+
+:root {
+  --ktsb-fg:        #1a1814;       /* main stroke + wordmark */
+  --ktsb-bg:        transparent;   /* background fill */
+  --ktsb-accent:    #1a1814;       /* iris / pupil tint */
+  --ktsb-stroke:    1;             /* hairline width multiplier */
+
+  /* Pupil + iris are CONSTANT across moods — only manual override changes them */
+  --ktsb-pupil-r:   5;
+  --ktsb-iris-r:    16;
+
+  /* Live expression control (drive these from your AI / state) */
+  --ktsb-aperture:  1;             /* 0 = closed,  1 = fully open */
+  --ktsb-look-x:    0;             /* horizontal gaze offset (~ -28..28) */
+  --ktsb-look-y:    0;             /* vertical gaze offset   (~ -10..10) */
+
+  /* Atmospherics — moods toggle these */
+  --ktsb-pulse-dur: 6s;
+  --ktsb-scan-op:   0;
+  --ktsb-aura-op:   0;
+  --ktsb-spark-op:  0;
+}
+
+.ktsb {
+  color: var(--ktsb-fg);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  font-family: 'Cinzel', 'Trajan Pro', serif;
+}
+.ktsb svg     { display: block; overflow: visible; }
+.ktsb .k-fg     { stroke: var(--ktsb-fg); fill: none; }
+.ktsb .k-accent { stroke: var(--ktsb-accent); fill: var(--ktsb-accent); }
+.ktsb .k-pupil  { fill: var(--ktsb-accent); }
+.ktsb .k-iris   { stroke: var(--ktsb-accent); fill: none; }
+.ktsb .k-hair   { stroke-width: calc(var(--ktsb-stroke) * 0.5); }
+.ktsb .k-thin   { stroke-width: calc(var(--ktsb-stroke) * 0.75); }
+.ktsb .k-med    { stroke-width: calc(var(--ktsb-stroke) * 1); }
+.ktsb .k-bold   { stroke-width: calc(var(--ktsb-stroke) * 1.5); }
+
+/* ── Upper lid (strict aperture rules) ─────────────────────────────────
+ * scaleY around (cx, cy) — the corner axis where endpoints sit.
+ * Endpoints lock to y=cy; only the control point moves vertically.
+ * Width is mathematically invariant. */
+.ktsb .k-upper-half {
+  transform: scaleY(var(--ktsb-aperture));
+  transform-box: view-box;
+  transform-origin: var(--k-eye-cx, 140px) var(--k-eye-cy, 108px);
+  transition: transform .5s cubic-bezier(.55, 0, .2, 1);
+}
+
+/* Pupil + iris gaze tracking (no size change) */
+.ktsb .k-gaze {
+  transform: translate(
+    calc(var(--ktsb-look-x) * 1px),
+    calc(var(--ktsb-look-y) * 1px)
+  );
+  transition: transform .35s cubic-bezier(.4, 0, .2, 1);
+}
+
+/* Breathing — scaleY only so width stays constant */
+.ktsb .k-eye-breathe {
+  animation: ktsb-breathe var(--ktsb-pulse-dur) ease-in-out infinite;
+  transform-box: view-box;
+  transform-origin: var(--k-eye-cx, 140px) var(--k-eye-cy, 108px);
+}
+@keyframes ktsb-breathe {
+  0%, 100% { transform: scaleY(1);    opacity: 1;   }
+  50%      { transform: scaleY(1.03); opacity: .92; }
+}
+
+.ktsb .k-scan  { opacity: var(--ktsb-scan-op);  }
+.ktsb .k-aura  { opacity: var(--ktsb-aura-op);  }
+.ktsb .k-spark { opacity: var(--ktsb-spark-op); }
+
+/* ── Moods ──────────────────────────────────────────────────────────── */
+[data-mood="idle"]      .ktsb, .ktsb[data-mood="idle"]      { --ktsb-aperture: 1.0;  --ktsb-aura-op: .25; }
+[data-mood="watching"]  .ktsb, .ktsb[data-mood="watching"]  { --ktsb-aperture: 1.0;  --ktsb-scan-op: 1;  --ktsb-aura-op: .4; }
+[data-mood="listening"] .ktsb, .ktsb[data-mood="listening"] { --ktsb-aperture: 0.95; --ktsb-aura-op: 1;  --ktsb-pulse-dur: 2.4s; }
+[data-mood="thinking"]  .ktsb, .ktsb[data-mood="thinking"]  { --ktsb-aperture: 0.5;  --ktsb-spark-op: 1; --ktsb-pulse-dur: 3.2s; }
+[data-mood="happy"]     .ktsb, .ktsb[data-mood="happy"]     { --ktsb-aperture: 0.85; --ktsb-aura-op: .6; --ktsb-spark-op: .7; }
+[data-mood="alert"]     .ktsb, .ktsb[data-mood="alert"]     { --ktsb-aperture: 1.0;  --ktsb-stroke: 1.4; --ktsb-pulse-dur: 1.2s; --ktsb-aura-op: .8; }
+[data-mood="dreaming"]  .ktsb, .ktsb[data-mood="dreaming"]  { --ktsb-aperture: 0.35; --ktsb-spark-op: .8; --ktsb-pulse-dur: 8s; }
+[data-mood="sleeping"]  .ktsb, .ktsb[data-mood="sleeping"]  { --ktsb-aperture: 0;    --ktsb-pulse-dur: 10s; --ktsb-aura-op: 0; }
+
+.ktsb .k-smile { stroke: var(--ktsb-fg); fill: none; opacity: 0; transition: opacity .3s; }
+[data-mood="happy"] .ktsb .k-smile,
+.ktsb[data-mood="happy"] .k-smile { opacity: 1; }
+
+.ktsb .k-zzz {
+  opacity: 0; transition: opacity .3s;
+  font-family: 'Cinzel', serif; font-size: 9px;
+  fill: var(--ktsb-fg); letter-spacing: .2em;
+}
+[data-mood="sleeping"] .ktsb .k-zzz,
+.ktsb[data-mood="sleeping"] .k-zzz { opacity: .7; }
+
+.ktsb .k-ripple {
+  transform-box: fill-box; transform-origin: center;
+  opacity: 0;
+}
+[data-mood="listening"] .ktsb .k-ripple,
+.ktsb[data-mood="listening"] .k-ripple {
+  animation: ktsb-ripple 2.2s ease-out infinite;
+}
+.ktsb .k-ripple-2 { animation-delay: .7s !important; }
+.ktsb .k-ripple-3 { animation-delay: 1.4s !important; }
+@keyframes ktsb-ripple {
+  0%   { transform: scale(.7); opacity: .8; }
+  100% { transform: scale(1.6); opacity: 0;  }
+}
+
+.ktsb .k-orbit {
+  transform-box: fill-box; transform-origin: center;
+  opacity: 0;
+  animation: ktsb-orbit 4s linear infinite;
+}
+[data-mood="thinking"] .ktsb .k-orbit,
+.ktsb[data-mood="thinking"] .k-orbit { opacity: 1; }
+@keyframes ktsb-orbit { to { transform: rotate(360deg); } }
+
+/* ── Mood colours ────────────────────────────────────────────────────────
+ * SVG stroke/fill transition gives a slow colour breath on mood change.
+ * Each mood has its own fg (strokes + wordmark) and accent (iris + pupil). */
+.ktsb svg line,
+.ktsb svg circle,
+.ktsb svg path,
+.ktsb svg text {
+  transition: stroke 0.8s ease, fill 0.8s ease;
+}
+
+[data-mood="idle"]      .ktsb, .ktsb[data-mood="idle"]      { --ktsb-fg: #e8c97a; --ktsb-accent: #c9a84c; }
+[data-mood="watching"]  .ktsb, .ktsb[data-mood="watching"]  { --ktsb-fg: #a8d4f5; --ktsb-accent: #3498db; }
+[data-mood="listening"] .ktsb, .ktsb[data-mood="listening"] { --ktsb-fg: #a8e6c1; --ktsb-accent: #4caf82; }
+[data-mood="thinking"]  .ktsb, .ktsb[data-mood="thinking"]  { --ktsb-fg: #d4c0ff; --ktsb-accent: #8b7cf8; }
+[data-mood="happy"]     .ktsb, .ktsb[data-mood="happy"]     { --ktsb-fg: #ffd280; --ktsb-accent: #f5a623; }
+[data-mood="alert"]     .ktsb, .ktsb[data-mood="alert"]     { --ktsb-fg: #f5a49a; --ktsb-accent: #e74c3c; }
+[data-mood="dreaming"]  .ktsb, .ktsb[data-mood="dreaming"]  { --ktsb-fg: #c9b8e8; --ktsb-accent: #9b7fc9; }
+[data-mood="sleeping"]  .ktsb, .ktsb[data-mood="sleeping"]  { --ktsb-fg: #718096; --ktsb-accent: #4a5568; }

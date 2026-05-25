@@ -1,0 +1,17 @@
+{$KAARE_DOMAIN:localhost} {
+
+    # API — main backend
+    handle /api/* {
+        reverse_proxy kaare-api:8000
+    }
+
+    # Voice — STT/TTS (HTTP + WebSocket)
+    handle /transcribe* {
+        reverse_proxy kaare-voice:8011
+    }
+
+    # Frontend — static files
+    handle {
+        reverse_proxy kaare-frontend:80
+    }
+}
