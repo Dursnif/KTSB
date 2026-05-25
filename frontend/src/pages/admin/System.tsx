@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, RotateCcw, ShieldCheck } from "lucide-react";
+import { Loader2, RefreshCw, RotateCcw, ShieldCheck, Cpu } from "lucide-react";
 import axios from "axios";
 import i18n from "@/i18n";
 import {
@@ -100,6 +100,93 @@ function ServiceRestartRow({ serviceKey, unit, active, onRestarted }: {
           {state === "restarting" ? t("system.services.restarting") : t("system.services.restart")}
         </Button>
       </div>
+    </div>
+  );
+}
+
+type HardwareInfo = {
+  detected_at: string;
+  source: "host_script" | "container";
+  platform: string;
+  cpu: { model: string; cores: number };
+  ram_gb: number;
+  gpus: { type: string; id: number; name: string; vram_gb: number | null }[];
+  npu: { detected: boolean; devices?: string[] };
+};
+
+function HardwareCard() {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [hw, setHw] = useState<HardwareInfo | null>(null);
+
+  const detect = useCallback(async (refresh = false) => {
+    setStatus("loading");
+    try {
+      const r = await axios.get<HardwareInfo>(
+        `${BASE}/api/system/hardware${refresh ? "?refresh=true" : ""}`,
+        { headers: { Authorization: `Bearer ${token()}` } },
+      );
+      setHw(r.data);
+      setStatus("done");
+    } catch {
+      setStatus("error");
+    }
+  }, []);
+
+  useEffect(() => { detect(false); }, [detect]);
+
+  const gpuLabel = (gpu: HardwareInfo["gpus"][0]) => {
+    const vram = gpu.vram_gb != null ? ` (${t("system.hardware.vram", { gb: gpu.vram_gb })})` : "";
+    return `${gpu.type.toUpperCase()} ${gpu.name}${vram}`;
+  };
+
+  const row = (label: string, value: string, accent?: boolean) => (
+    <div style={{ display: "flex", gap: 8, fontSize: 12, lineHeight: 1.8 }}>
+      <span style={{ color: "#555", minWidth: 44 }}>{label}</span>
+      <span style={{ color: accent ? "#f59e0b" : "#999", wordBreak: "break-word" }}>{value}</span>
+    </div>
+  );
+
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <Cpu size={15} style={{ color: "#888", flexShrink: 0 }} />
+        <span style={{ color: "#ddd", fontSize: 15, fontWeight: 600 }}>{t("system.hardware.title")}</span>
+      </div>
+      <p style={{ color: "#666", fontSize: 13, marginBottom: 16 }}>{t("system.hardware.description")}</p>
+
+      <Button
+        onClick={() => detect(true)}
+        disabled={status === "loading"}
+        variant="outline"
+        className="gap-2"
+      >
+        {status === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cpu className="h-4 w-4" />}
+        {status === "loading" ? t("system.hardware.loading") : hw ? t("system.hardware.refresh") : t("system.hardware.button")}
+      </Button>
+
+      {status === "error" && (
+        <p style={{ color: "#f87171", fontSize: 13, marginTop: 12 }}>{t("system.hardware.error")}</p>
+      )}
+
+      {hw && status !== "loading" && (
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 1 }}>
+          {row(t("system.hardware.cpu"), `${hw.cpu.model} · ${t("system.hardware.cores", { n: hw.cpu.cores })}`)}
+          {row(t("system.hardware.ram"), t("system.hardware.ram_gb", { gb: hw.ram_gb }))}
+          {hw.gpus.length > 0
+            ? hw.gpus.map((g, i) => row(i === 0 ? t("system.hardware.gpu") : "", gpuLabel(g), true))
+            : row(t("system.hardware.gpu"), t("system.hardware.none_detected"))}
+          {row(t("system.hardware.npu"), hw.npu.detected ? (hw.npu.devices ?? []).join(", ") : t("system.hardware.none_detected"))}
+          <div style={{ marginTop: 6, fontSize: 11, color: "#444" }}>
+            {t("system.hardware.detected_at")} {new Date(hw.detected_at).toLocaleString()} · {hw.source === "host_script" ? t("system.hardware.source_host") : t("system.hardware.source_container")}
+          </div>
+          {hw.gpus.length > 0 && hw.source !== "host_script" && (
+            <div style={{ marginTop: 8, fontSize: 11, color: "#f59e0b", lineHeight: 1.5 }}>
+              {t("system.hardware.note_gpu")}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -317,12 +404,12 @@ export default function System() {
       <h1>{t("system.title")}</h1>
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
-        {/* Hot-reload + System check — delt kort */}
+        {/* Hot-reload + Systemsjekk + Maskinvare — tre kolonner */}
         <div className="admin-card" style={{ borderRadius: 12, padding: "20px 24px" }}>
           <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
 
-            {/* Venstre halvdel: Hot-reload */}
-            <div style={{ flex: 1, minWidth: 220 }}>
+            {/* Kolonne 1: Hot-reload */}
+            <div style={{ flex: 1, minWidth: 200 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                 <RefreshCw size={15} style={{ color: "#888", flexShrink: 0 }} />
                 <span style={{ color: "#ddd", fontSize: 15, fontWeight: 600 }}>{t("system.hot_reload.title")}</span>
@@ -346,11 +433,15 @@ export default function System() {
               <p style={{ color: "#555", fontSize: 12, marginTop: 12 }}>{t("system.hot_reload.note")}</p>
             </div>
 
-            {/* Skillelinje */}
             <div style={{ width: 1, background: "#1e1e1e", flexShrink: 0, minHeight: 80 }} />
 
-            {/* Høyre halvdel: Systemsjekk */}
+            {/* Kolonne 2: Systemsjekk */}
             <HealthCheckCard />
+
+            <div style={{ width: 1, background: "#1e1e1e", flexShrink: 0, minHeight: 80 }} />
+
+            {/* Kolonne 3: Maskinvare */}
+            <HardwareCard />
 
           </div>
         </div>

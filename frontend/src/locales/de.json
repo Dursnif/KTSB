@@ -560,7 +560,8 @@
       "bruker": "Benutzer",
       "distribusjon": "Distribution",
       "integrasjoner": "Integrationen",
-      "ferdig": "Fertig"
+      "ferdig": "Fertig",
+      "llm": "LLM-Quelle"
     },
     "back": "Zurück",
     "profil": {
@@ -607,6 +608,22 @@
         "Plex-Token, Kameraeinstellungen und mehr in Einstellungen einrichten"
       ],
       "go_dashboard": "Zum Dashboard"
+    },
+    "llm": {
+      "title": "LLM-Quelle",
+      "description": "Kåre benötigt Zugang zu einem Sprachmodell (LLM). Wählen Sie, ob Sie das integrierte verwenden oder eines, das Sie bereits haben.",
+      "builtin_label": "Integriertes Ollama",
+      "builtin_hint": "Empfohlen für Einsteiger. Einfache Einrichtung, alles inklusive.",
+      "builtin_warning": "Lädt beim ersten Start ca. 10 GB herunter.",
+      "builtin_note_title": "Stellen Sie sicher, dass COMPOSE_PROFILES \"ollama\" enthält",
+      "builtin_note_body": "Die Standard-.env.example hat dies konfiguriert. Führen Sie setup.sh aus, um die Einrichtung zu bestätigen, dann docker compose up -d.",
+      "external_label": "Externer LLM-Server",
+      "external_hint": "Sie haben Ollama, vLLM oder eine Cloud-API anderswo laufen.",
+      "external_url_label": "LLM-Server-URL",
+      "external_url_hint": "Kompatibel mit Ollama und OpenAI-API (vLLM, LM Studio usw.)",
+      "save_continue": "Speichern und weiter",
+      "skip": "Überspringen",
+      "error_save": "LLM-Quelle konnte nicht gespeichert werden."
     }
   },
   "system": {
@@ -705,6 +722,27 @@
     "github": {
       "title": "GitHub-Veröffentlichung",
       "description": "Kåre wird auf GitHub veröffentlicht. Niemals Benutzernamen, Ortsnamen, Home Assistant-URL, API-Schlüssel oder Zeitzone direkt im Code hardcoden. Alle solche Werte werden in configs/settings.yaml oder .env-Dateien gespeichert, die nicht eingecheckt werden."
+    },
+    "hardware": {
+      "title": "Hardware",
+      "description": "Erkannte CPU, RAM, GPU und NPU. Führen Sie setup.sh auf dem Host für vollständige Erkennung aus.",
+      "button": "Hardware erkennen",
+      "refresh": "Aktualisieren",
+      "loading": "Wird erkannt…",
+      "detected_at": "Erkannt",
+      "source_host": "Host-Skript",
+      "source_container": "Container (begrenzt)",
+      "platform": "Plattform",
+      "cpu": "CPU",
+      "ram": "RAM",
+      "gpu": "GPU",
+      "npu": "NPU",
+      "none_detected": "Nicht erkannt",
+      "vram": "{{gb}} GB VRAM",
+      "cores": "{{n}} Kerne",
+      "ram_gb": "{{gb}} GB",
+      "note_gpu": "GPU erkannt — aktivieren Sie GPU, indem Sie COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml zu .env hinzufügen und setup.sh ausführen",
+      "error": "Hardware-Informationen konnten nicht abgerufen werden"
     }
   },
   "dashboard": {

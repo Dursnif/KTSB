@@ -560,7 +560,8 @@
       "bruker": "Bruker",
       "distribusjon": "Distribusjon",
       "integrasjoner": "Integrasjoner",
-      "ferdig": "Ferdig"
+      "ferdig": "Ferdig",
+      "llm": "LLM-kilde"
     },
     "back": "Tilbake",
     "profil": {
@@ -607,6 +608,22 @@
         "Sett opp Plex-token, kamera-innstillinger og mer i Innstillinger"
       ],
       "go_dashboard": "Gå til Dashboard"
+    },
+    "llm": {
+      "title": "LLM-kilde",
+      "description": "Kåre trenger tilgang til en språkmodell (LLM). Velg om du vil bruke den innebygde eller en du allerede har.",
+      "builtin_label": "Innebygd Ollama",
+      "builtin_hint": "Anbefalt for nybegynnere. Enkel oppsett, alt følger med.",
+      "builtin_warning": "Laster ned ca. 10 GB ved første oppstart.",
+      "builtin_note_title": "Sørg for at COMPOSE_PROFILES inkluderer \"ollama\"",
+      "builtin_note_body": "Standard .env.example har dette konfigurert. Kjør setup.sh for å bekrefte oppsettet, deretter docker compose up -d.",
+      "external_label": "Ekstern LLM-tjener",
+      "external_hint": "Du har Ollama, vLLM eller sky-API kjørende et annet sted.",
+      "external_url_label": "LLM-tjener URL",
+      "external_url_hint": "Kompatibel med Ollama og OpenAI-API (vLLM, LM Studio m.fl.)",
+      "save_continue": "Lagre og fortsett",
+      "skip": "Hopp over",
+      "error_save": "Kunne ikke lagre LLM-kilde."
     }
   },
   "system": {
@@ -705,6 +722,27 @@
     "github": {
       "title": "GitHub-publisering",
       "description": "Kåre skal publiseres på GitHub. Aldri hardkod brukernavn, stedsnavn, Home Assistant-URL, API-nøkler eller tidssone direkte i kode. Alle slike verdier lagres i configs/settings.yaml eller .env-filer som ikke sjekkes inn."
+    },
+    "hardware": {
+      "title": "Maskinvare",
+      "description": "Detektert CPU, RAM, GPU og NPU. Kjør setup.sh på verten for full deteksjon.",
+      "button": "Oppdag maskinvare",
+      "refresh": "Oppdater",
+      "loading": "Detekterer…",
+      "detected_at": "Detektert",
+      "source_host": "Vert-skript",
+      "source_container": "Container (begrenset)",
+      "platform": "Plattform",
+      "cpu": "CPU",
+      "ram": "RAM",
+      "gpu": "GPU",
+      "npu": "NPU",
+      "none_detected": "Ikke detektert",
+      "vram": "{{gb}} GB VRAM",
+      "cores": "{{n}} kjerner",
+      "ram_gb": "{{gb}} GB",
+      "note_gpu": "GPU oppdaget — aktiver ved å legge til COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml i .env og kjøre setup.sh",
+      "error": "Kunne ikke hente maskinvareinfo"
     }
   },
   "dashboard": {

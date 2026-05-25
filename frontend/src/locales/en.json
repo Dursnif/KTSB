@@ -560,7 +560,8 @@
       "bruker": "User",
       "distribusjon": "Distribution",
       "integrasjoner": "Integrations",
-      "ferdig": "Done"
+      "ferdig": "Done",
+      "llm": "LLM source"
     },
     "back": "Back",
     "profil": {
@@ -607,6 +608,22 @@
         "Set up Plex token, camera settings and more in Settings"
       ],
       "go_dashboard": "Go to Dashboard"
+    },
+    "llm": {
+      "title": "LLM source",
+      "description": "Kåre needs access to a language model (LLM). Choose whether to use the built-in one or one you already have.",
+      "builtin_label": "Built-in Ollama",
+      "builtin_hint": "Recommended for beginners. Simple setup, everything included.",
+      "builtin_warning": "Downloads approx. 10 GB on first startup.",
+      "builtin_note_title": "Make sure COMPOSE_PROFILES includes \"ollama\"",
+      "builtin_note_body": "The default .env.example has this configured. Run setup.sh to confirm the setup, then docker compose up -d.",
+      "external_label": "External LLM server",
+      "external_hint": "You have Ollama, vLLM or a cloud API running elsewhere.",
+      "external_url_label": "LLM server URL",
+      "external_url_hint": "Compatible with Ollama and OpenAI API (vLLM, LM Studio, etc.)",
+      "save_continue": "Save and continue",
+      "skip": "Skip",
+      "error_save": "Could not save LLM source."
     }
   },
   "system": {
@@ -705,6 +722,27 @@
     "github": {
       "title": "GitHub publishing",
       "description": "Kåre will be published on GitHub. Never hardcode usernames, place names, Home Assistant URL, API keys or timezone directly in code. All such values are stored in configs/settings.yaml or .env files that are not checked in."
+    },
+    "hardware": {
+      "title": "Hardware",
+      "description": "Detected CPU, RAM, GPU and NPU. Run setup.sh on the host for full detection.",
+      "button": "Detect hardware",
+      "refresh": "Refresh",
+      "loading": "Detecting…",
+      "detected_at": "Detected",
+      "source_host": "Host script",
+      "source_container": "Container (limited)",
+      "platform": "Platform",
+      "cpu": "CPU",
+      "ram": "RAM",
+      "gpu": "GPU",
+      "npu": "NPU",
+      "none_detected": "Not detected",
+      "vram": "{{gb}} GB VRAM",
+      "cores": "{{n}} cores",
+      "ram_gb": "{{gb}} GB",
+      "note_gpu": "GPU detected — enable by adding COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml to .env and running setup.sh",
+      "error": "Could not fetch hardware info"
     }
   },
   "dashboard": {

@@ -1,0 +1,25 @@
+# NVIDIA GPU override for Ollama.
+#
+# Usage (one-time setup):
+#   Add this line to your .env file:
+#     COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
+#   Then run as usual:
+#     docker compose up -d
+#
+# Or run directly:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# Requirements:
+#   - NVIDIA driver installed on the host
+#   - nvidia-container-toolkit installed (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+#   - On Windows/WSL2: WSL2 CUDA driver from https://developer.nvidia.com/cuda/wsl
+
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

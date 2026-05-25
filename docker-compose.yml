@@ -15,19 +15,16 @@ services:
     volumes:
       - ./state/qdrant:/qdrant/storage
 
+  # Built-in Ollama — optional (~10 GB image).
+  # Enabled by default via COMPOSE_PROFILES=ollama in .env.
+  # Remove "ollama" from COMPOSE_PROFILES if you have your own LLM server.
   ollama:
     image: ollama/ollama:latest
     restart: unless-stopped
     ports: ["11434:11434"]
     volumes:
       - ollama_models:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    profiles: [ollama]
 
   caddy:
     image: caddy:latest

@@ -211,7 +211,100 @@ function StepDistribusjon({ onDone }: { onDone: () => void }) {
   );
 }
 
-// ── Step 4: Integrasjoner (valgfri) ──────────────────────────────────────────
+// ── Step 4: LLM-kilde ─────────────────────────────────────────────────────────
+
+function StepLLM({ onDone }: { onDone: () => void }) {
+  const { t } = useTranslation();
+  const [choice, setChoice] = useState<"builtin" | "external">("builtin");
+  const [url, setUrl] = useState("http://localhost:11434");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    axios.get(`${BASE}/api/settings/ollama_source`, { headers: authHeader() })
+      .then(r => {
+        if (!r.data.builtin && r.data.url) {
+          setChoice("external");
+          setUrl(r.data.url);
+        }
+      }).catch(() => {});
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const targetUrl = choice === "builtin" ? "http://ollama:11434" : url.trim();
+      await axios.put(`${BASE}/api/settings/ollama_source`, { url: targetUrl }, { headers: authHeader() });
+      onDone();
+    } catch { setError(t("onboarding.llm.error_save")); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-semibold">{t("onboarding.llm.title")}</h2>
+        <p className="text-sm text-muted-foreground mt-1">{t("onboarding.llm.description")}</p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button
+          onClick={() => setChoice("builtin")}
+          className={`text-left p-4 rounded-lg border transition-colors ${choice === "builtin" ? "border-primary bg-primary/10" : "border-border hover:border-muted-foreground"}`}
+        >
+          <div className="text-2xl mb-2">📦</div>
+          <div className="font-semibold text-sm">{t("onboarding.llm.builtin_label")}</div>
+          <div className="text-xs text-muted-foreground mt-1">{t("onboarding.llm.builtin_hint")}</div>
+          <div className="mt-3 text-xs text-amber-400/80 flex items-start gap-1">
+            <span className="shrink-0 mt-0.5">⚠</span>
+            <span>{t("onboarding.llm.builtin_warning")}</span>
+          </div>
+        </button>
+
+        <button
+          onClick={() => setChoice("external")}
+          className={`text-left p-4 rounded-lg border transition-colors ${choice === "external" ? "border-primary bg-primary/10" : "border-border hover:border-muted-foreground"}`}
+        >
+          <div className="text-2xl mb-2">🌐</div>
+          <div className="font-semibold text-sm">{t("onboarding.llm.external_label")}</div>
+          <div className="text-xs text-muted-foreground mt-1">{t("onboarding.llm.external_hint")}</div>
+        </button>
+      </div>
+
+      {choice === "builtin" && (
+        <div className="bg-amber-950/20 border border-amber-800/30 rounded-lg p-4 text-sm text-amber-300/80 space-y-1">
+          <p className="font-medium">{t("onboarding.llm.builtin_note_title")}</p>
+          <p className="text-xs text-amber-400/60">{t("onboarding.llm.builtin_note_body")}</p>
+        </div>
+      )}
+
+      {choice === "external" && (
+        <div className="space-y-2">
+          <Label className="text-xs text-muted-foreground">{t("onboarding.llm.external_url_label")}</Label>
+          <Input
+            value={url}
+            onChange={e => setUrl(e.target.value)}
+            placeholder="http://192.168.0.x:11434"
+          />
+          <p className="text-xs text-muted-foreground">{t("onboarding.llm.external_url_hint")}</p>
+        </div>
+      )}
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      <div className="flex gap-2">
+        <Button onClick={save} disabled={saving || (choice === "external" && !url.trim())} className="flex-1">
+          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+          {t("onboarding.llm.save_continue")} <ChevronRight className="ml-2 h-4 w-4" />
+        </Button>
+        <Button variant="outline" onClick={onDone}>{t("onboarding.llm.skip")}</Button>
+      </div>
+    </div>
+  );
+}
+
+// ── Step 5: Integrasjoner (valgfri) ──────────────────────────────────────────
 
 type IntegrationState = {
   haUrl: string; mqttHost: string; frigateUrl: string; plexUrl: string;
@@ -322,7 +415,7 @@ function StepFerdig({ onDashboard }: { onDashboard: () => void }) {
 
 // ── Wizard ────────────────────────────────────────────────────────────────────
 
-const STEP_KEYS = ["profil", "bruker", "distribusjon", "integrasjoner", "ferdig"] as const;
+const STEP_KEYS = ["profil", "bruker", "distribusjon", "llm", "integrasjoner", "ferdig"] as const;
 
 export default function Onboarding() {
   const { t } = useTranslation();
@@ -364,8 +457,9 @@ export default function Onboarding() {
           {step === 0 && <StepProfil onDone={next} />}
           {step === 1 && <StepBruker onDone={next} onSkip={next} />}
           {step === 2 && <StepDistribusjon onDone={next} />}
-          {step === 3 && <StepIntegrasjoner onDone={next} />}
-          {step === 4 && <StepFerdig onDashboard={() => navigate("/admin")} />}
+          {step === 3 && <StepLLM onDone={next} />}
+          {step === 4 && <StepIntegrasjoner onDone={next} />}
+          {step === 5 && <StepFerdig onDashboard={() => navigate("/admin")} />}
         </div>
 
         {/* Back button */}

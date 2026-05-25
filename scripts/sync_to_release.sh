@@ -81,6 +81,8 @@ rsync -av --delete \
   --exclude='.DS_Store' \
   --exclude='.idea/' \
   --exclude='.vscode/' \
+  --exclude='intent_server' \
+  --exclude='services/gui/' \
   --exclude='www/' \
   --exclude='mini_kaareha/' \
   --exclude='vaktmester_halfyear.py' \

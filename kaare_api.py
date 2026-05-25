@@ -1448,6 +1448,109 @@ async def api_get_gpus(_u=Depends(_require_auth)):
         return {"gpus": []}
 
 
+@app.get("/api/system/hardware")
+async def api_get_hardware(refresh: bool = False, _u=Depends(_require_auth)):
+    """Detect host hardware (CPU, RAM, GPU, NPU) and cache result in state/hardware.json."""
+    import platform
+
+    hw_path = Path("/kaare/state/hardware.json")
+
+    if not refresh and hw_path.exists():
+        try:
+            return json.loads(hw_path.read_text())
+        except Exception:
+            pass
+
+    result: dict = {
+        "detected_at": datetime.utcnow().isoformat(),
+        "source": "container",
+        "platform": platform.system().lower(),
+        "cpu": {"model": "unknown", "cores": os.cpu_count() or 0},
+        "ram_gb": 0,
+        "gpus": [],
+        "npu": {"detected": False},
+    }
+
+    # CPU
+    try:
+        with open("/proc/cpuinfo") as f:
+            cpuinfo = f.read()
+        model_lines = [l.split(":", 1)[1].strip() for l in cpuinfo.splitlines() if l.startswith("model name")]
+        cores = cpuinfo.count("processor\t:")
+        result["cpu"] = {"model": model_lines[0] if model_lines else platform.processor() or "unknown", "cores": cores or (os.cpu_count() or 0)}
+    except Exception:
+        result["cpu"] = {"model": platform.processor() or "unknown", "cores": os.cpu_count() or 0}
+
+    # RAM
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    result["ram_gb"] = round(int(line.split()[1]) / 1024 / 1024, 1)
+                    break
+    except Exception:
+        pass
+
+    # NVIDIA GPU
+    try:
+        r = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index,name,memory.total", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            for line in r.stdout.strip().splitlines():
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) == 3:
+                    result["gpus"].append({"type": "nvidia", "id": int(parts[0]), "name": parts[1], "vram_gb": round(int(parts[2]) / 1024, 1)})
+    except Exception:
+        pass
+
+    # AMD GPU (rocm-smi)
+    if not result["gpus"]:
+        try:
+            r = subprocess.run(["rocm-smi", "--showproductname", "--csv"], capture_output=True, text=True, timeout=10)
+            if r.returncode == 0:
+                for i, line in enumerate(r.stdout.strip().splitlines()):
+                    if line and not line.lower().startswith("device"):
+                        result["gpus"].append({"type": "amd", "id": i, "name": line.strip(), "vram_gb": None})
+        except Exception:
+            pass
+
+    # Intel GPU (check DRM subsystem)
+    if not result["gpus"]:
+        try:
+            dri_path = "/sys/class/drm"
+            if os.path.exists(dri_path):
+                for entry in os.listdir(dri_path):
+                    uevent_path = f"{dri_path}/{entry}/device/uevent"
+                    if os.path.exists(uevent_path):
+                        with open(uevent_path) as f:
+                            content = f.read()
+                        if "intel" in content.lower() or "i915" in content.lower():
+                            result["gpus"].append({"type": "intel", "id": 0, "name": "Intel GPU", "vram_gb": None})
+                            break
+        except Exception:
+            pass
+
+    # Intel NPU
+    try:
+        accel_path = "/dev/accel"
+        if os.path.exists(accel_path):
+            devices = os.listdir(accel_path)
+            if devices:
+                result["npu"] = {"detected": True, "devices": devices}
+    except Exception:
+        pass
+
+    try:
+        hw_path.parent.mkdir(parents=True, exist_ok=True)
+        hw_path.write_text(json.dumps(result, indent=2, ensure_ascii=False))
+    except Exception:
+        pass
+
+    return result
+
+
 @app.get("/api/ollama/models/{role}")
 async def api_get_ollama_models(role: str, _u=Depends(_require_auth)):
     """List models installed in the Ollama instance used by this role."""
@@ -1514,6 +1617,46 @@ async def api_ollama_pull(role: str, payload: dict, _u=Depends(_require_admin)):
 async def api_ollama_pull_status(role: str, _u=Depends(_require_auth)):
     """Return current pull progress for a role."""
     return _OLLAMA_PULL_STATUS.get(role, {"pulling": False, "status": "", "completed": 0, "total": 0, "error": None})
+
+
+_OLLAMA_ROLE_KEYS = {"kare", "miss_kare", "library", "pettersmart", "fallback"}
+_SERVICES_OLLAMA_KEYS = {"kare", "library", "miss_kare", "proxy"}
+
+@app.get("/api/settings/ollama_source")
+async def api_get_ollama_source(_u=Depends(_require_auth)):
+    """Return current Ollama base URL and whether it appears to be the built-in container."""
+    data = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
+    url = ""
+    for role in ("kare", "miss_kare", "library", "pettersmart", "fallback"):
+        role_data = data.get(role, {})
+        if role_data.get("provider", "ollama") == "ollama" and role_data.get("base_url"):
+            url = role_data["base_url"]
+            break
+    builtin = "ollama:11434" in url
+    return {"url": url or "http://ollama:11434", "builtin": builtin}
+
+
+@app.put("/api/settings/ollama_source")
+async def api_put_ollama_source(payload: dict, _u=Depends(_require_admin)):
+    """Update Ollama base URL for all Ollama-backed roles in llm.yaml and services.yaml."""
+    url = (payload.get("url") or "http://ollama:11434").rstrip("/")
+
+    # Update llm.yaml — all roles with provider: ollama
+    llm = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
+    for role in _OLLAMA_ROLE_KEYS:
+        if role in llm and llm[role].get("provider", "ollama") == "ollama":
+            llm[role]["base_url"] = url
+    _LLM_PATH.write_text(yaml.dump(llm, allow_unicode=True, default_flow_style=False), encoding="utf-8")
+
+    # Update services.yaml — ollama.* keys (excluding embed)
+    svc = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
+    if "ollama" not in svc:
+        svc["ollama"] = {}
+    for key in _SERVICES_OLLAMA_KEYS:
+        svc["ollama"][key] = url
+    _SERVICES_PATH.write_text(yaml.dump(svc, allow_unicode=True, default_flow_style=False), encoding="utf-8")
+
+    return {"ok": True, "url": url}
 
 
 # ── Image serving and stats ───────────────────────────────────────────────────
