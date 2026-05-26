@@ -31,7 +31,7 @@ def _check_login_rate(ip: str) -> None:
     if len(dq) >= _LOGIN_FAIL_MAX:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="For mange mislykkede innloggingsforsøk. Prøv igjen om 15 minutter.",
+            detail="Too many failed login attempts. Try again in 15 minutes.",
         )
 
 
@@ -106,7 +106,7 @@ async def api_login(req: LoginRequest, request: Request):
         _record_login_fail(client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Den midlertidige PIN-koden har utløpt. Be en administrator om ny.",
+            detail="Temporary PIN has expired. Ask an administrator for a new one.",
         )
     result = login(req.username, req.pin)
     if not result:
@@ -133,7 +133,7 @@ async def api_logout(payload: dict = Depends(require_auth)):
 def api_me(payload: dict = Depends(require_auth)):
     user = store.get_user(payload["sub"])
     if not user:
-        raise HTTPException(status_code=404, detail="Bruker ikke funnet.")
+        raise HTTPException(status_code=404, detail="User not found.")
     return user
 
 
@@ -175,7 +175,7 @@ def api_create_user(req: CreateUserRequest, payload: dict = Depends(require_admi
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         if "UNIQUE" in str(e):
-            raise HTTPException(status_code=409, detail="Brukernavnet er allerede tatt.")
+            raise HTTPException(status_code=409, detail="Username already taken.")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -195,7 +195,7 @@ def api_update_user(username: str, req: UpdateUserRequest,
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if not user:
-        raise HTTPException(status_code=404, detail="Bruker ikke funnet.")
+        raise HTTPException(status_code=404, detail="User not found.")
     return user
 
 
@@ -206,13 +206,13 @@ def api_update_pin(username: str, req: UpdatePinRequest,
     caller = payload["sub"]
     caller_role = payload["role"]
     if caller != username and caller_role != "admin":
-        raise HTTPException(status_code=403, detail="Du kan bare bytte din egen PIN.")
+        raise HTTPException(status_code=403, detail="You can only change your own PIN.")
     try:
         ok = store.update_pin(username, req.new_pin)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if not ok:
-        raise HTTPException(status_code=404, detail="Bruker ikke funnet.")
+        raise HTTPException(status_code=404, detail="User not found.")
     return {"ok": True}
 
 
@@ -223,7 +223,7 @@ def api_delete_user(username: str, payload: dict = Depends(require_admin)):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if not ok:
-        raise HTTPException(status_code=404, detail="Bruker ikke funnet.")
+        raise HTTPException(status_code=404, detail="User not found.")
     return {"ok": True}
 
 
@@ -238,7 +238,7 @@ async def api_voice_status(username: str, _=Depends(require_admin)):
             resp.raise_for_status()
             return resp.json()
     except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Voice bridge er ikke tilgjengelig.")
+        raise HTTPException(status_code=503, detail="Voice bridge not available.")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -247,7 +247,7 @@ async def api_voice_status(username: str, _=Depends(require_admin)):
 async def api_voice_enroll(username: str, file: UploadFile = File(...), _=Depends(require_admin)):
     """Upload audio and create a voiceprint for the user."""
     if not store.get_user(username):
-        raise HTTPException(status_code=404, detail="Bruker ikke funnet.")
+        raise HTTPException(status_code=404, detail="User not found.")
     audio_bytes = await file.read()
     try:
         async with httpx.AsyncClient(timeout=60) as client:
@@ -258,7 +258,7 @@ async def api_voice_enroll(username: str, file: UploadFile = File(...), _=Depend
             resp.raise_for_status()
             return resp.json()
     except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Voice bridge er ikke tilgjengelig.")
+        raise HTTPException(status_code=503, detail="Voice bridge not available.")
     except httpx.HTTPStatusError as exc:
         raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
     except Exception as exc:
@@ -274,6 +274,6 @@ async def api_voice_delete(username: str, _=Depends(require_admin)):
             resp.raise_for_status()
             return resp.json()
     except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Voice bridge er ikke tilgjengelig.")
+        raise HTTPException(status_code=503, detail="Voice bridge not available.")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

@@ -81,10 +81,10 @@ def decode_token(token: str) -> dict:
         return jwt.decode(token, _SECRET, algorithms=[ALGORITHM])
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Token utløpt — logg inn igjen.")
+                            detail="Token expired — please log in again.")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Ugyldig token.")
+                            detail="Invalid token.")
 
 
 # ── Keypair setup (called after user creation) ─────────────────────────────────
@@ -180,7 +180,7 @@ def login(username: str, pin: str) -> Optional[dict]:
 def _extract_token(authorization: str) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Mangler Authorization-header.")
+                            detail="Missing Authorization header.")
     return authorization.split(" ", 1)[1]
 
 
@@ -241,7 +241,7 @@ def require_admin(authorization: str = Header(default="")) -> dict:
     payload = decode_token(_extract_token(authorization))
     if payload.get("role") != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Krever admin-tilgang.")
+                            detail="Admin access required.")
     touch_last_seen(payload["sub"])
     return payload
 
@@ -255,7 +255,7 @@ def require_image_auth(
     raw = token or (authorization.split(" ", 1)[1] if authorization.startswith("Bearer ") else "")
     if not raw:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Mangler token.")
+                            detail="Missing token.")
     payload = decode_token(raw)
     touch_last_seen(payload["sub"])
     return payload

@@ -630,7 +630,7 @@
     "title": "Maintenance",
     "hot_reload": {
       "title": "Hot-reload config",
-      "description": "Reloads YAML files in running processes — without restart. Covers: aliases, sprakvask, capability_map, llm.yaml, models.yaml, services.yaml, settings.yaml, personality.",
+      "description": "Reloads YAML files in running processes — without restart. Covers: aliases, lang_normalize, capability_map, llm.yaml, models.yaml, services.yaml, settings.yaml, personality.",
       "button": "Hot-reload all config files",
       "loading": "Loading…",
       "ok": "{{count}} files loaded — {{aliases}} aliases",

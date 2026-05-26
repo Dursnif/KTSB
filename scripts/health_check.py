@@ -155,7 +155,7 @@ CONFIG_RULES = [
         "location",
     ]),
     ("aliases.yaml",          []),
-    ("sprakvask.yaml",        []),
+    ("lang_normalize.yaml",   []),
     ("nodes.yaml",            []),
     ("radio_stations.yaml",   []),
     ("tool_permissions.yaml", []),

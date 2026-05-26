@@ -630,7 +630,7 @@
     "title": "Wartung",
     "hot_reload": {
       "title": "Hot-reload Konfig",
-      "description": "Lädt YAML-Dateien in laufenden Prozessen neu — ohne Neustart. Umfasst: aliases, sprakvask, capability_map, llm.yaml, models.yaml, services.yaml, settings.yaml, Persönlichkeit.",
+      "description": "Lädt YAML-Dateien in laufenden Prozessen neu — ohne Neustart. Umfasst: aliases, lang_normalize, capability_map, llm.yaml, models.yaml, services.yaml, settings.yaml, Persönlichkeit.",
       "button": "Alle Konfigurationsdateien hot-reloaden",
       "loading": "Lädt…",
       "ok": "{{count}} Dateien geladen — {{aliases}} Aliase",

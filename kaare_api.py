@@ -37,6 +37,11 @@ from kaare_core.users.auth import (
 )
 from kaare_core.users.store import init_db as init_users_db
 from kaare_fastpath import match_fastpath
+import kaare_core.app_state as app_state
+from kaare_core.routers.router_vaktmester import router as vaktmester_router
+from kaare_core.routers.router_media import router as media_router
+from kaare_core.routers.router_meetings import router as meetings_router
+from kaare_core.routers.router_system import router as system_router
 
 _miss_kare_stm = MissKareSTM()
 _miss_kare_latest: dict[str, str] = {}  # user_id → latest comment (cleared on fetch)
@@ -78,8 +83,8 @@ def _route_log(stage: str, **fields):
         pass
 
 
-def _sprakvask_text(text: str) -> str:
-    """Normalize text using sprakvask.yaml rules before alias lookup."""
+def _normalize_text(text: str) -> str:
+    """Normalize text using lang_normalize.yaml rules before alias lookup."""
     if not text:
         return ""
 
@@ -87,7 +92,7 @@ def _sprakvask_text(text: str) -> str:
     if not t:
         return ""
 
-    rules = SPRAKVASK if isinstance(SPRAKVASK, dict) else {}
+    rules = app_state.LANG_NORMALIZE if isinstance(app_state.LANG_NORMALIZE, dict) else {}
     noise = rules.get("noise") or []
     verbs = rules.get("verbs") or {}
     synonyms = rules.get("synonyms") or []
@@ -167,29 +172,27 @@ def _sprakvask_text(text: str) -> str:
 CAPABILITY_MAP_PATH = "/kaare/capability_map.yaml"
 
 with open(CAPABILITY_MAP_PATH, "r", encoding="utf-8") as f:
-    CAPABILITY_MAP = yaml.safe_load(f)
+    app_state.CAPABILITY_MAP = yaml.safe_load(f)
 
 ALIASES_PATH = "/kaare/configs/aliases.yaml"
 
 try:
     with open(ALIASES_PATH, "r", encoding="utf-8") as f:
         loaded = yaml.safe_load(f) or {}
-        ALIASES = loaded.get("aliases", loaded)
+        app_state.ALIASES = loaded.get("aliases", loaded)
 except Exception:
-    ALIASES = {}
-if isinstance(ALIASES, dict) and "aliases" in ALIASES:
-    ALIASES = ALIASES.get("aliases") or {}
+    app_state.ALIASES = {}
+if isinstance(app_state.ALIASES, dict) and "aliases" in app_state.ALIASES:
+    app_state.ALIASES = app_state.ALIASES.get("aliases") or {}
 
 
-SPRAKVASK_PATH = "/kaare/configs/sprakvask.yaml"
-SPRAKVASK = {}
-
+LANG_NORMALIZE_PATH = "/kaare/configs/lang_normalize.yaml"
 try:
-    with open(SPRAKVASK_PATH, "r", encoding="utf-8") as f:
+    with open(LANG_NORMALIZE_PATH, "r", encoding="utf-8") as f:
         _sv = yaml.safe_load(f) or {}
-        SPRAKVASK = (_sv.get("normalize") if isinstance(_sv, dict) else {}) or {}
+        app_state.LANG_NORMALIZE = (_sv.get("normalize") if isinstance(_sv, dict) else {}) or {}
 except Exception:
-    SPRAKVASK = {}
+    app_state.LANG_NORMALIZE = {}
 
 
 
@@ -199,6 +202,10 @@ os.makedirs(os.path.dirname(HA_LOG_PATH), exist_ok=True)
 
 app = FastAPI(title="Kåre Hoved-AI Orkestrator")
 app.include_router(users_router)
+app.include_router(vaktmester_router)
+app.include_router(media_router)
+app.include_router(meetings_router)
+app.include_router(system_router)
 init_users_db()
 
 # Suppress uvicorn access log for high-frequency poll endpoints
@@ -234,7 +241,7 @@ def _load_stm_daily_summary() -> None:
         from kaare_core.memory.long_term import load_latest_daily_summary
         summary = load_latest_daily_summary()
         if summary:
-            STM.set_daily_summary(summary)
+            app_state.STM.set_daily_summary(summary)
             import logging
             logging.getLogger("kaare_api").info("STM daily summary loaded (%d chars)", len(summary))
     except Exception as e:
@@ -254,7 +261,7 @@ def _configure_stm_autosave() -> None:
     cfg = _stm_cfg()
     path = cfg.get("snapshot_path", "/kaare/state/stm_snapshot.json")
     interval = float(cfg.get("autosave_min_interval_seconds", 5.0))
-    STM.configure_autosave(path, min_interval=interval)
+    app_state.STM.configure_autosave(path, min_interval=interval)
     import logging
     logging.getLogger("kaare_api").info("STM autosave configured: %s (min interval %.0fs)", path, interval)
 
@@ -264,10 +271,10 @@ def _load_stm_snapshot() -> None:
     cfg = _stm_cfg()
     path = cfg.get("snapshot_path", "/kaare/state/stm_snapshot.json")
     try:
-        ok = STM.load_snapshot(path)
+        ok = app_state.STM.load_snapshot(path)
         import logging
         if ok:
-            counts = STM.snapshot_counts()
+            counts = app_state.STM.snapshot_counts()
             logging.getLogger("kaare_api").info(
                 "STM snapshot restored: %d dialog turns, %d actions, %d state keys",
                 counts["dialog_turns"], counts["actions"], counts["state_keys"],
@@ -294,13 +301,13 @@ async def _stm_snapshot_loop() -> None:
     while True:
         await asyncio.sleep(interval)
         try:
-            STM.save_snapshot(snapshot_path)
+            app_state.STM.save_snapshot(snapshot_path)
 
             today = datetime.now(timezone.utc).date()
             if today != last_date:
                 # Save yesterday as a dated archive
                 daily_path = str(history_dir / f"{last_date.isoformat()}.json")
-                STM.save_snapshot(daily_path)
+                app_state.STM.save_snapshot(daily_path)
                 last_date = today
                 logger.info("STM daily snapshot saved: %s", daily_path)
 
@@ -589,7 +596,7 @@ def _create_stm() -> ShortTermMemory:
 
 
 # Parameters come from configs/settings.yaml [stm:]
-STM = _create_stm()
+app_state.STM = _create_stm()
 
 if _voice_manager_ok:
     register_voice_endpoints(app)
@@ -603,10 +610,9 @@ def read_root():
 async def api_reload():
     """
     Hot-reload all file-based config caches without restarting Kåre.
-    Covers: aliases, sprakvask, capability_map, llm.yaml, settings.yaml,
+    Covers: aliases, lang_normalize, capability_map, llm.yaml, settings.yaml,
             personality files, and the HA gateway's own caches.
     """
-    global ALIASES, SPRAKVASK, CAPABILITY_MAP
     reloaded = []
     errors = []
 
@@ -616,22 +622,22 @@ async def api_reload():
             new_aliases = loaded.get("aliases", loaded)
         if isinstance(new_aliases, dict) and "aliases" in new_aliases:
             new_aliases = new_aliases.get("aliases") or {}
-        ALIASES = new_aliases if isinstance(new_aliases, dict) else {}
+        app_state.ALIASES = new_aliases if isinstance(new_aliases, dict) else {}
         reloaded.append("aliases.yaml")
     except Exception as e:
         errors.append(f"aliases.yaml: {e}")
 
     try:
-        with open(SPRAKVASK_PATH, "r", encoding="utf-8") as f:
+        with open(LANG_NORMALIZE_PATH, "r", encoding="utf-8") as f:
             _sv = yaml.safe_load(f) or {}
-            SPRAKVASK = (_sv.get("normalize") if isinstance(_sv, dict) else {}) or {}
-        reloaded.append("sprakvask.yaml")
+            app_state.LANG_NORMALIZE = (_sv.get("normalize") if isinstance(_sv, dict) else {}) or {}
+        reloaded.append("lang_normalize.yaml")
     except Exception as e:
-        errors.append(f"sprakvask.yaml: {e}")
+        errors.append(f"lang_normalize.yaml: {e}")
 
     try:
         with open(CAPABILITY_MAP_PATH, "r", encoding="utf-8") as f:
-            CAPABILITY_MAP = yaml.safe_load(f) or {}
+            app_state.CAPABILITY_MAP = yaml.safe_load(f) or {}
         reloaded.append("capability_map.yaml")
     except Exception as e:
         errors.append(f"capability_map.yaml: {e}")
@@ -692,396 +698,10 @@ async def api_reload():
     return {
         "reloaded": reloaded,
         "errors": errors,
-        "aliases_count": len(ALIASES),
-        "sprakvask_keys": list(SPRAKVASK.keys()),
+        "aliases_count": len(app_state.ALIASES),
+        "lang_normalize_keys": list(app_state.LANG_NORMALIZE.keys()),
     }
 
-
-@app.get("/api/health_check")
-async def api_health_check(_u=Depends(_require_admin)):
-    """Run scripts/health_check.py --json and return structured results."""
-    try:
-        result = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: subprocess.run(
-                [sys.executable, "/kaare/scripts/health_check.py", "--json"],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                env={**os.environ, "PYTHONPATH": "/kaare"},
-            ),
-        )
-        return json.loads(result.stdout)
-    except subprocess.TimeoutExpired:
-        return {"ok": False, "total_errors": 1, "error": "Health check timed out (>30s)"}
-    except Exception as e:
-        return {"ok": False, "total_errors": 1, "error": str(e)}
-
-
-
-_FRIGATE_CAMERAS_PATH = Path("/kaare/configs/frigate_cameras.yaml")
-
-@app.get("/api/settings/cameras")
-async def api_get_cameras(_u=Depends(_require_admin)):
-    """
-    Returns camera config merged with live Frigate camera+label discovery.
-    Cameras known to Frigate but not in config appear with analyze: false defaults.
-    """
-    import httpx as _hx
-    from kaare_core.domain.frigate_responder import _cfg
-
-    cfg = _cfg()
-    saved_cameras: dict = cfg.get("cameras", {})
-    roles: dict = cfg.get("roles", {})
-    enabled: bool = cfg.get("enabled", True)
-
-    # Discover available labels from Frigate config
-    available_labels: list[str] = []
-    frigate_cameras: list[str] = []
-    try:
-        from adapters.frigate_adapter import get_cameras as _get_cameras
-        frigate_cam_list = await _get_cameras()
-        frigate_cameras = [c["api_name"] for c in frigate_cam_list]
-    except Exception:
-        pass
-
-    try:
-        svc_cfg = yaml.safe_load(Path("/kaare/configs/services.yaml").read_text()) or {}
-        frigate_url = (svc_cfg.get("frigate") or {}).get("url", "http://localhost:5000")
-        async with _hx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"{frigate_url}/api/config")
-            fcfg = r.json()
-            objects = fcfg.get("objects", {}) or {}
-            available_labels = objects.get("track", [])
-    except Exception:
-        available_labels = ["person", "car", "postnord", "deer", "dog", "cat"]
-
-    # Merge: saved config + auto-discovered cameras
-    merged_cameras = {}
-    all_cam_ids = list(saved_cameras.keys()) + [c for c in frigate_cameras if c not in saved_cameras]
-    for cam_id in all_cam_ids:
-        if cam_id in saved_cameras:
-            merged_cameras[cam_id] = saved_cameras[cam_id]
-        else:
-            # Auto-discovered, not yet configured
-            merged_cameras[cam_id] = {
-                "display_name": cam_id,
-                "role": "road_facing",
-                "labels": {lbl: {"analyze": False, "min_confidence": 0.65, "announce": False} for lbl in available_labels},
-            }
-        merged_cameras[cam_id]["_id"] = cam_id
-
-    return {
-        "enabled": enabled,
-        "cameras": list(merged_cameras.values()),
-        "roles": roles,
-        "available_labels": available_labels,
-        "storage": cfg.get("storage", {}),
-    }
-
-
-@app.get("/api/settings/cameras/_storage_usage")
-async def api_get_cameras_storage_usage(_u=Depends(_require_admin)):
-    """Returns actual disk usage for camera snapshots and analysis log in MB."""
-    snap_dir = Path("/kaare/state/frigate_snapshots")
-    log_file = Path("/kaare/logs/frigate_analysis.log")
-    try:
-        snap_mb = round(sum(f.stat().st_size for f in snap_dir.iterdir() if f.is_file()) / 1_048_576, 1)
-    except Exception:
-        snap_mb = 0.0
-    try:
-        log_mb = round(log_file.stat().st_size / 1_048_576, 1) if log_file.exists() else 0.0
-    except Exception:
-        log_mb = 0.0
-    return {"snapshots_mb": snap_mb, "log_mb": log_mb}
-
-
-@app.put("/api/settings/cameras/_global")
-async def api_put_cameras_global(payload: dict, _u=Depends(_require_admin)):
-    """Toggle global enabled flag for all automatic Frigate event analysis."""
-    try:
-        raw = yaml.safe_load(_FRIGATE_CAMERAS_PATH.read_text(encoding="utf-8")) or {}
-    except Exception:
-        raw = {"enabled": True, "cameras": {}, "roles": {}}
-
-    raw["enabled"] = bool(payload.get("enabled", True))
-    _FRIGATE_CAMERAS_PATH.write_text(
-        yaml.dump(raw, allow_unicode=True, default_flow_style=False, sort_keys=False),
-        encoding="utf-8",
-    )
-
-    from kaare_core.domain.frigate_responder import load_camera_config
-    load_camera_config()
-    return {"ok": True, "enabled": raw["enabled"]}
-
-
-@app.put("/api/settings/cameras/_storage")
-async def api_put_cameras_storage(payload: dict, _u=Depends(_require_admin)):
-    """Update storage size limits. Values are clamped: 0=disabled, snapshots 100–10000 MB, log 10–1000 MB."""
-    try:
-        raw = yaml.safe_load(_FRIGATE_CAMERAS_PATH.read_text(encoding="utf-8")) or {}
-    except Exception:
-        raw = {"enabled": True, "cameras": {}, "roles": {}}
-
-    storage = raw.setdefault("storage", {})
-
-    if "snapshots_max_mb" in payload:
-        val = int(payload["snapshots_max_mb"])
-        storage["snapshots_max_mb"] = 0 if val == 0 else max(100, min(val, 10_000))
-
-    if "log_max_mb" in payload:
-        val = int(payload["log_max_mb"])
-        storage["log_max_mb"] = 0 if val == 0 else max(10, min(val, 1_000))
-
-    _FRIGATE_CAMERAS_PATH.write_text(
-        yaml.dump(raw, allow_unicode=True, default_flow_style=False, sort_keys=False),
-        encoding="utf-8",
-    )
-
-    from kaare_core.domain.frigate_responder import load_camera_config
-    load_camera_config()
-    return {"ok": True, "storage": storage}
-
-
-@app.put("/api/settings/cameras/{camera_id}")
-async def api_put_camera(camera_id: str, payload: dict, _u=Depends(_require_admin)):
-    """Update config for one camera. Writes to frigate_cameras.yaml and hot-reloads."""
-    try:
-        raw = yaml.safe_load(_FRIGATE_CAMERAS_PATH.read_text(encoding="utf-8")) or {}
-    except Exception:
-        raw = {"enabled": True, "cameras": {}, "roles": {}}
-
-    if "cameras" not in raw:
-        raw["cameras"] = {}
-
-    # Remove internal _id field before saving
-    payload.pop("_id", None)
-    raw["cameras"][camera_id] = payload
-
-    _FRIGATE_CAMERAS_PATH.write_text(
-        yaml.dump(raw, allow_unicode=True, default_flow_style=False, sort_keys=False),
-        encoding="utf-8",
-    )
-
-    from kaare_core.domain.frigate_responder import load_camera_config
-    load_camera_config()
-    return {"ok": True, "camera_id": camera_id}
-
-
-
-class VpnCreateRequest(BaseModel):
-    username: str
-    device_name: str
-
-@app.get("/api/vpn/clients")
-async def api_vpn_list(payload: dict = Depends(_require_admin)):
-    """Lists all WireGuard VPN clients."""
-    from kaare_core.vpn import list_clients
-    try:
-        return list_clients()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/vpn/clients", status_code=201)
-async def api_vpn_create(req: VpnCreateRequest, payload: dict = Depends(_require_admin)):
-    """Creates a new WireGuard client. Returns config text for QR rendering."""
-    from kaare_core.vpn import create_client
-    try:
-        return create_client(req.username, req.device_name)
-    except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.delete("/api/vpn/clients/{client_name}")
-async def api_vpn_delete(client_name: str, payload: dict = Depends(_require_admin)):
-    """Removes a WireGuard client by name."""
-    from kaare_core.vpn import delete_client
-    try:
-        delete_client(client_name)
-        return {"ok": True}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/settings/vpn")
-async def api_get_vpn_settings(_u=Depends(_require_admin)):
-    """Return VPN endpoint config from settings.yaml."""
-    try:
-        data = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
-    except Exception:
-        data = {}
-    vpn = data.get("vpn", {})
-    return {"duckdns_host": vpn.get("duckdns_host", ""), "wg_port": int(vpn.get("wg_port", 51820))}
-
-
-@app.put("/api/settings/vpn")
-async def api_put_vpn_settings(payload: dict, _u=Depends(_require_admin)):
-    """Update VPN endpoint config in settings.yaml."""
-    allowed = {"duckdns_host", "wg_port"}
-    unknown = set(payload) - allowed
-    if unknown:
-        raise HTTPException(400, f"Unknown fields: {unknown}")
-    try:
-        data = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
-        data.setdefault("vpn", {}).update(payload)
-        _SETTINGS_PATH.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False), encoding="utf-8")
-    except Exception as e:
-        raise HTTPException(500, f"Could not write settings.yaml: {e}")
-    return {"ok": True}
-
-
-@app.get("/api/system_status")
-def api_system_status(_u=Depends(_require_auth)):
-    """
-    Returnerer hvilke moduler Kåre har aktivert.
-    Leser capability_map.yaml + services.yaml + ha_token.env.
-    Domain must be enabled AND actually configured to show as active.
-    """
-    domains = CAPABILITY_MAP.get("domains", {})
-
-    # Home Assistant: enabled in capability_map AND ha_token.env has a token
-    ha_domain_on = domains.get("home_assistant", {}).get("enabled", False)
-    ha_token = ""
-    try:
-        _ha_env = Path("/kaare/configs/ha_token.env")
-        if _ha_env.exists():
-            for ln in _ha_env.read_text(encoding="utf-8").splitlines():
-                ln = ln.strip()
-                if ln and not ln.startswith("#") and "=" in ln:
-                    ha_token = ln.partition("=")[2].strip()
-                    break
-    except Exception:
-        pass
-    ha_enabled = ha_domain_on and bool(ha_token)
-
-    # Frigate: enabled in capability_map AND a URL is configured in services.yaml
-    frigate_domain_on = domains.get("frigate", {}).get("enabled", False)
-    frigate_url = ""
-    try:
-        _svc = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
-        frigate_url = _svc.get("frigate", {}).get("url", "")
-    except Exception:
-        pass
-    frigate_enabled = frigate_domain_on and bool(frigate_url)
-
-    try:
-        from adapters.mqtt_adapter import get_status as mqtt_status
-        mqtt = mqtt_status()
-        mqtt_enabled = mqtt.get("connected", False)
-    except Exception:
-        mqtt_enabled = False
-
-    return {
-        "modules": [
-            {"name": "Local LLM", "enabled": True},
-            {"name": "Memory Module", "enabled": True},
-            {"name": "Home Assistant Bridge", "enabled": ha_enabled},
-            {"name": "Frigate Adapter", "enabled": frigate_enabled},
-            {"name": "MQTT", "enabled": mqtt_enabled},
-        ]
-    }
-
-
-def _build_service_catalog() -> list[dict]:
-    """System services (systemd processes). URLs read from services.yaml."""
-    return [
-        {"key": "kaare_api",     "name": "Kåre",          "description": "Main orchestrator API",
-         "color": "#646cff",     "check_url": get_service("internal", "kaare_api") + "/"},
-        {"key": "ha_gateway",    "name": "HA Gateway",    "description": "Home Assistant command executor",
-         "color": "#f0a500",     "check_url": get_service("internal", "ha_gateway") + "/"},
-        {"key": "semantic_embed", "name": "Semantic Embed", "description": "384-dim embedding for semantic memory",
-         "color": "#60a5fa",     "check_url": get_service("internal", "semantic_embed") + "/"},
-        {"key": "agents_server", "name": "Agents Server", "description": "Library + Pettersmart HTTP API",
-         "color": "#5ba8a0",     "check_url": get_service("internal", "agents") + "/"},
-        {"key": "voice_bridge",  "name": "Voice Bridge",  "description": "Piper TTS + Whisper STT",
-         "color": "#a78bfa",     "check_url": get_service("internal", "voice_bridge") + "/"},
-        {"key": "embedding",     "name": "Embedding",     "description": "BGE-M3 vector service (NPU)",
-         "color": "#fbbf24",     "check_url": get_service("ollama", "embed") + "/health"},
-        {"key": "qdrant",        "name": "Qdrant",        "description": "Vector database — semantic memory",
-         "color": "#34d399",     "check_url": get_service("storage", "qdrant") + "/readyz"},
-        {"key": "vaktmester",    "name": "Vaktmester",    "description": "System log monitor and alerter",
-         "color": "#fb7185",     "check_url": "file:///kaare/state/vaktmester/report.json:600"},
-        {"key": "jing_svc",      "name": "Jing (ainuc)",  "description": "Fast inner voice service",
-         "color": "#a78bfa",     "check_url": "file:///kaare/state/jing_thoughts.txt:600"},
-        {"key": "jang_svc",      "name": "Jang (ainuc)",  "description": "Slow inner voice service",
-         "color": "#f472b6",     "check_url": "file:///kaare/state/inner_thoughts.txt:2100"},
-    ]
-
-
-def _build_model_catalog() -> list[dict]:
-    """LLM/ML models being served. Model names and platforms derived from llm.yaml + models.yaml.
-    OpenVINO models on ainuc and Whisper are checked via file age / voice-bridge."""
-    try:
-        _llm = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
-    except Exception:
-        _llm = {}
-    try:
-        _svc = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
-        _embed_model = _svc.get("embedding", {}).get("hf_model") or get_model("embed")
-    except Exception:
-        _embed_model = get_model("embed")
-
-    def _platform(llm_key: str) -> str:
-        s = _llm.get(llm_key, {})
-        provider = s.get("provider", "ollama")
-        if provider == "vllm":
-            return "vLLM"
-        if provider == "openai":
-            return "OpenAI-compat"
-        if provider not in ("ollama", "openvino"):
-            return "Cloud"
-        base_url = s.get("base_url", "")
-        if "ollama:11434" in base_url or not base_url:
-            return "Ollama (builtin)"
-        host = base_url.replace("http://", "").replace("https://", "").split(":")[0]
-        return f"Ollama ({host})"
-
-    def _model(model_key: str) -> str:
-        try:
-            model_role = _llm.get(model_key, {}).get("model_role", model_key)
-            return get_model(model_role)
-        except Exception:
-            return get_model(model_key)
-
-    def _check_url_for(llm_key: str, model_key: str | None = None) -> str | None:
-        s = _llm.get(llm_key, {})
-        provider = s.get("provider", "ollama")
-        base = (s.get("base_url") or "http://ollama:11434").rstrip("/")
-        if provider == "vllm":
-            return f"{base}/health"
-        if provider == "openai":
-            return f"{base}/v1/models"
-        if provider not in ("ollama", "openvino"):
-            return None  # cloud providers — no local reachability check
-        host_port = base.replace("http://", "").replace("https://", "")
-        return f"ollama-model://{host_port}|{_model(model_key or llm_key)}"
-
-    return [
-        {"key": "llm_kare",      "name": "Kåre",               "model": _model("kare"),
-         "platform": _platform("default"),    "color": "#646cff",
-         "check_url": _check_url_for("default", "kare")},
-        {"key": "llm_miss_kare", "name": "Miss Kåre",           "model": _model("miss_kare"),
-         "platform": _platform("miss_kare"), "color": "#c084fc",
-         "check_url": _check_url_for("miss_kare")},
-        {"key": "llm_library",   "name": "Library / Pettersmart", "model": _model("library"),
-         "platform": _platform("library"),   "color": "#5ba8a0",
-         "check_url": _check_url_for("library")},
-        {"key": "llm_jing",      "name": "Jing",                "model": "qwen2.5-0.5b-openvino",
-         "platform": "ainuc (OpenVINO)",     "color": "#a78bfa",
-         "check_url": "file:///kaare/state/jing_thoughts.txt:600"},
-        {"key": "llm_jang",      "name": "Jang",                "model": "qwen2.5-3b-openvino",
-         "platform": "ainuc (OpenVINO)",     "color": "#f472b6",
-         "check_url": "file:///kaare/state/inner_thoughts.txt:2100"},
-        {"key": "whisper",       "name": "Whisper STT",         "model": "nb-whisper-large",
-         "platform": "Voice Bridge",         "color": "#60a5fa",
-         "check_url": get_service("internal", "voice_bridge") + "/"},
-        {"key": "bge_m3",        "name": _embed_model.split("/")[-1], "model": _embed_model,
-         "platform": "Embedding service",    "color": "#fbbf24",
-         "check_url": get_service("ollama", "embed") + "/health"},
-    ]
 
 _SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
 
@@ -1184,9 +804,9 @@ _VLLM_OPTION_KEYS     = {"max_tokens", "temperature", "top_p", "presence_penalty
 _VLLM_DOCKER_KEYS     = {"max_model_len", "kv_cache_dtype", "gpu_memory_utilization", "max_num_seqs", "gpu_id"}
 _OLLAMA_ENV_KEYS      = {"num_threads", "num_parallel", "max_loaded_models", "flash_attention", "kv_cache_type"}
 
-_OLLAMA_PULL_STATUS: dict[str, dict] = {}
-
-_AGENT_ENABLED: dict[str, bool] = {}
+# In-place-mutated state — owned by app_state, aliased here for backward compat
+_OLLAMA_PULL_STATUS = app_state._OLLAMA_PULL_STATUS
+_AGENT_ENABLED = app_state._AGENT_ENABLED
 
 def _reload_agent_enabled() -> None:
     try:
@@ -1446,297 +1066,6 @@ async def api_discover_ollama(_u=Depends(_require_admin)):
 
 
 
-def _ollama_base_url(role: str) -> str:
-    data = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
-    if role not in data:
-        raise HTTPException(404, f"Role {role} not in llm.yaml")
-    return data[role].get("base_url", "").rstrip("/")
-
-
-@app.get("/api/system/gpus")
-async def api_get_gpus(_u=Depends(_require_auth)):
-    """List available GPUs via nvidia-smi. Returns empty list if not available."""
-    import subprocess
-    try:
-        result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=index,name,memory.total", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=10,
-        )
-        gpus = []
-        if result.returncode == 0:
-            for line in result.stdout.strip().splitlines():
-                parts = [p.strip() for p in line.split(",")]
-                if len(parts) == 3:
-                    gpus.append({"id": int(parts[0]), "name": parts[1], "vram_gb": round(int(parts[2]) / 1024, 1)})
-        return {"gpus": gpus}
-    except Exception:
-        return {"gpus": []}
-
-
-@app.get("/api/system/hardware")
-async def api_get_hardware(refresh: bool = False, _u=Depends(_require_auth)):
-    """Detect host hardware (CPU, RAM, GPU, NPU) and cache result in state/hardware.json."""
-    import platform
-
-    hw_path = Path("/kaare/state/hardware.json")
-
-    if not refresh and hw_path.exists():
-        try:
-            return json.loads(hw_path.read_text())
-        except Exception:
-            pass
-
-    result: dict = {
-        "detected_at": datetime.utcnow().isoformat(),
-        "source": "container",
-        "platform": platform.system().lower(),
-        "cpu": {"model": "unknown", "cores": os.cpu_count() or 0},
-        "ram_gb": 0,
-        "gpus": [],
-        "npu": {"detected": False},
-    }
-
-    # CPU
-    try:
-        with open("/proc/cpuinfo") as f:
-            cpuinfo = f.read()
-        model_lines = [l.split(":", 1)[1].strip() for l in cpuinfo.splitlines() if l.startswith("model name")]
-        cores = cpuinfo.count("processor\t:")
-        result["cpu"] = {"model": model_lines[0] if model_lines else platform.processor() or "unknown", "cores": cores or (os.cpu_count() or 0)}
-    except Exception:
-        result["cpu"] = {"model": platform.processor() or "unknown", "cores": os.cpu_count() or 0}
-
-    # RAM
-    try:
-        with open("/proc/meminfo") as f:
-            for line in f:
-                if line.startswith("MemTotal:"):
-                    result["ram_gb"] = round(int(line.split()[1]) / 1024 / 1024, 1)
-                    break
-    except Exception:
-        pass
-
-    # NVIDIA GPU
-    try:
-        r = subprocess.run(
-            ["nvidia-smi", "--query-gpu=index,name,memory.total", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if r.returncode == 0:
-            for line in r.stdout.strip().splitlines():
-                parts = [p.strip() for p in line.split(",")]
-                if len(parts) == 3:
-                    result["gpus"].append({"type": "nvidia", "id": int(parts[0]), "name": parts[1], "vram_gb": round(int(parts[2]) / 1024, 1)})
-    except Exception:
-        pass
-
-    # AMD GPU (rocm-smi)
-    if not result["gpus"]:
-        try:
-            r = subprocess.run(["rocm-smi", "--showproductname", "--csv"], capture_output=True, text=True, timeout=10)
-            if r.returncode == 0:
-                for i, line in enumerate(r.stdout.strip().splitlines()):
-                    if line and not line.lower().startswith("device"):
-                        result["gpus"].append({"type": "amd", "id": i, "name": line.strip(), "vram_gb": None})
-        except Exception:
-            pass
-
-    # Intel GPU (check DRM subsystem)
-    if not result["gpus"]:
-        try:
-            dri_path = "/sys/class/drm"
-            if os.path.exists(dri_path):
-                for entry in os.listdir(dri_path):
-                    uevent_path = f"{dri_path}/{entry}/device/uevent"
-                    if os.path.exists(uevent_path):
-                        with open(uevent_path) as f:
-                            content = f.read()
-                        if "intel" in content.lower() or "i915" in content.lower():
-                            result["gpus"].append({"type": "intel", "id": 0, "name": "Intel GPU", "vram_gb": None})
-                            break
-        except Exception:
-            pass
-
-    # Intel NPU
-    try:
-        accel_path = "/dev/accel"
-        if os.path.exists(accel_path):
-            devices = os.listdir(accel_path)
-            if devices:
-                result["npu"] = {"detected": True, "devices": devices}
-    except Exception:
-        pass
-
-    try:
-        hw_path.parent.mkdir(parents=True, exist_ok=True)
-        hw_path.write_text(json.dumps(result, indent=2, ensure_ascii=False))
-    except Exception:
-        pass
-
-    return result
-
-
-@app.get("/api/ollama/models/{role}")
-async def api_get_ollama_models(role: str, _u=Depends(_require_auth)):
-    """List models installed in the Ollama instance used by this role."""
-    base_url = _ollama_base_url(role)
-    try:
-        async with httpx.AsyncClient(timeout=8) as client:
-            resp = await client.get(f"{base_url}/api/tags")
-            resp.raise_for_status()
-            models = [m["name"] for m in resp.json().get("models", [])]
-            return {"models": models}
-    except Exception as e:
-        return {"models": [], "error": str(e)}
-
-
-@app.delete("/api/ollama/models/{role}/{model_name:path}")
-async def api_delete_ollama_model(role: str, model_name: str, _u=Depends(_require_admin)):
-    """Delete a model from the Ollama instance used by this role."""
-    base_url = _ollama_base_url(role)
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.request("DELETE", f"{base_url}/api/delete", json={"model": model_name})
-            return {"ok": resp.status_code in (200, 204)}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
-async def _stream_ollama_pull(role: str, base_url: str, model: str) -> None:
-    try:
-        async with httpx.AsyncClient(timeout=600) as client:
-            async with client.stream("POST", f"{base_url}/api/pull", json={"model": model}) as resp:
-                async for line in resp.aiter_lines():
-                    if not line.strip():
-                        continue
-                    try:
-                        data = json.loads(line)
-                    except Exception:
-                        continue
-                    done = data.get("status") in ("success",)
-                    _OLLAMA_PULL_STATUS[role] = {
-                        "pulling": not done,
-                        "status": data.get("status", ""),
-                        "completed": data.get("completed", 0),
-                        "total": data.get("total", 0),
-                        "error": None,
-                    }
-        _OLLAMA_PULL_STATUS[role]["pulling"] = False
-    except Exception as e:
-        _OLLAMA_PULL_STATUS[role] = {"pulling": False, "status": "", "completed": 0, "total": 0, "error": str(e)}
-
-
-@app.post("/api/ollama/pull/{role}")
-async def api_ollama_pull(role: str, payload: dict, _u=Depends(_require_admin)):
-    """Start pulling an Ollama model in the background. Poll /status for progress."""
-    model = payload.get("model", "").strip()
-    if not model:
-        raise HTTPException(400, "model is required")
-    base_url = _ollama_base_url(role)
-    _OLLAMA_PULL_STATUS[role] = {"pulling": True, "status": "Starter nedlasting…", "completed": 0, "total": 0, "error": None}
-    asyncio.create_task(_stream_ollama_pull(role, base_url, model))
-    return {"ok": True}
-
-
-@app.get("/api/ollama/pull/status/{role}")
-async def api_ollama_pull_status(role: str, _u=Depends(_require_auth)):
-    """Return current pull progress for a role."""
-    return _OLLAMA_PULL_STATUS.get(role, {"pulling": False, "status": "", "completed": 0, "total": 0, "error": None})
-
-
-_OLLAMA_ROLE_KEYS = {"kare", "miss_kare", "library", "pettersmart", "fallback"}
-_SERVICES_OLLAMA_KEYS = {"kare", "library", "miss_kare", "proxy"}
-
-@app.get("/api/settings/ollama_source")
-async def api_get_ollama_source(_u=Depends(_require_auth)):
-    """Return current Ollama base URL and whether it appears to be the built-in container."""
-    data = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
-    url = ""
-    for role in ("kare", "miss_kare", "library", "pettersmart", "fallback"):
-        role_data = data.get(role, {})
-        if role_data.get("provider", "ollama") == "ollama" and role_data.get("base_url"):
-            url = role_data["base_url"]
-            break
-    builtin = "ollama:11434" in url
-    return {"url": url or "http://ollama:11434", "builtin": builtin}
-
-
-@app.put("/api/settings/ollama_source")
-async def api_put_ollama_source(payload: dict, _u=Depends(_require_admin)):
-    """Update Ollama base URL for all Ollama-backed roles in llm.yaml and services.yaml."""
-    url = (payload.get("url") or "http://ollama:11434").rstrip("/")
-
-    # Update llm.yaml — all roles with provider: ollama
-    llm = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
-    for role in _OLLAMA_ROLE_KEYS:
-        if role in llm and llm[role].get("provider", "ollama") == "ollama":
-            llm[role]["base_url"] = url
-    _LLM_PATH.write_text(yaml.dump(llm, allow_unicode=True, default_flow_style=False), encoding="utf-8")
-
-    # Update services.yaml — ollama.* keys (excluding embed)
-    svc = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
-    if "ollama" not in svc:
-        svc["ollama"] = {}
-    for key in _SERVICES_OLLAMA_KEYS:
-        svc["ollama"][key] = url
-    _SERVICES_PATH.write_text(yaml.dump(svc, allow_unicode=True, default_flow_style=False), encoding="utf-8")
-
-    return {"ok": True, "url": url}
-
-
-
-@app.get("/api/image/{image_id}")
-async def api_serve_image(image_id: str, _u=Depends(_require_image_auth)):
-    from kaare_core.image_store import find_image
-    safe_id = "".join(c for c in image_id if c.isalnum() or c in "_-")
-    path = find_image(safe_id)
-    if not path:
-        raise HTTPException(404, "Image not found")
-    suffix = path.suffix.lower()
-    media = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}.get(suffix.lstrip("."), "image/png")
-    return FileResponse(path, media_type=media)
-
-
-@app.get("/api/frigate_snapshot/{event_id:path}")
-async def api_serve_frigate_snapshot(event_id: str, _u=Depends(_require_image_auth)):
-    import re as _re
-    safe = _re.sub(r"[^A-Za-z0-9._\-]", "", event_id)
-    path = Path("/kaare/state/frigate_snapshots") / f"{safe}.jpg"
-    if not path.is_file():
-        raise HTTPException(404, "Frigate snapshot not found")
-    return FileResponse(path, media_type="image/jpeg")
-
-
-@app.get("/api/admin/images/stats")
-async def api_image_stats(_user=Depends(_require_admin)):
-    from kaare_core.image_store import all_users_stats
-    return all_users_stats()
-
-
-@app.get("/api/settings/images")
-async def api_get_image_settings(_user=Depends(_require_admin)):
-    import yaml as _yaml
-    cfg = _yaml.safe_load(Path("/kaare/configs/settings.yaml").read_text()) or {}
-    img = cfg.get("images", {})
-    return {
-        "max_per_user_count": int(img.get("max_per_user_count", 500)),
-        "max_per_user_mb": float(img.get("max_per_user_mb", 200)),
-    }
-
-
-@app.put("/api/settings/images")
-async def api_put_image_settings(payload: dict, _user=Depends(_require_admin)):
-    import yaml as _yaml
-    p = Path("/kaare/configs/settings.yaml")
-    cfg = _yaml.safe_load(p.read_text()) or {}
-    img = cfg.setdefault("images", {})
-    if "max_per_user_count" in payload:
-        img["max_per_user_count"] = int(payload["max_per_user_count"])
-    if "max_per_user_mb" in payload:
-        img["max_per_user_mb"] = float(payload["max_per_user_mb"])
-    p.write_text(_yaml.dump(cfg, allow_unicode=True, sort_keys=False))
-    return {"ok": True}
-
 
 
 @app.get("/api/settings/models")
@@ -1895,8 +1224,7 @@ async def api_put_services_frigate(payload: dict, _u=Depends(_require_admin)):
             Path(CAPABILITY_MAP_PATH).write_text(
                 yaml.dump(cap, allow_unicode=True, default_flow_style=False), encoding="utf-8"
             )
-            global CAPABILITY_MAP
-            CAPABILITY_MAP = cap
+            app_state.CAPABILITY_MAP = cap
         except Exception:
             pass
     return {"ok": True}
@@ -2512,8 +1840,7 @@ async def api_put_aliases(payload: dict, _u=Depends(_require_admin)):
         if section in payload:
             data[section] = payload[section]
     _ALIASES_PATH.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False), encoding="utf-8")
-    global ALIASES
-    ALIASES = data.get("aliases", {}) or {}
+    app_state.ALIASES = data.get("aliases", {}) or {}
     return {"ok": True}
 
 
@@ -2559,8 +1886,7 @@ async def api_put_capabilities(payload: dict, _u=Depends(_require_admin)):
     if "services" in payload:
         data["services"] = payload["services"]
     cap_path.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False), encoding="utf-8")
-    global CAPABILITY_MAP
-    CAPABILITY_MAP = data
+    app_state.CAPABILITY_MAP = data
     reload_capability_services()
     return {"ok": True}
 
@@ -2635,57 +1961,6 @@ async def api_test_connection(payload: dict, _u=Depends(_require_auth)):
 
 
 
-_RESTARTABLE_SERVICES = {
-    "kaare":           "kaare.service",
-    "gateway":         "kaare_ha_gateway.service",
-    "semantic_embed":  "kaare-semantic-embed.service",
-    "agents":          "kaare-agents.service",
-    "embedding":       "kaare-embedding.service",
-    "vaktmester":      "kaare-vaktmester.service",
-    "voice":           "kaare-voice-bridge.service",
-    "frontend":        "kaare-frontend.service",
-    "ha-log-bridge":   "kaare-ha-log-bridge.service",
-}
-
-_IN_DOCKER = os.path.exists("/.dockerenv")
-
-@app.post("/api/admin/restart/{service_key}")
-async def api_restart_service(service_key: str, background_tasks: BackgroundTasks, _u=Depends(_require_admin)):
-    if service_key not in _RESTARTABLE_SERVICES:
-        raise HTTPException(400, f"Unknown service: {service_key}")
-    unit = _RESTARTABLE_SERVICES[service_key]
-
-    if _IN_DOCKER:
-        if service_key == "kaare":
-            # Send SIGTERM to self — Docker compose (restart: unless-stopped) brings it back
-            def _docker_self_restart():
-                time.sleep(0.8)
-                os.kill(os.getpid(), signal.SIGTERM)
-            background_tasks.add_task(_docker_self_restart)
-            return {"ok": True, "unit": unit, "docker": True}
-        # Other services are separate containers — can't restart from inside
-        return {"ok": False, "docker": True, "error": f"In Docker: restart '{service_key}' with 'docker compose restart {service_key}'"}
-
-    # Bare-metal / systemd path
-    import subprocess as _sp
-
-    if service_key == "kaare":
-        def _self_restart():
-            time.sleep(0.6)
-            _sp.run(["sudo", "/bin/systemctl", "restart", unit], capture_output=True)
-        background_tasks.add_task(_self_restart)
-        return {"ok": True, "unit": unit}
-
-    try:
-        result = _sp.run(
-            ["sudo", "/bin/systemctl", "restart", unit],
-            capture_output=True, text=True, timeout=15
-        )
-        if result.returncode != 0:
-            return {"ok": False, "error": result.stderr.strip() or "systemctl failed"}
-        return {"ok": True, "unit": unit}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
 
 
 @app.get("/api/admin/tool_permissions")
@@ -2817,111 +2092,6 @@ async def api_put_meeting_roles(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True}
 
 
-@app.post("/api/admin/settings/rollback")
-async def api_settings_rollback(_u=Depends(_require_admin)):
-    """Restore configs/settings.yaml, llm.yaml, models.yaml, services.yaml from configs_default/."""
-    defaults_dir = Path("/kaare/configs_default")
-    configs_dir = Path("/kaare/configs")
-    files = ["settings.yaml", "llm.yaml", "models.yaml", "services.yaml", "trusted_sources.yaml"]
-    restored = []
-    errors = []
-    for fname in files:
-        src = defaults_dir / fname
-        dst = configs_dir / fname
-        if not src.exists():
-            errors.append(f"{fname}: no default found")
-            continue
-        try:
-            dst.write_bytes(src.read_bytes())
-            restored.append(fname)
-        except Exception as e:
-            errors.append(f"{fname}: {e}")
-    return {"ok": len(errors) == 0, "restored": restored, "errors": errors}
-
-
-@app.get("/api/admin/services")
-async def api_admin_services(_u=Depends(_require_auth)):
-    """Return list of restartable services with current status."""
-    statuses = {}
-    if _IN_DOCKER:
-        # In Docker each service is a separate container — can't use systemctl.
-        # Assume running (docker compose restart: unless-stopped manages this).
-        for key, unit in _RESTARTABLE_SERVICES.items():
-            statuses[key] = {"unit": unit, "active": True, "docker": True}
-        return statuses
-
-    import subprocess as _sp
-    for key, unit in _RESTARTABLE_SERVICES.items():
-        try:
-            r = _sp.run(["systemctl", "is-active", unit], capture_output=True, text=True, timeout=3)
-            statuses[key] = {"unit": unit, "active": r.stdout.strip() == "active"}
-        except Exception:
-            statuses[key] = {"unit": unit, "active": False}
-    return statuses
-
-
-async def _check_url(url: str | None) -> bool:
-    """Check if a service or model endpoint is reachable.
-    Supports:
-      file://PATH:MAX_AGE_SECONDS — file must exist and be newer than max_age
-      ollama-model://HOST:PORT|MODEL_NAME — model must be present in /api/tags
-      http(s)://... — status < 500
-    """
-    if not url:
-        return False
-    if url.startswith("file://"):
-        rest = url[7:]
-        if ":" in rest:
-            path_str, max_age_str = rest.rsplit(":", 1)
-            max_age = int(max_age_str)
-        else:
-            path_str, max_age = rest, 600
-        try:
-            return (time.time() - Path(path_str).stat().st_mtime) < max_age
-        except Exception:
-            return False
-    if url.startswith("ollama-model://"):
-        rest = url[len("ollama-model://"):]
-        host_port, _, model_name = rest.partition("|")
-        if not model_name or not host_port:
-            return False
-        try:
-            async with httpx.AsyncClient(timeout=4.0) as client:
-                r = await client.get(f"http://{host_port}/api/tags")
-                if r.status_code != 200:
-                    return False
-                available = [m.get("name", "") for m in r.json().get("models", [])]
-                # If a tag is specified (e.g. qwen3:8b), require exact match.
-                # If no tag (e.g. qwen3), match any tag variant (qwen3:8b, qwen3:latest).
-                if ":" in model_name:
-                    return model_name in available
-                else:
-                    return any(av == model_name or av.startswith(model_name + ":") for av in available)
-        except Exception:
-            return False
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            r = await client.get(url)
-            return r.status_code < 500
-    except Exception:
-        return False
-
-
-@app.get("/api/system/overview")
-async def api_system_overview():
-    """Returns live status of all system services and LLM/ML models."""
-    services = _build_service_catalog()
-    models   = _build_model_catalog()
-
-    svc_results, mdl_results = await asyncio.gather(
-        asyncio.gather(*[_check_url(s["check_url"]) for s in services]),
-        asyncio.gather(*[_check_url(m["check_url"]) for m in models]),
-    )
-
-    return {
-        "services": [{**s, "online": ok, "check_url": None} for s, ok in zip(services, svc_results)],
-        "models":   [{**m, "online": ok, "check_url": None} for m, ok in zip(models,   mdl_results)],
-    }
 
 
 @app.post("/api/ha_log")
@@ -3015,10 +2185,10 @@ async def generate(request: PromptRequest, http: Request):
     prompt = (request.prompt or "").strip()
     images = request.images
     capability_hints = {
-        "domains": list(CAPABILITY_MAP.get("domains", {}).keys()),
-        "rooms": list(CAPABILITY_MAP.get("rooms", {}).keys()),
-        "weather_enabled": CAPABILITY_MAP.get("domains", {}).get("weather", {}).get("enabled", False),
-        "time_date_enabled": CAPABILITY_MAP.get("domains", {}).get("time_date", {}).get("enabled", False),
+        "domains": list(app_state.CAPABILITY_MAP.get("domains", {}).keys()),
+        "rooms": list(app_state.CAPABILITY_MAP.get("rooms", {}).keys()),
+        "weather_enabled": app_state.CAPABILITY_MAP.get("domains", {}).get("weather", {}).get("enabled", False),
+        "time_date_enabled": app_state.CAPABILITY_MAP.get("domains", {}).get("time_date", {}).get("enabled", False),
     }
     print(f"[KÅRE] Mottatt prompt: {prompt}")
     rid = f"rid-{int(time.time()*1000)}"
@@ -3108,7 +2278,7 @@ async def generate(request: PromptRequest, http: Request):
         source=source,
         rid=rid,
         user_id=user_id,
-        memory=STM,
+        memory=app_state.STM,
         miss_kare_addressed=mk_addressed,
         api_intent_to_ha=api_intent_to_ha,
         api_exec_ha_direct=exec_ha_direct,
@@ -3159,9 +2329,9 @@ async def api_chat_history(user_id: str = "global", limit: int = 60, _u=Depends(
     Only returns user/assistant turns (skips internal system turns).
     """
     limit = max(1, min(limit, 200))
-    with STM._lock:
+    with app_state.STM._lock:
         turns = [
-            t for t in STM._dialog
+            t for t in app_state.STM._dialog
             if t.user_id == user_id and t.role in ("user", "assistant")
         ]
     turns = turns[-limit:]
@@ -3172,282 +2342,10 @@ async def api_chat_history(user_id: str = "global", limit: int = 60, _u=Depends(
 
 
 
-@app.post("/api/vaktmester_delta")
-async def api_vaktmester_delta(payload: dict, request: Request):
-    """
-    Tar imot delta/summary fra Vaktmester-Kåre.
-    Lagrer en linje i kare_log.txt som Kåre kan plukke opp videre.
-    """
-    import json, time, os
-    log_path = "/kaare/logs/vaktmester_delta.log"
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    line = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] VAKTMESTER_DELTA {json.dumps(payload, ensure_ascii=False)}\n"
-    with open(log_path, "a", encoding="utf-8") as f:
-        f.write(line)
-    return {"ok": True, "stored": len(line)}
-@app.get("/api/vaktmester_status")
-def api_vaktmester_status(limit: int = 20):
-    import json
-    from pathlib import Path
-    p = Path("/kaare/logs/vaktmester_delta.log")
-    events = []
-    if p.exists():
-        for line in reversed(p.read_text(encoding="utf-8").splitlines()):
-            if "VAKTMESTER_DELTA " in line:
-                try:
-                    payload = json.loads(line.split("VAKTMESTER_DELTA ", 1)[1])
-                    events.append(payload.get("summary", payload))
-                    if len(events) >= limit:
-                        break
-                except Exception:
-                    continue
-    return {"count": len(events), "events": events}
-@app.get("/api/vaktmester_brief")
-def api_vaktmester_brief(limit: int = 1):
-    import json
-    from pathlib import Path
-
-    p = Path("/kaare/logs/vaktmester_delta.log")
-    events = []
-    if p.exists():
-        for line in reversed(p.read_text(encoding="utf-8").splitlines()):
-            if "VAKTMESTER_DELTA " in line:
-                try:
-                    payload = json.loads(line.split("VAKTMESTER_DELTA ", 1)[1])
-                    ev = payload.get("summary", payload)
-                    events.append(ev)
-                    if len(events) >= limit:
-                        break
-                except Exception:
-                    continue
-
-    if not events:
-        return {"brief": "Ingen vaktmester-rapporter enda.", "events": []}
-
-    last = events[0]
-    sev = last.get("severity", "ok")
-    ts  = last.get("timestamp", "?")
-    ne  = last.get("new_error_total", 0)
-    nw  = last.get("new_warning_total", 0)
-
-    def fmt_top(items):
-        if not items: return "ingen"
-        return ", ".join(f"{k.split('.')[-1]}:+{v}" for k,v in items[:3])
-
-    top_err = fmt_top(last.get("top_error_components", []))
-    top_warn= fmt_top(last.get("top_warning_components", []))
-    tot_e   = last.get("totals",{}).get("errors",0)
-    tot_w   = last.get("totals",{}).get("warnings",0)
-
-    brief = (
-        f"[{ts}] Status: {sev.upper()}. "
-        f"Nye feil: {ne}, nye varsler: {nw}. "
-        f"Topp feilkomponenter: {top_err}. "
-        f"Topp varselkomponenter: {top_warn}. "
-        f"Totalt (akkumulert): errors={tot_e}, warnings={tot_w}."
-    )
-    return {"brief": brief, "events": events}
-@app.get("/api/vaktmester_advice")
-def api_vaktmester_advice(limit: int = 1):
-    rules_path = Path("/kaare/kaare_advice_rules.yaml")
-    log_path   = Path("/kaare/logs/vaktmester_delta.log")
-
-    # last regler
-    rules = []
-    if rules_path.exists():
-        try:
-            rules = yaml.safe_load(rules_path.read_text(encoding="utf-8")) or []
-        except Exception:
-            rules = []
-
-    # hent siste delta
-    payload = None
-    if log_path.exists():
-        for line in reversed(log_path.read_text(encoding="utf-8").splitlines()):
-            if "VAKTMESTER_DELTA " in line:
-                try:
-                    payload = json.loads(line.split("VAKTMESTER_DELTA ", 1)[1])
-                    break
-                except Exception:
-                    continue
-    if not payload:
-        return {"advice": [], "note": "Ingen deltarapporter enda."}
-
-    delta_err = payload.get("delta_errors", {}) or {}
-    delta_wrn = payload.get("delta_warnings", {}) or {}
-    summary   = payload.get("summary", {})
-
-    out = []
-    for r in rules:
-        patt = re.compile(r.get("match", ".*"))
-        hits_err = sum(v for k,v in delta_err.items() if patt.search(k))
-        hits_wrn = sum(v for k,v in delta_wrn.items() if patt.search(k))
-        trig = False
-        if r.get("threshold_errors")   and hits_err >= int(r["threshold_errors"]):   trig = True
-        if r.get("threshold_warnings") and hits_wrn >= int(r["threshold_warnings"]): trig = True
-        if trig:
-            out.append({"id": r.get("id"), "advice": r.get("advice"),
-                        "hits": {"errors": hits_err, "warnings": hits_wrn}})
-    out.sort(key=lambda x: (x["hits"]["errors"], x["hits"]["warnings"]), reverse=True)
-    return {"timestamp": summary.get("timestamp"),
-            "severity": summary.get("severity"),
-            "advice": out}
-@app.get("/api/vaktmester_types")
-def api_vaktmester_types():
-    import json
-    from pathlib import Path
-    log_path = Path("/kaare/logs/vaktmester_delta.log")
-
-    payload = None
-    if log_path.exists():
-        for line in reversed(log_path.read_text(encoding="utf-8").splitlines()):
-            if "VAKTMESTER_DELTA " in line:
-                try:
-                    payload = json.loads(line.split("VAKTMESTER_DELTA ", 1)[1])
-                    break
-                except Exception:
-                    continue
-
-    if not payload:
-        return {"delta_warnings": {}, "delta_errors": {}, "note": "Ingen delta funnet"}
-
-    summary = payload.get("summary", {}) or {}
-    return {
-        "timestamp": summary.get("timestamp"),
-        "severity": summary.get("severity"),
-        "delta_warnings": payload.get("delta_warnings", {}) or {},
-        "delta_errors": payload.get("delta_errors", {}) or {},
-        "top_warning_components": summary.get("top_warning_components", []) or [],
-        "top_error_components": summary.get("top_error_components", []) or [],
-    }
-@app.get("/api/reflections/{username}")
-def api_reflections_list(username: str):
-    from pathlib import Path
-    d = Path(f"/kaare/state/memory/reflections/{username}")
-    if not d.exists():
-        return []
-    files = sorted(d.glob("[0-9][0-9][0-9][0-9]-*.md"), reverse=True)
-    return [f.stem for f in files]
-
-class _PinBody(BaseModel):
-    pin: str
-
-@app.post("/api/reflections/{username}/{date}")
-def api_reflection_get(username: str, date: str, body: _PinBody):
-    from pathlib import Path
-    import re as _re
-    from fastapi import HTTPException
-    from kaare_core.users.store import get_user_with_hash, verify_pin
-    if not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
-        raise HTTPException(400, "Ugyldig dato-format")
-    user = get_user_with_hash(username)
-    if not user or not verify_pin(body.pin, user["pin_hash"]):
-        raise HTTPException(403, "Feil PIN")
-    p = Path(f"/kaare/state/memory/reflections/{username}/{date}.md")
-    if not p.exists():
-        raise HTTPException(404, "Ikke funnet")
-    return {"date": date, "content": p.read_text(encoding="utf-8")}
-
-@app.get("/api/dev-meetings")
-def api_dev_meetings_list():
-    from pathlib import Path
-    d = Path("/kaare/state/memory/dev_meetings")
-    if not d.exists():
-        return []
-    files = sorted(d.glob("*.md"), reverse=True)
-    return [f.stem for f in files]
-
-@app.get("/api/dev-meetings/{date}")
-def api_dev_meeting_get(date: str):
-    from pathlib import Path
-    import re
-    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
-        from fastapi import HTTPException
-        raise HTTPException(400, "Ugyldig dato-format")
-    p = Path(f"/kaare/state/memory/dev_meetings/{date}.md")
-    if not p.exists():
-        from fastapi import HTTPException
-        raise HTTPException(404, "Ikke funnet")
-    return {"date": date, "content": p.read_text(encoding="utf-8")}
-
-
-import json as _json
-
-_TOPICS_FILE = Path("/kaare/state/meeting_topics.json")
-_COMMENTS_DIR = Path("/kaare/state/meeting_comments")
-
-def _load_topics() -> dict:
-    try:
-        return _json.loads(_TOPICS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {"reflection": "", "dev": ""}
-
-def _save_topics(data: dict) -> None:
-    _TOPICS_FILE.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-class _TopicBody(BaseModel):
-    topic: str
-
-class _CommentBody(BaseModel):
-    comment: str
-
-@app.get("/api/meetings/topic/{meeting_type}")
-def api_get_topic(meeting_type: str):
-    from fastapi import HTTPException
-    if meeting_type not in ("reflection", "dev"):
-        raise HTTPException(400, "Ugyldig møtetype")
-    return {"topic": _load_topics().get(meeting_type, "")}
-
-@app.post("/api/meetings/topic/{meeting_type}")
-def api_set_topic(meeting_type: str, body: _TopicBody):
-    from fastapi import HTTPException
-    if meeting_type not in ("reflection", "dev"):
-        raise HTTPException(400, "Ugyldig møtetype")
-    data = _load_topics()
-    data[meeting_type] = body.topic.strip()
-    _save_topics(data)
-    return {"ok": True}
-
-@app.get("/api/meetings/comment/{meeting_type}/{date}")
-def api_get_comment(meeting_type: str, date: str):
-    import re as _re
-    from fastapi import HTTPException
-    if meeting_type not in ("reflection", "dev"):
-        raise HTTPException(400, "Ugyldig møtetype")
-    if not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
-        raise HTTPException(400, "Ugyldig dato")
-    p = _COMMENTS_DIR / meeting_type / f"{date}.txt"
-    return {"comment": p.read_text(encoding="utf-8").strip() if p.exists() else ""}
-
-@app.post("/api/meetings/comment/{meeting_type}/{date}")
-def api_set_comment(meeting_type: str, date: str, body: _CommentBody):
-    import re as _re
-    from fastapi import HTTPException
-    if meeting_type not in ("reflection", "dev"):
-        raise HTTPException(400, "Ugyldig møtetype")
-    if not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
-        raise HTTPException(400, "Ugyldig dato")
-    p = _COMMENTS_DIR / meeting_type / f"{date}.txt"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(body.comment.strip(), encoding="utf-8")
-    return {"ok": True}
-
-
 import subprocess as _sp
 
-_MEETING_STATUS: dict = {
-    "reflection": {"running": False, "progress": 0, "round": 0, "max_rounds": 6,
-                   "step": "", "log": [], "started_at": None, "source": None},
-    "dev":        {"running": False, "progress": 0, "round": 0, "max_rounds": 6,
-                   "step": "", "log": [], "started_at": None, "source": None},
-}
-_MEETING_PROCS: dict = {}
-
-_NIGHTJOB_STATUS: dict = {
-    "running": False, "episodes": 0, "compressed": 0,
-    "step": "", "log": [], "started_at": None, "finished_at": None, "error": None,
-}
-_NIGHTJOB_PROC = None
+# In-place-mutated state — owned by app_state, aliased here for backward compat
+_NIGHTJOB_STATUS = app_state._NIGHTJOB_STATUS
 
 
 async def _stream_nightjob_proc(proc) -> None:
@@ -3482,73 +2380,6 @@ async def _stream_nightjob_proc(proc) -> None:
         st["finished_at"] = datetime.now().isoformat()
 
 
-def _parse_meeting_round(line: str):
-    m = re.search(r"Runde (\d+)/(\d+)", line)
-    if m:
-        return int(m.group(1)), int(m.group(2))
-    return None
-
-
-async def _stream_meeting_proc(key: str, proc) -> None:
-    st = _MEETING_STATUS[key]
-    try:
-        async for raw in proc.stdout:
-            line = raw.decode(errors="replace").rstrip()
-            st["log"].append(line)
-            if len(st["log"]) > 60:
-                st["log"].pop(0)
-            rounds = _parse_meeting_round(line)
-            if rounds:
-                st["round"], st["max_rounds"] = rounds
-                st["progress"] = int(rounds[0] / rounds[1] * 90)
-                st["step"] = line
-            elif "ferdig" in line.lower() or line.startswith("==="):
-                st["step"] = line
-        await proc.wait()
-        if proc.returncode == 0:
-            st["progress"] = 100
-    except Exception as exc:
-        st["log"].append(f"[feil: {exc}]")
-    finally:
-        st["running"] = False
-
-
-def _detect_systemd_meeting(key: str, svc: str) -> None:
-    st = _MEETING_STATUS[key]
-    try:
-        r = _sp.run(["systemctl", "is-active", f"{svc}.service"],
-                    capture_output=True, text=True, timeout=2)
-        is_active = r.stdout.strip() == "active"
-        if is_active and not st["running"]:
-            st.update({"running": True, "source": "timer",
-                       "started_at": st["started_at"] or datetime.now().isoformat()})
-        elif not is_active and st["running"] and st["source"] == "timer":
-            st["running"] = False
-    except Exception:
-        pass
-
-    if st["running"] and st["source"] == "timer":
-        try:
-            jr = _sp.run(
-                ["journalctl", "-u", f"{svc}.service", "-n", "30",
-                 "--no-pager", "--output=cat"],
-                capture_output=True, text=True, timeout=3,
-            )
-            lines = [ln for ln in jr.stdout.splitlines() if ln.strip()]
-            if lines:
-                st["log"] = lines[-15:]
-                for line in reversed(lines):
-                    rounds = _parse_meeting_round(line)
-                    if rounds:
-                        st["round"] = rounds[0]
-                        st["max_rounds"] = rounds[1]
-                        st["progress"] = int(rounds[0] / rounds[1] * 90)
-                        st["step"] = line
-                        break
-        except Exception:
-            pass
-
-
 def _load_env_file(path: str, env: dict) -> None:
     try:
         for ln in Path(path).read_text(encoding="utf-8").splitlines():
@@ -3560,64 +2391,8 @@ def _load_env_file(path: str, env: dict) -> None:
         pass
 
 
-@app.get("/api/meetings/status")
-async def api_meetings_status():
-    _detect_systemd_meeting("reflection", "kaare-reflection")
-    _detect_systemd_meeting("dev", "kaare-dev-meeting")
-    return {"reflection": _MEETING_STATUS["reflection"], "dev": _MEETING_STATUS["dev"]}
-
-
-@app.post("/api/reflections/start")
-async def api_reflections_start():
-    st = _MEETING_STATUS["reflection"]
-    if st["running"]:
-        return {"status": "already_running"}
-    try:
-        env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": "/kaare"}
-        _load_env_file("/kaare/configs/kare_llm.env", env)
-        _MEETING_LOCK.touch()
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable, "/kaare/kaare_reflection_runner.py",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-            cwd="/kaare", env=env,
-        )
-        _MEETING_PROCS["reflection"] = proc
-        st.update({"running": True, "progress": 0, "round": 0, "step": "Starter…",
-                   "log": [], "started_at": datetime.now().isoformat(), "source": "manual"})
-        asyncio.create_task(_stream_meeting_proc("reflection", proc))
-        return {"status": "started"}
-    except Exception as exc:
-        _MEETING_LOCK.unlink(missing_ok=True)
-        return {"status": "error", "detail": str(exc)}
-
-
-@app.post("/api/dev-meetings/start")
-async def api_dev_meetings_start():
-    st = _MEETING_STATUS["dev"]
-    if st["running"]:
-        return {"status": "already_running"}
-    try:
-        env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": "/kaare"}
-        _load_env_file("/kaare/configs/kare_llm.env", env)
-        _MEETING_LOCK.touch()
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable, "/kaare/kaare_dev_meeting.py",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-            cwd="/kaare", env=env,
-        )
-        _MEETING_PROCS["dev"] = proc
-        st.update({"running": True, "progress": 0, "round": 0, "step": "Starter…",
-                   "log": [], "started_at": datetime.now().isoformat(), "source": "manual"})
-        asyncio.create_task(_stream_meeting_proc("dev", proc))
-        return {"status": "started"}
-    except Exception as exc:
-        _MEETING_LOCK.unlink(missing_ok=True)
-        return {"status": "error", "detail": str(exc)}
-
-
 @app.post("/api/memory/compress")
 async def api_memory_compress():
-    global _NIGHTJOB_PROC
     if _NIGHTJOB_STATUS["running"]:
         return {"status": "already_running"}
     try:
@@ -3628,7 +2403,7 @@ async def api_memory_compress():
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
             cwd="/kaare", env=env,
         )
-        _NIGHTJOB_PROC = proc
+        app_state._NIGHTJOB_PROC = proc
         _NIGHTJOB_STATUS.update({
             "running": True, "episodes": 0, "compressed": 0,
             "step": "Starter…", "log": [],

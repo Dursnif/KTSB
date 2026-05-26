@@ -630,7 +630,7 @@
     "title": "Vedlikehold",
     "hot_reload": {
       "title": "Hot-reload konfig",
-      "description": "Laster inn YAML-filer på nytt i kjørende prosesser — uten restart. Dekker: aliases, sprakvask, capability_map, llm.yaml, models.yaml, services.yaml, settings.yaml, personlighet.",
+      "description": "Laster inn YAML-filer på nytt i kjørende prosesser — uten restart. Dekker: aliases, lang_normalize, capability_map, llm.yaml, models.yaml, services.yaml, settings.yaml, personlighet.",
       "button": "Hot-reload alle konfig-filer",
       "loading": "Laster inn…",
       "ok": "{{count}} filer lastet — {{aliases}} aliaser",
