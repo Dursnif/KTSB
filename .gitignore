@@ -8,7 +8,7 @@ configs/*.save
 configs/*.save.*
 configs/kare_ha_bridgealiases.yaml.txt
 configs/prism/
-docs/
+docs/*.md
 .env
 
 # Runtime state — instance-specific, recreated on first run
@@ -55,6 +55,11 @@ models/
 *.jpg
 *.jpeg
 *.gif
+# Exception: docs/ folder is allowed for README assets
+!docs/*.png
+!docs/*.jpg
+!docs/*.jpeg
+!docs/*.gif
 .playwright-mcp/
 
 # Claude Code — personal settings and memory

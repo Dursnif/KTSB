@@ -55,6 +55,11 @@ rsync -av --delete \
   --exclude='*.safetensors' \
   --exclude='*.pt' \
   --exclude='*.ot' \
+  --include='docs/' \
+  --include='docs/*.png' \
+  --include='docs/*.jpg' \
+  --include='docs/*.jpeg' \
+  --include='docs/*.gif' \
   --exclude='*.png' \
   --exclude='*.jpg' \
   --exclude='*.jpeg' \

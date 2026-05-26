@@ -27,6 +27,8 @@ It makes sense when you think about it. Home Assistant is an I/O powerhouse — 
 
 Each system stays focused on what it does best.
 
+![KTSB Dashboard](docs/dashboard.jpg)
+
 ---
 
 ## What can Kåre do?
@@ -142,6 +144,14 @@ Press `Ctrl+C` to stop watching logs. The services keep running in the backgroun
 ### Step 4 — Open the browser
 
 Go to **http://localhost** in your web browser.
+
+Log in with the default admin credentials:
+
+| Username | PIN |
+|----------|-----|
+| `admin` | `1234` |
+
+> **Change your PIN** after first login under Settings → Users.
 
 The onboarding wizard walks you through the rest — no config files to edit manually:
 
