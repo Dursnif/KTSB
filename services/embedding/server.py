@@ -45,6 +45,12 @@ DEVICE     = _cfg.get("device", "NPU")
 PORT       = int(_cfg.get("port", 11446))
 MAX_LENGTH = int(_cfg.get("max_length", 512))
 
+# ── Startup guard ──────────────────────────────────────────────────────────────
+if not _cfg.get("enabled", True):
+    import time as _time
+    log.info("[embedding] Disabled via config (embedding.enabled: false) — sleeping.")
+    while True:
+        _time.sleep(300)
 
 # ── Model loading ──────────────────────────────────────────────────────────────
 class _NPUEmbedder:

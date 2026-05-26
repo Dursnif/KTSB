@@ -1,4 +1,5 @@
 embedding:
+  enabled: false
   device: torch
   hf_model: BAAI/bge-m3
   max_length: 512

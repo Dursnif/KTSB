@@ -198,14 +198,19 @@ def _build_services() -> list[tuple[str, str]]:
     ollama_miss  = _u(ollama.get("miss_kare"),        "http://127.0.0.1:11445")
     ollama_lib   = _u(ollama.get("library"),          "http://127.0.0.1:11447")
 
+    mem_embed_enabled = svc.get("memory_embed", {}).get("enabled", False)
+    bge_embed_enabled = svc.get("embedding", {}).get("enabled", True)
+
     services = [
         ("Main API",       kaare_api  + "/"),
         ("HA gateway",     ha_gateway + "/"),
-        ("Semantic embed", sem_embed  + "/"),
-        ("Embedding (BGE)", embed     + "/health"),
         ("Agents server",  agents     + "/"),
         ("Qdrant",         qdrant     + "/"),
     ]
+    if mem_embed_enabled:
+        services.append(("Semantic embed", sem_embed + "/"))
+    if bge_embed_enabled:
+        services.append(("Embedding (BGE)", embed + "/health"))
 
     default_llm = llm.get("default", {})
     if default_llm.get("provider") == "vllm":
