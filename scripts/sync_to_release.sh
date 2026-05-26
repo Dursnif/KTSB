@@ -69,6 +69,7 @@ rsync -av --delete \
   --exclude='claude_memory' \
   --exclude='CLAUDE.md' \
   --exclude='CURRENT.md' \
+  --exclude='DEBUG_*.md' \
   --exclude='vaktmester_report.json' \
   --exclude='vaktmester_state.json' \
   --exclude='vaktmester_delta.json' \
