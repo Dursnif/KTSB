@@ -1,5 +1,5 @@
 # KTSB Windows-installasjon — Debug & Status
-_Sist oppdatert: 2026-05-26 (v1.0.12). Les denne filen for å fortsette arbeid etter context-compact._
+_Sist oppdatert: 2026-05-26 (v1.0.15). Les denne filen for å fortsette arbeid etter context-compact._
 
 > **Kontekst:** Windows-PC (192.168.0.203) er testplatform for GitHub-slippet.
 > Kode endres alltid i `/kaare` på AI-PC, synces til `/mnt/ai_disk/ktsb-release`, pushes til GitHub.
@@ -14,68 +14,99 @@ Kryss av med `[x]` etterhvert som hvert punkt er ferdig og verifisert på Window
 
 ### Gruppe A — Datalekkasjer (persondata i GitHub-repoen)
 
-- [ ] **A1: `configs/frigate_cameras.yaml` fjernes fra GitHub**
+- [x] **A1: `configs/frigate_cameras.yaml` fjernes fra GitHub**
   - Legg til `--exclude='configs/frigate_cameras.yaml'` i `scripts/sync_to_release.sh`
   - Lag ren `configs_default/frigate_cameras.yaml` med tom `cameras: {}`
   - Slett filen fra `/mnt/ai_disk/ktsb-release/configs/` med `git rm`
   - Verifiser: Windows-PC har ikke kameranavn i GUI etter `git pull + docker compose up`
 
-- [ ] **A2: `configs_default/models.yaml` — bytt til generiske defaults**
+- [x] **A2: `configs_default/models.yaml` — bytt til generiske defaults**
   - `kare: qwen3:8b` (ikke `huihui_ai/Qwen3.6-abliterated:27b`)
   - `miss_kare: qwen3:4b` (ikke `huihui_ai/qwen3.5-abliterated:9b`)
   - `library: qwen3:4b` (ikke `huihui_ai/qwen3-abliterated:8b`)
   - Merk: endrer ikke eksisterende installasjoner (entrypoint kopierer kun ved første oppstart)
   - Verifiser: LLM/Modeller-fanen viser generiske modellnavn for ny installasjon
 
-- [ ] **A3: Frontend-placeholder "stian" → generisk**
+- [x] **A3: Frontend-placeholder "stian" → generisk**
   - `frontend/src/pages/admin/Nodes.tsx:201`: `placeholder="stian"` → `placeholder="admin"`
 
-- [ ] **A4: Frontend-placeholder modellnavn → generisk**
+- [x] **A4: Frontend-placeholder modellnavn → generisk**
   - `frontend/src/pages/admin/Settings.tsx:878`: `placeholder="f.eks. huihui_ai/qwen3.5-abliterated:9b"` → `placeholder="f.eks. qwen3:8b"`
 
 ### Gruppe B — Bugs
 
-- [ ] **B1: Alias-fanen krasjer — sort skjerm (KRITISK)**
+- [x] **B1: Alias-fanen krasjer — sort skjerm (KRITISK)**
   - Fix backend `kaare_api.py:2491`: `data.get("aliases", {})` → `data.get("aliases") or {}`
   - Fix frontend `Aliases.tsx:323`: `config.aliases` → `config.aliases ?? {}` (null-guard)
   - Verifiser: Alias-fanen åpnes uten krasj på Windows-PC
 
-- [ ] **B2: Systemsjekk bruker `127.0.0.1` — feiler i Docker**
+- [x] **B2: Systemsjekk bruker `127.0.0.1` — feiler i Docker**
   - `scripts/health_check.py:170-180`: SERVICES-listen hardkoder `http://127.0.0.1:PORT`
   - Fix: Les URL-er fra `services.yaml` (Docker-hostnavn: `kaare-ha-gateway:8002`, `qdrant:6333`, etc.)
   - Alternativ: Kjør sjekken fra innsiden av kaare-api-containeren med interne hostnavn
   - Verifiser: Systemsjekk viser korrekte feil (kun HA gateway / vLLM / Ollama 9B som forventet)
 
-- [ ] **B3: Miss Kåre vises "online" i dashboard selv uten modell**
+- [x] **B3: Miss Kåre vises "online" i dashboard selv uten modell**
   - Årsak: v1.0.10 `_IN_DOCKER`-fix returnerer `active: true` for alle tjenester
   - Fix: Modellkort i dashboard bør sjekke `ollama-model://` (faktisk modell tilgjengelig?) ikke systemd-status
   - Verifiser: Miss Kåre-kortet viser "offline" på Windows-PC (9B ikke installert)
 
-- [ ] **B4: Hot-reload feilmelding — "gateway: All connection attempts failed"**
+- [x] **B4: Hot-reload feilmelding — "gateway: All connection attempts failed"**
   - Årsak: Hot-reload prøver alltid å nå HA-gateway, selv om HA ikke er konfigurert
   - Fix: Sjekk `home_assistant.url` i services.yaml — hopp over gateway-reload og vis "hoppet over" hvis tom
   - Verifiser: Hot-reload på Windows-PC gir ikke feilmelding om gateway
 
 ### Gruppe C — Etter A+B er ferdig
 
-- [ ] **C1: Oppdater `configs_default/aliases.yaml` — fjern `aliases: null`**
+- [x] **C1: Oppdater `configs_default/aliases.yaml` — fjern `aliases: null`**
   - Filen har `aliases: null` som krasjer alias-fanen. Bytt til `aliases: {}`
   - Dette er en del av B1-fiksen (backend-fix er primær, men default bør også ryddes)
 
-- [ ] **C2: Release — sync, commit, tag, push**
-  - `bash /kaare/scripts/sync_to_release.sh`
-  - `cd /mnt/ai_disk/ktsb-release && git rm configs/frigate_cameras.yaml`
-  - `git add -A && git commit -m "fix: remove personal data, fix alias crash, fix system check Docker URLs"`
-  - `git tag v1.0.13 && git push && git push --tags`
-  - Verifiser: Windows-PC: `git pull && docker compose pull && docker compose up -d`
+- [x] **C2: Release — sync, commit, tag, push**
+  - v1.0.13: Alle A1–B4 + C1 fikser. Verifisert i container.
+  - v1.0.14: Embedding startup-guard + health check hopper over deaktiverte tjenester.
+  - Gjenstår: Windows-PC trenger `docker compose pull && docker compose up -d` (kjøres manuelt pga. credentials-problem)
 
-- [ ] **C3: Test alle fikser på Windows-PC**
-  - Alias-fanen åpner uten krasj
-  - Kameranavn er borte (tom kamera-fane)
-  - Modellnavn er generiske i LLM/Modeller
-  - Systemsjekk viser korrekte resultater
-  - Miss Kåre-kort viser riktig status
+- [ ] **C3: Test alle fikser på Windows-PC** ← NESTE STEG
+  - Krever at Windows-PC kjører v1.0.15-images (se under)
+  - `docker compose pull && docker compose up -d` på Windows-PC
+  - Alias-fanen åpner uten krasj ✅ (verifisert i container via Python)
+  - Kameranavn er borte (tom kamera-fane) ✅ (verifisert: `configs/frigate_cameras.yaml` slettet)
+  - Modellnavn er generiske i LLM/Modeller ✅ (verifisert: `qwen3:8b` i container)
+  - Systemsjekk viser 0 feil (Embedding + Semantic embed hoppet over)
+  - Miss Kåre-kort viser offline (ikke online)
   - Hot-reload gir ikke falsk feilmelding om gateway
+  - `configs/services.yaml` er reparert (migration erstatter ødelagt YAML automatisk)
+
+---
+
+## Gjenstående etter v1.0.14 — oppdatering av eksisterende install
+
+**Problem:** Windows-PC kjørte første gang med gammel `configs_default/services.yaml` (uten `embedding.enabled: false`).
+Entrypoint kopierer kun fra defaults ved første oppstart. Eksisterende `configs/services.yaml` mangler flagget.
+
+**Symptom:** Embedding-containeren starter og prøver å laste ned BGE-M3 (~2GB) fra HuggingFace automatisk.
+
+**Fix for eksisterende installasjon (Windows-PC):**
+Legg til `enabled: false` under `embedding:` i `C:\Users\stian\Documents\KTSB\configs\services.yaml` manuelt,
+eller kjør dette i PowerShell på Windows-PC:
+```powershell
+# Alternativ: rediger filen direkte
+notepad C:\Users\stian\Documents\KTSB\configs\services.yaml
+# Legg til "  enabled: false" under "embedding:" seksjonen
+```
+
+**Nye installasjoner:** Får automatisk `enabled: false` fra `configs_default/services.yaml` via entrypoint.
+
+**Oppdater til v1.0.14 (pga. credentials-problem i Docker på Windows):**
+```powershell
+# Kjør i PowerShell på Windows-PC (192.168.0.203):
+cd C:\Users\stian\Documents\KTSB
+git pull
+docker compose pull
+docker compose up -d
+```
+Forrige gang fungerte `docker compose pull` etter at det ble kjørt direkte i PowerShell (ikke via SSH).
 
 ---
 
@@ -398,6 +429,9 @@ Konfigureres via GUI: Innstillinger → LLM/Modeller → Semantisk minne. Ikke d
 | v1.0.10 | Docker restart (SIGTERM), tjenestestatus Docker, MQTT startup-guard |
 | v1.0.11 | personality_mode: minimal som default |
 | v1.0.12 | **0 tools under 9B** — 9B+ er minimum for tool-bruk |
+| v1.0.13 | Fjern persondata (kameranavn), generiske modell-defaults, alias-krasj fikset, systemsjekk Docker-aware, modellstatus presis match, hot-reload hopper over ukonfigurert gateway |
+| v1.0.14 | Embedding startup-guard (sover hvis `enabled: false`), health check hopper over deaktiverte tjenester (Semantic embed + BGE) |
+| v1.0.15 | Config-migrering: `scripts/migrate_configs.py` kjører ved hver oppstart — fikser ødelagt YAML, legger til manglende nøkler fra defaults |
 
 ---
 

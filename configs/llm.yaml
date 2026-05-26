@@ -15,6 +15,7 @@ default:
     presence_penalty: 1.5
     temperature: 1
     top_p: 0.75
+    num_predict: 512
   provider: vllm
   stream: false
   system: 'Du er Kåre. Du bor med familien, kjenner hjemmet og menneskene i det —
@@ -121,6 +122,7 @@ reason_freely:
   options:
     max_tokens: 2048
     temperature: 0.7
+    num_predict: 512
   provider: vllm
   stream: false
   think: true
