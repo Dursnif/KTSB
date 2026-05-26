@@ -104,6 +104,8 @@ def write_entry(entry: dict) -> None:
 # ─── WebSocket loop ───────────────────────────────────────────────────────────
 
 async def connect_and_listen() -> None:
+    if not TOKEN_FILE.exists():
+        raise RuntimeError(f"ha_token.env not found at {TOKEN_FILE} — configure HA token via GUI")
     token  = read_token()
     msg_id = 1
 
@@ -159,6 +161,11 @@ async def connect_and_listen() -> None:
 # ─── Daemon ───────────────────────────────────────────────────────────────────
 
 async def daemon() -> None:
+    if not _HA_URL:
+        log.info("Home Assistant URL not configured — sleeping (set home_assistant.url in services.yaml to enable).")
+        while True:
+            await asyncio.sleep(300)
+
     log.info("ha_log_bridge starting — events: %s", SUBSCRIBE_EVENTS)
     while True:
         try:
