@@ -621,6 +621,15 @@ function LlmRoleCard({ role, config, onSaved, allConfigs }: { role: string; conf
   const [dockerRestarting, setDockerRestarting] = useState(false);
   const [dockerStatus, setDockerStatus] = useState<"idle" | "ok" | "error">("idle");
   const ss = useSaveState();
+
+  const toggleEnabled = async (v: boolean) => {
+    setAgentEnabled(v);
+    try {
+      await apiPutLlmRole(role, { enabled: v } as Parameters<typeof apiPutLlmRole>[1]);
+    } catch {
+      setAgentEnabled(!v);
+    }
+  };
   const info = LLM_ROLE_LABELS[role] ?? {};
   const roleLabel = t(`settings.llm.role_labels.${role}`, role);
   const isToggleable = AGENT_TOGGLEABLE.includes(role);
@@ -847,7 +856,7 @@ function LlmRoleCard({ role, config, onSaved, allConfigs }: { role: string; conf
             {isToggleable && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">{agentEnabled ? t("common.enabled") : t("common.disabled")}</span>
-                <Switch checked={agentEnabled} onCheckedChange={setAgentEnabled} className="data-checked:bg-green-600 data-unchecked:bg-red-600" />
+                <Switch checked={agentEnabled} onCheckedChange={toggleEnabled} className="data-checked:bg-green-600 data-unchecked:bg-red-600" />
               </div>
             )}
             <Badge variant="outline" className="font-mono text-xs">{role}</Badge>
@@ -1352,6 +1361,15 @@ function ImageRoleCard({ role, config, onSaved }: { role: string; config: LlmRol
   const info = LLM_ROLE_LABELS[role] ?? {};
   const roleLabel = t(`settings.llm.role_labels.${role}`, role);
 
+  const toggleEnabled = async (v: boolean) => {
+    setAgentEnabled(v);
+    try {
+      await apiPutLlmRole(role, { enabled: v } as Parameters<typeof apiPutLlmRole>[1]);
+    } catch {
+      setAgentEnabled(!v);
+    }
+  };
+
   const save = async () => {
     ss.saving();
     try {
@@ -1386,7 +1404,7 @@ function ImageRoleCard({ role, config, onSaved }: { role: string; config: LlmRol
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">{agentEnabled ? t("common.enabled") : t("common.disabled")}</span>
-              <Switch checked={agentEnabled} onCheckedChange={setAgentEnabled} className="data-checked:bg-green-600 data-unchecked:bg-red-600" />
+              <Switch checked={agentEnabled} onCheckedChange={toggleEnabled} className="data-checked:bg-green-600 data-unchecked:bg-red-600" />
             </div>
             <Badge variant="outline" className="font-mono text-xs">{role}</Badge>
           </div>
