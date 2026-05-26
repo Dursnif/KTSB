@@ -1069,12 +1069,14 @@ def _build_model_catalog() -> list[dict]:
     except Exception:
         _embed_model = get_model("embed")
 
-    def _platform(role: str) -> str:
-        s = _llm.get(role, {})
+    def _platform(llm_key: str) -> str:
+        s = _llm.get(llm_key, {})
         provider = s.get("provider", "ollama")
         if provider == "vllm":
             return "vLLM"
-        if provider not in ("ollama",):
+        if provider == "openai":
+            return "OpenAI-compat"
+        if provider not in ("ollama", "openvino"):
             return "Cloud"
         base_url = s.get("base_url", "")
         if "ollama:11434" in base_url or not base_url:
@@ -1082,28 +1084,36 @@ def _build_model_catalog() -> list[dict]:
         host = base_url.replace("http://", "").replace("https://", "").split(":")[0]
         return f"Ollama ({host})"
 
-    def _model(role: str) -> str:
+    def _model(model_key: str) -> str:
         try:
-            model_role = _llm.get(role, {}).get("model_role", role)
+            model_role = _llm.get(model_key, {}).get("model_role", model_key)
             return get_model(model_role)
         except Exception:
-            return get_model(role)
+            return get_model(model_key)
 
-    def _ollama_check(role: str) -> str:
-        base = (_llm.get(role, {}).get("base_url") or "http://ollama:11434").rstrip("/")
+    def _check_url_for(llm_key: str, model_key: str | None = None) -> str | None:
+        s = _llm.get(llm_key, {})
+        provider = s.get("provider", "ollama")
+        base = (s.get("base_url") or "http://ollama:11434").rstrip("/")
+        if provider == "vllm":
+            return f"{base}/health"
+        if provider == "openai":
+            return f"{base}/v1/models"
+        if provider not in ("ollama", "openvino"):
+            return None  # cloud providers — no local reachability check
         host_port = base.replace("http://", "").replace("https://", "")
-        return f"ollama-model://{host_port}|{_model(role)}"
+        return f"ollama-model://{host_port}|{_model(model_key or llm_key)}"
 
     return [
         {"key": "llm_kare",      "name": "Kåre",               "model": _model("kare"),
-         "platform": _platform("kare"),      "color": "#646cff",
-         "check_url": _ollama_check("kare")},
+         "platform": _platform("default"),    "color": "#646cff",
+         "check_url": _check_url_for("default", "kare")},
         {"key": "llm_miss_kare", "name": "Miss Kåre",           "model": _model("miss_kare"),
          "platform": _platform("miss_kare"), "color": "#c084fc",
-         "check_url": _ollama_check("miss_kare")},
+         "check_url": _check_url_for("miss_kare")},
         {"key": "llm_library",   "name": "Library / Pettersmart", "model": _model("library"),
          "platform": _platform("library"),   "color": "#5ba8a0",
-         "check_url": _ollama_check("library")},
+         "check_url": _check_url_for("library")},
         {"key": "llm_jing",      "name": "Jing",                "model": "qwen2.5-0.5b-openvino",
          "platform": "ainuc (OpenVINO)",     "color": "#a78bfa",
          "check_url": "file:///kaare/state/jing_thoughts.txt:600"},
