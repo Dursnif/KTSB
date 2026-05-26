@@ -143,7 +143,7 @@ Press `Ctrl+C` to stop watching logs. The services keep running in the backgroun
 
 ### Step 4 — Open the browser
 
-Go to **http://localhost** in your web browser.
+Go to **http://localhost:5173/login** in your web browser.
 
 Log in with the default admin credentials:
 
