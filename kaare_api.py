@@ -1,99 +1,69 @@
-# kaare_api.py
-# sudo cat /kaare/kaare_api.py
-"""
-KÅRE - HOVED-AI / ORKESTRATOR
------------------------------
-Kåre er hoved-AI og orkestrator for hele det lokale AI-system:
-- Tar imot intents/kommandoer fra Home Assistant (via API)
-- Logger og ruter forespørsler til andre AI-moduler (Ollama, Mini-Kåreha m.fl)
-- Kan utvides med logikk, logging, kontroll og svar til alle systemer
-
-API-endepunkter:
-    GET  /           - Sjekk at Kåre kjører ("heartbeat")
-    POST /api/ha_intent  - Motta intent fra Home Assistant (JSON)
-"""
-
-# --- YAML ---
-import yaml
-# --- Standard library ---
 import asyncio
-import os
-import sys
-import signal
-import json
-import subprocess
-import time
-import re
 import hashlib
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from collections import defaultdict
 
-# --- Third-party ---
-import yaml
 import httpx
-from fastapi import FastAPI, Request, HTTPException, Depends, Header, BackgroundTasks
+import yaml
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
-# --- Kåre-interne ---
-from kaare_fastpath import match_fastpath
-from kaare_core.ha.clarification import ha_clarification_rescue
-from kaare_core.routers.router_users import router as users_router
-from kaare_core.users.store import init_db as init_users_db
-from kaare_core.users.auth import (
-    touch_last_seen as _touch_last_seen,
-    require_auth as _require_auth,
-    require_admin as _require_admin,
-    require_image_auth as _require_image_auth,
-    get_network_context as _get_network_context,
-)
-from kaare_core.users import store as _user_store
-from kaare_core.config import get_model, get_service, reload_capability_services
-from adapters.llm_adapter import ask_llm, ask_vlm, ask_llm_cloud, ask_llm_with_tools
-
-# --- ShortTermMemory + generate-router (RAM korttidsminne v1) ---
-from kaare_core.memory.short_term import ShortTermMemory
-from kaare_core.routers.router_generate import handle_generate
-
-# --- Miss Kåre sideview ---
+from adapters.llm_adapter import ask_llm, ask_llm_cloud, ask_llm_with_tools, ask_vlm
 from kaare_core.agents.miss_kare.evaluator import evaluate as _miss_kare_evaluate
 from kaare_core.agents.miss_kare.stm import MissKareSTM
+from kaare_core.config import get_model, get_service, reload_capability_services
+from kaare_core.ha.clarification import ha_clarification_rescue
+from kaare_core.memory.short_term import ShortTermMemory
+from kaare_core.routers.router_generate import handle_generate
+from kaare_core.routers.router_users import router as users_router
+from kaare_core.users import store as _user_store
+from kaare_core.users.auth import (
+    get_network_context as _get_network_context,
+    require_admin as _require_admin,
+    require_auth as _require_auth,
+    require_image_auth as _require_image_auth,
+    touch_last_seen as _touch_last_seen,
+)
+from kaare_core.users.store import init_db as init_users_db
+from kaare_fastpath import match_fastpath
 
 _miss_kare_stm = MissKareSTM()
-_miss_kare_latest: dict[str, str] = {}    # user_id → siste kommentar (for frontend, slettes ved henting)
+_miss_kare_latest: dict[str, str] = {}  # user_id → latest comment (cleared on fetch)
 
-_last_user_prompt_time: float = 0.0      # updated on every real user prompt via /api/generate
+_last_user_prompt_time: float = 0.0  # updated on every real user prompt via /api/generate
 
 _MK_PREFIXES = ("miss kåre", "miss kare")  # case-insensitive prefix triggers
 
 def _detect_miss_kare_addressed(prompt: str) -> bool:
     return prompt.lower().startswith(_MK_PREFIXES)
 
-# Aliasing for å støtte eldre moduler som bruker call_llm
+# backward-compat alias — remove when all callers use ask_llm directly
 call_llm = ask_llm
 
-# --- Voice Manager (WebSocket for voice-noder) ---
-# Valgfri modul – Kåre skal ALDRI krasje fordi denne mangler
+# Optional module — never crash if unavailable
 try:
     from services.voice.voice_manager import register_voice_endpoints
     _voice_manager_ok = True
 except Exception as _e:
     _voice_manager_ok = False
     import logging as _logging
-    _logging.getLogger("kaare_api").warning("voice_manager ikke tilgjengelig: %s", _e)
+    _logging.getLogger("kaare_api").warning("voice_manager not available: %s", _e)
 
-# --- ROUTE DEBUG LOG (Kåre -> beslutningslogg) ----------------------
 ROUTE_LOG = "/kaare/logs/route_decisions.log"
 os.makedirs(os.path.dirname(ROUTE_LOG), exist_ok=True)
 
 def _route_log(stage: str, **fields):
-    """
-    Skriv én JSON-linje per beslutningspunkt.
-    Ikke la logging kunne knekke API-et.
-    """
     rec = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "source": "kaare",
@@ -109,30 +79,20 @@ def _route_log(stage: str, **fields):
 
 
 def _sprakvask_text(text: str) -> str:
-    """Normaliser tekst før alias-oppslag.
-    Bruker /kaare/configs/sprakvask.yaml via global SPRAKVASK.
-    Støtter:
-      - noise: fjerner faste fraser
-      - verbs: normaliserer verbfraser (f.eks. "skru av" -> "slå av")
-      - synonyms: frase-til-frase (variant -> standard)
-      - words: enkeltord (variant -> standard)
-    """
+    """Normalize text using sprakvask.yaml rules before alias lookup."""
     if not text:
         return ""
 
-    # Start: grunnvask
     t = str(text).strip().lower()
     if not t:
         return ""
 
-    # Hent regler (defensivt)
     rules = SPRAKVASK if isinstance(SPRAKVASK, dict) else {}
     noise = rules.get("noise") or []
     verbs = rules.get("verbs") or {}
     synonyms = rules.get("synonyms") or []
     words = rules.get("words") or {}
 
-    # 1) Fjern "støy" i tale (enkle substring-fjerninger)
     try:
         if isinstance(noise, list):
             for phrase in noise:
@@ -143,11 +103,9 @@ def _sprakvask_text(text: str) -> str:
     except Exception:
         pass
 
-    # Normaliser whitespace etter noise
     t = " ".join(t.split())
 
-    # 2) Normaliser verbfraser (substring replace)
-    #    (valg: gjør lengste først for å unngå deltreff)
+    # sort longest-first to avoid partial matches (e.g. "skru av" before "av")
     try:
         if isinstance(verbs, dict) and verbs:
             for k in sorted([x for x in verbs.keys() if isinstance(x, str)], key=len, reverse=True):
@@ -163,8 +121,6 @@ def _sprakvask_text(text: str) -> str:
 
     t = " ".join(t.split())
 
-    # 3) Synonymer (frase -> frase): forventer ["variant", "standard"]
-    #    Vi gjør også lengste først.
     try:
         pairs = []
         if isinstance(synonyms, list):
@@ -187,11 +143,8 @@ def _sprakvask_text(text: str) -> str:
 
     t = " ".join(t.split())
 
-    # 4) Enkeltord-mapping (variant -> standard)
-    #    Vi tokeniserer på whitespace og bytter eksakt match.
     try:
         if isinstance(words, dict) and words:
-            # normaliser keys/values
             wmap = {}
             for k, v in words.items():
                 if isinstance(k, str) and isinstance(v, str):
@@ -208,23 +161,14 @@ def _sprakvask_text(text: str) -> str:
     except Exception:
         pass
 
-    # Siste opprydding
     return " ".join(t.split())
 
 
-
-# --- /ROUTE DEBUG LOG ------------------------------------------------
-
-print("### API HIT /api/generate ###")
-
-# --- capability_map.yaml -------------
 CAPABILITY_MAP_PATH = "/kaare/capability_map.yaml"
 
 with open(CAPABILITY_MAP_PATH, "r", encoding="utf-8") as f:
     CAPABILITY_MAP = yaml.safe_load(f)
-# --- /capability_map.yaml -------------
 
-# --- aliases.yaml (for entity match) ---
 ALIASES_PATH = "/kaare/configs/aliases.yaml"
 
 try:
@@ -237,9 +181,6 @@ if isinstance(ALIASES, dict) and "aliases" in ALIASES:
     ALIASES = ALIASES.get("aliases") or {}
 
 
-# --- /aliases.yaml ---
-
-# --- sprakvask.yaml (language normalization) ---
 SPRAKVASK_PATH = "/kaare/configs/sprakvask.yaml"
 SPRAKVASK = {}
 
@@ -249,7 +190,6 @@ try:
         SPRAKVASK = (_sv.get("normalize") if isinstance(_sv, dict) else {}) or {}
 except Exception:
     SPRAKVASK = {}
-# --- /sprakvask.yaml ---
 
 
 
@@ -261,7 +201,7 @@ app = FastAPI(title="Kåre Hoved-AI Orkestrator")
 app.include_router(users_router)
 init_users_db()
 
-# Dempe uvicorn access-log for støyende poll-endepunkter
+# Suppress uvicorn access log for high-frequency poll endpoints
 import logging as _logging
 
 class _SuppressPolls(_logging.Filter):
@@ -390,7 +330,6 @@ async def _start_mqtt():
         logging.getLogger("kaare_api").warning("MQTT adapter not started: %s", e)
 
 
-# ── Jang reflection loop ─────────────────────────────────────────────────────
 # Every 10 minutes, Kåre reads Jang's distilled thoughts and decides whether
 # to update his self-image (personality_self.md) or notepad. Runs silently —
 # no user output, no TTS. Paused 10 min before each scheduled meeting and
@@ -649,10 +588,9 @@ def _create_stm() -> ShortTermMemory:
         return ShortTermMemory()
 
 
-# Global short-term memory. Parameters come from configs/settings.yaml [stm:].
+# Parameters come from configs/settings.yaml [stm:]
 STM = _create_stm()
 
-# --- Aktiver voice-endepunkter (WebSocket + admin API) ---
 if _voice_manager_ok:
     register_voice_endpoints(app)
 
@@ -780,7 +718,6 @@ async def api_health_check(_u=Depends(_require_admin)):
         return {"ok": False, "total_errors": 1, "error": str(e)}
 
 
-# ── Frigate camera settings ───────────────────────────────────────────────────
 
 _FRIGATE_CAMERAS_PATH = Path("/kaare/configs/frigate_cameras.yaml")
 
@@ -931,7 +868,6 @@ async def api_put_camera(camera_id: str, payload: dict, _u=Depends(_require_admi
     return {"ok": True, "camera_id": camera_id}
 
 
-# ── VPN client management ─────────────────────────────────────────────────────
 
 class VpnCreateRequest(BaseModel):
     username: str
@@ -969,7 +905,6 @@ async def api_vpn_delete(client_name: str, payload: dict = Depends(_require_admi
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ── VPN settings ──────────────────────────────────────────────────────────────
 
 @app.get("/api/settings/vpn")
 async def api_get_vpn_settings(_u=Depends(_require_admin)):
@@ -1152,7 +1087,7 @@ _SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
 
 @app.get("/api/settings")
 def api_get_settings():
-    """Returnerer redigerbare innstillinger (uten hemmeligheter)."""
+    """Return editable settings (no secrets)."""
     try:
         data = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
     except Exception:
@@ -1226,7 +1161,6 @@ async def api_put_language(payload: dict):
     return {"ok": True, "language": data.get("language"), "kare_language": data.get("kare_language")}
 
 
-# ── Config file paths ─────────────────────────────────────────────────────────
 
 _LLM_PATH       = Path("/kaare/configs/llm.yaml")
 _MODELS_PATH    = Path("/kaare/configs/models.yaml")
@@ -1296,7 +1230,6 @@ def _mask_token(tok: str) -> str:
     return (tok[:8] + "..." + tok[-6:]) if len(tok) > 14 else ("***" if tok else "")
 
 
-# ── LLM config ────────────────────────────────────────────────────────────────
 
 @app.get("/api/settings/llm")
 def api_get_llm(_u=Depends(_require_auth)):
@@ -1469,7 +1402,6 @@ async def api_restart_vllm_docker(role: str, _u=Depends(_require_admin)):
         return {"ok": False, "error": str(e), "container": container}
 
 
-# ── Ollama auto-discover ──────────────────────────────────────────────────────
 
 @app.post("/api/settings/llm/discover_ollama")
 async def api_discover_ollama(_u=Depends(_require_admin)):
@@ -1513,7 +1445,6 @@ async def api_discover_ollama(_u=Depends(_require_admin)):
     return {"found": found}
 
 
-# ── Ollama model management ───────────────────────────────────────────────────
 
 def _ollama_base_url(role: str) -> str:
     data = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
@@ -1753,7 +1684,6 @@ async def api_put_ollama_source(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True, "url": url}
 
 
-# ── Image serving and stats ───────────────────────────────────────────────────
 
 @app.get("/api/image/{image_id}")
 async def api_serve_image(image_id: str, _u=Depends(_require_image_auth)):
@@ -1808,7 +1738,6 @@ async def api_put_image_settings(payload: dict, _user=Depends(_require_admin)):
     return {"ok": True}
 
 
-# ── Models config ─────────────────────────────────────────────────────────────
 
 @app.get("/api/settings/models")
 def api_get_models(_u=Depends(_require_auth)):
@@ -1827,7 +1756,6 @@ async def api_put_models(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True, "models": data}
 
 
-# ── Services config (HA + MQTT) ───────────────────────────────────────────────
 
 @app.get("/api/settings/services")
 def api_get_services(_u=Depends(_require_auth)):
@@ -2061,7 +1989,6 @@ async def api_put_services_voice(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True}
 
 
-# ── HA token ──────────────────────────────────────────────────────────────────
 
 @app.get("/api/settings/ha-token")
 def api_get_ha_token(_u=Depends(_require_auth)):
@@ -2078,7 +2005,6 @@ async def api_put_ha_token(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True}
 
 
-# ── HA Log Bridge (kare_ha.env) ───────────────────────────────────────────────
 
 @app.get("/api/settings/ha-bridge")
 def api_get_ha_bridge(_u=Depends(_require_auth)):
@@ -2104,7 +2030,6 @@ async def api_put_ha_bridge(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True}
 
 
-# ── API secrets (Brave, NVIDIA) ───────────────────────────────────────────────
 
 @app.get("/api/settings/secrets")
 def api_get_secrets(_u=Depends(_require_auth)):
@@ -2130,7 +2055,6 @@ async def api_put_secret(name: str, payload: dict, _u=Depends(_require_admin)):
     return {"ok": True}
 
 
-# ── Weather settings ─────────────────────────────────────────────────────────
 
 _WEATHER_ENV_PATH = Path("/kaare/configs/weather.env")
 
@@ -2184,7 +2108,6 @@ async def api_put_weather(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True, "provider": provider, "forecast_days": forecast_days}
 
 
-# ── Websearch settings ────────────────────────────────────────────────────────
 
 @app.get("/api/settings/websearch")
 async def api_get_websearch(_u=Depends(_require_admin)):
@@ -2232,7 +2155,6 @@ async def api_put_websearch(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True}
 
 
-# ── Kåre reflection ───────────────────────────────────────────────────────────
 
 _LEDER_PRESET_DIR   = Path("/kaare/configs/meeting_leder")
 _VALID_LEDER_DEV_PRESETS        = {"standard", "streng", "utforskende", "egendefinert"}
@@ -2245,6 +2167,56 @@ def _get_kare_lang() -> str:
         return data.get("kare_language") or data.get("language", "nb")
     except Exception:
         return "nb"
+
+
+def _fp_lang() -> str:
+    """Return normalized 2-letter language code for fastpath responses."""
+    raw = _get_kare_lang().lower().split("-")[0].split("_")[0]
+    return "nb" if raw in ("no", "nb", "nn") else raw
+
+
+_FASTPATH_STRINGS: dict[str, dict[str, str]] = {
+    "vpn_blocked": {
+        "nb": "Du er ikke hjemme og har ikke ekstern tilgang. Spør en administrator om å aktivere det.",
+        "en": "You are not at home and do not have external access. Ask an administrator to enable it.",
+        "de": "Sie sind nicht zu Hause und haben keinen externen Zugang. Bitten Sie einen Administrator, dies zu aktivieren.",
+    },
+    "ha_blocked": {
+        "nb": "Smarthus-kontroll er ikke tilgjengelig eksternt for din bruker.",
+        "en": "Smart home control is not available remotely for your account.",
+        "de": "Smart-Home-Steuerung ist für Ihr Konto nicht remote verfügbar.",
+    },
+    "fastpath_error": {
+        "nb": "Klarte ikke å utføre kommandoen, prøv igjen.",
+        "en": "Command failed, please try again.",
+        "de": "Befehl fehlgeschlagen, bitte erneut versuchen.",
+    },
+}
+
+def _fpt(key: str) -> str:
+    """Return a localized fastpath string."""
+    lang = _fp_lang()
+    bucket = _FASTPATH_STRINGS.get(key, {})
+    return bucket.get(lang) or bucket.get("en") or next(iter(bucket.values()), key)
+
+def _clock_text(time_str: str) -> str:
+    lang = _fp_lang()
+    if lang == "de":
+        return f"Es ist {time_str} Uhr."
+    if lang == "en":
+        return f"The time is {time_str}."
+    return f"Klokka er {time_str}."
+
+def _action_text(action: str, entity_id: str) -> str:
+    lang = _fp_lang()
+    if lang == "de":
+        verb = "Eingeschaltet" if action == "turn_on" else "Ausgeschaltet"
+        return f"{verb}: {entity_id}."
+    if lang == "en":
+        verb = "Turned on" if action == "turn_on" else "Turned off"
+        return f"{verb} {entity_id}."
+    verb = "skrudde på" if action == "turn_on" else "skrudde av"
+    return f"Jeg {verb} {entity_id}."
 
 
 def _leder_preset_text(meeting: str, preset: str) -> str:
@@ -2361,7 +2333,6 @@ async def api_put_dev_meeting(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True}
 
 
-# ── Kåre-innstillinger ────────────────────────────────────────────────────────
 
 _VALID_CONTRIBUTOR_MODES = {"all", "selected", "admin_only"}
 
@@ -2459,7 +2430,6 @@ async def api_put_kare_settings(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True}
 
 
-# ── Trusted sources ───────────────────────────────────────────────────────────
 
 _TRUSTED_PATH = Path("/kaare/configs/trusted_sources.yaml")
 
@@ -2502,7 +2472,6 @@ async def api_put_trusted_sources(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True, "categories": len(payload), "domains": domain_count}
 
 
-# ── Plex token ────────────────────────────────────────────────────────────────
 
 @app.get("/api/settings/plex-token")
 def api_get_plex_token(_u=Depends(_require_auth)):
@@ -2519,7 +2488,6 @@ async def api_put_plex_token(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True, "restart_required": True}
 
 
-# ── Aliases ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/settings/aliases")
 def api_get_aliases(_u=Depends(_require_admin)):
@@ -2549,7 +2517,6 @@ async def api_put_aliases(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True}
 
 
-# ── Nodes ─────────────────────────────────────────────────────────────────────
 
 @app.get("/api/settings/nodes")
 def api_get_nodes(_u=Depends(_require_admin)):
@@ -2567,7 +2534,6 @@ async def api_put_nodes(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True}
 
 
-# ── Capabilities ──────────────────────────────────────────────────────────────
 
 @app.get("/api/settings/capabilities")
 def api_get_capabilities(_u=Depends(_require_admin)):
@@ -2599,7 +2565,6 @@ async def api_put_capabilities(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True}
 
 
-# ── Onboarding status ─────────────────────────────────────────────────────────
 
 @app.get("/api/onboarding/status")
 def api_onboarding_status(_u=Depends(_require_admin)):
@@ -2654,7 +2619,6 @@ def api_onboarding_status(_u=Depends(_require_admin)):
     return {"complete": complete, "steps": steps, "optional_hints": optional_hints}
 
 
-# ── Connection test ───────────────────────────────────────────────────────────
 
 @app.post("/api/settings/test-connection")
 async def api_test_connection(payload: dict, _u=Depends(_require_auth)):
@@ -2670,7 +2634,6 @@ async def api_test_connection(payload: dict, _u=Depends(_require_auth)):
         return {"ok": False, "error": str(e)}
 
 
-# ── Service restart ───────────────────────────────────────────────────────────
 
 _RESTARTABLE_SERVICES = {
     "kaare":           "kaare.service",
@@ -2763,7 +2726,6 @@ async def api_put_agent_tools(data: dict, _u=Depends(_require_admin)):
         return {"ok": False, "error": str(e)}
 
 
-# ── Meeting roles ─────────────────────────────────────────────────────────────
 
 _MEETING_ROLE_PS_CUSTOM = Path("/kaare/configs/meeting_role_pettersmart_custom.md")
 _MEETING_ROLE_MK_CUSTOM = Path("/kaare/configs/meeting_role_miss_kare_custom.md")
@@ -3032,7 +2994,7 @@ def api_memory_stats(_u=Depends(_require_admin)):
 
 @app.get("/api/memory/search")
 def api_memory_search(q: str, limit: int = 8, _u=Depends(_require_admin)):
-    """Søk i langtidsminnet. Brukes av Kåre-tool og til debugging."""
+    """Search long-term memory. Used by Kåre tools and for debugging."""
     from kaare_core.memory.long_term import get_ltm
     try:
         hits = get_ltm().search_interactions(q, limit=limit)
@@ -3048,18 +3010,8 @@ class PromptRequest(BaseModel):
     user_id: str | None = None
 
 
-   # Hoved-inngangen for Kåre (brukes av Hub, sener også TTS)
-
 @app.post("/api/generate")
 async def generate(request: PromptRequest, http: Request):
-    """
-    Hoved-inngangen for Kåre (brukes av Hub-GUI og framtidig TTS).
-
-    Flyt:
-      1. Fastpath → HA-gateway (direkte, uten LLM).
-      2. Intent-pipeline → HA-gateway (alias + action-mapping).
-      3. Fallback til stor LLM via api_ask_llm.
-    """
     prompt = (request.prompt or "").strip()
     images = request.images
     capability_hints = {
@@ -3071,10 +3023,6 @@ async def generate(request: PromptRequest, http: Request):
     print(f"[KÅRE] Mottatt prompt: {prompt}")
     rid = f"rid-{int(time.time()*1000)}"
     _route_log("generate_in", rid=rid, prompt_preview=prompt[:120])
-
-    # ------------------------------------------------------------
-    # ADAPTER ROUTING (ekstern input: Frigate / GenAI osv.)
-    # ------------------------------------------------------------
 
     source = (request.source or http.headers.get("X-Kaare-Source") or "gui").lower()
     from kaare_core.memory.long_term import USER_GLOBAL
@@ -3088,11 +3036,6 @@ async def generate(request: PromptRequest, http: Request):
     if user_id and user_id != USER_GLOBAL:
         _touch_last_seen(user_id)
 
-    # -----------------------------------------------------
-    # NETWORK ACCESS CONTROL
-    # Determines if this request comes from local network, VPN, or external.
-    # Enforces per-user vpn_access setting.
-    # -----------------------------------------------------
     _client_ip = http.client.host if http.client else "127.0.0.1"
     _network_ctx = _get_network_context(_client_ip)
     _block_ha_write = False
@@ -3101,12 +3044,9 @@ async def generate(request: PromptRequest, http: Request):
         _user_rec = _user_store.get_user(user_id) if user_id and user_id != USER_GLOBAL else None
         _vpn_access = (_user_rec or {}).get("vpn_access", "local_only")
         if _vpn_access == "local_only":
-            return {"text": "Du er ikke hjemme og har ikke ekstern tilgang. Spør en administrator om å aktivere det."}
+            return {"text": _fpt("vpn_blocked")}
         _block_ha_write = (_vpn_access == "ai_only")
 
-    # -----------------------------------------------------
-    # FASTPATH: direkte handling uten Intent/LLM (hvis match)
-    # -----------------------------------------------------
     fast = match_fastpath(prompt)
     _route_log("fastpath_check", rid=rid, hit=bool(fast))
     if fast:
@@ -3120,19 +3060,17 @@ async def generate(request: PromptRequest, http: Request):
             source_tag=fast.get("source"),
         )
 
-        # Fastpath: klokke (IKKE HA) – svar direkte fra host OS
         if fast.get("route") == "clock_fastpath":
             from kaare_core.config import get_local_tz as _get_local_tz
             now_str = datetime.now(tz=_get_local_tz()).strftime("%H:%M")
             _route_log("fastpath_clock_done", rid=rid, now=now_str)
-            return {"text": f"Klokka er {now_str}."}
+            return {"text": _clock_text(now_str)}
 
 
         # Block HA commands for users with ai_only VPN access
         if _block_ha_write:
-            return {"text": "Smarthus-kontroll er ikke tilgjengelig eksternt for din bruker."}
+            return {"text": _fpt("ha_blocked")}
 
-        # Bygg payload til HA-gateway (samme format som nl_apply)
         payload = {
             "prompt": prompt,
             "action": fast["action"],
@@ -3143,7 +3081,6 @@ async def generate(request: PromptRequest, http: Request):
             "dry_run": False
         }
 
-        # Send direkte til HA-gateway
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 r = await client.post(
@@ -3154,19 +3091,13 @@ async def generate(request: PromptRequest, http: Request):
             print(f"[KÅRE] FASTPATH RESULTAT: {out}")
             _route_log("fastpath_done", rid=rid, ha_result=out)
 
-            # Svar til GUI/TTS
-            return {"text": f"Jeg { 'skrudd på' if fast['action']=='turn_on' else 'skrudd av' } {fast['entity_id']}."}
+            return {"text": _action_text(fast["action"], fast["entity_id"])}
 
         except Exception as e:
             print(f"[KÅRE FASTPATH FEIL] {e}")
             _route_log("fastpath_error", rid=rid, error=str(e))
-            return {"text": "Fastpath feilet, prøv igjen eller bruk vanlig kommando."}
+            return {"text": _fpt("fastpath_error")}
 
-
-    # ------------------------------------------------------------
-    # Resten av flyten håndteres av router_generate.py
-    # (korttidsminne + HA->LLM fallback)
-    # ------------------------------------------------------------
 
     mk_addressed = _detect_miss_kare_addressed(prompt)
     print(f"[MISS KÅRE] prefix detektert: {mk_addressed} | prompt start: {prompt[:30]!r}")
@@ -3188,7 +3119,7 @@ async def generate(request: PromptRequest, http: Request):
         network_context=_network_ctx,
     )
 
-    # Miss Kåre ser over skulderen – fire-and-forget, blokkerer aldri svar
+    # fire-and-forget — never blocks the response
     async def _run_miss_kare(u_msg: str, k_reply: str, uid: str, addressed: bool):
         print(f"[MISS KÅRE] evaluator starter | addressed={addressed}")
         try:
@@ -3207,7 +3138,6 @@ async def generate(request: PromptRequest, http: Request):
 
 
 
-# --- Miss Kåre sideview ---
 
 @app.get("/api/miss_kare/comment")
 async def miss_kare_comment(user_id: str = "global"):
@@ -3220,7 +3150,6 @@ async def miss_kare_comment(user_id: str = "global"):
     return {"comment": comment, "user_id": user_id}
 
 
-# --- Chat history ---
 
 @app.get("/api/chat_history")
 async def api_chat_history(user_id: str = "global", limit: int = 60, _u=Depends(_require_auth)):
@@ -3242,7 +3171,6 @@ async def api_chat_history(user_id: str = "global", limit: int = 60, _u=Depends(
     }
 
 
-# --- Vaktmester delta endpoint ---
 
 @app.post("/api/vaktmester_delta")
 async def api_vaktmester_delta(payload: dict, request: Request):
@@ -3257,8 +3185,6 @@ async def api_vaktmester_delta(payload: dict, request: Request):
     with open(log_path, "a", encoding="utf-8") as f:
         f.write(line)
     return {"ok": True, "stored": len(line)}
-# --- /Vaktmester delta endpoint ---
-# --- Vaktmester status (siste N deltarapporter) -------------------
 @app.get("/api/vaktmester_status")
 def api_vaktmester_status(limit: int = 20):
     import json
@@ -3276,8 +3202,6 @@ def api_vaktmester_status(limit: int = 20):
                 except Exception:
                     continue
     return {"count": len(events), "events": events}
-# --- /Vaktmester status -------------------------------------------
-# --- Vaktmester brief (menneskelig oppsummering) ------------------
 @app.get("/api/vaktmester_brief")
 def api_vaktmester_brief(limit: int = 1):
     import json
@@ -3323,8 +3247,6 @@ def api_vaktmester_brief(limit: int = 1):
         f"Totalt (akkumulert): errors={tot_e}, warnings={tot_w}."
     )
     return {"brief": brief, "events": events}
-# --- /Vaktmester brief --------------------------------------------
-# --- Vaktmester advice (foreslå tiltak basert på siste delta) -----
 @app.get("/api/vaktmester_advice")
 def api_vaktmester_advice(limit: int = 1):
     rules_path = Path("/kaare/kaare_advice_rules.yaml")
@@ -3370,7 +3292,6 @@ def api_vaktmester_advice(limit: int = 1):
     return {"timestamp": summary.get("timestamp"),
             "severity": summary.get("severity"),
             "advice": out}
-# --- /Vaktmester advice -------------------------------------------
 @app.get("/api/vaktmester_types")
 def api_vaktmester_types():
     import json
@@ -3450,7 +3371,6 @@ def api_dev_meeting_get(date: str):
     return {"date": date, "content": p.read_text(encoding="utf-8")}
 
 
-# ── Meeting topics + comments ──────────────────────────────────────────────────
 import json as _json
 
 _TOPICS_FILE = Path("/kaare/state/meeting_topics.json")
@@ -3513,7 +3433,6 @@ def api_set_comment(meeting_type: str, date: str, body: _CommentBody):
     return {"ok": True}
 
 
-# ── Meeting run / status ───────────────────────────────────────────────────────
 import subprocess as _sp
 
 _MEETING_STATUS: dict = {
@@ -3743,7 +3662,6 @@ def api_agent_messages(limit: int = 50):
     return get_ltm().get_agent_messages(limit=limit)
 
 
-# --- METRICS_MIDDLEWARE_START ---
 
 METRICS_LOG = "/kaare/logs/metrics_requests.log"
 os.makedirs(os.path.dirname(METRICS_LOG), exist_ok=True)
@@ -3782,8 +3700,6 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         return resp
 
 app.add_middleware(MetricsMiddleware)
-# --- METRICS_MIDDLEWARE_END ---
-# --- METRICS_ENDPOINTS_START ---
 from collections import defaultdict
 from pathlib import Path
 
@@ -3861,15 +3777,11 @@ def api_metrics_prompts(min_calls: int = 1, top: int = 20):
     ]
     rows.sort(key=lambda x: (x["avg_ms"], x["count"]), reverse=True)
     return {"items": rows[:top], "total_prompts": len(rows)}
-# --- METRICS_ENDPOINTS_END ---
 
-# --- MEMORY STORE / MEMORY LLM ---------------------------------
-# Hvor memory-konteineren kjører (korttidsminne + modell)
 MEMORY_LLM_BASE = os.getenv("MEMORY_LLM_BASE", "http://127.0.0.1:11434")
 MEMORY_LLM_MODEL = os.getenv("MEMORY_LLM_MODEL", "qwen3:8b")
 MEMORY_LLM_TIMEOUT = float(os.getenv("MEMORY_LLM_TIMEOUT", "30"))
 
-# Enkel fil-logg for å ha spor, uavhengig av hva memory-konteineren gjør
 MEMORY_LOG_PATH = os.getenv(
     "MEMORY_LOG_PATH",
     "/kaare/logs/memory_events.jsonl",
@@ -4023,10 +3935,8 @@ async def api_memory_query(req: MemoryQueryRequest):
         "latency_ms": dt_ms,
         "result": data,
     }
-# --- /MEMORY STORE / MEMORY LLM ---------------------------------
 
 
-# --- LLM relay (Kåre hoved-LLM) -----------------------------------
 
 class LLMRequest(BaseModel):
     prompt: str
@@ -4053,9 +3963,7 @@ async def api_ask_llm(req: LLMRequest):
         "latency_ms": dt_ms,
         "text": result["text"],
     }
-# --- /LLM relay ---------------------------------------------------
 
-# --- Cloud LLM (NVIDIA) -------------------------------------------
 
 @app.post("/api/ask_cloud")
 async def api_ask_cloud(req: LLMRequest):
@@ -4069,7 +3977,6 @@ async def api_ask_cloud(req: LLMRequest):
         return {"ok": False, "error": result.get("error", "cloud_error"), "text": ""}
     return {"ok": True, "text": result["text"]}
 
-# --- /Cloud LLM ---------------------------------------------------
 
 
 @app.post("/api/intent_to_ha")

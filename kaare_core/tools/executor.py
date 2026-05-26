@@ -371,7 +371,6 @@ def _rediger_selvbilde(fragment: str, ny_tekst: str) -> str:
         return f"Kunne ikke redigere selvbilde: {e}"
 
 
-# ── world.md helpers ─────────────────────────────────────────────────────────
 
 _WORLD_PATH = Path("/kaare/state/world.md")
 _WORLD_VARS_PATH = Path("/kaare/state/world_vars.json")
@@ -731,7 +730,6 @@ def _hent_ubekreftede(user_id: str, limit: int = 10, offset: int = 0) -> str:
         return f"Kunne ikke hente ubekreftede interaksjoner: {e}"
 
 
-# Domene → hva Kåre kan gjøre med entiteten
 _DOMAIN_LABELS: Dict[str, str] = {
     "light":         "lys — kan styres (turn_on/turn_off/set_level/set_color_temp/set_color)",
     "switch":        "bryter — kan styres (turn_on/turn_off)",
@@ -747,9 +745,6 @@ _DOMAIN_LABELS: Dict[str, str] = {
 }
 
 
-# -------------------------------------------------
-# les_alias_lista
-# -------------------------------------------------
 
 def _load_yaml() -> Dict:
     try:
@@ -771,15 +766,12 @@ def _format_aliases(rom: str | None = None) -> str:
         domain = entity_id.split(".")[0] if "." in entity_id else ""
         return _DOMAIN_LABELS.get(domain, domain)
 
-    # Bygg rom → nøkkelord-mapping (små bokstaver)
     room_kw: Dict[str, list] = {
         r: [str(k).lower() for k in kws]
         for r, kws in rooms_cfg.items()
     }
 
-    # Grupper alias-nøkler per rom.
-    # Velg rommet med det LENGSTE matchende nøkkelordet for å unngå
-    # at "stue" matcher "kjellerstue" før "kjellerstue" gjør det.
+    # sort longest-first so "kjellerstue" beats "stue" as the room match
     groups: Dict[str, list] = {}
     unmatched: list = []
     for key in aliases:
@@ -794,8 +786,6 @@ def _format_aliases(rom: str | None = None) -> str:
         else:
             unmatched.append(key)
 
-    # Filtrer på rom hvis oppgitt.
-    # Velg rommet med det lengste nøkkelordet som matcher — aldri bare substring av romnavn.
     if rom:
         rl = rom.lower()
         target, best_len = None, 0
@@ -803,7 +793,7 @@ def _format_aliases(rom: str | None = None) -> str:
             for kw in kws:
                 if kw == rl and len(kw) > best_len:
                     target, best_len = r, len(kw)
-        # Fallback: eksakt romnavn-match
+        # fallback: exact room name match
         if not target and rl in room_kw:
             target = rl
         if target and target in groups:
@@ -814,8 +804,7 @@ def _format_aliases(rom: str | None = None) -> str:
             return "\n".join(lines)
         return f"Kjenner ikke til noe rom som heter '{rom}'."
 
-    # Ingen rom oppgitt → returner kun romnavn, ikke alle enheter.
-    # Kall igjen med rom='<romnavn>' for å se enheter i et spesifikt rom.
+    # call again with rom='<room name>' to list devices in a specific room
     known_rooms = sorted(groups.keys())
     lines = [
         "Kjenner til følgende rom i huset:",
@@ -827,9 +816,6 @@ def _format_aliases(rom: str | None = None) -> str:
     return "\n".join(lines)
 
 
-# -------------------------------------------------
-# styr_enhet
-# -------------------------------------------------
 
 async def _styr_enhet(
     entity_id: str,
@@ -876,9 +862,6 @@ async def _styr_enhet(
         return f"Feil ved HA-kall: {e}"
 
 
-# -------------------------------------------------
-# Dispatcher — kalles fra router_generate
-# -------------------------------------------------
 
 async def _les_ha_status(entity_id: str) -> str:
     if not entity_id:
@@ -999,7 +982,6 @@ async def _spør_frøken_library(spørsmål: str, arguments: Dict) -> str:
         return "Feil: spørsmål kan ikke være tomt."
     if not _llm_cfg("library").get("enabled", True):
         return "Frøken Library er deaktivert. Aktiver den under Innstillinger → LLM/Modeller."
-    # Injiser lokasjonskontekst hvis spørsmålet ikke allerede spesifiserer land/sted
     lok = _lok_prefix()
     spørsmål_med_kontekst = f"{lok}{spørsmål}" if lok else spørsmål
     try:
@@ -1120,7 +1102,6 @@ async def _reason_freely(query: str) -> str:
                     think_text = text[t_start + len("<THINK>"):t_end].strip()
                     text = text[t_end + len("</THINK>"):].strip()
 
-        # Log to think cache
         if think_text:
             try:
                 log_think(
@@ -1167,7 +1148,6 @@ def _resolve_station(name_or_url: str) -> str | None:
 async def _media(arguments: Dict[str, Any]) -> str:
     action = arguments.get("action", "")
 
-    # ── Plex ──────────────────────────────────────────────────────────────
     if action == "plex_sessions":
         return await _plex_get_sessions()
 
@@ -1253,7 +1233,6 @@ async def _media(arguments: Dict[str, Any]) -> str:
             return f"▶ Caster «{label}» til {entity_id} ✅"
         return f"HA svarte: {result}"
 
-    # ── Radio (MPD via mpc) ───────────────────────────────────────────────
     if action == "radio_status":
         try:
             result = _sp.run(
@@ -1321,7 +1300,6 @@ async def _media(arguments: Dict[str, Any]) -> str:
 async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
     """Dispatcher — kalles fra execute_tool. Returnerer alltid streng."""
 
-    # ── les_ha ────────────────────────────────────────────────────────────
     if name == "les_ha":
         action = arguments.get("action", "")
         if action == "rom_liste":
@@ -1332,7 +1310,7 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             return await _les_ha_status(arguments.get("entity_id", ""))
         return f"Unknown action for les_ha: '{action}'. Valid: rom_liste, rom_enheter, status."
 
-    # Bakoverkompatibilitet — fjernes når alle klienter er oppdatert
+    # backward-compat shim — remove when all callers use les_ha instead
     if name == "les_alias_lista":
         return _format_aliases(arguments.get("rom"))
 
@@ -1368,7 +1346,6 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             pass
         return response
 
-    # ── library ───────────────────────────────────────────────────────────
     if name == "library":
         action = arguments.get("action", "")
         if action == "søk":
@@ -1382,7 +1359,6 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             return await _spør_frøken_library_online(arguments.get("spørsmål", ""), arguments)
         return f"Unknown action for library: '{action}'. Valid: søk, hent_artikkel, online."
 
-    # ── timer ─────────────────────────────────────────────────────────────
     if name == "timer":
         action = arguments.get("action", "")
         if action == "klokke":
@@ -1402,7 +1378,6 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             return liste_timere()
         return f"Unknown action for timer: '{action}'. Valid: klokke, sett, avbryt, liste."
 
-    # ── minne ─────────────────────────────────────────────────────────────
     if name == "minne":
         action = arguments.get("action", "")
         if action == "søk":
@@ -1423,7 +1398,6 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             return _get_stm_history(arguments.get("dato"))
         return f"Unknown action for minne: '{action}'. Valid: søk, hent_ubekreftede, bekreft, hent_stm."
 
-    # ── pettersmart ───────────────────────────────────────────────────────
     if name == "pettersmart":
         action = arguments.get("action", "")
         if action == "spør":
@@ -1508,7 +1482,6 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
                 return f"pettersmart kommenter failed: {e}"
         return f"Unknown action for pettersmart: '{action}'. Valid: spør, deleger, svar, avbryt, kommenter."
 
-    # ── selvbilde ─────────────────────────────────────────────────────────
     if name == "selvbilde":
         action = arguments.get("action", "")
         if action == "les":
@@ -1534,7 +1507,6 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             return "Notert."
         return f"Unknown action for selvbilde: '{action}'. Valid: les, oppdater, rediger, slett."
 
-    # ── verden ────────────────────────────────────────────────────────────
     if name == "verden":
         action = arguments.get("action", "")
         if action == "les":
@@ -1571,7 +1543,6 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             return _verden_liste_vars()
         return f"Unknown action for verden: '{action}'. Valid: les, oppdater_felt, legg_til, slett, rediger, les_var, sett_var, slett_var, liste_vars."
 
-    # ── brukerprofil ──────────────────────────────────────────────────────
     if name == "brukerprofil":
         action = arguments.get("action", "")
         user_id = arguments.get("_user_id", "global")
@@ -1613,7 +1584,6 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             try:
                 from kaare_core.users.profile_manager import update_household_visible
                 result = update_household_visible(user_id=user_id, field=felt, value=verdi)
-                # Reload household block in system prompt cache
                 try:
                     from adapters.llm_adapter import reload_config
                     reload_config()
@@ -1639,13 +1609,11 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
                 return f"Feil ved oppdatering av hus-profil: {e}"
         return f"Unknown action for brukerprofil: '{action}'. Valid: les, oppdater, oppdater_hus, sett_felt, rediger, slett, nysgjerrighet."
 
-    # ── notat ─────────────────────────────────────────────────────────────
     if name == "notat":
         action = arguments.get("action", "")
         liste = arguments.get("liste", "arkitekt")
         user_id = arguments.get("_user_id", "global")
 
-        # handle-liste routing
         if liste == "handle":
             if action in ("skriv", "legg_til"):
                 return handle_legg_til(
@@ -1666,7 +1634,6 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
                 return handle_tøm()
             return f"Unknown action for handle-liste: '{action}'. Valid: skriv, les, merk_kjøpt, slett, tøm, tøm_alt."
 
-        # bruker-huskeliste routing
         if liste == "huske":
             if action in ("skriv", "husk"):
                 return huske_husk(
@@ -1684,7 +1651,6 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
                 return huske_tøm(user_id=user_id)
             return f"Unknown action for huskeliste: '{action}'. Valid: skriv, les, ferdig, slett, tøm."
 
-        # Kåres egne huskeliste routing
         if liste == "kare":
             if action in ("skriv", "husk"):
                 return kare_husk(
@@ -1699,7 +1665,6 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
                 return kare_tøm()
             return f"Unknown action for kare-liste: '{action}'. Valid: skriv, les, ferdig, slett, tøm."
 
-        # arkitekt-blokk (liste="arkitekt" eller ikke oppgitt)
         if action == "skriv":
             return skriv_notat(
                 tekst=arguments.get("tekst", ""),
@@ -1713,7 +1678,6 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             return tøm_notater(arguments.get("kategori"))
         return f"Unknown action for notat: '{action}'. Valid: skriv, les, slett, tøm."
 
-    # ── utforsk_kode ──────────────────────────────────────────────────────
     if name == "utforsk_kode":
         action = arguments.get("action", "")
         if action == "les":
@@ -1724,7 +1688,6 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             return _shared_søk_kode(arguments)
         return f"Unknown action for utforsk_kode: '{action}'. Valid: les, liste, søk."
 
-    # ── inspiser_system ───────────────────────────────────────────────────
     if name == "inspiser_system":
         action = arguments.get("action", "")
         if action == "logg":
@@ -1739,7 +1702,6 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             return _shared_git_log(arguments)
         return f"Unknown action for inspiser_system: '{action}'. Valid: logg, tjenester, ressurser, git_diff, git_log."
 
-    # ── kamera ────────────────────────────────────────────────────────────
     if name == "kamera":
         action = arguments.get("action", "")
 
@@ -1779,7 +1741,6 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
                 if failed:
                     result += f"\n\nKunne ikke hente: {', '.join(failed)}"
                 return result
-            # scope == "ett"
             kamera_navn = arguments.get("kamera", "").strip()
             spørsmål = arguments.get("spørsmål", "").strip() or "Beskriv hva du ser på bildet. Nevn personer, kjøretøy, dyr og eventuelle hendelser."
             if not kamera_navn:
@@ -2265,7 +2226,6 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
                 result += f"\n\nKunne ikke hente: {', '.join(failed)}"
             return result
 
-        # scope == "ett"
         kamera = arguments.get("kamera", "").strip()
         spørsmål = arguments.get("spørsmål", "").strip() or "Beskriv hva du ser på bildet. Nevn personer, kjøretøy, dyr og eventuelle hendelser."
         if not kamera:
@@ -2666,7 +2626,7 @@ async def execute_tool(name: str, arguments: Dict[str, Any]) -> str:
         result = f"Tool '{name}' feilet uventet: {e}"
     duration_ms = int((_time.time() - t0) * 1000)
 
-    # Timer-tools logger seg selv (sett_timer skriver til loggen via timer_service)
+    # timer tools log themselves via timer_service
     if name not in ("sett_timer", "avbryt_timer", "liste_timere"):
         _log_tool(name, arguments, result, duration_ms)
 

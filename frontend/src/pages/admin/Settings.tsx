@@ -50,7 +50,6 @@ import {
 const BASE = `http://${window.location.hostname}:8000`;
 const token = () => sessionStorage.getItem("kaare_token");
 
-// ── Tiny helpers ──────────────────────────────────────────────────────────────
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -128,7 +127,6 @@ function MaskedInput({ value, onChange, placeholder }: { value: string; onChange
   );
 }
 
-// ── GENERELT tab ──────────────────────────────────────────────────────────────
 
 type Location = { city: string; postal_code: string; country: string; lat: number; lon: number; timezone: string };
 
@@ -280,7 +278,6 @@ function TabGenerelt() {
   );
 }
 
-// ── HOME ASSISTANT tab ────────────────────────────────────────────────────────
 
 function TabHomeAssistant() {
   const { t } = useTranslation();
@@ -426,7 +423,6 @@ function TabHomeAssistant() {
   );
 }
 
-// ── MQTT / VPN tab ────────────────────────────────────────────────────────────
 
 function TabMqtt() {
   const { t } = useTranslation();
@@ -581,7 +577,6 @@ function TabMqtt() {
   );
 }
 
-// ── LLM/Models tab ───────────────────────────────────────────────────────────
 
 const PROVIDER_OPTIONS = [
   { value: "ollama" },
@@ -638,7 +633,6 @@ function LlmRoleCard({ role, config, onSaved, allConfigs }: { role: string; conf
   const isVllm   = local.provider === "vllm";
   const isLocal  = isOllama || isVllm;
 
-  // ── Administrer modell state ──────────────────────────────────────────────
   const [manageOpen, setManageOpen]               = useState(false);
   const [gpus, setGpus]                           = useState<GpuInfo[]>([]);
   const [gpusLoaded, setGpusLoaded]               = useState(false);
@@ -1529,7 +1523,6 @@ function ImageRoleCard({ role, config, onSaved }: { role: string; config: LlmRol
   );
 }
 
-// ── Whisper card ──────────────────────────────────────────────────────────────
 
 type VoiceServicesData = {
   stt_backend: string;
@@ -1563,7 +1556,7 @@ const WHISPER_COMPUTE_OPTIONS = [
   { value: "float32",       label: "float32 – CPU-vennlig" },
 ];
 
-// nb-whisper-large (OV) har <|no|> og <|nn|> — IKKE <|nb|>
+// nb-whisper-large (OV) exposes <|no|> and <|nn|> — NOT <|nb|>
 const WHISPER_LANGUAGE_OPTIONS = [
   { value: "no",   label: "Norsk (no) — anbefalt for NbAiLab-modellen" },
   { value: "nn",   label: "Nynorsk (nn)" },
@@ -1756,7 +1749,6 @@ function WhisperCard({ data, onSaved }: { data: VoiceServicesData; onSaved: () =
 }
 
 
-// ── Embedding card ────────────────────────────────────────────────────────────
 
 type EmbServicesData = {
   device: string;
@@ -1932,7 +1924,6 @@ function EmbeddingCard({ data, onSaved }: { data: EmbServicesData; onSaved: () =
 }
 
 
-// ── Memory embed card ─────────────────────────────────────────────────────────
 
 type MemoryEmbedData = { enabled: boolean; model_dir: string };
 
@@ -2008,7 +1999,6 @@ function MemoryEmbedCard({ data, onSaved }: { data: MemoryEmbedData; onSaved: ()
 }
 
 
-// ── LLM/Models tab ────────────────────────────────────────────────────────────
 
 function TabLlm() {
   const { t } = useTranslation();
@@ -2077,7 +2067,6 @@ function TabLlm() {
 }
 
 
-// ── NETTSØK OG VÆR tab ───────────────────────────────────────────────────────
 
 const WEATHER_PROVIDERS: { value: WeatherProvider; label: string; needsKey: boolean; keyField?: "owm" | "wapi" }[] = [
   { value: "met.no",        label: "met.no (gratis, norsk, ingen nøkkel)",         needsKey: false },
@@ -2088,7 +2077,6 @@ const WEATHER_PROVIDERS: { value: WeatherProvider; label: string; needsKey: bool
 
 function TabNettsokOgVaer() {
   const { t } = useTranslation();
-  // ── Weather state
   const [weather, setWeather]     = useState<WeatherConfig | null>(null);
   const [provider, setProvider]   = useState<WeatherProvider>("met.no");
   const [forecastDays, setForecastDays] = useState(2);
@@ -2096,7 +2084,6 @@ function TabNettsokOgVaer() {
   const [wapiKey, setWapiKey]     = useState("");
   const ssWeather = useSaveState();
 
-  // ── Websearch state
   const [, setWs]                 = useState<WebsearchConfig | null>(null);
   const [wsLocal, setWsLocal]     = useState<WebsearchConfig>({
     provider: "ddg", fallback: "ddg",
@@ -2105,12 +2092,10 @@ function TabNettsokOgVaer() {
   });
   const ssWs = useSaveState();
 
-  // ── Brave API key state
   const [braveKey, setBraveKey]   = useState("");
   const [braveStatus, setBraveStatus] = useState<{ is_set: boolean; masked: string } | null>(null);
   const ssBrave = useSaveState();
 
-  // ── Trusted sources state
   const [sources, setSources]     = useState<TrustedSources>({});
   const [newCat, setNewCat]       = useState("");
   const [addingDomain, setAddingDomain] = useState<Record<string, boolean>>({});
@@ -2496,22 +2481,18 @@ function TabNettsokOgVaer() {
 }
 
 
-// ── KÅRE REFLEKSJON tab ───────────────────────────────────────────────────────
 
 function TabRefleksjon() {
   const { t } = useTranslation();
 
-  // Schedule settings
   const [cfg, setCfg] = useState<ReflectionConfig>({ enabled: false, interval_seconds: 600 });
   const [loadingCfg, setLoadingCfg] = useState(true);
   const ss = useSaveState();
 
-  // Reflection meeting settings
   const [refMtg, setRefMtg] = useState<ReflectionMeetingSettings | null>(null);
   const [loadingRef, setLoadingRef] = useState(true);
   const ssRef = useSaveState();
 
-  // Dev meeting settings
   const [devMtg, setDevMtg] = useState<DevMeetingSettings | null>(null);
   const [loadingDev, setLoadingDev] = useState(true);
   const ssDev = useSaveState();
@@ -2757,7 +2738,6 @@ function TabRefleksjon() {
   );
 }
 
-// ── BILDER tab ───────────────────────────────────────────────────────────────
 
 function TabBilder() {
   const { t } = useTranslation();
@@ -2886,7 +2866,6 @@ function TabBilder() {
 }
 
 
-// ── KÅRE-INNSTILLINGER tab ────────────────────────────────────────────────────
 
 type UserEntry = { username: string; display_name: string; role: string };
 
@@ -3153,7 +3132,6 @@ function TabKareInnstillinger() {
 }
 
 
-// ── INTEGRASJONER tab ─────────────────────────────────────────────────────────
 
 function TabIntegrasjoner() {
   const { t } = useTranslation();
@@ -3309,7 +3287,6 @@ function TabIntegrasjoner() {
 }
 
 
-// ── DISTRIBUSJON tab ──────────────────────────────────────────────────────────
 
 const DISTRIBUTION_PRESETS: { id: string; emoji: string; services: string[] }[] = [
   {
@@ -3473,7 +3450,6 @@ function TabDistribusjon() {
 }
 
 
-// ── AGENTER tab ───────────────────────────────────────────────────────────────
 
 const DEFAULT_AGENT_TOOLS: AgentToolsConfig = {
   pettersmart: { utforsk: true, inspiser: true, "nettsøk": true, "søk_vaktmester": true, shell: false, hukommelse: true },
@@ -3744,7 +3720,6 @@ function TabAgenter() {
 }
 
 
-// ── Hoved-komponent ───────────────────────────────────────────────────────────
 
 export default function Settings() {
   const { t } = useTranslation();
