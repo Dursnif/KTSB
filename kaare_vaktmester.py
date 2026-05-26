@@ -68,6 +68,14 @@ def _load_camera_names() -> dict[str, str]:
         return {}
 
 
+def _load_embedding_enabled() -> bool:
+    try:
+        cfg = yaml.safe_load(Path("/kaare/configs/services.yaml").read_text())
+        return bool(cfg.get("embedding", {}).get("enabled", True))
+    except Exception:
+        return True
+
+
 LOCAL_TZ             = _load_local_tz()
 QDRANT_URL           = _svc("storage", "qdrant")
 EMBED_URL            = _svc("ollama", "embed") + "/api/embed"
@@ -76,6 +84,7 @@ VECTOR_DIM           = 1024
 
 FACE_SESSION_TIMEOUT_S, FACE_EVENTS_RETENTION_H = _load_face_events_cfg()
 _CAMERA_NAMES: dict[str, str] = _load_camera_names()
+EMBEDDING_ENABLED: bool = _load_embedding_enabled()
 POLL_INTERVAL     = 5.0    # sekunder mellom fil-sjekk
 REPORT_INTERVAL   = 60.0   # sekunder mellom rapport-skriving
 BATCH_SIZE        = 50     # maks dokumenter per Qdrant-upsert
@@ -506,7 +515,7 @@ def ensure_vaktmester_collection() -> None:
 
 async def qdrant_upsert_batch(http: httpx.AsyncClient, docs: list[dict]) -> int:
     """Embed og upsert en batch dokumenter til Qdrant. Returnerer antall vellykket indeksert."""
-    if not docs:
+    if not docs or not EMBEDDING_ENABLED:
         return 0
     try:
         texts = [d["fields"]["message"] for d in docs]
@@ -709,6 +718,8 @@ async def daemon():
 
     async with httpx.AsyncClient() as client:
         log.info("Vaktmester v2.0 startet — overvåker %d logfiler", len(LOG_SOURCES))
+        if not EMBEDDING_ENABLED:
+            log.info("Embedding disabled — Qdrant indexing skipped.")
 
         while True:
             batch: list[dict] = []
