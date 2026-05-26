@@ -76,7 +76,7 @@ Møtet starter med en undersøkelsesfase hvor du graver selv — ingen får tild
 Møteleder leser funnene dine og Kåres funn, og setter agenda for diskusjonen.
 
 **Undersøkelsesfasen — start her:**
-1. `søk_vaktmester` — finn feil og mønstre i systemlogger siste 24 timer
+1. `søk_argus` — finn feil og mønstre i systemlogger siste 24 timer
 2. `les_logg` — les konkrete loggfiler for detaljer
 3. `git_log` / `git_diff` — hva er endret siden sist?
 4. `sjekk_tjenester` — er noe ustabilt?

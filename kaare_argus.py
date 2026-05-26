@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-kaare_vaktmester.py  v3.0  –  Async logg-daemon
+kaare_argus.py  v3.0  –  Async logg-daemon
 -------------------------------------------------
 Tails 7 interne logfiler → normaliserer → indekserer i Qdrant (port 6333).
 Embedding via BGE-M3 (1024-dim, NPU, port 11446).
@@ -79,7 +79,7 @@ def _load_embedding_enabled() -> bool:
 LOCAL_TZ             = _load_local_tz()
 QDRANT_URL           = _svc("storage", "qdrant")
 EMBED_URL            = _svc("ollama", "embed") + "/api/embed"
-VAKTMESTER_COLLECTION = "vaktmester_events"
+ARGUS_COLLECTION = "argus_events"
 VECTOR_DIM           = 1024
 
 FACE_SESSION_TIMEOUT_S, FACE_EVENTS_RETENTION_H = _load_face_events_cfg()
@@ -92,11 +92,11 @@ MAX_ACTIVE_RIDS   = 20_000
 RID_TIMEOUT_SECS  = 30
 RAW_MAX_LEN       = 2000   # tegn – avkorter store JSON-linjer i 'raw'-feltet
 
-STATE_PATH        = Path("/kaare/state/vaktmester/state.json")
-REPORT_PATH       = Path("/kaare/state/vaktmester/report.json")
-DIGEST_PATH       = Path("/kaare/state/vaktmester/digest.txt")
-FACE_EVENTS_PATH  = Path("/kaare/state/vaktmester/face_events.txt")
-IDS_DIR           = Path("/kaare/state/vaktmester/ids")  # én .txt per måned med doc_ids
+STATE_PATH        = Path("/kaare/state/argus/state.json")
+REPORT_PATH       = Path("/kaare/state/argus/report.json")
+DIGEST_PATH       = Path("/kaare/state/argus/digest.txt")
+FACE_EVENTS_PATH  = Path("/kaare/state/argus/face_events.txt")
+IDS_DIR           = Path("/kaare/state/argus/ids")  # én .txt per måned med doc_ids
 DIGEST_MAX        = 200  # events kept in rolling digest for Jing
 
 # Logfiler med kilde-tag og standard subsystem
@@ -121,7 +121,7 @@ logging.basicConfig(
     format="%(asctime)s  %(levelname)s  %(message)s",
     stream=sys.stdout,
 )
-log = logging.getLogger("vaktmester")
+log = logging.getLogger("argus")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
@@ -199,7 +199,7 @@ def write_digest(path: Path, lines: list[str]) -> None:
 
 
 def record_doc_ids(doc_ids: list[str], period: str) -> None:
-    """Appender doc_ids til /kaare/state/vaktmester/ids/YYYY-MM.txt."""
+    """Appender doc_ids til /kaare/state/argus/ids/YYYY-MM.txt."""
     if not doc_ids:
         return
     try:
@@ -246,7 +246,7 @@ def is_noise(ev: dict, source: str) -> bool:
         if stage == "state_changed":
             entity_id = ev.get("entity_id", "")
             domain = entity_id.split(".")[0] if "." in entity_id else ""
-            # Drop continuously updating numeric domains — not useful for Vaktmester
+            # Drop continuously updating numeric domains — not useful for Argus
             if domain in {"sensor", "weather", "sun", "zone", "update", "number", "select", "text"}:
                 return True
             # Drop attribute-only updates where state value did not change
@@ -497,18 +497,18 @@ def _qdrant_client() -> QdrantClient:
     return _qdrant
 
 
-def ensure_vaktmester_collection() -> None:
+def ensure_argus_collection() -> None:
     try:
         client = _qdrant_client()
         existing = [c.name for c in client.get_collections().collections]
-        if VAKTMESTER_COLLECTION not in existing:
+        if ARGUS_COLLECTION not in existing:
             client.create_collection(
-                collection_name=VAKTMESTER_COLLECTION,
+                collection_name=ARGUS_COLLECTION,
                 vectors_config=VectorParams(size=VECTOR_DIM, distance=Distance.COSINE),
             )
-            log.info("Qdrant-kolleksjon '%s' opprettet.", VAKTMESTER_COLLECTION)
+            log.info("Qdrant-kolleksjon '%s' opprettet.", ARGUS_COLLECTION)
         else:
-            log.info("Qdrant-kolleksjon '%s' klar.", VAKTMESTER_COLLECTION)
+            log.info("Qdrant-kolleksjon '%s' klar.", ARGUS_COLLECTION)
     except Exception as exc:
         log.error("Feil ved init av Qdrant-kolleksjon: %s", exc)
 
@@ -534,7 +534,7 @@ async def qdrant_upsert_batch(http: httpx.AsyncClient, docs: list[dict]) -> int:
             )
             for doc, vec in zip(docs, dense_vecs)
         ]
-        _qdrant_client().upsert(collection_name=VAKTMESTER_COLLECTION, points=points)
+        _qdrant_client().upsert(collection_name=ARGUS_COLLECTION, points=points)
         return len(points)
     except Exception as exc:
         log.warning("Qdrant upsert feil: %s", exc)
@@ -717,7 +717,7 @@ async def daemon():
     last_report = 0.0
 
     async with httpx.AsyncClient() as client:
-        log.info("Vaktmester v2.0 startet — overvåker %d logfiler", len(LOG_SOURCES))
+        log.info("Argus v3.0 startet — overvåker %d logfiler", len(LOG_SOURCES))
         if not EMBEDDING_ENABLED:
             log.info("Embedding disabled — Qdrant indexing skipped.")
 
@@ -746,7 +746,7 @@ async def daemon():
                         inc(counters, "qdrant.dropped_noise")
                         continue
 
-                    # Face aggregation — runs before Prism indexing
+                    # Face aggregation — runs before Qdrant indexing
                     if source == "frigate-mqtt" and ev.get("sub_label"):
                         process_face_event(ev)
 
@@ -827,11 +827,11 @@ async def daemon():
 
 
 def main():
-    ensure_vaktmester_collection()
+    ensure_argus_collection()
     try:
         asyncio.run(daemon())
     except KeyboardInterrupt:
-        log.info("Vaktmester stoppet.")
+        log.info("Argus stoppet.")
 
 
 if __name__ == "__main__":

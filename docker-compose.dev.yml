@@ -43,7 +43,7 @@ services:
       - ./configs:/kaare/configs
       - ./state:/kaare/state
 
-  kaare-vaktmester:
+  kaare-argus:
     build: .
     image: kaare-dev
     volumes:

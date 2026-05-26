@@ -370,9 +370,9 @@ KAARE_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "søk_i_vaktmester",
+            "name": "søk_i_argus",
             "description": (
-                "Søk i Kåres systemlogg via Vaktmester. "
+                "Søk i Kåres systemlogg via Argus. "
                 "Returnerer logg-hendelser: HA-handlinger, feil, LLM-kall, stoppede forespørsler. "
                 "Bruk for å finne hva systemet HAR GJORT — ikke hva brukeren SA "
                 "(bruk minne(action='søk') for det). "
@@ -1327,6 +1327,6 @@ TOOL_MODEL_TIERS: dict[str, float] = {
     "ssh_kommando":             9.0,
     "local_kommando":           9.0,
     "restart_docker_container": 9.0,
-    "søk_i_vaktmester":         9.0,
+    "søk_i_argus":         9.0,
     "reason_freely":            9.0,
 }

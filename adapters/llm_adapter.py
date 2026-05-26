@@ -313,7 +313,7 @@ def _build_disabled_modules_block() -> str:
             "utforsk":        "utforsk (lese filer/kode)",
             "inspiser":       "inspiser (logger/tjenester/ressurser)",
             "nettsøk":        "nettsøk",
-            "søk_vaktmester": "søk_vaktmester (systemlogg)",
+            "søk_argus": "søk_argus (systemlogg)",
             "shell":          "shell (kjøre kommandoer)",
             "hukommelse":     "hukommelse",
         }

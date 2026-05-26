@@ -3452,7 +3452,7 @@ function TabDistribusjon() {
 
 
 const DEFAULT_AGENT_TOOLS: AgentToolsConfig = {
-  pettersmart: { utforsk: true, inspiser: true, "nettsøk": true, "søk_vaktmester": true, shell: false, hukommelse: true },
+  pettersmart: { utforsk: true, inspiser: true, "nettsøk": true, "søk_argus": true, shell: false, hukommelse: true },
   miss_kare:   { "spør_frøken_library": true },
   miss_library: { wiki: false },
 };
@@ -3528,7 +3528,7 @@ function TabAgenter() {
     { key: "utforsk",        label: t("settings.agenter.tools.utforsk"),        description: t("settings.agenter.tools.utforsk_desc") },
     { key: "inspiser",       label: t("settings.agenter.tools.inspiser"),       description: t("settings.agenter.tools.inspiser_desc") },
     { key: "nettsøk",        label: t("settings.agenter.tools.nettsøk"),        description: t("settings.agenter.tools.nettsøk_desc") },
-    { key: "søk_vaktmester", label: t("settings.agenter.tools.søk_vaktmester"), description: t("settings.agenter.tools.søk_vaktmester_desc") },
+    { key: "søk_argus", label: t("settings.agenter.tools.søk_argus"), description: t("settings.agenter.tools.søk_argus_desc") },
     { key: "shell",          label: t("settings.agenter.tools.shell"),          description: t("settings.agenter.tools.shell_desc"), defaultOff: true },
     { key: "hukommelse",     label: t("settings.agenter.tools.hukommelse"),     description: t("settings.agenter.tools.hukommelse_desc") },
   ];

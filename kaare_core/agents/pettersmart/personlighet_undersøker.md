@@ -32,7 +32,7 @@ Alle andre kommandoer kjøres uten sudo. Prøv alltid uten sudo først.
 
 ## Rekkefølge i undersøkelsesfasen
 
-1. `søk_vaktmester` – semantisk søk etter feil og mønstre siste 24t
+1. `søk_argus` – semantisk søk etter feil og mønstre siste 24t
 2. `les_logg` – konkrete loggfiler for detaljer
 3. `git_log` – hva er endret siden sist?
 4. `sjekk_tjenester` – er noe ustabilt?

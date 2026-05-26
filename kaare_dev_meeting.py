@@ -382,7 +382,7 @@ async def _kare_investigate(system_prompt: str) -> str:
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": (
             "Undersøk systemet nå. Bruk alle verktøyene dine for å finne reelle problemer "
-            "og mønstre fra siste 24 timer. Start bredt: les logg-filer, søk i vaktmester, "
+            "og mønstre fra siste 24 timer. Start bredt: les logg-filer, søk i argus, "
             "sjekk minnet. Zoom inn på det viktigste. Bruk verktøyene – ikke gjett."
         )},
     ]
@@ -545,7 +545,7 @@ async def _pettersmart_investigate(system_prompt: str) -> str:
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": (
-            "Undersøk systemet. Bruk søk_vaktmester, les_logg, git_log, sjekk_tjenester "
+            "Undersøk systemet. Bruk søk_argus, les_logg, git_log, sjekk_tjenester "
             "og sjekk_ressurser for å finne reelle problemer fra siste 24 timer. "
             "Start bredt – logger, tjenestestatus, siste kodeendringer. "
             "Oppsummer funnene konkret til slutt. Ikke gjett. "
@@ -974,7 +974,7 @@ async def main() -> None:
         f"{_time_anchor}"
         f"{_health_block}"
         f"{_memory_block}"
-        "Din oppgave: finn reelle problemer i systemet ved å søke i vaktmester og minne.\n"
+        "Din oppgave: finn reelle problemer i systemet ved å søke i argus og minne.\n"
         "Se etter: feil, mønstre som gjentar seg, ting du ikke klarer å svare på, "
         "interaksjoner med dårlig utfall. Bruk verktøyene – ikke gjett.\n"
         "Oppsummer funnene konkret og ærlig."
@@ -999,7 +999,7 @@ async def main() -> None:
         f"{_memory_block}"
         f"{_pettersmart_mem_block}"
         "Din oppgave: kartlegg systemets nåværende tilstand med verktøyene dine.\n"
-        "Bruk søk_vaktmester, les_logg, git_log, sjekk_tjenester og sjekk_ressurser.\n"
+        "Bruk søk_argus, les_logg, git_log, sjekk_tjenester og sjekk_ressurser.\n"
         "Let etter: feil i logger, ustabile tjenester, siste kodeendringer, ressurspress.\n"
         "Bruk verktøyene – ikke gjett. Oppsummer funnene konkret."
     )

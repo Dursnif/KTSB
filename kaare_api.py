@@ -38,7 +38,7 @@ from kaare_core.users.auth import (
 from kaare_core.users.store import init_db as init_users_db
 from kaare_fastpath import match_fastpath
 import kaare_core.app_state as app_state
-from kaare_core.routers.router_vaktmester import router as vaktmester_router
+from kaare_core.routers.router_argus import router as argus_router
 from kaare_core.routers.router_media import router as media_router
 from kaare_core.routers.router_meetings import router as meetings_router
 from kaare_core.routers.router_system import router as system_router
@@ -196,13 +196,13 @@ except Exception:
 
 
 
-HA_LOG_PATH = "/kaare/vaktmester_inbox/ha_bridge.log"
+HA_LOG_PATH = "/kaare/argus_inbox/ha_bridge.log"
 os.makedirs(os.path.dirname(HA_LOG_PATH), exist_ok=True)
 
 
 app = FastAPI(title="Kåre Hoved-AI Orkestrator")
 app.include_router(users_router)
-app.include_router(vaktmester_router)
+app.include_router(argus_router)
 app.include_router(media_router)
 app.include_router(meetings_router)
 app.include_router(system_router)
@@ -2653,7 +2653,7 @@ async def api_memory_query(req: MemoryQueryRequest):
     Spør memory-konteineren om relevante minner/kontekst.
     Denne kan kalles av:
     - Kåre selv før han spør LLM
-    - Vaktmester-Kåre
+    - Argus-Kåre
     - HA-bridge osv.
     """
     t0 = time.perf_counter()

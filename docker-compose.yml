@@ -82,10 +82,10 @@ services:
       - ./state:/kaare/state
     depends_on: [qdrant, kaare-memory-embed]
 
-  kaare-vaktmester:
+  kaare-argus:
     image: ghcr.io/dursnif/kaare:latest
     restart: unless-stopped
-    command: python kaare_vaktmester.py
+    command: python kaare_argus.py
     volumes:
       - ./configs:/kaare/configs
       - ./state:/kaare/state

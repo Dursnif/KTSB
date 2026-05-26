@@ -142,7 +142,7 @@ def les_logg(arguments: dict) -> str:
 
 _ALLOWED_SERVICES = {
     "kaare", "kaare_ha_gateway", "kaare-semantic-embed", "kaare-embedding",
-    "kaare-agents", "kaare-qdrant", "kaare-vaktmester", "kaare-voice-bridge",
+    "kaare-agents", "kaare-qdrant", "kaare-argus", "kaare-voice-bridge",
     "kaare-frontend", "kaare-nightjob", "kaare-reflection", "kaare-dev-meeting",
     "kaare-nvidia-init", "kaare-backup",
 }
@@ -173,7 +173,7 @@ def sjekk_tjenester(arguments: dict) -> str:
     tjenester = [
         "kaare", "kaare_ha_gateway", "kaare-semantic-embed",
         "kaare-agents", "kaare-qdrant",
-        "kaare-vaktmester", "kaare-voice-bridge", "kaare-frontend",
+        "kaare-argus", "kaare-voice-bridge", "kaare-frontend",
     ]
     linjer = []
     for t in tjenester:

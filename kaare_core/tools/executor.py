@@ -882,7 +882,7 @@ async def _les_ha_status(entity_id: str) -> str:
         return f"Feil ved lesing av '{entity_id}': {e}"
 
 
-async def _søk_i_vaktmester(spørsmål: str, grense: int = 8) -> str:
+async def _søk_i_argus(spørsmål: str, grense: int = 8) -> str:
     if not spørsmål.strip():
         return "Feil: spørsmål kan ikke være tomt."
     grense = max(1, min(grense, 20))
@@ -894,14 +894,14 @@ async def _søk_i_vaktmester(spørsmål: str, grense: int = 8) -> str:
             emb_r.raise_for_status()
             vector = emb_r.json()["embeddings"][0]
             r = await client.post(
-                f"{qdrant_url}/collections/vaktmester_events/points/query",
+                f"{qdrant_url}/collections/argus_events/points/query",
                 json={"query": vector, "limit": grense, "with_payload": True},
                 timeout=15.0,
             )
             r.raise_for_status()
             data = r.json()
     except Exception as e:
-        return f"Vaktmester utilgjengelig: {e}"
+        return f"Argus utilgjengelig: {e}"
     hits = data.get("result", {}).get("points", [])
     if not hits:
         return f"Fant ingen hendelser for '{spørsmål}' i systemloggen."
@@ -1765,7 +1765,7 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
         if action == "hendelser":
             navn_filter = (arguments.get("navn") or "").strip().lower()
             timer_tilbake = min(int(arguments.get("timer_tilbake", 24)), 48)
-            face_path = Path("/kaare/state/vaktmester/face_events.txt")
+            face_path = Path("/kaare/state/argus/face_events.txt")
             if not face_path.exists():
                 return "Ingen kamerahendelser registrert ennå."
             try:
@@ -1955,8 +1955,8 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             offset=int(arguments.get("hopp_over", 0)),
         )
 
-    if name == "søk_i_vaktmester":
-        return await _søk_i_vaktmester(
+    if name == "søk_i_argus":
+        return await _søk_i_argus(
             spørsmål=arguments.get("spørsmål", ""),
             grense=int(arguments.get("grense", 8)),
         )
@@ -2279,7 +2279,7 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
     if name == "les_kamerahendelser":
         navn_filter    = (arguments.get("navn") or "").strip().lower()
         timer_tilbake  = min(int(arguments.get("timer_tilbake", 24)), 48)
-        face_path      = Path("/kaare/state/vaktmester/face_events.txt")
+        face_path      = Path("/kaare/state/argus/face_events.txt")
 
         if not face_path.exists():
             return "Ingen kamerahendelser registrert ennå."

@@ -540,8 +540,8 @@
         "inspiser_desc": "Logs lesen, Dienste und Ressourcen prüfen, git diff/log anzeigen.",
         "nettsøk": "nettsøk",
         "nettsøk_desc": "Im Internet suchen über den konfigurierten Suchanbieter.",
-        "søk_vaktmester": "søk_vaktmester",
-        "søk_vaktmester_desc": "Im Vaktmester-Ereignisprotokoll suchen (Qdrant).",
+        "søk_argus": "søk_argus",
+        "søk_argus_desc": "Im Argus-Ereignisprotokoll suchen (Qdrant).",
         "shell": "shell",
         "shell_desc": "Shell-Befehle lokal oder auf verbundenen Knoten ausführen. Nur bei Bedarf aktivieren.",
         "hukommelse": "hukommelse",
@@ -680,8 +680,8 @@
           "label": "Embedding (BGE-M3)",
           "hint": "Port 11446. Neustart nach Embedding-Konfig-Änderung."
         },
-        "vaktmester": {
-          "label": "Vaktmester",
+        "argus": {
+          "label": "Argus",
           "hint": "Log-Daemon. Neustart wenn Log-Sammlung stoppt."
         },
         "voice": {
@@ -923,7 +923,7 @@
         "reason_freely": "Freies Denken",
         "minne": "Speicher (LTM)",
         "kamera": "Kamera (Frigate)",
-        "søk_i_vaktmester": "Vaktmester-Suche",
+        "søk_i_argus": "Argus-Suche",
         "les_møte": "Besprechungsberichte lesen",
         "pettersmart": "Pettersmart",
         "utforsk_kode": "Code erkunden",

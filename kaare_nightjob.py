@@ -289,7 +289,7 @@ def _parse_jing_blocks(text: str) -> list[tuple[str, str]]:
         # Strip category headers and "Ingen data." to check if anything meaningful remains
         # Handles both [KATEGORI] and **KATEGORI**: and plain KATEGORI: formats
         stripped = re.sub(r"[-*\[\]]+", "", content)
-        stripped = re.sub(r"(MENNESKER|ANDRE|VAKTMESTER|STM)[\s:]*", "", stripped, flags=re.IGNORECASE)
+        stripped = re.sub(r"(MENNESKER|ANDRE|ARGUS|STM)[\s:]*", "", stripped, flags=re.IGNORECASE)
         stripped = stripped.replace("Ingen data.", "").strip()
         if not stripped:
             continue
@@ -518,7 +518,7 @@ async def run_nightjob() -> None:
     except Exception as e:
         log.warning("Global event compression failed: %s — continuing.", e)
 
-    # Slett vaktmester-hendelser eldre enn 30 dager
+    # Slett argus-hendelser eldre enn 30 dager
     # ts er lagret som ISO-streng — bruk scroll+Python-sammenligning (Range krever float)
     try:
         cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(timespec="seconds")
@@ -527,7 +527,7 @@ async def run_nightjob() -> None:
         offset = None
         while True:
             scroll_result = qc.scroll(
-                collection_name="vaktmester_events",
+                collection_name="argus_events",
                 limit=200,
                 offset=offset,
                 with_payload=["ts"],
@@ -542,14 +542,14 @@ async def run_nightjob() -> None:
                 break
         if ids_to_delete:
             qc.delete(
-                collection_name="vaktmester_events",
+                collection_name="argus_events",
                 points_selector=PointIdsList(points=ids_to_delete),
             )
-            log.info("Vaktmester-cleanup: slettet %d hendelser eldre enn %s", len(ids_to_delete), cutoff_iso[:10])
+            log.info("Argus-cleanup: slettet %d hendelser eldre enn %s", len(ids_to_delete), cutoff_iso[:10])
         else:
-            log.info("Vaktmester-cleanup: ingen gamle hendelser å slette.")
+            log.info("Argus-cleanup: ingen gamle hendelser å slette.")
     except Exception as e:
-        log.warning("Vaktmester-cleanup feil: %s — continuing.", e)
+        log.warning("Argus-cleanup feil: %s — continuing.", e)
 
     conn.close()
     log.info(

@@ -70,10 +70,10 @@ rsync -av --delete \
   --exclude='CLAUDE.md' \
   --exclude='CURRENT.md' \
   --exclude='DEBUG_*.md' \
-  --exclude='vaktmester_report.json' \
-  --exclude='vaktmester_state.json' \
-  --exclude='vaktmester_delta.json' \
-  --exclude='vaktmester_inbox/' \
+  --exclude='argus_report.json' \
+  --exclude='argus_state.json' \
+  --exclude='argus_delta.json' \
+  --exclude='argus_inbox/' \
   --exclude='.npm/' \
   --exclude='volumes/' \
   --exclude='intel/' \
@@ -91,8 +91,8 @@ rsync -av --delete \
   --exclude='services/gui/' \
   --exclude='www/' \
   --exclude='mini_kaareha/' \
-  --exclude='vaktmester_halfyear.py' \
-  --exclude='vaktmester_monthly.py' \
+  --exclude='argus_halfyear.py' \
+  --exclude='argus_monthly.py' \
   --exclude='lost+found/' \
   --exclude='.ssh/' \
   --exclude='.cache/' \

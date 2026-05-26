@@ -12,7 +12,7 @@ Verktøy:
   nettsøk          – nettsøk via web_search_adapter
   git_diff         – vis git diff for fil eller hele repoet
   git_log          – vis commit-historikk
-  søk_vaktmester   – semantisk søk i systemlogg (Qdrant BGE-M3)
+  søk_argus   – semantisk søk i systemlogg (Qdrant BGE-M3)
   ssh_kommando     – les-bare kommandoer på ainuc/dnspi/proxypi
   local_kommando   – les-bare kommandoer lokalt på AI-pc
   hukommelse       – Pettersmarts personlige minne (les/skriv/slett_gammel)
@@ -175,12 +175,12 @@ PETTERSMART_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "søk_vaktmester",
+            "name": "søk_argus",
             "description": (
                 "Semantisk søk i systemloggen via Qdrant (BGE-M3, 1024-dim). "
                 "Finner semantisk nærliggende hendelser fra alle loggkilder. "
                 "Bruk for å se HA-handlinger, feil, treghet, stoppede forespørsler. "
-                "Eksempel: søk_vaktmester(query='HA feil siste dag')"
+                "Eksempel: søk_argus(query='HA feil siste dag')"
             ),
             "parameters": {
                 "type": "object",
@@ -256,7 +256,7 @@ def _tools_by_name(*names: str) -> list:
     return [t for t in PETTERSMART_TOOLS if t["function"]["name"] in names]
 
 UNDERSØKER_TOOLS = _tools_by_name(
-    "utforsk", "inspiser", "søk_vaktmester", "shell", "hukommelse",
+    "utforsk", "inspiser", "søk_argus", "shell", "hukommelse",
 )
 
 KRITIKER_TOOLS = _tools_by_name("hukommelse")
@@ -300,7 +300,7 @@ async def execute_tool(name: str, arguments: dict) -> str:
             from adapters.web_search_adapter import søk_nett
             return await søk_nett(query)
 
-        elif name == "søk_vaktmester":
+        elif name == "søk_argus":
             query  = arguments.get("query", "").strip()
             grense = max(1, min(int(arguments.get("grense", 10)), 20))
             if not query:
@@ -313,18 +313,18 @@ async def execute_tool(name: str, arguments: dict) -> str:
                     emb_r.raise_for_status()
                     vector = emb_r.json()["embeddings"][0]
                     r = await client.post(
-                        f"{qdrant_url}/collections/vaktmester_events/points/query",
+                        f"{qdrant_url}/collections/argus_events/points/query",
                         json={"query": vector, "limit": grense, "with_payload": True},
                         timeout=15.0,
                     )
                     r.raise_for_status()
                     data = r.json()
             except Exception as e:
-                return f"[Vaktmester utilgjengelig: {e}]"
+                return f"[Argus utilgjengelig: {e}]"
             hits = data.get("result", {}).get("points", [])
             if not hits:
                 return f"[Ingen treff på '{query}' i systemloggen]"
-            lines = [f"Vaktmester: {len(hits)} treff — '{query}'\n"]
+            lines = [f"Argus: {len(hits)} treff — '{query}'\n"]
             for h in hits:
                 f     = h.get("payload", {})
                 ts    = _fmt_ts_local(f.get("ts", ""))

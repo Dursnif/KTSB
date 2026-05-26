@@ -550,7 +550,7 @@ export async function apiSaveToolPermissions(data: ToolPermissions): Promise<{ o
 
 export type ServiceKey =
   | "kaare" | "gateway" | "semantic_embed" | "agents" | "embedding"
-  | "vaktmester" | "voice" | "frontend" | "ha-log-bridge";
+  | "argus" | "voice" | "frontend" | "ha-log-bridge";
 
 export type AdminServiceStatus = { unit: string; active: boolean };
 

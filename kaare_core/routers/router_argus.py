@@ -10,25 +10,25 @@ from fastapi import APIRouter
 router = APIRouter()
 
 
-@router.post("/api/vaktmester_delta")
-async def api_vaktmester_delta(payload: dict):
-    log_path = "/kaare/logs/vaktmester_delta.log"
+@router.post("/api/argus_delta")
+async def api_argus_delta(payload: dict):
+    log_path = "/kaare/logs/argus_delta.log"
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    line = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] VAKTMESTER_DELTA {json.dumps(payload, ensure_ascii=False)}\n"
+    line = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ARGUS_DELTA {json.dumps(payload, ensure_ascii=False)}\n"
     with open(log_path, "a", encoding="utf-8") as f:
         f.write(line)
     return {"ok": True, "stored": len(line)}
 
 
-@router.get("/api/vaktmester_status")
-def api_vaktmester_status(limit: int = 20):
-    p = Path("/kaare/logs/vaktmester_delta.log")
+@router.get("/api/argus_status")
+def api_argus_status(limit: int = 20):
+    p = Path("/kaare/logs/argus_delta.log")
     events = []
     if p.exists():
         for line in reversed(p.read_text(encoding="utf-8").splitlines()):
-            if "VAKTMESTER_DELTA " in line:
+            if "ARGUS_DELTA " in line:
                 try:
-                    payload = json.loads(line.split("VAKTMESTER_DELTA ", 1)[1])
+                    payload = json.loads(line.split("ARGUS_DELTA ", 1)[1])
                     events.append(payload.get("summary", payload))
                     if len(events) >= limit:
                         break
@@ -37,15 +37,15 @@ def api_vaktmester_status(limit: int = 20):
     return {"count": len(events), "events": events}
 
 
-@router.get("/api/vaktmester_brief")
-def api_vaktmester_brief(limit: int = 1):
-    p = Path("/kaare/logs/vaktmester_delta.log")
+@router.get("/api/argus_brief")
+def api_argus_brief(limit: int = 1):
+    p = Path("/kaare/logs/argus_delta.log")
     events = []
     if p.exists():
         for line in reversed(p.read_text(encoding="utf-8").splitlines()):
-            if "VAKTMESTER_DELTA " in line:
+            if "ARGUS_DELTA " in line:
                 try:
-                    payload = json.loads(line.split("VAKTMESTER_DELTA ", 1)[1])
+                    payload = json.loads(line.split("ARGUS_DELTA ", 1)[1])
                     ev = payload.get("summary", payload)
                     events.append(ev)
                     if len(events) >= limit:
@@ -54,7 +54,7 @@ def api_vaktmester_brief(limit: int = 1):
                     continue
 
     if not events:
-        return {"brief": "Ingen vaktmester-rapporter enda.", "events": []}
+        return {"brief": "Ingen Argus-rapporter enda.", "events": []}
 
     last = events[0]
     sev = last.get("severity", "ok")
@@ -82,10 +82,10 @@ def api_vaktmester_brief(limit: int = 1):
     return {"brief": brief, "events": events}
 
 
-@router.get("/api/vaktmester_advice")
-def api_vaktmester_advice(limit: int = 1):
+@router.get("/api/argus_advice")
+def api_argus_advice(limit: int = 1):
     rules_path = Path("/kaare/kaare_advice_rules.yaml")
-    log_path   = Path("/kaare/logs/vaktmester_delta.log")
+    log_path   = Path("/kaare/logs/argus_delta.log")
 
     rules = []
     if rules_path.exists():
@@ -97,9 +97,9 @@ def api_vaktmester_advice(limit: int = 1):
     payload = None
     if log_path.exists():
         for line in reversed(log_path.read_text(encoding="utf-8").splitlines()):
-            if "VAKTMESTER_DELTA " in line:
+            if "ARGUS_DELTA " in line:
                 try:
-                    payload = json.loads(line.split("VAKTMESTER_DELTA ", 1)[1])
+                    payload = json.loads(line.split("ARGUS_DELTA ", 1)[1])
                     break
                 except Exception:
                     continue
@@ -127,16 +127,16 @@ def api_vaktmester_advice(limit: int = 1):
             "advice": out}
 
 
-@router.get("/api/vaktmester_types")
-def api_vaktmester_types():
-    log_path = Path("/kaare/logs/vaktmester_delta.log")
+@router.get("/api/argus_types")
+def api_argus_types():
+    log_path = Path("/kaare/logs/argus_delta.log")
 
     payload = None
     if log_path.exists():
         for line in reversed(log_path.read_text(encoding="utf-8").splitlines()):
-            if "VAKTMESTER_DELTA " in line:
+            if "ARGUS_DELTA " in line:
                 try:
-                    payload = json.loads(line.split("VAKTMESTER_DELTA ", 1)[1])
+                    payload = json.loads(line.split("ARGUS_DELTA ", 1)[1])
                     break
                 except Exception:
                     continue

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-ha_log_bridge.py — Real-time Home Assistant event bridge for Vaktmester.
+ha_log_bridge.py — Real-time Home Assistant event bridge for Argus.
 
 Connects to HA WebSocket on the Pi4 and writes all subscribed events as JSONL
-to /kaare/logs/ha_events.log. No filtering here — that is Vaktmester's job.
+to /kaare/logs/ha_events.log. No filtering here — that is Argus's job.
 No configuration required on the HA/Pi4 side — uses existing HA token.
 """
 
@@ -136,7 +136,7 @@ async def connect_and_listen() -> None:
                 log.warning("Subscribe failed for %s: %s", event_type, sub_resp)
             msg_id += 1
 
-        # Forward all events — filtering is Vaktmester's job
+        # Forward all events — filtering is Argus's job
         indexed = 0
         async for raw in ws:
             msg = json.loads(raw)

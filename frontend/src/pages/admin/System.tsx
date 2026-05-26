@@ -39,7 +39,7 @@ function formatTs(iso: string | null, neverLabel: string) {
 
 const SERVICE_KEYS = new Set([
   "kaare", "gateway", "semantic_embed", "agents", "embedding",
-  "vaktmester", "voice", "ha-log-bridge", "frontend",
+  "argus", "voice", "ha-log-bridge", "frontend",
 ]);
 
 function ServiceRestartRow({ serviceKey, unit, active, onRestarted }: {

@@ -69,7 +69,7 @@ agent_tools:
     utforsk: true
     inspiser: true
     nettsøk: true
-    søk_vaktmester: true
+    søk_argus: true
     shell: false
     hukommelse: true
   miss_kare:
