@@ -21,7 +21,8 @@ from typing import Optional
 
 import jwt
 import yaml
-from fastapi import Header, HTTPException, status
+from fastapi import Header, HTTPException, Query, status
+from typing import Optional
 
 from kaare_core.users.store import get_user_with_hash, verify_pin, get_keypair_data, store_keypair, has_keypair
 from kaare_core.crypto import (
@@ -38,8 +39,13 @@ SYSTEM_ACCOUNTS: set[str] = {"admin"}
 _SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
 
 SECRET_PATH = Path("/kaare/configs/auth.env")
-TOKEN_EXPIRY_HOURS = 8
 ALGORITHM = "HS256"
+
+try:
+    _auth_settings = yaml.safe_load(Path("/kaare/configs/settings.yaml").read_text())
+    TOKEN_EXPIRY_HOURS: int = int(_auth_settings.get("token_expiry_hours", 4))
+except Exception:
+    TOKEN_EXPIRY_HOURS = 4
 
 
 def _load_or_create_secret() -> str:
@@ -51,6 +57,7 @@ def _load_or_create_secret() -> str:
     secret = secrets.token_hex(32)
     with open(SECRET_PATH, "a") as f:
         f.write(f"\nJWT_SECRET={secret}\n")
+    SECRET_PATH.chmod(0o600)
     return secret
 
 
@@ -235,5 +242,20 @@ def require_admin(authorization: str = Header(default="")) -> dict:
     if payload.get("role") != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="Krever admin-tilgang.")
+    touch_last_seen(payload["sub"])
+    return payload
+
+
+def require_image_auth(
+    authorization: str = Header(default=""),
+    token: Optional[str] = Query(default=None),
+) -> dict:
+    """Dependency for image endpoints: accepts JWT from Authorization header OR ?token= query param.
+    The query-param path exists because <img src="..."> in browsers cannot send custom headers."""
+    raw = token or (authorization.split(" ", 1)[1] if authorization.startswith("Bearer ") else "")
+    if not raw:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Mangler token.")
+    payload = decode_token(raw)
     touch_last_seen(payload["sub"])
     return payload

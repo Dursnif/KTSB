@@ -9,20 +9,33 @@ and returns a plain-text string result.
 import subprocess as _sp
 from pathlib import Path
 
-_SENSITIVE_NAMES = {".env", "token", "secret", "password", "apikey", "api_key", "nvidia"}
+_SENSITIVE_NAMES = {".env", "auth.env", "token", "secret", "password", "apikey", "api_key", "nvidia"}
+
+_KAARE_ROOT = Path("/kaare").resolve()
+
+
+def _valider_sti(sti: str, tillatt_rot: Path = _KAARE_ROOT) -> Path | None:
+    """Resolve path and verify it stays inside tillatt_rot. Returns resolved Path or None."""
+    try:
+        resolved = Path(sti).resolve()
+        resolved.relative_to(tillatt_rot)
+        return resolved
+    except (ValueError, RuntimeError):
+        return None
 
 
 def les_fil(arguments: dict, default_chunk: int = 500, max_chunk: int = 500) -> str:
     sti = arguments.get("sti", "").strip()
-    if not sti.startswith("/kaare/"):
+    resolved = _valider_sti(sti)
+    if not sti.startswith("/kaare/") or resolved is None:
         return (
             "Mangler eller ugyldig filsti. Oppgi absolutt sti under /kaare/, "
             "f.eks. les_fil(sti='/kaare/kaare_api.py'). "
             "Bruk liste_filer() for å se hva som finnes."
         )
-    if any(s in Path(sti).name.lower() for s in _SENSITIVE_NAMES):
+    if any(s in resolved.name.lower() for s in _SENSITIVE_NAMES):
         return "[Feil: filen er sensitiv og kan ikke leses]"
-    p = Path(sti)
+    p = resolved
     if not p.exists():
         return f"[Finner ikke: {sti}]"
     alle = p.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -39,9 +52,9 @@ def les_fil(arguments: dict, default_chunk: int = 500, max_chunk: int = 500) -> 
 def liste_filer(arguments: dict) -> str:
     mappe = arguments.get("mappe", "/kaare/kaare_core").strip() or "/kaare/kaare_core"
     rekursiv = bool(arguments.get("rekursiv", False))
-    if not mappe.startswith("/kaare"):
+    p = _valider_sti(mappe)
+    if p is None:
         return "[Feil: kun mapper under /kaare er tillatt]"
-    p = Path(mappe)
     if not p.exists():
         return f"[Finner ikke: {mappe}]"
     if rekursiv:
@@ -51,7 +64,7 @@ def liste_filer(arguments: dict) -> str:
         return f"{mappe}/\n" + "\n".join(lines) + suffix
     items = sorted(p.iterdir(), key=lambda x: (x.is_file(), x.name))
     lines = [f"{'[mappe]' if i.is_dir() else '[fil]  '} {i.name}" for i in items[:100]]
-    return f"{mappe}/\n" + "\n".join(lines)
+    return f"{p}/\n" + "\n".join(lines)
 
 
 def søk_kode(arguments: dict) -> str:
@@ -107,8 +120,8 @@ def les_logg(arguments: dict) -> str:
                 deler.append(f"\n--- {_fn} ---\n{innhold}")
         return "\n".join(deler)[:6000]
 
-    p = logg_dir / fil
-    if not p.exists():
+    p = _valider_sti(str(logg_dir / fil), logg_dir.resolve())
+    if p is None or not p.exists():
         return (
             f"Finner ikke: /kaare/logs/{fil}\n"
             "Tilgjengelige filer:\n" + "\n".join(f"  {f}" for f in filer)
@@ -127,9 +140,22 @@ def les_logg(arguments: dict) -> str:
     return result.stdout.strip() or "[Tom logg]"
 
 
+_ALLOWED_SERVICES = {
+    "kaare", "kaare_ha_gateway", "kaare-semantic-embed", "kaare-embedding",
+    "kaare-agents", "kaare-qdrant", "kaare-vaktmester", "kaare-voice-bridge",
+    "kaare-frontend", "kaare-nightjob", "kaare-reflection", "kaare-dev-meeting",
+    "kaare-nvidia-init", "kaare-backup",
+}
+
+
 def sjekk_tjenester(arguments: dict) -> str:
     tjeneste = arguments.get("tjeneste", "").strip()
     if tjeneste:
+        if tjeneste not in _ALLOWED_SERVICES:
+            return (
+                f"[Feil: '{tjeneste}' er ikke en kjent Kåre-tjeneste. "
+                f"Tillatte: {', '.join(sorted(_ALLOWED_SERVICES))}]"
+            )
         logglinjer = min(int(arguments.get("logglinjer", 20)), 50)
         status_r = _sp.run(
             ["systemctl", "status", f"{tjeneste}.service", "--no-pager", "-l"],

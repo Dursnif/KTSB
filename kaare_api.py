@@ -47,6 +47,7 @@ from kaare_core.users.auth import (
     touch_last_seen as _touch_last_seen,
     require_auth as _require_auth,
     require_admin as _require_admin,
+    require_image_auth as _require_image_auth,
     get_network_context as _get_network_context,
 )
 from kaare_core.users import store as _user_store
@@ -598,13 +599,32 @@ async def _jang_injection_loop() -> None:
             _log.warning("jang_injection_loop: unhandled error: %s", e)
 
 
+try:
+    import yaml as _cors_yaml
+    _cors_cfg = _cors_yaml.safe_load(Path("/kaare/configs/settings.yaml").read_text())
+    _cors_origins: list = _cors_cfg.get("cors_origins", ["*"])
+except Exception:
+    _cors_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # vi strammer inn senere
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=False,  # We use JWT in headers, not cookies — credentials=True is unnecessary
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 def _create_stm() -> ShortTermMemory:
@@ -979,7 +999,7 @@ async def api_put_vpn_settings(payload: dict, _u=Depends(_require_admin)):
 
 
 @app.get("/api/system_status")
-def api_system_status():
+def api_system_status(_u=Depends(_require_auth)):
     """
     Returnerer hvilke moduler Kåre har aktivert.
     Leser capability_map.yaml + services.yaml + ha_token.env.
@@ -1736,7 +1756,7 @@ async def api_put_ollama_source(payload: dict, _u=Depends(_require_admin)):
 # ── Image serving and stats ───────────────────────────────────────────────────
 
 @app.get("/api/image/{image_id}")
-async def api_serve_image(image_id: str):
+async def api_serve_image(image_id: str, _u=Depends(_require_image_auth)):
     from kaare_core.image_store import find_image
     safe_id = "".join(c for c in image_id if c.isalnum() or c in "_-")
     path = find_image(safe_id)
@@ -1748,7 +1768,7 @@ async def api_serve_image(image_id: str):
 
 
 @app.get("/api/frigate_snapshot/{event_id:path}")
-async def api_serve_frigate_snapshot(event_id: str):
+async def api_serve_frigate_snapshot(event_id: str, _u=Depends(_require_image_auth)):
     import re as _re
     safe = _re.sub(r"[^A-Za-z0-9._\-]", "", event_id)
     path = Path("/kaare/state/frigate_snapshots") / f"{safe}.jpg"
@@ -2973,6 +2993,7 @@ def api_think_history(
     search: str = "",
     role: str = "",
     recovered_only: bool = False,
+    _u=Depends(_require_admin),
 ):
     """Recent LLM think-block entries from the rolling cache."""
     from kaare_core.tools.think_cache import read_think_history
@@ -2989,7 +3010,7 @@ def api_think_history(
 
 
 @app.get("/api/memory/recent")
-def api_memory_recent(limit: int = 20):
+def api_memory_recent(limit: int = 20, _u=Depends(_require_admin)):
     """Siste N interaksjoner fra langtidsminnet."""
     from kaare_core.memory.long_term import get_ltm
     try:
@@ -3000,7 +3021,7 @@ def api_memory_recent(limit: int = 20):
 
 
 @app.get("/api/memory/stats")
-def api_memory_stats():
+def api_memory_stats(_u=Depends(_require_admin)):
     """Statistikk over langtidsminnet (utfall og feedback-fordeling)."""
     from kaare_core.memory.long_term import get_ltm
     try:
@@ -3010,7 +3031,7 @@ def api_memory_stats():
 
 
 @app.get("/api/memory/search")
-def api_memory_search(q: str, limit: int = 8):
+def api_memory_search(q: str, limit: int = 8, _u=Depends(_require_admin)):
     """Søk i langtidsminnet. Brukes av Kåre-tool og til debugging."""
     from kaare_core.memory.long_term import get_ltm
     try:
@@ -3202,7 +3223,7 @@ async def miss_kare_comment(user_id: str = "global"):
 # --- Chat history ---
 
 @app.get("/api/chat_history")
-async def api_chat_history(user_id: str = "global", limit: int = 60):
+async def api_chat_history(user_id: str = "global", limit: int = 60, _u=Depends(_require_auth)):
     """
     Returns the last N dialog turns for a user from STM (already persisted to disk).
     Used by the frontend to restore chat after logout/login.

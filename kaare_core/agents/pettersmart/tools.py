@@ -337,6 +337,18 @@ async def execute_tool(name: str, arguments: dict) -> str:
             return "\n".join(lines)
 
         elif name == "shell":
+            # Shell commands require developer_tools: true in settings.yaml.
+            # This mirrors Frigate's "protected mode" — off by default, user opts in knowingly.
+            try:
+                _dev_cfg = yaml.safe_load(Path("/kaare/configs/settings.yaml").read_text())
+                _dev_tools_enabled = bool(_dev_cfg.get("developer_tools", False))
+            except Exception:
+                _dev_tools_enabled = False
+            if not _dev_tools_enabled:
+                return (
+                    "[Developer tools are disabled. Shell commands are not available. "
+                    "An admin can enable this under Settings → Security in the GUI.]"
+                )
             node     = arguments.get("node", "").strip()
             kommando = arguments.get("kommando", "").strip()
             if not kommando:

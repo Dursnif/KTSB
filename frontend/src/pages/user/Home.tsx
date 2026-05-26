@@ -23,9 +23,10 @@ function renderKareText(text: string, onImageClick: (src: string) => void) {
   let last = 0;
   let match;
   IMAGE_URL_RE.lastIndex = 0;
+  const token = sessionStorage.getItem("kaare_token") ?? "";
   while ((match = IMAGE_URL_RE.exec(text)) !== null) {
     if (match.index > last) parts.push(text.slice(last, match.index));
-    const fullSrc = `${API_BASE}${match[0]}`;
+    const fullSrc = `${API_BASE}${match[0]}${token ? `?token=${encodeURIComponent(token)}` : ""}`;
     parts.push(
       <img
         key={match.index}

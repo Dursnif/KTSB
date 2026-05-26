@@ -152,7 +152,7 @@ Log in with the default admin credentials:
 |----------|-----|
 | `admin` | `1234` |
 
-> **Change your PIN** after first login under Settings → Users.
+> ⚠️ **You will be forced to change the PIN on first login.** Do not skip this — the default PIN is public knowledge.
 
 The onboarding wizard walks you through the rest — no config files to edit manually:
 

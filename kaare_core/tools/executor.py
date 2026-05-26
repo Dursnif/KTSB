@@ -2501,6 +2501,18 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
         return out[:4000] if out else "[Ingen output]"
 
     if name == "local_kommando":
+        # Shell commands require developer_tools: true in settings.yaml.
+        # This mirrors Frigate's "protected mode" — off by default, user opts in knowingly.
+        try:
+            _dev_cfg = yaml.safe_load(Path("/kaare/configs/settings.yaml").read_text())
+            _dev_tools_enabled = bool(_dev_cfg.get("developer_tools", False))
+        except Exception:
+            _dev_tools_enabled = False
+        if not _dev_tools_enabled:
+            return (
+                "[Utviklerverktøy er deaktivert. Shell-kommandoer er ikke tilgjengelig. "
+                "Admin kan aktivere dette under Innstillinger → Sikkerhet i GUI-et.]"
+            )
         kommando = arguments.get("kommando", "").strip()
         if not kommando:
             return "[Tom kommando]"

@@ -44,3 +44,17 @@ jang:
 face_events:
   session_timeout_seconds: 60
   retention_hours: 48
+
+# When false (default): shell command tools (å_kjøre_kommando / local_kommando) are disabled.
+# Enable only on dedicated machines where all users are trusted.
+# Configurable in the admin GUI under Settings → Security.
+developer_tools: false
+
+# JWT token expiry in hours. Default 4 hours.
+token_expiry_hours: 4
+
+# Allowed CORS origins. Default ["*"] works for most home installs.
+# Restrict to specific origins for stricter setups, e.g.:
+# cors_origins: ["http://192.168.0.232:5173", "https://yourdomain.com"]
+cors_origins:
+  - "*"

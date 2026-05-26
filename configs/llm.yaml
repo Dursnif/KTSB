@@ -12,10 +12,10 @@ default:
   model_role: kare
   options:
     max_tokens: 8192
+    num_predict: 512
     presence_penalty: 1.5
     temperature: 1
     top_p: 0.75
-    num_predict: 512
   provider: vllm
   stream: false
   system: 'Du er Kåre. Du bor med familien, kjenner hjemmet og menneskene i det —
@@ -52,6 +52,7 @@ default:
     '
   think: true
   vllm_docker:
+    gpu_id: 1
     gpu_memory_utilization: 0.97
     kv_cache_dtype: fp8
     max_model_len: 40960
@@ -121,8 +122,8 @@ reason_freely:
   model_role: kare
   options:
     max_tokens: 2048
-    temperature: 0.7
     num_predict: 512
+    temperature: 0.7
   provider: vllm
   stream: false
   think: true

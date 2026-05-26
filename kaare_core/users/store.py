@@ -83,7 +83,7 @@ def _ensure_admin(conn: sqlite3.Connection) -> None:
     count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     if count == 0:
         _create_user_conn(conn, username="admin", display_name="Administrator",
-                          role="admin", pin="1234", avatar="🛡️")
+                          role="admin", pin="1234", avatar="🛡️", must_change_pin=True)
         import logging
         logging.getLogger(__name__).warning(
             "Opprettet standard admin-bruker (PIN: 1234). Bytt PIN umiddelbart!"

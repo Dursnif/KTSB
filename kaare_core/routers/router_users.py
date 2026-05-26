@@ -10,10 +10,37 @@ PUT  /api/users/{username}/pin → bytt PIN (admin eller seg selv)
 DELETE /api/users/{username} → slett bruker (admin)
 """
 
+import collections
+import time
 import httpx
-from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, Request, status, UploadFile, File
 from pydantic import BaseModel
 from typing import Optional
+
+# Simple in-memory rate limiter for login: max 5 failures per 15 min per IP.
+_LOGIN_FAIL_WINDOW = 900  # seconds
+_LOGIN_FAIL_MAX = 5
+_login_failures: dict[str, collections.deque] = {}
+
+
+def _check_login_rate(ip: str) -> None:
+    now = time.monotonic()
+    dq = _login_failures.setdefault(ip, collections.deque())
+    while dq and now - dq[0] > _LOGIN_FAIL_WINDOW:
+        dq.popleft()
+    if len(dq) >= _LOGIN_FAIL_MAX:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="For mange mislykkede innloggingsforsøk. Prøv igjen om 15 minutter.",
+        )
+
+
+def _record_login_fail(ip: str) -> None:
+    _login_failures.setdefault(ip, collections.deque()).append(time.monotonic())
+
+
+def _clear_login_fail(ip: str) -> None:
+    _login_failures.pop(ip, None)
 
 from kaare_core.users import store
 from kaare_core.users.profile_manager import init_profile
@@ -71,17 +98,22 @@ def api_list_personalities():
 # ── Auth ───────────────────────────────────────────────────────────────────────
 
 @router.post("/auth/login")
-async def api_login(req: LoginRequest):
+async def api_login(req: LoginRequest, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    _check_login_rate(client_ip)
     # Sjekk om midlertidig PIN har utløpt før vi prøver å logge inn
     if store.check_pin_expired(req.username):
+        _record_login_fail(client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Den midlertidige PIN-koden har utløpt. Be en administrator om ny.",
         )
     result = login(req.username, req.pin)
     if not result:
+        _record_login_fail(client_ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="Feil brukernavn eller PIN.")
+    _clear_login_fail(client_ip)
     # Unlock session key (decrypt private key to RAM) + process vault files
     pin_for_session = result.pop("_pin_for_session", None)
     expires_at = result.pop("_expires_at", None)
