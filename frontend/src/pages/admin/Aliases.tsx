@@ -277,7 +277,11 @@ export default function Aliases() {
   const ssRoomEntities = useSaveState();
 
   useEffect(() => {
-    apiGetAliases().then(d => setConfig(d)).catch(() => {});
+    apiGetAliases().then(d => setConfig({
+      aliases: d.aliases ?? {},
+      rooms: d.rooms ?? {},
+      room_entities: d.room_entities ?? {},
+    })).catch(() => {});
   }, []);
 
   const saveAliases = async (aliases: Record<string, string>) => {

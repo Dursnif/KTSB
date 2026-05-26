@@ -167,17 +167,58 @@ CONFIG_RULES = [
 
 # ── Live service endpoints ────────────────────────────────────────────────────
 
-SERVICES = [
-    ("Main API",         "http://127.0.0.1:8000/"),
-    ("HA gateway",       "http://127.0.0.1:8002/"),
-    ("Semantic embed",   "http://127.0.0.1:11500/"),
-    ("Embedding (BGE)",  "http://127.0.0.1:11446/"),
-    ("Agents server",    "http://127.0.0.1:11450/"),
-    ("vLLM (27B)",       "http://127.0.0.1:11440/v1/models"),
-    ("Ollama miss_kare", "http://127.0.0.1:11445/"),
-    ("Ollama library",   "http://127.0.0.1:11447/"),
-    ("Qdrant",           "http://127.0.0.1:6333/"),
-]
+def _build_services() -> list[tuple[str, str]]:
+    """Build service URL list from services.yaml + llm.yaml.
+    Works on AI-PC (localhost URLs) and in Docker (internal hostnames).
+    Falls back to 127.0.0.1 defaults if configs are missing.
+    """
+    try:
+        svc = yaml.safe_load(Path("/kaare/configs/services.yaml").read_text()) or {}
+    except Exception:
+        svc = {}
+    try:
+        llm = yaml.safe_load(Path("/kaare/configs/llm.yaml").read_text()) or {}
+    except Exception:
+        llm = {}
+
+    internal = svc.get("internal", {})
+    ollama   = svc.get("ollama", {})
+    storage  = svc.get("storage", {})
+
+    def _u(val: str | None, fallback: str) -> str:
+        return (val or fallback).rstrip("/")
+
+    kaare_api    = _u(internal.get("kaare_api"),    "http://127.0.0.1:8000")
+    ha_gateway   = _u(internal.get("ha_gateway"),   "http://127.0.0.1:8002")
+    sem_embed    = _u(internal.get("semantic_embed"),"http://127.0.0.1:11500")
+    agents       = _u(internal.get("agents"),        "http://127.0.0.1:11450")
+    embed        = _u(ollama.get("embed"),            "http://127.0.0.1:11446")
+    qdrant       = _u(storage.get("qdrant"),          "http://127.0.0.1:6333")
+    ollama_kare  = _u(ollama.get("kare"),             "http://127.0.0.1:11434")
+    ollama_miss  = _u(ollama.get("miss_kare"),        "http://127.0.0.1:11445")
+    ollama_lib   = _u(ollama.get("library"),          "http://127.0.0.1:11447")
+
+    services = [
+        ("Main API",       kaare_api  + "/"),
+        ("HA gateway",     ha_gateway + "/"),
+        ("Semantic embed", sem_embed  + "/"),
+        ("Embedding (BGE)", embed     + "/health"),
+        ("Agents server",  agents     + "/"),
+        ("Qdrant",         qdrant     + "/"),
+    ]
+
+    default_llm = llm.get("default", {})
+    if default_llm.get("provider") == "vllm":
+        vllm_url = _u(default_llm.get("base_url"), "http://127.0.0.1:11440")
+        services.append(("vLLM", vllm_url + "/v1/models"))
+
+    services.append(("Ollama (main)", ollama_kare + "/"))
+    if ollama_miss != ollama_kare:
+        services.append(("Ollama miss_kare", ollama_miss + "/"))
+    if ollama_lib not in (ollama_kare, ollama_miss):
+        services.append(("Ollama library", ollama_lib + "/"))
+
+    return services
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -267,7 +308,7 @@ def check_services() -> tuple[int, int, list[dict]]:
     """Returns (passed, failed, results_list)."""
     results: list[dict] = []
     passed = failed = 0
-    for name, url in SERVICES:
+    for name, url in _build_services():
         success, detail = _check_url(url)
         results.append({"name": name, "url": url, "ok": success, "detail": detail})
         if success:

@@ -875,7 +875,7 @@ function LlmRoleCard({ role, config, onSaved, allConfigs }: { role: string; conf
               value={modelName}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setModelName(e.target.value)}
               className="font-mono text-sm"
-              placeholder="f.eks. huihui_ai/qwen3.5-abliterated:9b"
+              placeholder="f.eks. qwen3:8b"
             />
           </FieldRow>
 

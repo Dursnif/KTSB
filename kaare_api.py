@@ -701,12 +701,18 @@ async def api_reload():
         errors.append(f"core_config: {e}")
 
     try:
-        import httpx as _hx
-        async with _hx.AsyncClient(timeout=5.0) as _client:
-            _r = await _client.post("http://127.0.0.1:8002/api/reload")
-            _gw = _r.json()
-            reloaded.extend([f"gateway:{x}" for x in _gw.get("reloaded", [])])
-            errors.extend([f"gateway:{x}" for x in _gw.get("errors", [])])
+        _svc_cfg = yaml.safe_load(open("/kaare/configs/services.yaml", encoding="utf-8")) or {}
+        _ha_url = _svc_cfg.get("home_assistant", {}).get("url", "")
+        if not _ha_url:
+            reloaded.append("gateway: skipped (HA not configured)")
+        else:
+            import httpx as _hx
+            _gw_url = _svc_cfg.get("internal", {}).get("ha_gateway", "http://127.0.0.1:8002")
+            async with _hx.AsyncClient(timeout=5.0) as _client:
+                _r = await _client.post(f"{_gw_url}/api/reload")
+                _gw = _r.json()
+                reloaded.extend([f"gateway:{x}" for x in _gw.get("reloaded", [])])
+                errors.extend([f"gateway:{x}" for x in _gw.get("errors", [])])
     except Exception as e:
         errors.append(f"gateway: {e}")
 
@@ -2487,11 +2493,14 @@ async def api_put_plex_token(payload: dict, _u=Depends(_require_admin)):
 
 @app.get("/api/settings/aliases")
 def api_get_aliases(_u=Depends(_require_admin)):
-    data = yaml.safe_load(_ALIASES_PATH.read_text(encoding="utf-8")) or {}
+    try:
+        data = yaml.safe_load(_ALIASES_PATH.read_text(encoding="utf-8")) or {}
+    except FileNotFoundError:
+        data = {}
     return {
-        "aliases": data.get("aliases", {}),
-        "rooms": data.get("rooms", {}),
-        "room_entities": data.get("room_entities", {}),
+        "aliases": data.get("aliases") or {},
+        "rooms": data.get("rooms") or {},
+        "room_entities": data.get("room_entities") or {},
     }
 
 
@@ -2890,11 +2899,12 @@ async def _check_url(url: str | None) -> bool:
                 if r.status_code != 200:
                     return False
                 available = [m.get("name", "") for m in r.json().get("models", [])]
-                # Match: exact, or model_name is a prefix of an available name
-                return any(
-                    av == model_name or av.startswith(model_name.split(":")[0])
-                    for av in available
-                )
+                # If a tag is specified (e.g. qwen3:8b), require exact match.
+                # If no tag (e.g. qwen3), match any tag variant (qwen3:8b, qwen3:latest).
+                if ":" in model_name:
+                    return model_name in available
+                else:
+                    return any(av == model_name or av.startswith(model_name + ":") for av in available)
         except Exception:
             return False
     try:

@@ -1,0 +1,24 @@
+enabled: false
+storage:
+  snapshots_max_mb: 500
+  log_max_mb: 50
+cameras: {}
+roles:
+  front_door:
+    display_name: Front door
+  driveway:
+    display_name: Driveway
+  road_facing:
+    display_name: Road facing
+  garden:
+    display_name: Garden
+  garage:
+    display_name: Garage
+  indoor:
+    display_name: Indoor
+  custom_1:
+    display_name: ''
+  custom_2:
+    display_name: ''
+  custom_3:
+    display_name: ''

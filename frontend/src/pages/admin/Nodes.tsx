@@ -198,7 +198,7 @@ function NodeModal({
 
           <div>
             <Label className="text-xs text-muted-foreground mb-1 block">{t("nodes.modal.default_user")}</Label>
-            <Input value={form.default_user ?? ""} onChange={e => set("default_user", e.target.value)} placeholder="stian" />
+            <Input value={form.default_user ?? ""} onChange={e => set("default_user", e.target.value)} placeholder="admin" />
           </div>
 
           <div className="flex items-center gap-2 pt-1">

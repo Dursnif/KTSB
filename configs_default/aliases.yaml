@@ -43,9 +43,9 @@ room_entities:
   basement:
     - light.basement_ceiling
 
-aliases:
-  # Add your custom aliases here.
-  # Example:
-  #   "floor lamp":      light.living_room_floor_lamp
-  #   "coffee maker":    switch.kitchen_coffee_maker
-  #   "front door lock": lock.front_door
+# Add your custom aliases via the admin GUI (Settings → Aliases).
+# Example:
+#   "floor lamp":      light.living_room_floor_lamp
+#   "coffee maker":    switch.kitchen_coffee_maker
+#   "front door lock": lock.front_door
+aliases: {}
