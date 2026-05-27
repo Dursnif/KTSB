@@ -254,9 +254,12 @@ COMPOSE_PROFILES=medium
 ## Updating
 
 ```bash
+git pull
 docker compose pull
-docker compose up -d
+docker compose up -d --remove-orphans
 ```
+
+`--remove-orphans` removes containers that no longer exist in the compose file (e.g. after a service is renamed between versions). Without it, old containers keep restarting and spamming logs.
 
 Your configuration, state, and data are stored in folders outside the Docker images and survive updates unchanged.
 
