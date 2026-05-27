@@ -25,3 +25,9 @@ _NIGHTJOB_STATUS: dict = {
     "step": "", "log": [], "started_at": None, "finished_at": None, "error": None,
 }
 _NIGHTJOB_PROC = None
+
+_REFLECTION_ENABLED: bool = False
+_JANG_INTERVAL_S: int = 600
+
+_last_jang_run_time: float = 0.0
+_last_user_prompt_time: float = 0.0

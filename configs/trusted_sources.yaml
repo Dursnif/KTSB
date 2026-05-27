@@ -23,6 +23,8 @@ sources:
     domain: npmjs.com
   - beskrivelse: Modeller, datasett og AI-dokumentasjon
     domain: huggingface.co
+  - beskrivelse: KTSB/Kåre sin kode på github
+    domain: github.com/dursnif/ktsb
   kunnskap_og_forskning:
   - beskrivelse: Store norske leksikon
     domain: snl.no
