@@ -252,7 +252,17 @@ async def _ask_library(query: str, sources: list[dict]) -> str:
             return r.json().get("answer", "").strip()
     except Exception as exc:
         log.warning("[web_search] Library call failed: %s", exc)
-        return "Frøken Library svarte ikke — prøv igjen."
+        # Fallback: return raw fetched content without synthesis
+        parts = [
+            f"{s['title']} — {s['url']}\n{s['content']}"
+            for s in sources if s.get("content", "").strip()
+        ]
+        if parts:
+            return (
+                "Frøken Library er ikke tilgjengelig. Rå søkeresultater:\n\n"
+                + "\n\n---\n\n".join(parts[:2])
+            )
+        return "Frøken Library svarte ikke og ingen kilde ble hentet."
 
 
 # ── Main function ──────────────────────────────────────────────────────────

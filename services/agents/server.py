@@ -8,6 +8,8 @@ Pettersmart:  tool-using agent (uses miss_kare model, port 11445 — shared with
 
 import asyncio
 import logging
+import re
+import subprocess
 import sys
 import time
 import uuid
@@ -216,6 +218,9 @@ class WebAskRequest(BaseModel):
     question: str
     sources: list[WebSource]
 
+class UrlRequest(BaseModel):
+    url: str
+
 class TaskRequest(BaseModel):
     task: str
     role: str = "standard"    # "standard" | "undersøker" | "kritiker" | "analytiker"
@@ -241,6 +246,19 @@ class JobResponse(BaseModel):
 
 class InjectRequest(BaseModel):
     comment: str
+
+class SearchRequest(BaseModel):
+    search_type: str = "filer"      # "filer" | "grep" | "logg"
+    files: list[str] = []           # absolute paths under /kaare
+    from_line: int | None = None
+    to_line: int | None = None
+    pattern: str = ""               # grep pattern
+    directory: str = "/kaare"
+    service: str = ""               # journalctl service
+    log_file: str = ""              # filename in /kaare/logs/
+    lines: int = 100
+    log_filter: str = ""
+    question: str = ""
 
 # ── Miss Library ──────────────────────────────────────────────────────────────
 
@@ -315,9 +333,78 @@ async def ask_miss_library_web(req: WebAskRequest):
     log.info("[Miss.Library/web] svar: %s", answer[:80])
     return AskResponse(answer=answer, agent="miss_library")
 
+@app.post("/ask/miss_library/hent_url", response_model=AskResponse)
+async def ask_miss_library_hent_url(req: UrlRequest):
+    """Fetch a specific URL (trusted domains only) and let Miss Library summarize it."""
+    import yaml as _yaml
+    from urllib.parse import urlparse
+
+    url = req.url.strip()
+    if not url:
+        return AskResponse(answer="Feil: url kan ikke være tom.", agent="miss_library")
+
+    # Trusted-domain check
+    try:
+        trusted_path = Path("/kaare/configs/trusted_sources.yaml")
+        data = _yaml.safe_load(trusted_path.read_text(encoding="utf-8")) or {}
+        trusted = []
+        for category in data.get("sources", {}).values():
+            for entry in category:
+                d = entry.get("domain", "").lower().lstrip("www.")
+                if d and "/" not in d:
+                    trusted.append(d)
+        if trusted:
+            host = (urlparse(url).hostname or "").lower().lstrip("www.")
+            if not any(host == d or host.endswith("." + d) for d in trusted):
+                return AskResponse(
+                    answer=f"Domenet «{host}» er ikke i listen over godkjente kilder. "
+                           "Legg det til under Innstillinger → Nettsøk → Godkjente kilder.",
+                    agent="miss_library",
+                )
+    except Exception as e:
+        log.warning("[Miss.Library/hent_url] Kunne ikke laste trusted_sources: %s", e)
+
+    # Fetch page content
+    log.info("[Miss.Library/hent_url] %s", url[:100])
+    try:
+        import trafilatura
+        async with httpx.AsyncClient(
+            timeout=10.0,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; Kaare/1.0)"},
+            follow_redirects=True,
+        ) as client:
+            r = await client.get(url)
+            if r.status_code != 200:
+                return AskResponse(
+                    answer=f"Fikk HTTP {r.status_code} fra {url}.",
+                    agent="miss_library",
+                )
+            html = r.text
+        text = (trafilatura.extract(html, include_comments=False, include_tables=True) or "").strip()
+        if len(text) > 6000:
+            text = text[:6000] + "…"
+        if not text:
+            return AskResponse(answer=f"Klarte ikke å hente lesbart innhold fra {url}.", agent="miss_library")
+    except Exception as e:
+        return AskResponse(answer=f"Henting av {url} feilet: {e}", agent="miss_library")
+
+    system = _load_personality("miss_library")
+    user_msg = (
+        f"Kilde: {url}\n\n{text}\n\n"
+        "Oppsummer innholdet på en klar og nyttig måte. "
+        "Hvis brukeren stilte et spesifikt spørsmål, svar på det basert på kilden."
+    )
+    answer = await _llm_call(system, user_msg)
+    log.info("[Miss.Library/hent_url] svar: %s", answer[:80])
+    return AskResponse(answer=answer, agent="miss_library")
+
+
 @app.post("/ask/miss_library/cloud", response_model=AskResponse)
 async def ask_miss_library_cloud(req: AskRequest):
     """Library asks the configured cloud LLM — for questions beyond local wiki/web."""
+    if not _llm("cloud").get("enabled", True):
+        log.info("[Miss.Library/cloud] avvist — cloud LLM er deaktivert")
+        return AskResponse(answer="Online LLM er deaktivert. Aktiver den under Innstillinger → LLM → Sky-modell.", agent="miss_library")
     log.info("[Miss.Library/cloud] %s", req.question[:80])
     system = _load_personality("miss_library")
     prompt = f"{system.strip()}\n\nSpørsmål: {req.question}"
@@ -336,6 +423,152 @@ async def wiki_article(req: ArticleRequest):
     """Return all chunks of a wiki article concatenated in order."""
     result = await _wiki_fetch_article(req.title, req.max_chars)
     return result
+
+# ── Pettersmart søk-og-summer ────────────────────────────────────────────────
+
+_MAX_SØK_CHARS = 12000
+_ALLOWED_BASE  = "/kaare"
+
+async def _pettersmart_fetch_content(req: SearchRequest) -> str:
+    """Python reads files/runs grep/reads logs. No LLM involved."""
+    if req.search_type == "filer":
+        if not req.files:
+            return ""
+        parts = []
+        per_file = _MAX_SØK_CHARS // max(len(req.files), 1)
+        for path_str in req.files[:5]:
+            p = Path(path_str)
+            if not p.is_absolute() or not str(p).startswith(_ALLOWED_BASE):
+                parts.append(f"### {path_str}\n[Avvist: kun /kaare-stier tillatt]")
+                continue
+            try:
+                all_lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+                if req.from_line and req.to_line:
+                    chunk = all_lines[req.from_line - 1 : req.to_line]
+                elif req.from_line:
+                    chunk = all_lines[req.from_line - 1 : req.from_line + 299]
+                else:
+                    chunk = all_lines
+                text = "\n".join(f"{i+1}: {l}" for i, l in enumerate(
+                    chunk, start=(req.from_line or 1) - 1
+                ))
+                parts.append(f"### {path_str}\n{text[:per_file]}")
+            except Exception as e:
+                parts.append(f"### {path_str}\n[Lesefeil: {e}]")
+        return "\n\n".join(parts)
+
+    elif req.search_type == "grep":
+        if not req.pattern:
+            return "[Feil: mønster mangler for grep-søk]"
+        mappe = req.directory if req.directory.startswith(_ALLOWED_BASE) else _ALLOWED_BASE
+        try:
+            result = subprocess.run(
+                ["grep", "-rn", "-E",
+                 "--include=*.py", "--include=*.yaml", "--include=*.md",
+                 "--include=*.json", "--include=*.sh", "--include=*.toml",
+                 req.pattern, mappe],
+                capture_output=True, text=True, encoding="utf-8", timeout=15,
+            )
+            out = result.stdout.strip()
+            return out[:_MAX_SØK_CHARS] if out else f"[Ingen treff på '{req.pattern}' i {mappe}]"
+        except Exception as e:
+            return f"[Grep feilet: {e}]"
+
+    elif req.search_type == "logg":
+        n = min(max(req.lines, 10), 500)
+        if req.service:
+            try:
+                result = subprocess.run(
+                    ["journalctl", "-u", req.service, "-n", str(n), "--no-pager"],
+                    capture_output=True, text=True, timeout=15,
+                )
+                out = result.stdout.strip()
+                if req.log_filter and out:
+                    out = "\n".join(l for l in out.splitlines()
+                                    if req.log_filter.lower() in l.lower())
+                return out[:_MAX_SØK_CHARS] if out else f"[Tom logg for {req.service}]"
+            except Exception as e:
+                return f"[Journalctl feilet: {e}]"
+        elif req.log_file:
+            log_path = Path("/kaare/logs") / Path(req.log_file).name
+            if not log_path.exists():
+                return f"[Loggfil ikke funnet: {req.log_file}]"
+            try:
+                result = subprocess.run(
+                    ["tail", "-n", str(n), str(log_path)],
+                    capture_output=True, text=True, timeout=10,
+                )
+                out = result.stdout.strip()
+                if req.log_filter and out:
+                    out = "\n".join(l for l in out.splitlines()
+                                    if req.log_filter.lower() in l.lower())
+                return out[:_MAX_SØK_CHARS] if out else f"[Tom logg: {req.log_file}]"
+            except Exception as e:
+                return f"[Logglesing feilet: {e}]"
+        return "[Feil: angi 'service' eller 'log_file' for type=logg]"
+
+    return "[Ukjent search_type]"
+
+
+async def _pettersmart_llm_call(system: str, user: str) -> str:
+    """One-shot call to Pettersmart 9B — no tool use, just summarize."""
+    from kaare_core.model_lock import lock_11445, LockTimeout
+    payload = {
+        "model": PETTERSMART_MODEL,
+        "stream": False,
+        "think": False,
+        "options": {
+            "temperature": 0.3,
+            "num_ctx": 8192,
+            "num_predict": 800,
+        },
+        "messages": [
+            {"role": "system", "content": f"/no_think\n{system}"},
+            {"role": "user",   "content": user},
+        ],
+    }
+    try:
+        async with lock_11445("pettersmart_søk", max_wait=120):
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                r = await client.post(PETTERSMART_URL, json=payload,
+                                      headers={"x-kaare-source": "pettersmart_sok"})
+                r.raise_for_status()
+                content = r.json().get("message", {}).get("content", "").strip()
+                return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip() \
+                       or "[Ingen respons fra Pettersmart]"
+    except LockTimeout:
+        return "[Pettersmart er opptatt — prøv igjen om litt]"
+    except Exception as e:
+        return f"[Pettersmart utilgjengelig: {e}]"
+
+
+@app.post("/ask/pettersmart/søk", response_model=AskResponse)
+async def ask_pettersmart_søk(req: SearchRequest):
+    """
+    Pettersmart søk-og-summer: Python reads files/grep/logs, 9B summarizes.
+    No tool-calling loop in Pettersmart — one-shot summarization only.
+    """
+    if is_fallback_active():
+        return AskResponse(
+            answer="[Pettersmart ikke tilgjengelig — reservemodus aktiv]",
+            agent="pettersmart",
+        )
+    log.info("[Pettersmart/søk] type=%s spørsmål=%s", req.search_type, req.question[:60])
+
+    content = await _pettersmart_fetch_content(req)
+    if not content or content.startswith("["):
+        return AskResponse(answer=content or "Fant ingen innhold å søke i.", agent="pettersmart")
+
+    system = _load_personality("pettersmart")
+    user_msg = (
+        f"Du har fått følgende innhold:\n\n---\n{content}\n---\n\n"
+        f"Spørsmål: {req.question}\n\n"
+        "Svar kortfattet og presist. Henvis til konkrete linjenummer eller steder."
+    )
+    answer = await _pettersmart_llm_call(system, user_msg)
+    log.info("[Pettersmart/søk] svar: %s", answer[:80])
+    return AskResponse(answer=answer, agent="pettersmart")
+
 
 # ── Pettersmart ───────────────────────────────────────────────────────────────
 

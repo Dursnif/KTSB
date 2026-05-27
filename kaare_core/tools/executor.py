@@ -950,6 +950,8 @@ async def _spør_frøken_library_online(spørsmål: str, arguments: Dict) -> str
     """Calls Miss Library's cloud endpoint — large online model, no wiki lookup."""
     if not spørsmål.strip():
         return "Feil: spørsmål kan ikke være tomt."
+    if not _llm_cfg("cloud").get("enabled", True):
+        return "Online LLM er deaktivert. Aktiver den under Innstillinger → LLM → Sky-modell."
     if not _llm_cfg("library").get("enabled", True):
         return "Frøken Library er deaktivert. Aktiver den under Innstillinger → LLM/Modeller."
     try:
@@ -1025,6 +1027,34 @@ async def _hent_wiki_artikkel(title: str, max_chars: int = 8000) -> str:
         return f"# {data['title']} ({data['chunk_count']} biter)\n\n{data['text']}"
     except Exception as e:
         return f"Kunne ikke hente artikkel: {e}"
+
+
+async def _hent_url_via_library(url: str, arguments: Dict) -> str:
+    """Fetch a specific URL (trusted domains only) and let Miss Library summarize it."""
+    if not url.strip():
+        return "Feil: url kan ikke være tom."
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.post(
+                f"{_svc('internal', 'agents')}/ask/miss_library/hent_url",
+                json={"url": url},
+            )
+            r.raise_for_status()
+            svar = r.json().get("answer", "").strip()
+        try:
+            asyncio.create_task(get_ltm().log_agent_message(
+                from_agent="kare",
+                to_agent="miss_library",
+                query=url,
+                response=svar,
+                rid=arguments.get("_rid", ""),
+                user_id=arguments.get("_user_id", "global"),
+            ))
+        except Exception:
+            pass
+        return svar if svar else "Frøken Library fant ingenting på den adressen."
+    except Exception as e:
+        return f"Kunne ikke hente URL: {e}"
 
 
 async def _reason_freely(query: str) -> str:
@@ -1355,9 +1385,11 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
                 arguments.get("title", ""),
                 arguments.get("max_chars", 8000),
             )
+        if action == "hent_url":
+            return await _hent_url_via_library(arguments.get("url", ""), arguments)
         if action == "online":
             return await _spør_frøken_library_online(arguments.get("spørsmål", ""), arguments)
-        return f"Unknown action for library: '{action}'. Valid: søk, hent_artikkel, online."
+        return f"Unknown action for library: '{action}'. Valid: søk, hent_artikkel, hent_url, online."
 
     if name == "timer":
         action = arguments.get("action", "")
@@ -1400,8 +1432,49 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
 
     if name == "pettersmart":
         action = arguments.get("action", "")
-        if action == "spør":
-            return await _spør_pettersmart(arguments.get("oppgave", ""), arguments)
+        if action == "søk":
+            search_type = arguments.get("type", "filer")
+            spørsmål    = arguments.get("spørsmål", "Oppsummer innholdet.")
+            if not _llm_cfg("pettersmart").get("enabled", True):
+                return "Pettersmart er deaktivert. Aktiver den under Innstillinger → LLM/Modeller."
+            raw_filer = arguments.get("filer", [])
+            if isinstance(raw_filer, str):
+                try:
+                    raw_filer = _json.loads(raw_filer)
+                except Exception:
+                    raw_filer = []
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    r = await client.post(
+                        f"{_svc('internal', 'agents')}/ask/pettersmart/søk",
+                        json={
+                            "search_type": search_type,
+                            "files":       raw_filer,
+                            "from_line":   arguments.get("fra_linje"),
+                            "to_line":     arguments.get("til_linje"),
+                            "pattern":     arguments.get("mønster", ""),
+                            "directory":   arguments.get("mappe", "/kaare"),
+                            "service":     arguments.get("tjeneste", ""),
+                            "log_file":    arguments.get("logg_fil", ""),
+                            "lines":       arguments.get("linjer", 100),
+                            "log_filter":  arguments.get("filter", ""),
+                            "question":    spørsmål,
+                        },
+                    )
+                    r.raise_for_status()
+                    svar = r.json().get("answer", "").strip()
+                try:
+                    asyncio.create_task(get_ltm().log_agent_message(
+                        from_agent="kare", to_agent="pettersmart",
+                        query=spørsmål, response=svar,
+                        rid=arguments.get("_rid", ""),
+                        user_id=arguments.get("_user_id", "global"),
+                    ))
+                except Exception:
+                    pass
+                return svar or "Pettersmart fant ingenting."
+            except Exception as e:
+                return f"Pettersmart søk feilet: {e}"
         if action == "deleger":
             oppgave = arguments.get("oppgave", "").strip()
             if not oppgave:
@@ -1480,7 +1553,7 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
                 return f"[Job {job_id[:8]}…] Comment queued. Pettersmart will see it at the next tool round."
             except Exception as e:
                 return f"pettersmart kommenter failed: {e}"
-        return f"Unknown action for pettersmart: '{action}'. Valid: spør, deleger, svar, avbryt, kommenter."
+        return f"Unknown action for pettersmart: '{action}'. Valid: søk, deleger, svar, avbryt, kommenter."
 
     if name == "selvbilde":
         action = arguments.get("action", "")

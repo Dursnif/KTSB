@@ -39,7 +39,7 @@ rsync -av --delete \
   --exclude='backups/' \
   --exclude='venv/' \
   --exclude='.venv/' \
-  --exclude='memory_embed_server/venv/' \
+  --exclude='semantic_embed/venv/' \
   --exclude='services/voice/venv/' \
   --exclude='services/embedding/convert_venv/' \
   --exclude='__pycache__/' \
@@ -87,7 +87,8 @@ rsync -av --delete \
   --exclude='.DS_Store' \
   --exclude='.idea/' \
   --exclude='.vscode/' \
-  --exclude='intent_server' \
+  --exclude='intent_server/' \
+  --exclude='memory_embed_server/' \
   --exclude='services/gui/' \
   --exclude='www/' \
   --exclude='mini_kaareha/' \

@@ -12,20 +12,23 @@ LIBRARY_NO_ONLINE = {
     "function": {
         "name": "library",
         "description": (
-            "Spør Frøken Library — lokal wiki-database. To operasjoner: "
+            "Spør Frøken Library — lokal wiki-database. Tre operasjoner: "
             "action='søk': semantisk søk i lokal wiki (1M+ artikler) for faktaspørsmål, "
             "definisjoner, historiske data — ting som ikke endrer seg. Svarer alltid med kilde. "
-            "action='hent_artikkel': hent hele Wikipedia-artikkelen etter et søk (krever 'title')."
+            "action='hent_artikkel': hent hele Wikipedia-artikkelen etter et søk (krever 'title'). "
+            "action='hent_url': hent og oppsummer innholdet fra en spesifikk nettside (krever 'url'). "
+            "Kun tillatte domener. Bruk når brukeren oppgir en konkret URL."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["søk", "hent_artikkel"],
+                    "enum": ["søk", "hent_artikkel", "hent_url"],
                     "description": (
                         "'søk' = semantisk wiki-søk (krever 'spørsmål'). "
-                        "'hent_artikkel' = hent hel artikkel (krever 'title')."
+                        "'hent_artikkel' = hent hel artikkel (krever 'title'). "
+                        "'hent_url' = hent og oppsummer en konkret nettside (krever 'url')."
                     ),
                 },
                 "spørsmål": {
@@ -35,6 +38,10 @@ LIBRARY_NO_ONLINE = {
                 "title": {
                     "type": "string",
                     "description": "Artikkeltittel nøyaktig som i wiki-søkeresultatet. Kun ved action='hent_artikkel'.",
+                },
+                "url": {
+                    "type": "string",
+                    "description": "Fullstendig URL (https://...). Kun ved action='hent_url'.",
                 },
                 "max_chars": {
                     "type": "integer",
@@ -136,9 +143,14 @@ KAARE_TOOLS = [
         "function": {
             "name": "søk_nett",
             "description": (
-                "Søk på nettet via Frøken Library. Bruk for fakta, nyheter, lover, oppskrifter, "
+                "Søk på nettet. Bruk for fakta, nyheter, lover, oppskrifter, "
                 "teknisk dokumentasjon eller annet som krever oppdatert informasjon fra nettet. "
-                "Ikke for smarthus-styring, ting du allerede vet, eller vær (bruk hent_yr_varsel)."
+                "Ikke for smarthus-styring, ting du allerede vet, eller vær (bruk hent_yr_varsel). "
+                "VIKTIG — ærlighet ved feil: Hvis søket returnerer 'Fant ingen resultater' "
+                "eller ingen treff fra godkjente kilder: si det ærlig til brukeren med én setning. "
+                "Ikke prøv igjen automatisk med andre søkeord. "
+                "Tilby i stedet pettersmart(action='søk') for dypere undersøkelse — "
+                "men kun hvis brukeren eksplisitt ønsker det."
             ),
             "parameters": {
                 "type": "object",
@@ -178,22 +190,28 @@ KAARE_TOOLS = [
         "function": {
             "name": "library",
             "description": (
-                "Spør Frøken Library — lokal wiki-database og online LLM. Tre operasjoner: "
+                "Spør Frøken Library — lokal wiki-database og online LLM. Fire operasjoner: "
                 "action='søk': semantisk søk i lokal wiki (1M+ artikler) for faktaspørsmål, "
                 "definisjoner, historiske data — ting som ikke endrer seg. Svarer alltid med kilde. "
                 "action='hent_artikkel': hent hele Wikipedia-artikkelen etter et søk (krever 'title'). "
+                "action='hent_url': hent og oppsummer innholdet fra en spesifikk nettside (krever 'url'). "
+                "Kun tillatte domener. Bruk når brukeren oppgir en konkret URL. "
                 "action='online': spør stor online LLM for bred kunnskap, kompleks resonnering "
-                "eller second opinion. Ikke for vær/nyheter (bruk søk_nett)."
+                "eller second opinion. Ikke for vær/nyheter (bruk søk_nett). "
+                "VIKTIG — ærlighet ved feil: Hvis et søk returnerer ingen svar eller feil: "
+                "si det klart til brukeren. Ikke prøv igjen med andre varianter automatisk. "
+                "Tilby pettersmart(action='søk') som alternativ — kun om brukeren ønsker det."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["søk", "hent_artikkel", "online"],
+                        "enum": ["søk", "hent_artikkel", "hent_url", "online"],
                         "description": (
                             "'søk' = semantisk wiki-søk (krever 'spørsmål'). "
                             "'hent_artikkel' = hent hel artikkel etter søk (krever 'title'). "
+                            "'hent_url' = hent og oppsummer en konkret nettside (krever 'url'). "
                             "'online' = stor online LLM for dyp resonnering (krever 'spørsmål')."
                         ),
                     },
@@ -204,6 +222,10 @@ KAARE_TOOLS = [
                     "title": {
                         "type": "string",
                         "description": "Artikkeltittel nøyaktig som i wiki-søkeresultatet. Brukes ved action='hent_artikkel'.",
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": "Fullstendig URL (https://...). Kun ved action='hent_url'.",
                     },
                     "max_chars": {
                         "type": "integer",
@@ -403,36 +425,82 @@ KAARE_TOOLS = [
         "function": {
             "name": "pettersmart",
             "description": (
-                "Send oppgaver til Pettersmart — teknisk ekspert med egne verktøy (les_fil, søk_kode, les_logg, ssh, sandkasse m.m.). "
-                "Fem operasjoner: "
-                "action='spør': SYNKRON — venter på fullt svar. Bruk for korte undersøkelser, kode-lesing, logganalyse. "
-                "action='deleger': ASYNKRON — returnerer job_id umiddelbart. Bruk for lang operasjoner "
-                "(apt upgrade, reboots, multi-SSH). Kåre kan gjøre andre ting mens Pettersmart jobber. "
-                "action='svar': poll resultat fra delegert jobb (krever 'job_id'). Sjekk hvert 30–60 sek. "
-                "action='avbryt': kanseller løpende jobb (krever 'job_id'). Abort LLM-kallet, Ollama stopper. "
-                "action='kommenter': injiser melding i løpende jobb (krever 'job_id' og 'comment'). "
-                "Pettersmart ser det ved neste tool-runde."
+                "Pettersmart — søk og oppsummer i kodebasen og logger. "
+                "Bruk action='søk' når du trenger å lese filer, søke i kode eller hente logglinjer "
+                "uten å fylle din egen kontekst med rå innhold. "
+                "Du bestemmer nøyaktig hva som skal søkes — Pettersmart leser og leverer kompakt sammendrag. "
+                "Bruk action='deleger' kun for ekte bakgrunnsoppgaver som tar lang tid "
+                "(apt upgrade, reboot, multi-SSH) der du ikke kan vente."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["spør", "deleger", "svar", "avbryt", "kommenter"],
+                        "enum": ["søk", "deleger", "svar", "avbryt", "kommenter"],
                         "description": (
-                            "'spør' = sync, venter på svar (krever 'oppgave'). "
-                            "'deleger' = async, returnerer job_id (krever 'oppgave'). "
-                            "'svar' = poll resultat (krever 'job_id'). "
-                            "'avbryt' = stopp jobb (krever 'job_id'). "
-                            "'kommenter' = inject melding (krever 'job_id' og 'comment')."
+                            "'søk' = les filer/søk i kode/hent logg og få sammendrag (sync). "
+                            "Krever 'type' og 'spørsmål'. "
+                            "'deleger' = lang bakgrunnsjobb (krever 'oppgave'), returnerer job_id. "
+                            "'svar' = poll resultat fra delegert jobb (krever 'job_id'). "
+                            "'avbryt' = stopp løpende jobb (krever 'job_id'). "
+                            "'kommenter' = injiser melding i løpende jobb (krever 'job_id' og 'comment')."
                         ),
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": ["filer", "grep", "logg"],
+                        "description": (
+                            "Søketype. Kun ved action='søk'. "
+                            "'filer' = les spesifikke filer (krever 'filer'). "
+                            "'grep' = søk etter mønster i kodebasen (krever 'mønster', valgfri 'mappe'). "
+                            "'logg' = les loggfiler/journalctl (krever 'tjeneste' eller 'logg_fil')."
+                        ),
+                    },
+                    "spørsmål": {
+                        "type": "string",
+                        "description": "Hva vil du vite? Pettersmart summerer innholdet mot dette. Kreves ved action='søk'.",
+                    },
+                    "filer": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Absolutte filstier under /kaare. Maks 5. Kun ved type='filer'.",
+                    },
+                    "fra_linje": {
+                        "type": "integer",
+                        "description": "Startlinje (1-basert). Valgfri ved type='filer'.",
+                    },
+                    "til_linje": {
+                        "type": "integer",
+                        "description": "Sluttlinje (inklusiv). Valgfri ved type='filer'.",
+                    },
+                    "mønster": {
+                        "type": "string",
+                        "description": "Grep-mønster. Kreves ved type='grep'.",
+                    },
+                    "mappe": {
+                        "type": "string",
+                        "description": "Katalog å søke i. Standard: /kaare. Kun ved type='grep'.",
+                    },
+                    "tjeneste": {
+                        "type": "string",
+                        "description": "Systemd-tjenestenavn, f.eks. 'kaare', 'kaare-agents'. Kun ved type='logg'.",
+                    },
+                    "logg_fil": {
+                        "type": "string",
+                        "description": "Loggfilnavn uten sti, f.eks. 'kaare_ha_gateway.log'. Kun ved type='logg'.",
+                    },
+                    "linjer": {
+                        "type": "integer",
+                        "description": "Antall logglinjer. Standard 100, maks 500. Kun ved type='logg'.",
+                    },
+                    "filter": {
+                        "type": "string",
+                        "description": "Grep-filter på logginnhold. Valgfri ved type='logg'.",
                     },
                     "oppgave": {
                         "type": "string",
-                        "description": (
-                            "Oppgavebeskrivelse til Pettersmart: hva problemet er, hvilke filer/tjenester, "
-                            "hva du vil vite eller foreslå. Kun ved action='spør' og 'deleger'."
-                        ),
+                        "description": "Bakgrunnsoppgave (apt, reboot, SSH). Kun ved action='deleger'.",
                     },
                     "job_id": {
                         "type": "string",
@@ -440,7 +508,7 @@ KAARE_TOOLS = [
                     },
                     "comment": {
                         "type": "string",
-                        "description": "Melding til Pettersmart midt i jobben. Kun ved action='kommenter'.",
+                        "description": "Melding til løpende jobb. Kun ved action='kommenter'.",
                     },
                 },
                 "required": ["action"],

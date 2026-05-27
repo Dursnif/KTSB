@@ -196,7 +196,9 @@ def get_tools_for_role(role: str) -> list:
 
     Reads tool_permissions.yaml. The always_included tools are always appended.
     library_online in a role's list upgrades the library tool to include the online action.
-    admin (or roles with "all") receives the full unfiltered list.
+    admin (or roles with "all") receives the full list, but capability guards still apply:
+    - cloud.enabled=false  → library tool loses the online action
+    - agents service off   → library tool removed, søk_nett added as fallback
     """
     from kaare_core.tools.definitions import KAARE_TOOLS, LIBRARY_NO_ONLINE
 
@@ -205,19 +207,44 @@ def get_tools_for_role(role: str) -> list:
     role_list: list[str] = roles_cfg.get(role, roles_cfg.get("adult", []))
 
     if "all" in role_list:
-        return KAARE_TOOLS
+        candidate = list(KAARE_TOOLS)
+    else:
+        allowed: set[str] = set(role_list)
+        has_library_online = "library_online" in allowed
+        candidate = []
+        for tool in KAARE_TOOLS:
+            name: str = tool["function"]["name"]
+            if name in always_names:
+                candidate.append(tool)
+            elif name == "library":
+                if "library" in allowed:
+                    candidate.append(tool if has_library_online else LIBRARY_NO_ONLINE)
+            elif name in allowed:
+                candidate.append(tool)
 
-    allowed: set[str] = set(role_list)
-    has_library_online = "library_online" in allowed
+    # Capability guards — applied regardless of role
+    cloud_enabled  = _LLM_CFG.get("cloud", {}).get("enabled", True)
+    agents_enabled = is_service_enabled("agents")
 
-    result = []
-    for tool in KAARE_TOOLS:
+    result: list = []
+    had_library  = False
+    has_søk_nett = any(t["function"]["name"] == "søk_nett" for t in candidate)
+
+    for tool in candidate:
         name: str = tool["function"]["name"]
-        if name in always_names:
+        if name == "library":
+            had_library = True
+            if not agents_enabled:
+                continue  # library needs agents; søk_nett added below as fallback
+            result.append(tool if cloud_enabled else LIBRARY_NO_ONLINE)
+        else:
             result.append(tool)
-        elif name == "library":
-            if "library" in allowed:
-                result.append(tool if has_library_online else LIBRARY_NO_ONLINE)
-        elif name in allowed:
-            result.append(tool)
+
+    # If agents off and role had library but not søk_nett → add direct web search
+    if had_library and not agents_enabled and not has_søk_nett:
+        for tool in KAARE_TOOLS:
+            if tool["function"]["name"] == "søk_nett":
+                result.append(tool)
+                break
+
     return result

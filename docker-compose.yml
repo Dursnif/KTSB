@@ -62,12 +62,12 @@ services:
       - ./state:/kaare/state
       - ./logs:/kaare/logs
 
-  kaare-memory-embed:
+  kaare-semantic-embed:
     image: ghcr.io/dursnif/kaare:latest
     restart: on-failure
     ports: ["11500:11500"]
     command: python server.py
-    working_dir: /kaare/memory_embed_server
+    working_dir: /kaare/semantic_embed
     volumes:
       - ./configs:/kaare/configs
       - ./state:/kaare/state
