@@ -136,7 +136,7 @@ def read_think_history(
 
     n             – max results (capped at 50)
     search        – substring match against think_text + think_summary + prompt_preview
-    role          – filter by role ("kare", "pettersmart", etc.)
+    role          – filter by role ("kare", "mechanic", etc.)
     recovered_only – only return entries where model produced no response (recovered=True)
     """
     n = min(n, 50)

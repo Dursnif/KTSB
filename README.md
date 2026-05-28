@@ -52,7 +52,7 @@ Kåre maintains a short-term memory of your recent conversations and a long-term
 Behind the scenes, Kåre has a small team working alongside it:
 
 - **Miss Kåre** — a quiet evaluator who reviews Kåre's answers before they reach you
-- **Pettersmart** — a technical assistant for deep-dives, system inspection, and complex problems
+- **Mechanic** — a technical assistant for deep-dives, system inspection, and complex problems
 - **Frøken Library** — searches a local Wikipedia corpus and the web for factual answers
 - **Jing and Jang** — background inner voices that process and reflect while you are not watching
 
@@ -206,7 +206,7 @@ After the onboarding wizard, go to **Settings → LLM → Manage models** to pul
 | 12–16 GB | `qwen3:8b` | Better reasoning, recommended |
 | 24 GB+ | `qwen3:14b` or larger | Best results |
 
-Start by setting the same model for all roles (Kåre, Miss Kåre, Library, Pettersmart) — this uses less VRAM and keeps things simple. You can give each agent its own model later once you are comfortable.
+Start by setting the same model for all roles (Kåre, Miss Kåre, Library, Mechanic) — this uses less VRAM and keeps things simple. You can give each agent its own model later once you are comfortable.
 
 **Qwen3 models** support extended thinking — Kåre pauses to reason before answering complex questions. Enable it per role under **Settings → LLM**.
 

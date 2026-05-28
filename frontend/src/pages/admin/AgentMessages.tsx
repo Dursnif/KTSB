@@ -18,7 +18,7 @@ const AGENT_COLORS: Record<string, string> = {
   kare:         "#646cff",
   miss_kare:    "#c084fc",
   miss_library: "#5ba8a0",
-  pettersmart:  "#82b366",
+  mechanic:  "#82b366",
   jing:         "#a78bfa",
   jang:         "#f472b6",
 };
@@ -27,7 +27,7 @@ const AGENT_LABELS: Record<string, string> = {
   kare:         "Kåre",
   miss_kare:    "Miss Kåre",
   miss_library: "Frøken Library",
-  pettersmart:  "Pettersmart",
+  mechanic:  "Mechanic",
   jing:         "Jing",
   jang:         "Jang",
 };

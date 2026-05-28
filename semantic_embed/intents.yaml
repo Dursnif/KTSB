@@ -136,8 +136,8 @@ intents:
       - "hva husker du om medisin"
     slots: [query]
 
-  - intent_type: pettersmart.idea
-    description: Bruk Pettersmart til ideer og optimalisering.
+  - intent_type: mechanic.idea
+    description: Bruk Mechanic til ideer og optimalisering.
     examples:
       - "hvordan kan jeg forbedre nettverket"
       - "hvordan kan jeg bygge bedre kjøling til coral"

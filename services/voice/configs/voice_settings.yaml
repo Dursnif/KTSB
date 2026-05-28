@@ -93,6 +93,13 @@ logging:
   log_transcriptions: true
   log_wakeword: true
 
+# --- MPD-ducking ---
+duck:
+  # Pause MPD-avspilling automatisk mens Kåre snakker lokalt (aplay)
+  mpd: true
+  # Sekunder å vente mellom TTS-slutt og MPD-gjenopptakelse
+  mpd_resume_delay: 0.3
+
 # --- Voice Bridge (for ESP32-noder) ---
 bridge:
   # UDP-port for lydstrøm fra ESP32

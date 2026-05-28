@@ -9,6 +9,8 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from kaare_core.tools.i18n import t
+
 _NOTATER_PATH = Path("/kaare/state/notater.json")
 
 
@@ -30,9 +32,9 @@ def _skriv_fil(notater: list) -> None:
     )
 
 
-def skriv_notat(tekst: str, kategori: str = "diverse") -> str:
+def skriv_notat(tekst: str, kategori: str = "diverse", lang: str = "nb") -> str:
     if not tekst.strip():
-        return "Feil: tekst kan ikke være tom."
+        return t("nota_empty_text", lang)
     notater = _les_fil()
     notat = {
         "id": uuid.uuid4().hex[:8],
@@ -43,22 +45,23 @@ def skriv_notat(tekst: str, kategori: str = "diverse") -> str:
     notater.append(notat)
     try:
         _skriv_fil(notater)
-        return f"Notert [{notat['id']}]: {notat['tekst']}"
+        return t("nota_noted", lang, note_id=notat["id"], text=notat["tekst"])
     except Exception as e:
-        return f"Kunne ikke skrive notat: {e}"
+        return t("nota_write_error", lang, error=e)
 
 
-def les_notater(kategori: str | None = None) -> str:
+def les_notater(kategori: str | None = None, lang: str = "nb") -> str:
     notater = _les_fil()
     if not notater:
-        return "Notisblokken er tom."
+        return t("nota_empty", lang)
     if kategori:
         kat = kategori.strip().lower()
         notater = [n for n in notater if n.get("kategori") == kat]
         if not notater:
-            return f"Ingen notater i kategori '{kategori}'."
+            return t("nota_no_category", lang, category=kategori)
 
-    lines = [f"Notisblokk ({len(notater)} notat{'er' if len(notater) != 1 else ''}):\n"]
+    suffix = "er" if len(notater) != 1 else ""
+    lines = [t("nota_header", lang, count=len(notater), suffix=suffix) + "\n"]
     siste_kat = None
     for n in notater:
         kat = n.get("kategori", "diverse")
@@ -69,41 +72,41 @@ def les_notater(kategori: str | None = None) -> str:
     return "\n".join(lines)
 
 
-def slett_notat(notat_id: str) -> str:
+def slett_notat(notat_id: str, lang: str = "nb") -> str:
     if not notat_id.strip():
-        return "Feil: notat_id kan ikke være tom."
+        return t("nota_empty_id", lang)
     notater = _les_fil()
     opprinnelig = len(notater)
     notater = [n for n in notater if n.get("id") != notat_id.strip()]
     if len(notater) == opprinnelig:
-        return f"Fant ingen notat med id '{notat_id}'."
+        return t("nota_id_not_found", lang, note_id=notat_id)
     try:
         _skriv_fil(notater)
-        return f"Notat '{notat_id}' slettet."
+        return t("nota_deleted", lang, note_id=notat_id)
     except Exception as e:
-        return f"Kunne ikke slette notat: {e}"
+        return t("nota_delete_error", lang, error=e)
 
 
-def tøm_notater(kategori: str | None = None) -> str:
+def tøm_notater(kategori: str | None = None, lang: str = "nb") -> str:
     notater = _les_fil()
     if not notater:
-        return "Notisblokken er allerede tom."
+        return t("nota_already_empty", lang)
     if kategori:
         kat = kategori.strip().lower()
         antall_før = len(notater)
         notater = [n for n in notater if n.get("kategori") != kat]
         antall_slettet = antall_før - len(notater)
         if antall_slettet == 0:
-            return f"Ingen notater i kategori '{kategori}'."
+            return t("nota_no_category", lang, category=kategori)
         try:
             _skriv_fil(notater)
-            return f"Slettet {antall_slettet} notat(er) fra kategori '{kategori}'."
+            return t("nota_category_cleared", lang, count=antall_slettet, category=kategori)
         except Exception as e:
-            return f"Kunne ikke tømme kategori: {e}"
+            return t("nota_category_clear_error", lang, error=e)
     else:
         antall = len(notater)
         try:
             _skriv_fil([])
-            return f"Notisblokken tømt ({antall} notat(er) slettet)."
+            return t("nota_cleared", lang, count=antall)
         except Exception as e:
-            return f"Kunne ikke tømme notisblokken: {e}"
+            return t("nota_clear_error", lang, error=e)

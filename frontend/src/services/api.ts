@@ -323,6 +323,7 @@ export type LlmRoleConfig = {
   enabled?: boolean;
   gpu_id?: number;
   ollama_env?: OllamaEnvConfig;
+  container?: string | null;
 };
 
 export async function apiGetLlmSettings(): Promise<Record<string, LlmRoleConfig>> {
@@ -381,6 +382,43 @@ export type OllamaDiscoverResult = { url: string; models: string[] };
 export async function apiDiscoverOllama(): Promise<{ found: OllamaDiscoverResult[] }> {
   const { data } = await api.post("/api/settings/llm/discover_ollama");
   return data as { found: OllamaDiscoverResult[] };
+}
+
+export type WarmupStatus = { status: "idle" | "waiting" | "loading" | "done" | "error" | "warning_cpu"; model?: string; detail?: string; vram_bytes?: number };
+export async function apiGetWarmupStatus(role: string): Promise<WarmupStatus> {
+  const { data } = await api.get(`/api/settings/llm/${role}/warmup_status`);
+  return data as WarmupStatus;
+}
+export async function apiTriggerWarmup(role: string, model?: string): Promise<{ ok: boolean; model?: string }> {
+  const { data } = await api.post(`/api/settings/llm/${role}/warmup`, model ? { model } : {});
+  return data as { ok: boolean; model?: string };
+}
+
+export type DockerControlSettings = { allow_docker_control: boolean; socket_available: boolean };
+export async function apiGetDockerControl(): Promise<DockerControlSettings> {
+  const { data } = await api.get("/api/settings/system/docker_control");
+  return data as DockerControlSettings;
+}
+export async function apiPutDockerControl(allow: boolean): Promise<{ ok: boolean }> {
+  const { data } = await api.put("/api/settings/system/docker_control", { allow_docker_control: allow });
+  return data as { ok: boolean };
+}
+
+export type ContainerInfo = { name: string; ports: number[] };
+export async function apiDiscoverContainers(): Promise<{ containers: ContainerInfo[]; error?: string }> {
+  const { data } = await api.get("/api/settings/llm/discover-containers");
+  return data as { containers: ContainerInfo[]; error?: string };
+}
+
+export type VramEntry = { role: string; model: string; vram_bytes: number; on_cpu: boolean; base_url: string };
+export async function apiGetVramOverview(): Promise<{ entries: VramEntry[] }> {
+  const { data } = await api.get("/api/settings/llm/vram_overview");
+  return data as { entries: VramEntry[] };
+}
+
+export async function apiRestartOllama(role: string): Promise<{ ok: boolean; container?: string; warmup_started?: boolean; error?: string }> {
+  const { data } = await api.post(`/api/settings/llm/${role}/restart_ollama`);
+  return data as { ok: boolean; container?: string; warmup_started?: boolean; error?: string };
 }
 
 
@@ -827,7 +865,7 @@ export async function apiGetOnboardingStatus(): Promise<OnboardingStatus> {
 // ── Agent tools ───────────────────────────────────────────────────────────────
 
 export type AgentToolsConfig = {
-  pettersmart: Record<string, boolean>;
+  mechanic: Record<string, boolean>;
   miss_kare: Record<string, boolean>;
   miss_library: Record<string, boolean>;
 };
@@ -843,9 +881,9 @@ export async function apiPutAgentTools(payload: AgentToolsConfig) {
 }
 
 export type MeetingRolesConfig = {
-  pettersmart: string;
-  pettersmart_custom: string;
-  pettersmart_default: string;
+  mechanic: string;
+  mechanic_custom: string;
+  mechanic_default: string;
   miss_kare: string;
   miss_kare_custom: string;
   miss_kare_default: string;

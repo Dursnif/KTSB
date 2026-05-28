@@ -30,7 +30,7 @@ const SOURCE_COLOR: Record<string, string> = {
   timer:        "#d79b00",
   miss_kare:    "#c084fc",
   miss_library: "#5ba8a0",
-  pettersmart:  "#82b366",
+  mechanic:  "#82b366",
   jing:         "#82b366",
   jang:         "#9673a6",
 };

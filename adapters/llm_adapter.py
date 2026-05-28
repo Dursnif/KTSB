@@ -275,11 +275,11 @@ def _current_user_block(user_id: str) -> str:
 
 
 def _build_disabled_modules_block() -> str:
-    """Return a prompt block listing disabled agents/domains and Pettersmart tool limits, or '' if everything is active."""
+    """Return a prompt block listing disabled agents/domains and Mechanic tool limits, or '' if everything is active."""
     disabled: list[str] = []
 
     _agent_labels = {
-        "pettersmart": "Pettersmart",
+        "mechanic": "Mechanic",
         "library":     "Frøken Library",
         "image_edit":  "bilderedigering",
     }
@@ -306,9 +306,9 @@ def _build_disabled_modules_block() -> str:
             f"Ikke tilby, forsøk å bruke, eller henvis til disse funksjonene."
         )
 
-    # Pettersmart tool-level awareness (only when Pettersmart itself is enabled)
-    if CFG.get("pettersmart", {}).get("enabled", True):
-        ps_perms = _get_tool_permissions().get("agent_tools", {}).get("pettersmart", {})
+    # Mechanic tool-level awareness (only when Mechanic itself is enabled)
+    if CFG.get("mechanic", {}).get("enabled", True):
+        ps_perms = _get_tool_permissions().get("agent_tools", {}).get("mechanic", {})
         _tool_labels = {
             "utforsk":        "utforsk (lese filer/kode)",
             "inspiser":       "inspiser (logger/tjenester/ressurser)",
@@ -320,9 +320,9 @@ def _build_disabled_modules_block() -> str:
         disabled_tools = [label for key, label in _tool_labels.items() if ps_perms.get(key) is False]
         if disabled_tools:
             parts.append(
-                f"## Pettersmart — deaktiverte verktøy\n"
-                f"Pettersmart kan ikke bruke: {', '.join(disabled_tools)}. "
-                f"Ikke be Pettersmart utføre oppgaver som krever disse verktøyene."
+                f"## Mechanic — deaktiverte verktøy\n"
+                f"Mechanic kan ikke bruke: {', '.join(disabled_tools)}. "
+                f"Ikke be Mechanic utføre oppgaver som krever disse verktøyene."
             )
 
     return "\n\n".join(parts)
@@ -1093,6 +1093,13 @@ async def ask_llm_with_tools(
                 _newly_deactivated = True
 
             try:
+                _has_images = any(
+                    bool(m.get("images")) or (
+                        isinstance(m.get("content"), list) and
+                        any(isinstance(c, dict) and c.get("type") == "image_url" for c in m["content"])
+                    )
+                    for m in messages
+                )
                 os.makedirs("/kaare/logs", exist_ok=True)
                 with open("/kaare/logs/llm_calls.log", "a", encoding="utf-8") as _f:
                     _f.write(json.dumps({
@@ -1102,6 +1109,7 @@ async def ask_llm_with_tools(
                         "latency_ms": elapsed_ms,
                         "has_tools":  bool(tool_calls),
                         "has_think":  bool(think_content),
+                        "has_images": _has_images,
                         "recovered":  recovered,
                         "status":     "ok",
                     }, ensure_ascii=False) + "\n")

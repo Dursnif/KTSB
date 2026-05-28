@@ -149,7 +149,7 @@ KAARE_TOOLS = [
                 "VIKTIG — ærlighet ved feil: Hvis søket returnerer 'Fant ingen resultater' "
                 "eller ingen treff fra godkjente kilder: si det ærlig til brukeren med én setning. "
                 "Ikke prøv igjen automatisk med andre søkeord. "
-                "Tilby i stedet pettersmart(action='søk') for dypere undersøkelse — "
+                "Tilby i stedet mechanic(action='søk') for dypere undersøkelse — "
                 "men kun hvis brukeren eksplisitt ønsker det."
             ),
             "parameters": {
@@ -200,7 +200,7 @@ KAARE_TOOLS = [
                 "eller second opinion. Ikke for vær/nyheter (bruk søk_nett). "
                 "VIKTIG — ærlighet ved feil: Hvis et søk returnerer ingen svar eller feil: "
                 "si det klart til brukeren. Ikke prøv igjen med andre varianter automatisk. "
-                "Tilby pettersmart(action='søk') som alternativ — kun om brukeren ønsker det."
+                "Tilby mechanic(action='søk') som alternativ — kun om brukeren ønsker det."
             ),
             "parameters": {
                 "type": "object",
@@ -307,7 +307,7 @@ KAARE_TOOLS = [
             "description": (
                 "Les innholdet fra et av Kåres nattlige møter. "
                 "type='refleksjon': Kåres egne refleksjonsmøter. "
-                "type='utvikling': tekniske utviklingsmøter (Kåre + Pettersmart). "
+                "type='utvikling': tekniske utviklingsmøter (Kåre + Mechanic). "
                 "Uten dato: siste møte. Med dato (YYYY-MM-DD): møtet fra den datoen."
             ),
             "parameters": {
@@ -418,17 +418,17 @@ KAARE_TOOLS = [
     },
 
     # ─────────────────────────────────────────────
-    # PETTERSMART
+    # MECHANIC
     # ─────────────────────────────────────────────
     {
         "type": "function",
         "function": {
-            "name": "pettersmart",
+            "name": "mechanic",
             "description": (
-                "Pettersmart — søk og oppsummer i kodebasen og logger. "
+                "Mechanic — søk og oppsummer i kodebasen og logger. "
                 "Bruk action='søk' når du trenger å lese filer, søke i kode eller hente logglinjer "
                 "uten å fylle din egen kontekst med rå innhold. "
-                "Du bestemmer nøyaktig hva som skal søkes — Pettersmart leser og leverer kompakt sammendrag. "
+                "Du bestemmer nøyaktig hva som skal søkes — Mechanic leser og leverer kompakt sammendrag. "
                 "Bruk action='deleger' kun for ekte bakgrunnsoppgaver som tar lang tid "
                 "(apt upgrade, reboot, multi-SSH) der du ikke kan vente."
             ),
@@ -459,7 +459,7 @@ KAARE_TOOLS = [
                     },
                     "spørsmål": {
                         "type": "string",
-                        "description": "Hva vil du vite? Pettersmart summerer innholdet mot dette. Kreves ved action='søk'.",
+                        "description": "Hva vil du vite? Mechanic summerer innholdet mot dette. Kreves ved action='søk'.",
                     },
                     "filer": {
                         "type": "array",
@@ -521,7 +521,7 @@ KAARE_TOOLS = [
             "name": "restart_docker_container",
             "description": (
                 "Restart en Ollama Docker-container som siste utvei når en modell henger. "
-                "Bruk kun når avbryt_pettersmart ikke har frigjort GPU, eller containeren er fryst. "
+                "Bruk kun når avbryt_mechanic ikke har frigjort GPU, eller containeren er fryst. "
                 "Advarsel: modell-reload tar ~3,5 min — tjenesten utilgjengelig i mellomtiden."
             ),
             "parameters": {
@@ -1389,7 +1389,7 @@ TOOL_MODEL_TIERS: dict[str, float] = {
     "se_bilder":       3.0,
     "media":           3.0,
     # Tier 9 — needs 9B+ for multi-step reasoning, shell access, delegation
-    "pettersmart":              9.0,
+    "mechanic":              9.0,
     "utforsk_kode":             9.0,
     "inspiser_system":          9.0,
     "ssh_kommando":             9.0,

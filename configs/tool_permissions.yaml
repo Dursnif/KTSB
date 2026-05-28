@@ -65,7 +65,7 @@ roles:
   admin:
   - all
 agent_tools:
-  pettersmart:
+  mechanic:
     utforsk: true
     inspiser: true
     nettsøk: true

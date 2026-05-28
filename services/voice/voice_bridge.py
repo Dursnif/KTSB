@@ -10,7 +10,9 @@ import logging
 import os
 import subprocess
 import tempfile
+import time
 import uuid
+import wave
 from pathlib import Path
 
 import math
@@ -84,6 +86,7 @@ WAKE_ACK_WAV   = CACHE_DIR / "wake_ack_0.wav"
 
 HTTP_PORT      = cfg["bridge"]["http_port"]
 BRIDGE_HOST    = cfg["bridge"]["serve_host"]
+_duck_cfg: dict = cfg.get("duck", {})
 
 TMP_AUDIO_DIR  = Path("/tmp/kaare_tts")
 TMP_AUDIO_DIR.mkdir(exist_ok=True)
@@ -321,6 +324,35 @@ def _delete_wav(path: Path) -> None:
         pass
 
 
+def _mpd_get_state() -> str:
+    """Returns 'playing', 'paused', or 'stopped'."""
+    result = subprocess.run(["mpc", "status"], capture_output=True, text=True, timeout=3)
+    if result.returncode != 0:
+        return "stopped"
+    for line in result.stdout.splitlines():
+        if "[playing]" in line:
+            return "playing"
+        if "[paused]" in line:
+            return "paused"
+    return "stopped"
+
+
+def _mpd_pause() -> None:
+    subprocess.run(["mpc", "pause"], capture_output=True, timeout=3)
+
+
+def _mpd_resume() -> None:
+    subprocess.run(["mpc", "play"], capture_output=True, timeout=3)
+
+
+def _wav_duration_seconds(wav_path: Path) -> float:
+    try:
+        with wave.open(str(wav_path), "rb") as wf:
+            return wf.getnframes() / wf.getframerate()
+    except Exception:
+        return 5.0
+
+
 def record_audio() -> np.ndarray:
     """
     Ta opp fra mikrofon (device 4, 44100Hz stereo).
@@ -505,9 +537,22 @@ async def run_pipeline(node_id: str, room: str = "", default_user: str = "") -> 
         await play_on_esp32(wav_path, node_id)
         asyncio.get_running_loop().call_later(60, _delete_wav, wav_path)
     else:
-        # local: spill av via Kåre sine høytalere
-        await loop.run_in_executor(None, play_wav, wav_path)
-        _delete_wav(wav_path)
+        # local: duck MPD, spill via aplay, gjenoppta MPD uansett (try/finally)
+        mpd_was_playing = False
+        if _duck_cfg.get("mpd", True):
+            state = await loop.run_in_executor(None, _mpd_get_state)
+            if state == "playing":
+                await loop.run_in_executor(None, _mpd_pause)
+                mpd_was_playing = True
+                log.info("MPD paused for voice pipeline TTS")
+                await asyncio.sleep(0.2)
+        try:
+            await loop.run_in_executor(None, play_wav, wav_path)
+        finally:
+            _delete_wav(wav_path)
+            if mpd_was_playing:
+                await loop.run_in_executor(None, _mpd_resume)
+                log.info("MPD resumed after voice pipeline TTS")
 
 
 async def trigger_pipeline(node_id: str, room: str = "", default_user: str = "") -> None:
@@ -618,22 +663,52 @@ def _resolve_targets(target: str) -> list[str]:
 
     Returns a list of node IDs from nodes.yaml, plus the special
     sentinel 'local' which means play via aplay on the AI-PC.
+    For 'all'/'alle': skips nodes marked is_tv=true if a non-TV node
+    exists in the same room.
     """
     t = target.strip().lower()
     if t in ("local", "lokal", ""):
         return ["local"]
+
     if t in ("all", "alle"):
-        enabled = [nid for nid, cfg in _nodes.items() if cfg.get("enabled", True)]
-        return ["local"] + enabled
+        enabled = {nid: ncfg for nid, ncfg in _nodes.items() if ncfg.get("enabled", True)}
+
+        by_room: dict[str, list[str]] = {}
+        roomless: list[str] = []
+        for nid, ncfg in enabled.items():
+            room = ncfg.get("room", "").strip().lower()
+            if room:
+                by_room.setdefault(room, []).append(nid)
+            else:
+                roomless.append(nid)
+
+        selected: list[str] = []
+        for room_nodes in by_room.values():
+            if len(room_nodes) == 1:
+                selected.append(room_nodes[0])
+            else:
+                non_tv = [n for n in room_nodes if not _nodes[n].get("is_tv", False)]
+                selected.extend(non_tv if non_tv else room_nodes)
+
+        selected.extend(roomless)
+        return ["local"] + selected
+
     if t in _nodes:
         if not _nodes[t].get("enabled", True):
             log.warning("Node '%s' is disabled, falling back to local", t)
             return ["local"]
         return [t]
-    # Try matching by room name (enabled nodes only)
-    for nid, cfg in _nodes.items():
-        if cfg.get("room", "").lower() == t and cfg.get("enabled", True):
-            return [nid]
+
+    # Try matching by room name — prefer non-TV nodes
+    room_nodes = [
+        nid for nid, ncfg in _nodes.items()
+        if ncfg.get("room", "").strip().lower() == t and ncfg.get("enabled", True)
+    ]
+    if room_nodes:
+        non_tv = [n for n in room_nodes if not _nodes[n].get("is_tv", False)]
+        chosen = non_tv if non_tv else room_nodes
+        return [chosen[0]]
+
     log.warning("Unknown or disabled speak target '%s', falling back to local", target)
     return ["local"]
 
@@ -644,10 +719,22 @@ async def _speak_background(text: str, target: str, volume: float | None = None)
     targets = _resolve_targets(target)
     log.info("Announce: target=%r -> %s volume=%s", target, targets, volume)
 
+    # Duck MPD before TTS (only needed when local speaker is a target)
+    mpd_was_playing = False
+    if "local" in targets and _duck_cfg.get("mpd", True):
+        state = await loop.run_in_executor(None, _mpd_get_state)
+        if state == "playing":
+            await loop.run_in_executor(None, _mpd_pause)
+            mpd_was_playing = True
+            log.info("MPD paused for TTS announce")
+            await asyncio.sleep(0.2)
+
     try:
         wav_path = await loop.run_in_executor(None, generate_speech_wav, text)
     except Exception as exc:
         log.error("TTS generation failed: %s", exc)
+        if mpd_was_playing:
+            await loop.run_in_executor(None, _mpd_resume)
         return
 
     # Set volume before playback if requested (provider handles it if supported)
@@ -675,7 +762,19 @@ async def _speak_background(text: str, target: str, volume: float | None = None)
             else:
                 log.warning("Ingen provider for node-type '%s', hopper over node '%s'", node_type, t)
 
+    t_play_start = time.monotonic()
     await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Unduck MPD — remote targets return immediately, so wait for WAV duration first
+    if mpd_was_playing:
+        if any(t != "local" for t in targets):
+            wav_duration = _wav_duration_seconds(wav_path)
+            elapsed = time.monotonic() - t_play_start
+            extra_wait = max(0.0, wav_duration + 1.5 - elapsed)
+            if extra_wait > 0:
+                await asyncio.sleep(extra_wait)
+        await loop.run_in_executor(None, _mpd_resume)
+        log.info("MPD resumed after TTS announce")
 
     # Give remote devices time to fetch the audio file before deleting it
     await asyncio.sleep(15)

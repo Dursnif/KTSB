@@ -12,7 +12,7 @@ from kaare_core.users.auth import require_admin as _require_admin, require_auth 
 _LLM_PATH      = Path("/kaare/configs/llm.yaml")
 _SERVICES_PATH = Path("/kaare/configs/services.yaml")
 
-_OLLAMA_ROLE_KEYS    = {"kare", "miss_kare", "library", "pettersmart", "fallback"}
+_OLLAMA_ROLE_KEYS    = {"kare", "miss_kare", "library", "mechanic", "fallback"}
 _SERVICES_OLLAMA_KEYS = {"kare", "library", "miss_kare", "proxy"}
 
 router = APIRouter()
@@ -98,7 +98,7 @@ async def api_ollama_pull_status(role: str, _u=Depends(_require_auth)):
 async def api_get_ollama_source(_u=Depends(_require_auth)):
     data = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
     url = ""
-    for role in ("kare", "miss_kare", "library", "pettersmart", "fallback"):
+    for role in ("kare", "miss_kare", "library", "mechanic", "fallback"):
         role_data = data.get(role, {})
         if role_data.get("provider", "ollama") == "ollama" and role_data.get("base_url"):
             url = role_data["base_url"]

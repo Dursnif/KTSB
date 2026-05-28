@@ -219,7 +219,7 @@
       "role_labels": {
         "default": "Kåre (main)",
         "miss_kare": "Miss Kåre",
-        "pettersmart": "Pettersmart",
+        "mechanic": "Mechanic",
         "library": "Miss Library",
         "fallback": "Fallback",
         "cloud": "Cloud LLM",
@@ -331,7 +331,29 @@
       "manage_kv_cache_label": "KV-cache precision",
       "manage_kv_cache_hint": "f16 = full precision. q8_0 = halves KV-cache size. q4_0 = quarter, frees most VRAM.",
       "manage_flash_attn_label": "Flash Attention",
-      "manage_flash_attn_hint": "Faster inference and lower memory usage. Requires compatible GPU setup. Recommended to enable."
+      "manage_flash_attn_hint": "Faster inference and lower memory usage. Requires compatible GPU setup. Recommended to enable.",
+      "warmup_waiting": "Waiting for Ollama container...",
+      "warmup_loading": "Loading model into VRAM...",
+      "warmup_done": "Model loaded and ready",
+      "warmup_error": "Failed to load model into VRAM",
+      "warmup_cpu_warning": "Model running on CPU — restart the container to load into VRAM",
+      "infra_card_title": "Infrastructure",
+      "docker_control": "Docker control",
+      "docker_control_hint": "Enables container restart buttons for Ollama roles. Requires /var/run/docker.sock to be mounted.",
+      "docker_socket_ok": "Docker socket available",
+      "docker_socket_missing": "Docker socket not mounted",
+      "vram_overview": "VRAM overview",
+      "vram_refresh": "Refresh",
+      "vram_col_role": "Role",
+      "vram_col_model": "Model",
+      "vram_col_vram": "VRAM",
+      "vram_on_cpu": "CPU",
+      "vram_no_models": "No Ollama models currently loaded",
+      "container_name": "Docker container",
+      "container_name_hint": "The container name running this Ollama instance (e.g. ollama-agents)",
+      "container_discover": "Search for containers on this port",
+      "restart_ollama": "Restart container",
+      "container_name_required": "Set container name to enable restart"
     },
     "nettsok": {
       "weather": {
@@ -501,8 +523,8 @@
       "role_custom_placeholder": "Write the role this agent should play in the meeting...",
       "role_custom_hint": "Custom text is used as the agent's instruction in the meeting system prompt.",
       "role_hot_reload_hint": "Changes take effect from the next meeting.",
-      "pettersmart": {
-        "label": "Pettersmart",
+      "mechanic": {
+        "label": "Mechanic",
         "description": "Technical assistant and problem solver. Used in dev meetings and for technical questions.",
         "roles": {
           "undersøker_label": "Investigator",
@@ -512,7 +534,7 @@
           "analytiker_label": "Analyst",
           "analytiker_desc": "Analyses patterns across meeting reports and history.",
           "egendefinert_label": "Custom",
-          "egendefinert_desc": "Write your own instruction for Pettersmart's role in the meeting."
+          "egendefinert_desc": "Write your own instruction for Mechanic's role in the meeting."
         }
       },
       "miss_kare": {
@@ -545,7 +567,7 @@
         "shell": "shell",
         "shell_desc": "Run shell commands locally or on connected nodes. Enable only when needed.",
         "hukommelse": "hukommelse",
-        "hukommelse_desc": "Pettersmart's personal memory – persists between meetings.",
+        "hukommelse_desc": "Mechanic's personal memory – persists between meetings.",
         "spør_frøken_library": "spør_frøken_library",
         "spør_frøken_library_desc": "Allow Miss Kåre to fact-check with Frøken Library during evaluation.",
         "wiki": "wiki (local)",
@@ -673,7 +695,7 @@
           "hint": "Port 11500. 384-dim embedding for semantic memory."
         },
         "agents": {
-          "label": "Agents (Library + Pettersmart)",
+          "label": "Agents (Library + Mechanic)",
           "hint": "Port 11450. Restart after LLM change for these roles."
         },
         "embedding": {
@@ -925,7 +947,7 @@
         "kamera": "Camera (Frigate)",
         "søk_i_argus": "Argus search",
         "les_møte": "Read meeting reports",
-        "pettersmart": "Pettersmart",
+        "mechanic": "Mechanic",
         "utforsk_kode": "Explore code",
         "inspiser_system": "Inspect system",
         "ssh_kommando": "SSH command",
@@ -1049,7 +1071,24 @@
     "saved": "Saved ✓",
     "error_load": "Could not fetch camera settings.",
     "error_save": "Could not save camera {{id}}.",
-    "error_save_global": "Could not save global setting: {{msg}}"
+    "error_save_global": "Could not save global setting: {{msg}}",
+    "log_title": "Recent detections",
+    "log_loading": "Loading analyses…",
+    "log_empty": "No analyses yet.",
+    "log_refresh": "Refresh",
+    "log_failed_label": "Failed",
+    "log_failed_text": "Analysis failed.",
+    "log_retry": "Re-analyze",
+    "log_retrying": "Analyzing…",
+    "log_retry_error": "Re-analysis failed.",
+    "log_no_snapshot": "No snapshot",
+    "log_meta_camera": "Camera",
+    "log_meta_time": "Time",
+    "log_meta_label": "Object",
+    "log_meta_score": "Confidence",
+    "log_meta_zones": "Zones",
+    "log_meta_face": "Face",
+    "log_meta_duration": "Duration (sec)"
   },
   "home": {
     "img_alt": "Generated image",
@@ -1072,7 +1111,7 @@
     "reflection_tab": "Reflection meeting",
     "dev_tab": "Dev meeting",
     "reflection_tab_sub": "04:00 · Miss Kåre",
-    "dev_tab_sub": "05:30 · Pettersmart",
+    "dev_tab_sub": "05:30 · Mechanic",
     "meetings_label": "Meetings",
     "no_dates": "None yet",
     "loading": "Loading…",

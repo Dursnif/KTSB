@@ -219,7 +219,7 @@
       "role_labels": {
         "default": "Kåre (Haupt)",
         "miss_kare": "Miss Kåre",
-        "pettersmart": "Pettersmart",
+        "mechanic": "Mechanic",
         "library": "Miss Library",
         "fallback": "Fallback",
         "cloud": "Cloud-LLM",
@@ -331,7 +331,29 @@
       "manage_kv_cache_label": "KV-Cache-Präzision",
       "manage_kv_cache_hint": "f16 = volle Präzision. q8_0 = halbiert KV-Cache-Größe. q4_0 = Viertel, gibt am meisten VRAM frei.",
       "manage_flash_attn_label": "Flash Attention",
-      "manage_flash_attn_hint": "Schnellere Inferenz und geringerer Speicherverbrauch. Erfordert kompatibles GPU-Setup. Empfohlen."
+      "manage_flash_attn_hint": "Schnellere Inferenz und geringerer Speicherverbrauch. Erfordert kompatibles GPU-Setup. Empfohlen.",
+      "warmup_waiting": "Warte auf Ollama-Container...",
+      "warmup_loading": "Lade Modell in VRAM...",
+      "warmup_done": "Modell geladen und bereit",
+      "warmup_error": "Fehler beim Laden des Modells in VRAM",
+      "warmup_cpu_warning": "Modell läuft auf CPU — Container neu starten, um in VRAM zu laden",
+      "infra_card_title": "Infrastruktur",
+      "docker_control": "Docker-Steuerung",
+      "docker_control_hint": "Aktiviert Neustart-Schaltflächen für Ollama-Container. Erfordert gemountetes /var/run/docker.sock.",
+      "docker_socket_ok": "Docker-Socket verfügbar",
+      "docker_socket_missing": "Docker-Socket nicht gemountet",
+      "vram_overview": "VRAM-Übersicht",
+      "vram_refresh": "Aktualisieren",
+      "vram_col_role": "Rolle",
+      "vram_col_model": "Modell",
+      "vram_col_vram": "VRAM",
+      "vram_on_cpu": "CPU",
+      "vram_no_models": "Keine Ollama-Modelle aktuell geladen",
+      "container_name": "Docker-Container",
+      "container_name_hint": "Der Containername, der diese Ollama-Instanz betreibt (z.B. ollama-agents)",
+      "container_discover": "Container auf diesem Port suchen",
+      "restart_ollama": "Container neu starten",
+      "container_name_required": "Containername setzen, um Neustart zu aktivieren"
     },
     "nettsok": {
       "weather": {
@@ -501,8 +523,8 @@
       "role_custom_placeholder": "Schreibe hier, welche Rolle der Agent im Meeting spielen soll...",
       "role_custom_hint": "Benutzerdefinierter Text wird als Agentenanweisung im Meeting-System-Prompt verwendet.",
       "role_hot_reload_hint": "Änderungen gelten ab dem nächsten Meeting.",
-      "pettersmart": {
-        "label": "Pettersmart",
+      "mechanic": {
+        "label": "Mechanic",
         "description": "Technischer Assistent und Problemlöser. Wird in Dev-Meetings und für technische Fragen verwendet.",
         "roles": {
           "undersøker_label": "Ermittler",
@@ -512,7 +534,7 @@
           "analytiker_label": "Analytiker",
           "analytiker_desc": "Analysiert Muster über Meeting-Berichte und Verlauf hinweg.",
           "egendefinert_label": "Benutzerdefiniert",
-          "egendefinert_desc": "Schreibe deine eigene Anweisung für Pettersmarts Rolle im Meeting."
+          "egendefinert_desc": "Schreibe deine eigene Anweisung für Mechanics Rolle im Meeting."
         }
       },
       "miss_kare": {
@@ -545,7 +567,7 @@
         "shell": "shell",
         "shell_desc": "Shell-Befehle lokal oder auf verbundenen Knoten ausführen. Nur bei Bedarf aktivieren.",
         "hukommelse": "hukommelse",
-        "hukommelse_desc": "Pettersmarts persönliches Gedächtnis – bleibt zwischen Meetings erhalten.",
+        "hukommelse_desc": "Mechanics persönliches Gedächtnis – bleibt zwischen Meetings erhalten.",
         "spør_frøken_library": "spør_frøken_library",
         "spør_frøken_library_desc": "Miss Kåre erlauben, bei Frøken Library Fakten zu prüfen.",
         "wiki": "wiki (lokal)",
@@ -673,7 +695,7 @@
           "hint": "Port 11500. 384-dim Embedding für semantisches Gedächtnis."
         },
         "agents": {
-          "label": "Agenten (Library + Pettersmart)",
+          "label": "Agenten (Library + Mechanic)",
           "hint": "Port 11450. Neustart nach LLM-Änderung für diese Rollen."
         },
         "embedding": {
@@ -925,7 +947,7 @@
         "kamera": "Kamera (Frigate)",
         "søk_i_argus": "Argus-Suche",
         "les_møte": "Besprechungsberichte lesen",
-        "pettersmart": "Pettersmart",
+        "mechanic": "Mechanic",
         "utforsk_kode": "Code erkunden",
         "inspiser_system": "System inspizieren",
         "ssh_kommando": "SSH-Befehl",
@@ -1049,7 +1071,24 @@
     "saved": "Gespeichert ✓",
     "error_load": "Kameraeinstellungen konnten nicht abgerufen werden.",
     "error_save": "Kamera {{id}} konnte nicht gespeichert werden.",
-    "error_save_global": "Globale Einstellung konnte nicht gespeichert werden: {{msg}}"
+    "error_save_global": "Globale Einstellung konnte nicht gespeichert werden: {{msg}}",
+    "log_title": "Letzte Erkennungen",
+    "log_loading": "Analysen werden geladen…",
+    "log_empty": "Noch keine Analysen.",
+    "log_refresh": "Aktualisieren",
+    "log_failed_label": "Fehlgeschlagen",
+    "log_failed_text": "Analyse fehlgeschlagen.",
+    "log_retry": "Neu analysieren",
+    "log_retrying": "Analysiere…",
+    "log_retry_error": "Neuanalyse fehlgeschlagen.",
+    "log_no_snapshot": "Kein Snapshot",
+    "log_meta_camera": "Kamera",
+    "log_meta_time": "Zeitpunkt",
+    "log_meta_label": "Objekt",
+    "log_meta_score": "Sicherheit",
+    "log_meta_zones": "Zonen",
+    "log_meta_face": "Gesicht",
+    "log_meta_duration": "Dauer (Sek.)"
   },
   "home": {
     "img_alt": "Generiertes Bild",
@@ -1072,7 +1111,7 @@
     "reflection_tab": "Reflexionssitzung",
     "dev_tab": "Entwicklungssitzung",
     "reflection_tab_sub": "04:00 · Miss Kåre",
-    "dev_tab_sub": "05:30 · Pettersmart",
+    "dev_tab_sub": "05:30 · Mechanic",
     "meetings_label": "Sitzungen",
     "no_dates": "Noch keine",
     "loading": "Lädt…",

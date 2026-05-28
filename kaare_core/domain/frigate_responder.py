@@ -115,31 +115,43 @@ def build_context_prompt(event: dict, cam_cfg: dict) -> str:
     )
 
 
-async def analyze_event(event: dict) -> dict | None:
+async def analyze_event(event: dict, img_b64_override: str | None = None) -> dict | None:
     from adapters.frigate_adapter import fetch_event_snapshot, fetch_snapshot_b64
 
     cfg = _cfg()
     cameras = cfg.get("cameras", {})
     camera = event.get("camera", "")
     cam_cfg = cameras.get(camera, {})
-
-    # Fetch snapshot — prefer event-specific snapshot, fall back to latest
-    img_b64: str | None = None
     event_id = event.get("event_id", "")
-    if event_id:
-        try:
-            raw = await asyncio.wait_for(fetch_event_snapshot(event_id), timeout=10)
-            if raw:
-                img_b64 = base64.b64encode(raw).decode()
-        except Exception as e:
-            log.warning("Event snapshot failed for %s: %s — trying latest", event_id, e)
+
+    # Use caller-supplied image (e.g. local snapshot on retry) — skip fetch entirely
+    img_b64: str | None = img_b64_override
 
     if not img_b64:
-        try:
-            img_b64 = await asyncio.wait_for(fetch_snapshot_b64(camera), timeout=10)
-        except Exception as e:
-            log.warning("Fallback snapshot failed for %s: %s", camera, e)
-            return None
+        if event_id and event.get("has_snapshot", True):
+            try:
+                raw = await asyncio.wait_for(fetch_event_snapshot(event_id), timeout=10)
+                if raw:
+                    img_b64 = base64.b64encode(raw).decode()
+            except Exception as e:
+                if "404" in str(e):
+                    # Race condition: snapshot not saved yet — wait and retry once
+                    await asyncio.sleep(1.5)
+                    try:
+                        raw = await asyncio.wait_for(fetch_event_snapshot(event_id), timeout=10)
+                        if raw:
+                            img_b64 = base64.b64encode(raw).decode()
+                    except Exception as e2:
+                        log.warning("Event snapshot failed for %s after retry: %s — trying latest", event_id, e2)
+                else:
+                    log.warning("Event snapshot failed for %s: %s — trying latest", event_id, e)
+
+        if not img_b64:
+            try:
+                img_b64 = await asyncio.wait_for(fetch_snapshot_b64(camera), timeout=10)
+            except Exception as e:
+                log.warning("Fallback snapshot failed for %s: %s", camera, e)
+                return None
 
     if not img_b64:
         log.warning("No snapshot available for event %s on %s", event_id, camera)

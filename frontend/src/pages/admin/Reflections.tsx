@@ -33,7 +33,7 @@ interface MeetingStatus {
 const MEETING_COLORS: Record<string, string> = {
   "KÅRE":        "#646cff",
   "MISS KÅRE":   "#f06292",
-  "PETTERSMART": "#ff9800",
+  "MECHANIC": "#ff9800",
   "ONLINE":      "#4caf50",
   "MØTELEDER":   "#00bcd4",
 };
@@ -41,7 +41,7 @@ const MEETING_COLORS: Record<string, string> = {
 const AGENT_LABELS: Record<string, string> = {
   "**[Kåre]**":        "KÅRE",
   "**[Miss Kåre]**":   "MISS KÅRE",
-  "**[Pettersmart]**": "PETTERSMART",
+  "**[Mechanic]**": "MECHANIC",
   "**[Online]**":      "ONLINE",
   "**[Møteleder]**":   "MØTELEDER",
 };

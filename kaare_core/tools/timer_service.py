@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from kaare_core.config import get_service as _svc
+from kaare_core.tools.i18n import t
 
 _timers: Dict[str, Dict[str, Any]] = {}
 _TOOL_LOG    = Path("/kaare/logs/tool_calls.log")
@@ -68,10 +69,10 @@ def _parse_at_time(at_time: str) -> Optional[datetime]:
     # Bare klokkeslett: "07:30"
     m = re.fullmatch(r"(\d{1,2}):(\d{2})", s)
     if m:
-        t = now.replace(hour=int(m.group(1)), minute=int(m.group(2)), second=0, microsecond=0)
-        if t <= now:
-            t += timedelta(days=1)
-        return t
+        fire_dt = now.replace(hour=int(m.group(1)), minute=int(m.group(2)), second=0, microsecond=0)
+        if fire_dt <= now:
+            fire_dt += timedelta(days=1)
+        return fire_dt
 
     # Ukedag + klokkeslett: "fredag 08:00"
     m = re.fullmatch(r"(\w+)\s+(\d{1,2}):(\d{2})", s)
@@ -206,6 +207,7 @@ def sett_timer(
     notify: bool = True,
     repeat: Optional[str] = None,
     at_time: Optional[str] = None,
+    lang: str = "nb",
 ) -> str:
     """
     Sett en timer.
@@ -218,25 +220,22 @@ def sett_timer(
       notify     — om brukeren skal varsles (standard: ja)
     """
     if not prompt.strip():
-        return "Feil: prompt kan ikke være tom."
+        return t("timer_empty_prompt", lang)
 
     if repeat and repeat not in VALID_REPEATS:
-        return f"Feil: ugyldig repeat-verdi '{repeat}'. Gyldige: {', '.join(VALID_REPEATS)}."
+        return t("timer_invalid_repeat", lang, repeat=repeat, valid=', '.join(VALID_REPEATS))
 
     # Bestem tidspunkt
     if at_time:
         fire_dt = _parse_at_time(at_time)
         if fire_dt is None:
-            return (
-                f"Feil: kunne ikke tolke '{at_time}'. "
-                "Bruk f.eks. '07:30', 'fredag 08:00' eller '2026-05-01 09:00'."
-            )
+            return t("timer_parse_error", lang, at_time=at_time)
         delay_secs = max(1.0, (fire_dt - datetime.now()).total_seconds())
     else:
         if in_seconds < 5:
-            return "Feil: minimum 5 sekunder."
+            return t("timer_min_seconds", lang)
         if in_seconds > 86400 * 365 and not repeat:
-            return "Feil: engangs-timer kan ikke settes mer enn ett år frem."
+            return t("timer_max_one_year", lang)
         delay_secs = float(in_seconds)
         fire_dt    = datetime.now() + timedelta(seconds=delay_secs)
 
@@ -269,48 +268,50 @@ def sett_timer(
          notify=notify, repeat=repeat, at_time=at_time,
          result_preview=f"Timer {timer_id} satt", duration_ms=0)
 
-    # Bygg lesbar tilbakemelding
     local_str = fire_dt.strftime("%d.%m.%Y %H:%M")
     delay_str = _fmt_delay(delay_secs)
-    repeat_str = f" — gjentar {_REPEAT_LABELS[repeat]}" if repeat else ""
-    return (
-        f"Timer satt [{timer_id}]: om {delay_str} ({local_str}){repeat_str}. "
-        f"Prompt: «{prompt[:60]}{'…' if len(prompt) > 60 else ''}»"
-    )
+    repeat_label = t(f"timer_repeat_{repeat}", lang) if repeat else ""
+    repeat_str = t("timer_repeats", lang, label=repeat_label) if repeat_label else ""
+    return t("timer_set", lang,
+             timer_id=timer_id, delay=delay_str, local_time=local_str,
+             repeat_str=repeat_str,
+             prompt_preview=prompt[:60] + ('…' if len(prompt) > 60 else ''))
 
 
-def avbryt_timer(timer_id: str) -> str:
+def avbryt_timer(timer_id: str, lang: str = "nb") -> str:
     if timer_id not in _timers:
-        return f"Ingen aktiv timer med ID '{timer_id}'."
+        return t("timer_not_found", lang, timer_id=timer_id)
     info = _timers.pop(timer_id)
     info["task"].cancel()
     _persist_repeating()
     _log("timer_cancelled", source="kare", tool="avbryt_timer", timer_id=timer_id,
          result_preview=f"Timer {timer_id} avbrutt", duration_ms=0)
-    repeat_str = f" (var {_REPEAT_LABELS[info['repeat']]})" if info.get("repeat") else ""
-    return f"Timer {timer_id} avbrutt{repeat_str}."
+    repeat_label = t(f"timer_repeat_{info['repeat']}", lang) if info.get("repeat") else ""
+    repeat_str = t("timer_repeat_was", lang, label=repeat_label) if repeat_label else ""
+    return t("timer_cancelled", lang, timer_id=timer_id, repeat_str=repeat_str)
 
 
-def liste_timere() -> str:
+def liste_timere(lang: str = "nb") -> str:
     if not _timers:
-        return "Ingen aktive timere."
+        return t("timer_none_active", lang)
     now = datetime.now(timezone.utc).timestamp()
     engang   = [(k, v) for k, v in _timers.items() if not v.get("repeat")]
     gjentatt = [(k, v) for k, v in _timers.items() if v.get("repeat")]
 
-    lines = [f"Aktive timere ({len(_timers)}):"]
+    lines = [t("timer_list_header", lang, count=len(_timers))]
     if gjentatt:
-        lines.append("  [Gjentakende]")
+        lines.append(t("timer_repeating_header", lang))
         for _, info in gjentatt:
             remaining = max(0, int(info["fires_at_ts"] - now))
             p_short = info["prompt"][:50] + ("…" if len(info["prompt"]) > 50 else "")
             fire_local = datetime.fromtimestamp(info["fires_at_ts"]).strftime("%d.%m %H:%M")
+            rep_label = t(f"timer_repeat_{info['repeat']}", lang)
             lines.append(
-                f"    [{info['id']}] {_REPEAT_LABELS[info['repeat']]} — "
+                f"    [{info['id']}] {rep_label} — "
                 f"neste om {_fmt_delay(remaining)} ({fire_local}): «{p_short}»"
             )
     if engang:
-        lines.append("  [Engang]")
+        lines.append(t("timer_one_time_header", lang))
         for _, info in engang:
             remaining = max(0, int(info["fires_at_ts"] - now))
             p_short = info["prompt"][:50] + ("…" if len(info["prompt"]) > 50 else "")

@@ -1,5 +1,5 @@
 """
-Pettersmarts verktøymotor – delt mellom agents-server og utviklingsmøtet.
+Mechanics verktøymotor – delt mellom agents-server og utviklingsmøtet.
 
 Verktøy:
   les_fil          – les filer under /kaare (read-only), støtter linjebulk
@@ -15,10 +15,10 @@ Verktøy:
   søk_argus   – semantisk søk i systemlogg (Qdrant BGE-M3)
   ssh_kommando     – les-bare kommandoer på ainuc/dnspi/proxypi
   local_kommando   – les-bare kommandoer lokalt på AI-pc
-  hukommelse       – Pettersmarts personlige minne (les/skriv/slett_gammel)
+  hukommelse       – Mechanics personlige minne (les/skriv/slett_gammel)
 
 Rolle-baserte verktøysett:
-  PETTERSMART_TOOLS  – alle verktøy (standard / teknisk assistent)
+  MECHANIC_TOOLS  – alle verktøy (standard / teknisk assistent)
   UNDERSØKER_TOOLS   – undersøkelsesfokus: logger, tjenester, kode, SSH
   KRITIKER_TOOLS     – bare hukommelse (ingen undersøkelsesverktøy — bare kritiske spørsmål)
   ANALYTIKER_TOOLS   – fillesing + hukommelse (møterapport-syntese)
@@ -49,18 +49,18 @@ from kaare_core.tools.shared_tools import (
     git_log as _shared_git_log,
 )
 
-log = logging.getLogger("pettersmart.tools")
+log = logging.getLogger("mechanic.tools")
 
-PETTERSMART_URL   = _llm("pettersmart")["base_url"] + "/api/chat"
-PETTERSMART_MODEL = _cfg_model("miss_kare")
+MECHANIC_URL   = _llm("mechanic")["base_url"] + "/api/chat"
+MECHANIC_MODEL = _cfg_model("miss_kare")
 
 MAX_TOOL_ROUNDS = 10
-TIMEOUT         = _llm("pettersmart")["timeout"]
-MAX_TOKENS      = _llm("pettersmart")["options"]["num_predict"]
-NUM_CTX         = _llm("pettersmart")["options"]["num_ctx"]
+TIMEOUT         = _llm("mechanic")["timeout"]
+MAX_TOKENS      = _llm("mechanic")["options"]["num_predict"]
+NUM_CTX         = _llm("mechanic")["options"]["num_ctx"]
 _MSG_WINDOW     = 10  # tool-meldinger som beholdes verbatim (eldre maskeres)
 
-MEMORY_PATH   = Path("/kaare/state/pettersmart_memory.md")
+MEMORY_PATH   = Path("/kaare/state/mechanic_memory.md")
 _SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
 
 
@@ -80,7 +80,7 @@ def _fmt_ts_local(ts_raw: str) -> str:
 
 # ── Tool-definisjoner ─────────────────────────────────────────────────────────
 
-PETTERSMART_TOOLS = [
+MECHANIC_TOOLS = [
     {
         "type": "function",
         "function": {
@@ -227,7 +227,7 @@ PETTERSMART_TOOLS = [
         "function": {
             "name": "hukommelse",
             "description": (
-                "Pettersmarts personlige minne — ting han har lært om systemet og seg selv. "
+                "Mechanics personlige minne — ting han har lært om systemet og seg selv. "
                 "Bruk 'skriv' for å lagre ny lærdom (datostemplet automatisk). "
                 "Bruk 'les' for å hente alt du har lagret. "
                 "Bruk 'slett_gammel' for å rydde ut oppføringer eldre enn N dager."
@@ -253,7 +253,7 @@ PETTERSMART_TOOLS = [
 # ── Rolle-baserte verktøysett ─────────────────────────────────────────────────
 
 def _tools_by_name(*names: str) -> list:
-    return [t for t in PETTERSMART_TOOLS if t["function"]["name"] in names]
+    return [t for t in MECHANIC_TOOLS if t["function"]["name"] in names]
 
 UNDERSØKER_TOOLS = _tools_by_name(
     "utforsk", "inspiser", "søk_argus", "shell", "hukommelse",
@@ -476,8 +476,8 @@ async def execute_tool(name: str, arguments: dict) -> str:
 
 async def ask_with_tools(
     messages: list[dict],
-    url: str = PETTERSMART_URL,
-    model: str = PETTERSMART_MODEL,
+    url: str = MECHANIC_URL,
+    model: str = MECHANIC_MODEL,
     max_tool_rounds: int = MAX_TOOL_ROUNDS,
     timeout: float = TIMEOUT,
     max_tokens: int = MAX_TOKENS,
@@ -485,7 +485,7 @@ async def ask_with_tools(
     tools: list | None = None,
 ) -> str:
     """
-    Kjører en tool-using samtale med Pettersmart.
+    Kjører en tool-using samtale med Mechanic.
     messages: komplett meldingsliste inkl. system-melding.
     job_state: shared dict from _jobs[job_id] — checked between rounds for injected comments.
     Returnerer alltid en streng.
@@ -494,8 +494,8 @@ async def ask_with_tools(
         active_tools = tools
     else:
         active_tools = [
-            t for t in PETTERSMART_TOOLS
-            if is_agent_tool_enabled("pettersmart", t["function"]["name"], default=True)
+            t for t in MECHANIC_TOOLS
+            if is_agent_tool_enabled("mechanic", t["function"]["name"], default=True)
         ]
     payload_base = {
         "model": model,
@@ -528,20 +528,20 @@ async def ask_with_tools(
     for round_num in range(max_tool_rounds + 1):
         payload = {**payload_base, "messages": _build_messages()}
         try:
-            async with lock_11445("pettersmart", max_wait=300):
+            async with lock_11445("mechanic", max_wait=300):
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     r = await client.post(
                         url, json=payload,
-                        headers={"x-kaare-source": "pettersmart"},
+                        headers={"x-kaare-source": "mechanic"},
                     )
                     r.raise_for_status()
                     resp = r.json()
         except LockTimeout as e:
-            log.error("Pettersmart: %s", e)
-            return "[Pettersmart: modellen er opptatt (lock timeout 300s) — prøv igjen om litt]"
+            log.error("Mechanic: %s", e)
+            return "[Mechanic: modellen er opptatt (lock timeout 300s) — prøv igjen om litt]"
         except Exception as e:
-            log.error("Pettersmart LLM-kall feilet (runde %d): %s", round_num, e)
-            return f"[Pettersmart utilgjengelig: {e}]"
+            log.error("Mechanic LLM-kall feilet (runde %d): %s", round_num, e)
+            return f"[Mechanic utilgjengelig: {e}]"
 
         msg        = resp.get("message", {})
         tool_calls = msg.get("tool_calls", [])
@@ -568,7 +568,7 @@ async def ask_with_tools(
             # Loop-deteksjon: ignorer identiske gjentakelser
             sig = f"{tool_name}:{json.dumps(args, sort_keys=True)}"
             if sig in _seen_calls:
-                log.warning("[Pettersmart loop] Duplikat ignorert: %s", sig[:80])
+                log.warning("[Mechanic loop] Duplikat ignorert: %s", sig[:80])
                 _history.append({
                     "role": "tool",
                     "content": (
@@ -580,16 +580,16 @@ async def ask_with_tools(
                 continue
             _seen_calls.add(sig)
 
-            log.info("[Pettersmart tool] %s(%s)", tool_name, str(args)[:80])
+            log.info("[Mechanic tool] %s(%s)", tool_name, str(args)[:80])
             result = await execute_tool(tool_name, args)
-            log.info("[Pettersmart result] %s", result[:100])
+            log.info("[Mechanic result] %s", result[:100])
             _history.append({"role": "tool", "content": result, "name": tool_name})
 
         # Check for injected user comment between rounds
         if job_state is not None:
             injected = job_state.pop("injected", None)
             if injected:
-                log.info("[Pettersmart] injecting user comment: %s", str(injected)[:60])
+                log.info("[Mechanic] injecting user comment: %s", str(injected)[:60])
                 _history.append({"role": "user", "content": f"[User comment mid-task]: {injected}"})
 
     return "[Ingen respons]"

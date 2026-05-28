@@ -3,15 +3,15 @@
 Kåre utviklingsmøte – kjøres kl. 05:30 via systemd timer.
 
 Deltakere:
-  - Pettersmart (9B, 5060 Ti port 11445) – teknisk graving med verktøy
+  - Mechanic (9B, 5060 Ti port 11445) – teknisk graving med verktøy
   - Kåre (27B, Blackwell GPU via proxy port 11441) – systemperspektiv med verktøy
   - Møteleder (27B, deler GPU-proxy port 11441) – regissør og prioriterer
   - Online (405B cloud) – ekstern vurdering
 
 Flyt:
-  1. Undersøkelsesfase: Pettersmart + Kåre graver uavhengig med sine verktøy
+  1. Undersøkelsesfase: Mechanic + Kåre graver uavhengig med sine verktøy
   2. Møteleder leser begge rapporter og setter konkret agenda
-  3. Diskusjonsrunder: Pettersmart → Kåre → Møteleder styrer
+  3. Diskusjonsrunder: Mechanic → Kåre → Møteleder styrer
   4. Online + oppsummering
 
 Utviklingsmøtet handler IKKE om refleksjonsmøtet – det er et eget møte med
@@ -35,15 +35,15 @@ import yaml
 
 sys.path.insert(0, "/kaare")
 from kaare_core.config import get_model as _cfg_model, get_llm_config as _llm, get_tool_permissions as _get_tool_perms
-from kaare_core.agents.pettersmart.tools import (
-    ask_with_tools as _pettersmart_ask,
-    PETTERSMART_URL,
-    PETTERSMART_MODEL,
-    PETTERSMART_TOOLS,
+from kaare_core.agents.mechanic.tools import (
+    ask_with_tools as _mechanic_ask,
+    MECHANIC_URL,
+    MECHANIC_MODEL,
+    MECHANIC_TOOLS,
     UNDERSØKER_TOOLS,
     KRITIKER_TOOLS,
-    MEMORY_PATH as _PETTERSMART_MEMORY_PATH,
-    execute_tool as _pettersmart_execute_tool,
+    MEMORY_PATH as _MECHANIC_MEMORY_PATH,
+    execute_tool as _mechanic_execute_tool,
 )
 from kaare_core.tools.executor import execute_tool as _kaare_execute_tool
 from kaare_core.tools.definitions import KAARE_TOOLS
@@ -53,31 +53,31 @@ from adapters.llm_adapter import _parse_ollama_tool_calls, _normalise_messages_f
 def _build_kare_dev_tools() -> list[dict]:
     """
     Kåre's tool set for the dev meeting:
-    All Pettersmart tools except sandkasse, merged with Kåre-specific tools
-    that aren't already covered (by name) in Pettersmart's set.
+    All Mechanic tools except sandkasse, merged with Kåre-specific tools
+    that aren't already covered (by name) in Mechanic's set.
     """
-    pettersmart_without_sandbox = [
-        t for t in PETTERSMART_TOOLS
+    mechanic_without_sandbox = [
+        t for t in MECHANIC_TOOLS
         if t["function"]["name"] != "sandkasse"
     ]
-    pettersmart_names = {t["function"]["name"] for t in pettersmart_without_sandbox}
+    mechanic_names = {t["function"]["name"] for t in mechanic_without_sandbox}
 
-    # Kåre-specific tools that don't overlap with Pettersmart's names
+    # Kåre-specific tools that don't overlap with Mechanic's names
     kare_only = [
         t for t in KAARE_TOOLS
-        if t["function"]["name"] not in pettersmart_names
+        if t["function"]["name"] not in mechanic_names
     ]
-    return pettersmart_without_sandbox + kare_only
+    return mechanic_without_sandbox + kare_only
 
 
 async def _kare_dev_execute_tool(name: str, args: dict) -> str:
     """
-    Hybrid executor: Pettersmart's executor handles investigation tools,
+    Hybrid executor: Mechanic's executor handles investigation tools,
     Kåre's executor handles his own domain tools.
     """
-    pettersmart_names = {t["function"]["name"] for t in PETTERSMART_TOOLS}
-    if name in pettersmart_names:
-        return await _pettersmart_execute_tool(name, args)
+    mechanic_names = {t["function"]["name"] for t in MECHANIC_TOOLS}
+    if name in mechanic_names:
+        return await _mechanic_execute_tool(name, args)
     return await _kaare_execute_tool(name, args)
 
 logging.basicConfig(
@@ -110,7 +110,7 @@ CLOUD_MODEL = _cfg_model("cloud")
 TIMEOUT_SECS      = 300
 LEDER_TIMEOUT     = 120
 KARE_WINDOW       = 8
-PETTERSMART_WINDOW = 6
+MECHANIC_WINDOW = 6
 
 _SETTINGS_PATH      = Path("/kaare/configs/settings.yaml")
 _LEDER_PRESET_DIR   = Path("/kaare/configs/meeting_leder")
@@ -220,35 +220,35 @@ def _strip_think(text: str) -> str:
 KARE_CORE     = _load("/kaare/configs/personality_core.md")
 KARE_BEHAVIOR = _load("/kaare/configs/personality_behavior.md")
 
-_PETTERSMART_DIR = Path(__file__).parent / "kaare_core" / "agents" / "pettersmart"
+_MECHANIC_DIR = Path(__file__).parent / "kaare_core" / "agents" / "mechanic"
 
-def _load_pettersmart_pers(role: str = "standard") -> str:
+def _load_mechanic_pers(role: str = "standard") -> str:
     if role == "egendefinert":
-        custom = Path("/kaare/configs/meeting_role_pettersmart_custom.md")
+        custom = Path("/kaare/configs/meeting_role_mechanic_custom.md")
         if custom.exists():
             return custom.read_text(encoding="utf-8")
     if role and role not in ("standard", "egendefinert"):
-        p = _PETTERSMART_DIR / f"personlighet_{role}.md"
+        p = _MECHANIC_DIR / f"personlighet_{role}.md"
         if p.exists():
             return p.read_text(encoding="utf-8")
-    p = _PETTERSMART_DIR / "personlighet.md"
-    return p.read_text(encoding="utf-8") if p.exists() else "Du er Pettersmart – praktisk problemløser."
+    p = _MECHANIC_DIR / "personlighet.md"
+    return p.read_text(encoding="utf-8") if p.exists() else "Du er Mechanic – praktisk problemløser."
 
 
-def _get_pettersmart_meeting_role() -> str:
+def _get_mechanic_meeting_role() -> str:
     try:
         data = yaml.safe_load(Path("/kaare/configs/settings.yaml").read_text(encoding="utf-8")) or {}
-        return data.get("meeting_roles", {}).get("pettersmart", "undersøker")
+        return data.get("meeting_roles", {}).get("mechanic", "undersøker")
     except Exception:
         return "undersøker"
 
 
-PETTERSMART_PERS = _load_pettersmart_pers(_get_pettersmart_meeting_role())
+MECHANIC_PERS = _load_mechanic_pers(_get_mechanic_meeting_role())
 
 
-def _load_pettersmart_memory() -> str:
+def _load_mechanic_memory() -> str:
     try:
-        content = _PETTERSMART_MEMORY_PATH.read_text(encoding="utf-8").strip()
+        content = _MECHANIC_MEMORY_PATH.read_text(encoding="utf-8").strip()
         return content if content else ""
     except Exception:
         return ""
@@ -370,7 +370,7 @@ async def _run_health_check() -> str:
 
 
 # ── Kåres verktøy i møtet ─────────────────────────────────────────────────────
-# All Pettersmart tools (except sandkasse) + Kåre's own domain tools.
+# All Mechanic tools (except sandkasse) + Kåre's own domain tools.
 
 _KARE_MEETING_TOOLS = _build_kare_dev_tools()
 
@@ -539,9 +539,9 @@ async def _ask_kare(messages: list[dict]) -> str:
         return f"[Kåre utilgjengelig: {e}]"
 
 
-# ── Pettersmart ───────────────────────────────────────────────────────────────
-async def _pettersmart_investigate(system_prompt: str) -> str:
-    """Pettersmart i undersøker-modus — graver i systemet med fokuserte verktøy."""
+# ── Mechanic ───────────────────────────────────────────────────────────────
+async def _mechanic_investigate(system_prompt: str) -> str:
+    """Mechanic i undersøker-modus — graver i systemet med fokuserte verktøy."""
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": (
@@ -552,18 +552,18 @@ async def _pettersmart_investigate(system_prompt: str) -> str:
             "Avslutt med hukommelse(action='skriv') for å lagre 1–2 viktige tekniske observasjoner."
         )},
     ]
-    return await _pettersmart_ask(
+    return await _mechanic_ask(
         messages=messages,
-        url=PETTERSMART_URL,
-        model=PETTERSMART_MODEL,
+        url=MECHANIC_URL,
+        model=MECHANIC_MODEL,
         tools=UNDERSØKER_TOOLS,
     )
 
 
-async def _pettersmart_kritiker(kare_funn: str, pettersmart_memory: str) -> str:
-    """Pettersmart i kritiker-modus — stiller kritiske spørsmål til Kåres funn."""
-    pers = _load_pettersmart_pers("kritiker")
-    mem_block = f"\n\n--- DIN HUKOMMELSE ---\n{pettersmart_memory}" if pettersmart_memory else ""
+async def _mechanic_kritiker(kare_funn: str, mechanic_memory: str) -> str:
+    """Mechanic i kritiker-modus — stiller kritiske spørsmål til Kåres funn."""
+    pers = _load_mechanic_pers("kritiker")
+    mem_block = f"\n\n--- DIN HUKOMMELSE ---\n{mechanic_memory}" if mechanic_memory else ""
     messages = [
         {"role": "system", "content": f"/no_think\n{pers}{mem_block}"},
         {"role": "user", "content": (
@@ -573,20 +573,20 @@ async def _pettersmart_kritiker(kare_funn: str, pettersmart_memory: str) -> str:
             "Gi ingen svar eller løsninger — bare spørsmål."
         )},
     ]
-    return await _pettersmart_ask(
+    return await _mechanic_ask(
         messages=messages,
-        url=PETTERSMART_URL,
-        model=PETTERSMART_MODEL,
+        url=MECHANIC_URL,
+        model=MECHANIC_MODEL,
         tools=KRITIKER_TOOLS,
     )
 
 
-async def _ask_pettersmart(messages: list[dict]) -> str:
-    """Pettersmart i diskusjonsfasen – kan bruke undersøkelsesverktøy."""
-    return await _pettersmart_ask(
-        messages=_trim(messages, PETTERSMART_WINDOW),
-        url=PETTERSMART_URL,
-        model=PETTERSMART_MODEL,
+async def _ask_mechanic(messages: list[dict]) -> str:
+    """Mechanic i diskusjonsfasen – kan bruke undersøkelsesverktøy."""
+    return await _mechanic_ask(
+        messages=_trim(messages, MECHANIC_WINDOW),
+        url=MECHANIC_URL,
+        model=MECHANIC_MODEL,
         tools=UNDERSØKER_TOOLS,
     )
 
@@ -649,10 +649,10 @@ def _build_leder_system() -> str:
     hostname = socket.gethostname()
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     lang = _get_kare_language()
-    ps_role = _get_pettersmart_meeting_role()
+    ps_role = _get_mechanic_meeting_role()
     ps_desc = _PS_ROLE_DESC.get(lang, _PS_ROLE_DESC["nb"]).get(ps_role, ps_role)
 
-    ps_perms = _get_tool_perms().get("agent_tools", {}).get("pettersmart", {})
+    ps_perms = _get_tool_perms().get("agent_tools", {}).get("mechanic", {})
     disabled_ps = [t for t, on in ps_perms.items() if on is False]
     tool_note = _TOOL_NOTE_TMPL.get(lang, _TOOL_NOTE_TMPL["nb"]).format(tools=", ".join(disabled_ps)) if disabled_ps else ""
 
@@ -743,10 +743,10 @@ async def _ask_leder(messages: list[dict], with_tools: bool = False) -> str:
 
 async def _leder_sett_agenda(
     kare_funn: str,
-    pettersmart_funn: str,
+    mechanic_funn: str,
     group: int,
     prev_summary: str = "",
-    pettersmart_kritikk: str = "",
+    mechanic_kritikk: str = "",
     health_summary: str = "",
 ) -> str:
     """Møteleder leser begge rapporter + kritikk og setter konkret agenda for diskusjonsrunden."""
@@ -755,8 +755,8 @@ async def _leder_sett_agenda(
         kontekst = f"Forrige gruppe oppsummert: {prev_summary}\n\n"
 
     kritikk_block = (
-        f"**Pettersmarts kritiske spørsmål til Kåres funn:**\n{pettersmart_kritikk[:800]}\n\n"
-        if pettersmart_kritikk else ""
+        f"**Mechanics kritiske spørsmål til Kåres funn:**\n{mechanic_kritikk[:800]}\n\n"
+        if mechanic_kritikk else ""
     )
 
     health_block = (
@@ -771,11 +771,11 @@ async def _leder_sett_agenda(
             f"{kontekst}"
             f"Undersøkelsesfasen er ferdig. Her er funnene:\n\n"
             f"**Kåres funn (interaksjoner og systemhendelser):**\n{kare_funn[:1500]}\n\n"
-            f"**Pettersmarts funn (kode, logger, tjenester):**\n{pettersmart_funn[:1500]}\n\n"
+            f"**Mechanics funn (kode, logger, tjenester):**\n{mechanic_funn[:1500]}\n\n"
             f"{kritikk_block}"
             f"Åpne gruppe {group} av møtet. Velg 1-2 konkrete temaer å fokusere på basert på funnene. "
             f"Vær spesifikk: pek på filer, tjenester eller mønstre de skal gå dypere inn i. "
-            f"Be Pettersmart starte undersøkelsen."
+            f"Be Mechanic starte undersøkelsen."
         )},
     ]
     return await _ask_leder(messages, with_tools=False)
@@ -794,16 +794,16 @@ async def _leder_styr(conversation_tail: str, round_num: int) -> str:
     return await _ask_leder(messages, with_tools=False)
 
 
-async def _leder_presenter_admin_input(admin_input: str, kare_funn: str, pettersmart_funn: str) -> str:
+async def _leder_presenter_admin_input(admin_input: str, kare_funn: str, mechanic_funn: str) -> str:
     """Møteleder løfter admin-innspill som første sak etter undersøkelsesfasen."""
     messages = [
         {"role": "system", "content": _build_leder_system()},
         {"role": "user", "content": (
             f"Undersøkelsesfasen er ferdig. Funnene er:\n\n"
-            f"Kåre: {kare_funn[:800]}\n\nPettersmart: {pettersmart_funn[:800]}\n\n"
+            f"Kåre: {kare_funn[:800]}\n\nMechanic: {mechanic_funn[:800]}\n\n"
             f"Admin har sendt inn dette innspillet til møtet:\n\"{admin_input}\"\n\n"
             "Åpne møtet med å presentere admin sitt innspill. Koble det gjerne til funnene hvis relevant. "
-            "Be Pettersmart starte med sin vurdering. Maks 3 setninger."
+            "Be Mechanic starte med sin vurdering. Maks 3 setninger."
         )},
     ]
     return await _ask_leder(messages, with_tools=False)
@@ -840,7 +840,7 @@ async def _ask_cloud(conversation: str, is_final: bool) -> str:
     )
     system = (
         "Du er en ekstern teknisk ekspert som kommenterer et utviklingsmøte mellom "
-        f"Kåre (hjemme-AI) og Pettersmart (teknisk problemløser). {instruction} "
+        f"Kåre (hjemme-AI) og Mechanic (teknisk problemløser). {instruction} "
         "Vær direkte. Ikke presenter deg selv."
     )
     try:
@@ -869,7 +869,7 @@ async def _ask_cloud(conversation: str, is_final: bool) -> str:
 def _write_report(
     date_str: str,
     kare_funn: str,
-    pettersmart_funn: str,
+    mechanic_funn: str,
     exchanges: list[tuple[str, str]],
 ) -> Path:
     DEV_DIR.mkdir(parents=True, exist_ok=True)
@@ -886,7 +886,7 @@ def _write_report(
         "",
         "## Deltakere",
         "- Kåre",
-        "- Pettersmart",
+        "- Mechanic",
         "- Møteleder",
         "- Online",
         "",
@@ -895,8 +895,8 @@ def _write_report(
         "### Kåres funn",
         kare_funn,
         "",
-        "### Pettersmarts funn",
-        pettersmart_funn,
+        "### Mechanics funn",
+        mechanic_funn,
         "",
     ]
     if forslag:
@@ -957,9 +957,9 @@ async def main() -> None:
     _memory_ctx = _get_memory_context()
     _memory_block = f"\n\n{_memory_ctx}\n" if _memory_ctx else ""
 
-    # Pettersmarts personlige minne
-    _pettersmart_mem = _load_pettersmart_memory()
-    _pettersmart_mem_block = f"\n\n--- PETTERSMARTS HUKOMMELSE ---\n{_pettersmart_mem}\n" if _pettersmart_mem else ""
+    # Mechanics personlige minne
+    _mechanic_mem = _load_mechanic_memory()
+    _mechanic_mem_block = f"\n\n--- MECHANICS HUKOMMELSE ---\n{_mechanic_mem}\n" if _mechanic_mem else ""
 
     # ── Systemsjekk ───────────────────────────────────────────────────────────
     log.info("=== Systemsjekk ===")
@@ -986,30 +986,30 @@ async def main() -> None:
         f"{_time_anchor}"
         f"{_health_block}"
         f"{_memory_block}"
-        "Du er i et teknisk møte med Pettersmart. Evaluer forslagene kritisk fra ditt perspektiv.\n"
+        "Du er i et teknisk møte med Mechanic. Evaluer forslagene kritisk fra ditt perspektiv.\n"
         "Du kjenner systemet fra innsiden – hva stemmer, hva mangler, hva er viktigst?\n"
         "Vær direkte. Svar alltid på norsk. Maks 5 setninger per innlegg."
     )
 
-    pettersmart_investigate_system = (
-        f"{_load_pettersmart_pers('undersøker')}\n\n"
+    mechanic_investigate_system = (
+        f"{_load_mechanic_pers('undersøker')}\n\n"
         "--- UNDERSØKELSESFASE: UTVIKLINGSMØTE ---\n"
         f"{_time_anchor}"
         f"{_health_block}"
         f"{_memory_block}"
-        f"{_pettersmart_mem_block}"
+        f"{_mechanic_mem_block}"
         "Din oppgave: kartlegg systemets nåværende tilstand med verktøyene dine.\n"
         "Bruk søk_argus, les_logg, git_log, sjekk_tjenester og sjekk_ressurser.\n"
         "Let etter: feil i logger, ustabile tjenester, siste kodeendringer, ressurspress.\n"
         "Bruk verktøyene – ikke gjett. Oppsummer funnene konkret."
     )
 
-    pettersmart_discuss_system = (
-        f"{_load_pettersmart_pers('standard')}\n\n"
+    mechanic_discuss_system = (
+        f"{_load_mechanic_pers('standard')}\n\n"
         "--- DISKUSJONSFASE: UTVIKLINGSMØTE ---\n"
         f"{_time_anchor}"
         f"{_memory_block}"
-        f"{_pettersmart_mem_block}"
+        f"{_mechanic_mem_block}"
         "Du er i teknisk møte med Kåre. Agenda er satt av Møteleder basert på reelle funn.\n"
         "Bruk verktøyene dine hvis du trenger mer data. Merk forslag med 'FORSLAG: ...'.\n"
         "Maks 5 setninger per innlegg. Svar alltid på norsk."
@@ -1018,42 +1018,42 @@ async def main() -> None:
     # ── Fase 1: Undersøkelse (parallelt) ─────────────────────────────────────
     log.info("=== Fase 1: Undersøkelse ===")
 
-    pettersmart_funn, kare_funn = await asyncio.gather(
-        _pettersmart_investigate(pettersmart_investigate_system),
+    mechanic_funn, kare_funn = await asyncio.gather(
+        _mechanic_investigate(mechanic_investigate_system),
         _kare_investigate(kare_investigate_system),
     )
-    log.info("[Pettersmart funn] %s", pettersmart_funn[:150])
+    log.info("[Mechanic funn] %s", mechanic_funn[:150])
     log.info("[Kåre funn] %s", kare_funn[:150])
 
     # ── Fase 1b: Kritiker-runde ───────────────────────────────────────────────
-    log.info("=== Fase 1b: Pettersmart kritiker ===")
-    pettersmart_kritikk = await _pettersmart_kritiker(kare_funn, _pettersmart_mem)
-    log.info("[Pettersmart kritikk] %s", pettersmart_kritikk[:150])
-    exchanges.append(("Pettersmart (kritiker)", pettersmart_kritikk))
+    log.info("=== Fase 1b: Mechanic kritiker ===")
+    mechanic_kritikk = await _mechanic_kritiker(kare_funn, _mechanic_mem)
+    log.info("[Mechanic kritikk] %s", mechanic_kritikk[:150])
+    exchanges.append(("Mechanic", mechanic_kritikk))
 
     # ── Fase 2: Admin-innspill (én ekstra runde hvis admin har sendt noe) ────────
     kare_messages       = [{"role": "system", "content": kare_discuss_system}]
-    pettersmart_messages = [{"role": "system", "content": pettersmart_discuss_system}]
+    mechanic_messages = [{"role": "system", "content": mechanic_discuss_system}]
 
     if _admin_topic:
         log.info("=== Admin-innspillsrunde ===")
-        admin_intro = await _leder_presenter_admin_input(_admin_topic, kare_funn, pettersmart_funn)
+        admin_intro = await _leder_presenter_admin_input(_admin_topic, kare_funn, mechanic_funn)
         exchanges.append(("Møteleder", admin_intro))
         log.info("[Møteleder admin-intro] %s", admin_intro[:120])
 
         admin_msg = f"Møteleder sier: {admin_intro}"
-        pettersmart_messages.append({"role": "user", "content": admin_msg})
+        mechanic_messages.append({"role": "user", "content": admin_msg})
         kare_messages.append({"role": "user", "content": admin_msg})
 
-        p_reply = await _ask_pettersmart(_trim(pettersmart_messages, PETTERSMART_WINDOW))
-        pettersmart_messages.append({"role": "assistant", "content": p_reply})
-        exchanges.append(("Pettersmart", p_reply))
-        log.info("[Pettersmart admin-runde] %s", p_reply[:120])
+        p_reply = await _ask_mechanic(_trim(mechanic_messages, MECHANIC_WINDOW))
+        mechanic_messages.append({"role": "assistant", "content": p_reply})
+        exchanges.append(("Mechanic", p_reply))
+        log.info("[Mechanic admin-runde] %s", p_reply[:120])
 
-        kare_messages.append({"role": "user", "content": f"Pettersmart sier:\n{p_reply}\n\nHva tenker du?"})
+        kare_messages.append({"role": "user", "content": f"Mechanic sier:\n{p_reply}\n\nHva tenker du?"})
         k_reply = await _ask_kare(kare_messages)
         kare_messages.append({"role": "assistant", "content": k_reply})
-        pettersmart_messages.append({"role": "user", "content": f"Kåre svarer:\n{k_reply}"})
+        mechanic_messages.append({"role": "user", "content": f"Kåre svarer:\n{k_reply}"})
         exchanges.append(("Kåre", k_reply))
         log.info("[Kåre admin-runde] %s", k_reply[:120])
 
@@ -1065,35 +1065,35 @@ async def main() -> None:
         log.info("=== Gruppe %d av %d ===", group, max_groups)
 
         # Møteleder setter agenda basert på undersøkelsesfunnene
-        agenda = await _leder_sett_agenda(kare_funn, pettersmart_funn, group, prev_summary, pettersmart_kritikk, _health_summary)
+        agenda = await _leder_sett_agenda(kare_funn, mechanic_funn, group, prev_summary, mechanic_kritikk, _health_summary)
         exchanges.append(("Møteleder", agenda))
         log.info("[Møteleder agenda] %s", agenda[:120])
 
         agenda_msg = f"Møteleder sier: {agenda}"
         kare_messages.append({"role": "user", "content": agenda_msg})
-        pettersmart_messages.append({"role": "user", "content": agenda_msg})
+        mechanic_messages.append({"role": "user", "content": agenda_msg})
 
         for local_round in range(ROUNDS_PER_GROUP):
             global_round += 1
             log.info("--- Runde %d/%d ---", global_round, MAX_ROUNDS)
 
-            # Pettersmart – kan bruke verktøy
+            # Mechanic – kan bruke verktøy
             p_prompt = (
                 "Din tur – undersøk det Møteleder pekte på med verktøyene dine."
                 if global_round == 1 else
                 "Din tur – grav dypere eller kom med konkrete forslag. Bruk verktøy ved behov."
             )
-            pettersmart_messages.append({"role": "user", "content": p_prompt})
-            p_reply = await _ask_pettersmart(_trim(pettersmart_messages, PETTERSMART_WINDOW))
-            pettersmart_messages.append({"role": "assistant", "content": p_reply})
-            exchanges.append(("Pettersmart", p_reply))
-            log.info("[Pettersmart] %s", p_reply[:120])
+            mechanic_messages.append({"role": "user", "content": p_prompt})
+            p_reply = await _ask_mechanic(_trim(mechanic_messages, MECHANIC_WINDOW))
+            mechanic_messages.append({"role": "assistant", "content": p_reply})
+            exchanges.append(("Mechanic", p_reply))
+            log.info("[Mechanic] %s", p_reply[:120])
 
             # Kåre – evaluerer fra sitt perspektiv
-            kare_messages.append({"role": "user", "content": f"Pettersmart sier:\n{p_reply}\n\nEvaluer dette fra ditt perspektiv."})
+            kare_messages.append({"role": "user", "content": f"Mechanic sier:\n{p_reply}\n\nEvaluer dette fra ditt perspektiv."})
             k_reply = await _ask_kare(kare_messages)
             kare_messages.append({"role": "assistant", "content": k_reply})
-            pettersmart_messages.append({"role": "user", "content": f"Kåre svarer:\n{k_reply}"})
+            mechanic_messages.append({"role": "user", "content": f"Kåre svarer:\n{k_reply}"})
             exchanges.append(("Kåre", k_reply))
             log.info("[Kåre] %s", k_reply[:120])
 
@@ -1105,7 +1105,7 @@ async def main() -> None:
                 log.info("[Møteleder styring] %s", styring[:120])
                 styring_msg = f"Møteleder sier: {styring}"
                 kare_messages.append({"role": "user", "content": styring_msg})
-                pettersmart_messages.append({"role": "user", "content": styring_msg})
+                mechanic_messages.append({"role": "user", "content": styring_msg})
 
         # Online etter gruppen
         is_final  = (group == max_groups)
@@ -1116,7 +1116,7 @@ async def main() -> None:
 
         online_msg = f"Online sier: {cloud_reply}"
         kare_messages.append({"role": "user", "content": online_msg})
-        pettersmart_messages.append({"role": "user", "content": online_msg})
+        mechanic_messages.append({"role": "user", "content": online_msg})
 
         fortsett, begrunnelse = await _leder_vurder(conv_text, group, max_groups)
         exchanges.append(("Møteleder", begrunnelse))
@@ -1127,25 +1127,25 @@ async def main() -> None:
             break
 
     # ── Oppsummering ──────────────────────────────────────────────────────────
-    log.info("--- Pettersmarts oppsummering ---")
-    pettersmart_messages.append({"role": "user", "content": (
+    log.info("--- Mechanics oppsummering ---")
+    mechanic_messages.append({"role": "user", "content": (
         "Møtet er over. Gi en punktliste med alle dine konkrete forslag – ett per linje, "
         "hvert merket med 'FORSLAG: ...'. Inkluder kun forslag du faktisk har undersøkt og bevist."
     )})
-    p_closing = await _ask_pettersmart(_trim(pettersmart_messages, PETTERSMART_WINDOW))
-    exchanges.append(("Pettersmart", p_closing))
-    log.info("[Pettersmart avslutning] %s", p_closing[:120])
+    p_closing = await _ask_mechanic(_trim(mechanic_messages, MECHANIC_WINDOW))
+    exchanges.append(("Mechanic", p_closing))
+    log.info("[Mechanic avslutning] %s", p_closing[:120])
 
     log.info("--- Kåres oppsummering ---")
     kare_messages.append({"role": "user", "content": (
-        "Møtet er over. Prioriter Pettersmarts forslag – hva er viktigst å ta videre til brukeren? "
+        "Møtet er over. Prioriter Mechanics forslag – hva er viktigst å ta videre til brukeren? "
         "Maks 5 setninger."
     )})
     k_closing = await _ask_kare(kare_messages)
     exchanges.append(("Kåre", k_closing))
     log.info("[Kåre avslutning] %s", k_closing[:120])
 
-    _write_report(date_str, kare_funn, pettersmart_funn, exchanges)
+    _write_report(date_str, kare_funn, mechanic_funn, exchanges)
     log.info("=== Utviklingsmøte ferdig – %d runder ===", global_round)
 
 

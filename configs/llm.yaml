@@ -38,7 +38,7 @@ default:
     - Frøken Library: bibliotekar og kunnskapsvokter. Bruk spør_frøken_library-verktøyet
     for faktaspørsmål.
 
-    - Pettersmart: praktisk problemløser med bredt teknisk spekter.
+    - Mechanic: praktisk problemløser med bredt teknisk spekter.
 
 
     Svarstil:
@@ -59,6 +59,7 @@ default:
     max_num_seqs: 2
 fallback:
   base_url: http://127.0.0.1:11445
+  container: ollama-miss_kare
   enabled: true
   model_role: miss_kare
   options:
@@ -68,7 +69,7 @@ fallback:
   provider: ollama
   stream: false
   think: false
-  timeout: 120.0
+  timeout: 120
 image_edit:
   api_key_env: IMAGE_EDIT_API_KEY
   base_url: https://router.huggingface.co/hf-inference/models
@@ -83,6 +84,7 @@ image_edit:
   true_cfg_scale: 5
 library:
   base_url: http://127.0.0.1:11447
+  container: ollama-agents
   enabled: true
   model_role: library
   options:
@@ -92,9 +94,10 @@ library:
   provider: ollama
   stream: false
   think: false
-  timeout: 120.0
+  timeout: 120
 miss_kare:
   base_url: http://127.0.0.1:11445
+  container: ollama-miss_kare
   enabled: true
   model_role: miss_kare
   options:
@@ -104,9 +107,10 @@ miss_kare:
   provider: ollama
   stream: false
   think: false
-  timeout: 90.0
-pettersmart:
+  timeout: 90
+mechanic:
   base_url: http://127.0.0.1:11445
+  container: ollama-miss_kare
   enabled: true
   model_role: miss_kare
   options:
@@ -116,7 +120,7 @@ pettersmart:
   provider: ollama
   stream: false
   think: false
-  timeout: 120.0
+  timeout: 120
 reason_freely:
   base_url: http://127.0.0.1:11440
   model_role: kare

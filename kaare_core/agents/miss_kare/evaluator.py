@@ -159,7 +159,7 @@ async def evaluate(
         return reply if reply and reply != "[STILLE]" else "[STILLE]"
 
     except LockTimeout:
-        log.warning("[Miss Kåre] lock timeout — Pettersmart holder modellen, hopper over evaluering")
+        log.warning("[Miss Kåre] lock timeout — Mechanic holder modellen, hopper over evaluering")
         return "[STILLE]"
     except Exception as e:
         log.warning("[Miss Kåre] evaluator feilet: %s", e)

@@ -1,3 +1,4 @@
+allow_docker_control: false
 assistant_name: "Kåre"
 language: nb
 hotword: "Kåre"

@@ -98,6 +98,7 @@ async def _process_frigate_event(payload_bytes: bytes) -> None:
     score = src.get("top_score") or src.get("score") or 0
     zones = src.get("entered_zones") or src.get("current_zones") or []
     event_id = src.get("id") or before.get("id", "")
+    has_snapshot = bool(src.get("has_snapshot") or before.get("has_snapshot", False))
 
     # Duration only available on "end" events
     start_time = before.get("start_time") or 0
@@ -153,6 +154,7 @@ async def _process_frigate_event(payload_bytes: bytes) -> None:
             "sub_label": sub_label,
             "sub_label_score": sub_label_score,
             "duration": duration,
+            "has_snapshot": has_snapshot,
         }
         asyncio.create_task(_END_EVENT_CALLBACK(event_dict))
 

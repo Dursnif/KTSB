@@ -1,5 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+
+type AnalysisEntry = {
+  ts: string;
+  camera: string;
+  display_name: string;
+  role: string;
+  label: string;
+  score: number;
+  top_score: number;
+  duration: number;
+  sub_label: string | null;
+  zones: string[];
+  event_id: string;
+  analysis: string;
+  failed: boolean;
+  has_snapshot: boolean;
+};
 
 type LabelConfig = {
   analyze: boolean;
@@ -256,6 +273,9 @@ export default function Cameras() {
         </div>
       </div>
 
+      {/* Analysis log panel */}
+      <AnalysisPanel />
+
       {/* Camera cards — 2-column grid */}
       <div style={{
         display: "grid",
@@ -277,6 +297,329 @@ export default function Cameras() {
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+function AnalysisPanel() {
+  const { t } = useTranslation();
+  const [entries, setEntries] = useState<AnalysisEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<AnalysisEntry | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const token = sessionStorage.getItem("kaare_token") ?? "";
+
+  const fetchLog = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`${API}/api/settings/cameras/_analysis_log?limit=40`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (r.ok) {
+        const d = await r.json();
+        setEntries(d.entries ?? []);
+        setSelected(prev => {
+          if (!prev) return null;
+          return (d.entries as AnalysisEntry[]).find(e => e.event_id === prev.event_id) ?? null;
+        });
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchLog(); }, []);
+
+  const handleRetry = async () => {
+    if (!selected) return;
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      const r = await fetch(`${API}/api/settings/cameras/_retry_analysis`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_id: selected.event_id,
+          camera: selected.camera,
+          label: selected.label,
+          score: selected.score,
+          top_score: selected.top_score,
+          duration: selected.duration,
+          sub_label: selected.sub_label,
+          zones: selected.zones,
+        }),
+      });
+      if (!r.ok) throw new Error(`${r.status}`);
+      const d = await r.json();
+      const updated: AnalysisEntry = { ...selected, analysis: d.analysis, failed: d.failed };
+      setSelected(updated);
+      setEntries(prev => prev.map(e => e.event_id === updated.event_id ? updated : e));
+    } catch {
+      setRetryError(t("cameras.log_retry_error"));
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  const handleThumbClick = (entry: AnalysisEntry) => {
+    if (clickTimer.current) clearTimeout(clickTimer.current);
+    clickTimer.current = setTimeout(() => {
+      setSelected(entry);
+      setRetryError(null);
+    }, 200);
+  };
+
+  const handleThumbDblClick = (entry: AnalysisEntry) => {
+    if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; }
+    if (!entry.has_snapshot) return;
+    setSelected(entry);
+    setExpanded(true);
+  };
+
+  const fmtTime = (ts: string) => {
+    try {
+      const d = new Date(ts);
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    } catch { return ts; }
+  };
+
+  const fmtDate = (ts: string) => {
+    try {
+      const d = new Date(ts);
+      return d.toLocaleDateString([], { day: "2-digit", month: "2-digit" });
+    } catch { return ""; }
+  };
+
+  const snapUrl = (eid: string) =>
+    `${API}/api/frigate_snapshot/${eid}?token=${encodeURIComponent(token)}`;
+
+  return (
+    <div style={{
+      background: "#111", border: "1px solid #222", borderRadius: 10,
+      padding: "16px 20px", marginBottom: 20,
+    }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <span style={{ color: "#aaa", fontWeight: 600, fontSize: 13 }}>{t("cameras.log_title")}</span>
+        <button
+          onClick={fetchLog}
+          disabled={loading}
+          style={{
+            background: "#1e1e1e", border: "1px solid #333", borderRadius: 6,
+            color: loading ? "#555" : "#ccc", padding: "4px 12px", fontSize: 12,
+            cursor: loading ? "not-allowed" : "pointer",
+          }}
+        >
+          {loading ? "…" : t("cameras.log_refresh")}
+        </button>
+      </div>
+
+      {entries.length === 0 && !loading && (
+        <div style={{ color: "#555", fontSize: 12 }}>{t("cameras.log_empty")}</div>
+      )}
+
+      {entries.length > 0 && (
+        <div style={{ display: "flex", gap: 14, minHeight: 360 }}>
+
+          {/* ── Left: scrollable thumbnail list ── */}
+          <div style={{
+            width: 170, flexShrink: 0,
+            overflowY: "auto", display: "flex", flexDirection: "column", gap: 8,
+            maxHeight: 480,
+          }}>
+            {entries.map(entry => {
+              const isSelected = selected?.event_id === entry.event_id;
+              return (
+                <div
+                  key={entry.event_id}
+                  onClick={() => handleThumbClick(entry)}
+                  onDoubleClick={() => handleThumbDblClick(entry)}
+                  style={{
+                    position: "relative", borderRadius: 7, overflow: "hidden",
+                    border: isSelected ? "2px solid #6366f1" : "2px solid #1e1e1e",
+                    cursor: "pointer", flexShrink: 0,
+                    transition: "border-color 0.15s",
+                  }}
+                >
+                  {/* Snapshot or placeholder */}
+                  {entry.has_snapshot ? (
+                    <img
+                      src={snapUrl(entry.event_id)}
+                      alt={entry.label}
+                      style={{ width: "100%", height: 100, objectFit: "cover", display: "block" }}
+                      draggable={false}
+                    />
+                  ) : (
+                    <div style={{
+                      width: "100%", height: 100,
+                      background: "#1a1a1a", display: "flex", alignItems: "center",
+                      justifyContent: "center", flexDirection: "column", gap: 4,
+                    }}>
+                      <span style={{ fontSize: 22 }}>🎞</span>
+                      <span style={{ color: "#444", fontSize: 10 }}>{t("cameras.log_no_snapshot")}</span>
+                    </div>
+                  )}
+
+                  {/* Face badge — top right */}
+                  {entry.sub_label && (
+                    <div style={{
+                      position: "absolute", top: 4, right: 4,
+                      background: "rgba(99,102,241,0.9)", borderRadius: 4,
+                      padding: "2px 5px", fontSize: 9, fontWeight: 700, color: "#fff",
+                      maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}>
+                      {entry.sub_label}
+                    </div>
+                  )}
+
+                  {/* Failed badge — top left */}
+                  {entry.failed && (
+                    <div style={{
+                      position: "absolute", top: 4, left: 4,
+                      background: "rgba(220,38,38,0.9)", borderRadius: 4,
+                      padding: "2px 5px", fontSize: 9, fontWeight: 700, color: "#fff",
+                    }}>
+                      {t("cameras.log_failed_label")}
+                    </div>
+                  )}
+
+                  {/* Bottom meta strip */}
+                  <div style={{
+                    background: "rgba(0,0,0,0.75)", padding: "3px 6px",
+                    display: "flex", flexDirection: "column", gap: 1,
+                  }}>
+                    <span style={{ color: "#ccc", fontSize: 10, fontWeight: 600 }}>
+                      {fmtTime(entry.ts)} · {fmtDate(entry.ts)}
+                    </span>
+                    <span style={{ color: "#888", fontSize: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {entry.display_name || entry.camera}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── Right: detail panel ── */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
+            {!selected ? (
+              <div style={{
+                flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#333", fontSize: 13,
+              }}>
+                ←
+              </div>
+            ) : (
+              <>
+                {/* Metadata box */}
+                <div style={{
+                  background: "#0e0e0e", border: "1px solid #1e1e1e", borderRadius: 8, padding: "12px 14px",
+                }}>
+                  <div style={{ color: "#555", fontSize: 10, fontWeight: 600, marginBottom: 8, letterSpacing: "0.05em" }}>
+                    {t("cameras.log_meta_camera").toUpperCase()}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 12px" }}>
+                    {[
+                      [t("cameras.log_meta_camera"), selected.display_name || selected.camera],
+                      [t("cameras.log_meta_time"), `${fmtDate(selected.ts)} ${fmtTime(selected.ts)}`],
+                      [t("cameras.log_meta_label"), selected.label],
+                      [t("cameras.log_meta_score"), `${Math.round(selected.top_score * 100)}%`],
+                      ...(selected.sub_label ? [[t("cameras.log_meta_face"), selected.sub_label]] : []),
+                      ...(selected.zones?.length ? [[t("cameras.log_meta_zones"), selected.zones.join(", ")]] : []),
+                      ...(selected.duration > 0 ? [[t("cameras.log_meta_duration"), `${selected.duration}s`]] : []),
+                    ].map(([label, value]) => (
+                      <div key={label as string} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <span style={{ color: "#555", fontSize: 10 }}>{label}</span>
+                        <span style={{ color: "#ccc", fontSize: 12, fontWeight: 500 }}>{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Analysis text box */}
+                <div style={{
+                  background: "#0e0e0e", border: "1px solid #1e1e1e", borderRadius: 8, padding: "12px 14px",
+                  flex: 1,
+                }}>
+                  <div style={{ color: "#555", fontSize: 10, fontWeight: 600, marginBottom: 8, letterSpacing: "0.05em" }}>
+                    ANALYSE
+                  </div>
+                  {selected.failed ? (
+                    <span style={{ color: "#f87171", fontSize: 13 }}>{t("cameras.log_failed_text")}</span>
+                  ) : (
+                    <p style={{ color: "#ccc", fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+                      {selected.analysis}
+                    </p>
+                  )}
+                </div>
+
+                {/* Retry button — only when failed */}
+                {selected.failed && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <button
+                      onClick={handleRetry}
+                      disabled={retrying}
+                      style={{
+                        background: "#6366f1", border: "none", borderRadius: 7, color: "#fff",
+                        padding: "7px 18px", fontSize: 12, fontWeight: 600,
+                        cursor: retrying ? "not-allowed" : "pointer",
+                        opacity: retrying ? 0.7 : 1,
+                      }}
+                    >
+                      {retrying ? t("cameras.log_retrying") : t("cameras.log_retry")}
+                    </button>
+                    {retryError && (
+                      <span style={{ color: "#f87171", fontSize: 12 }}>{retryError}</span>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Expand modal (double-click) ── */}
+      {expanded && selected?.has_snapshot && (
+        <div
+          onClick={() => setExpanded(false)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 9999,
+            background: "rgba(0,0,0,0.88)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "zoom-out",
+          }}
+        >
+          <img
+            src={snapUrl(selected.event_id)}
+            alt={selected.label}
+            style={{
+              maxWidth: "min(90vw, 1200px)",
+              maxHeight: "85vh",
+              objectFit: "contain",
+              borderRadius: 8,
+              boxShadow: "0 0 60px rgba(0,0,0,0.8)",
+            }}
+            draggable={false}
+            onClick={e => e.stopPropagation()}
+          />
+          <button
+            onClick={() => setExpanded(false)}
+            style={{
+              position: "fixed", top: 20, right: 24,
+              background: "rgba(30,30,30,0.9)", border: "1px solid #444",
+              borderRadius: 6, color: "#ccc", padding: "4px 12px",
+              fontSize: 14, cursor: "pointer",
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 }

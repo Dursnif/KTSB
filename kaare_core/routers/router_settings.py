@@ -29,13 +29,13 @@ _LEDER_PRESET_DIR     = Path("/kaare/configs/meeting_leder")
 _CAPABILITY_MAP_PATH  = Path("/kaare/capability_map.yaml")
 _PERSONALITY_CORE_CUSTOM_PATH   = Path("/kaare/configs/personality_core_custom.md")
 _PERSONALITY_CORE_STANDARD_PATH = Path("/kaare/configs/personality_core.md")
-_MEETING_ROLE_PS_CUSTOM = Path("/kaare/configs/meeting_role_pettersmart_custom.md")
+_MEETING_ROLE_PS_CUSTOM = Path("/kaare/configs/meeting_role_mechanic_custom.md")
 _MEETING_ROLE_MK_CUSTOM = Path("/kaare/configs/meeting_role_miss_kare_custom.md")
-_PS_AGENT_DIR = Path("/kaare/kaare_core/agents/pettersmart")
+_PS_AGENT_DIR = Path("/kaare/kaare_core/agents/mechanic")
 _MK_AGENT_DIR = Path("/kaare/kaare_core/agents/miss_kare")
 
-_EDITABLE_LLM_ROLES   = {"default", "miss_kare", "pettersmart", "library", "fallback", "cloud", "image_edit"}
-_AGENT_TOGGLEABLE     = {"miss_kare", "pettersmart", "library", "fallback", "cloud", "image_edit"}
+_EDITABLE_LLM_ROLES   = {"default", "miss_kare", "mechanic", "library", "fallback", "cloud", "image_edit"}
+_AGENT_TOGGLEABLE     = {"miss_kare", "mechanic", "library", "fallback", "cloud", "image_edit"}
 _OLLAMA_OPTION_KEYS   = {"num_ctx", "num_predict", "temperature", "presence_penalty", "top_k", "top_p"}
 _CLOUD_OPTION_KEYS    = {"temperature", "top_p", "max_tokens"}
 _IMAGE_OPTION_KEYS    = {"num_inference_steps", "guidance_scale", "true_cfg_scale", "response_format", "enabled"}
@@ -56,6 +56,70 @@ _PERSONALITY_CORE_BY_LANG = {
     "en": Path("/kaare/configs/personality_core_en.md"),
     "de": Path("/kaare/configs/personality_core_de.md"),
 }
+
+# In-memory warmup state per role (reset on restart, which is acceptable)
+_warmup_status: dict[str, dict] = {}
+_warmup_tasks: dict[str, "asyncio.Task[None]"] = {}
+
+
+async def _run_ollama_warmup(role: str, base_url: str, model: str, num_ctx: int) -> None:
+    """Load an Ollama model into VRAM after a config change or pull."""
+    _warmup_status[role] = {"status": "waiting", "model": model}
+    ready = False
+    for _ in range(40):  # max 120 s (40 × 3 s)
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as c:
+                r = await c.get(f"{base_url}/api/tags")
+                if r.status_code == 200:
+                    ready = True
+                    break
+        except Exception:
+            pass
+        await asyncio.sleep(3)
+    if not ready:
+        _warmup_status[role] = {"status": "error", "model": model}
+        return
+    _warmup_status[role] = {"status": "loading", "model": model}
+    try:
+        async with httpx.AsyncClient(timeout=300.0) as c:
+            r = await c.post(f"{base_url}/api/generate", json={
+                "model": model,
+                "prompt": "",
+                "keep_alive": -1,
+                "stream": False,
+                "options": {"num_ctx": num_ctx, "num_predict": 1},
+            })
+            r.raise_for_status()
+        # Check whether model actually loaded into VRAM or fell back to CPU
+        vram_bytes = await _get_model_vram(base_url, model)
+        if vram_bytes == 0:
+            _warmup_status[role] = {"status": "warning_cpu", "model": model, "vram_bytes": 0}
+        else:
+            _warmup_status[role] = {"status": "done", "model": model, "vram_bytes": vram_bytes}
+    except Exception as e:
+        _warmup_status[role] = {"status": "error", "model": model, "detail": str(e)[:120]}
+
+
+async def _get_model_vram(base_url: str, model: str) -> int:
+    """Return size_vram bytes for a loaded Ollama model. 0 means CPU."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as c:
+            r = await c.get(f"{base_url}/api/ps")
+            if r.status_code == 200:
+                for m in r.json().get("models", []):
+                    if m.get("name", "").startswith(model.split(":")[0]):
+                        return m.get("size_vram", 0)
+    except Exception:
+        pass
+    return 0
+
+
+def _start_warmup_task(role: str, base_url: str, model: str, num_ctx: int) -> None:
+    if role in _warmup_tasks and not _warmup_tasks[role].done():
+        _warmup_tasks[role].cancel()
+    _warmup_tasks[role] = asyncio.create_task(
+        _run_ollama_warmup(role, base_url, model, num_ctx)
+    )
 
 
 def _reload_agent_enabled() -> None:
@@ -341,6 +405,14 @@ async def api_put_llm_role(role: str, payload: dict, _u=Depends(_require_admin))
             env_var = s.get("api_key_env", f"{role.upper()}_API_KEY")
             target = _NVIDIA_ENV_PATH if role == "cloud" else _LLM_KEYS_PATH
             _write_env_key(target, env_var, payload["api_key"])
+    if provider == "ollama" and "container" in payload:
+        if payload["container"] is None or payload["container"] == "":
+            s.pop("container", None)
+        else:
+            # Validate: only alphanumeric, dash, underscore — no shell injection
+            import re as _re
+            if _re.fullmatch(r"[a-zA-Z0-9_\-]+", str(payload["container"])):
+                s["container"] = str(payload["container"])
     if provider == "ollama" and "gpu_id" in payload:
         if payload["gpu_id"] is None:
             s.pop("gpu_id", None)
@@ -360,15 +432,24 @@ async def api_put_llm_role(role: str, payload: dict, _u=Depends(_require_admin))
         s["enabled"] = bool(payload["enabled"])
     _LLM_PATH.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False), encoding="utf-8")
     _reload_agent_enabled()
+    warmup_started = False
     if "model" in payload and payload["model"]:
         mdata = yaml.safe_load(_MODELS_PATH.read_text(encoding="utf-8")) or {}
-        mdata[s.get("model_role", role)] = payload["model"]
+        model_role_key = s.get("model_role", role)
+        old_model = mdata.get(model_role_key, "")
+        new_model = payload["model"]
+        mdata[model_role_key] = new_model
         _MODELS_PATH.write_text(yaml.dump(mdata, allow_unicode=True, default_flow_style=False), encoding="utf-8")
+        # Auto-warmup whenever an Ollama model is saved (load into VRAM if needed)
+        if provider == "ollama" and new_model and s.get("base_url"):
+            num_ctx = s.get("options", {}).get("num_ctx", 8192)
+            _start_warmup_task(role, s["base_url"], new_model, num_ctx)
+            warmup_started = True
     if role == "image_edit" and "model_edit" in payload and payload["model_edit"]:
         mdata = yaml.safe_load(_MODELS_PATH.read_text(encoding="utf-8")) or {}
         mdata[s.get("model_role_edit", "image_edit_edit")] = payload["model_edit"]
         _MODELS_PATH.write_text(yaml.dump(mdata, allow_unicode=True, default_flow_style=False), encoding="utf-8")
-    return {"ok": True}
+    return {"ok": True, "warmup_started": warmup_started}
 
 
 @router.post("/api/settings/llm/{role}/restart_docker")
@@ -391,6 +472,35 @@ async def api_restart_vllm_docker(role: str, _u=Depends(_require_admin)):
         return {"ok": True, "container": container}
     except Exception as e:
         return {"ok": False, "error": str(e), "container": container}
+
+
+@router.post("/api/settings/llm/{role}/warmup")
+async def api_trigger_warmup(role: str, payload: dict, _u=Depends(_require_admin)):
+    """Manually trigger Ollama warmup for a role (e.g. after a model pull)."""
+    if role not in _EDITABLE_LLM_ROLES:
+        raise HTTPException(400, f"Unknown role: {role}")
+    data = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
+    if role not in data:
+        raise HTTPException(404, f"Role {role} not in llm.yaml")
+    s = data[role]
+    provider = s.get("provider", "ollama")
+    if provider != "ollama":
+        raise HTTPException(400, f"Role {role} uses provider={provider}, not ollama")
+    base_url = s.get("base_url", "")
+    if not base_url:
+        raise HTTPException(400, f"No base_url configured for role {role}")
+    num_ctx = s.get("options", {}).get("num_ctx", 8192)
+    model = payload.get("model") or get_model(s.get("model_role", role))
+    if not model:
+        raise HTTPException(400, "No model configured for this role")
+    _start_warmup_task(role, base_url, model, num_ctx)
+    return {"ok": True, "model": model}
+
+
+@router.get("/api/settings/llm/{role}/warmup_status")
+async def api_get_warmup_status(role: str, _u=Depends(_require_admin)):
+    """Return current warmup status for a role."""
+    return _warmup_status.get(role, {"status": "idle"})
 
 
 @router.post("/api/settings/llm/discover_ollama")
@@ -426,6 +536,150 @@ async def api_discover_ollama(_u=Depends(_require_admin)):
 
     await asyncio.gather(*[_probe(u) for u in candidates])
     return {"found": found}
+
+
+# ---------------------------------------------------------------------------
+# Docker-kontroll og VRAM-oversikt
+# ---------------------------------------------------------------------------
+
+def _docker_socket_ok() -> bool:
+    """Check if Docker socket is accessible (mounted in container or native)."""
+    import os
+    return os.access("/var/run/docker.sock", os.R_OK)
+
+
+@router.get("/api/settings/system/docker_control")
+async def api_get_docker_control(_u=Depends(_require_admin)):
+    """Return allow_docker_control flag and Docker socket availability."""
+    settings = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
+    return {
+        "allow_docker_control": bool(settings.get("allow_docker_control", False)),
+        "socket_available": _docker_socket_ok(),
+    }
+
+
+@router.put("/api/settings/system/docker_control")
+async def api_put_docker_control(payload: dict, _u=Depends(_require_admin)):
+    """Toggle allow_docker_control in settings.yaml."""
+    if "allow_docker_control" not in payload:
+        raise HTTPException(400, "Missing field: allow_docker_control")
+    settings = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
+    settings["allow_docker_control"] = bool(payload["allow_docker_control"])
+    _SETTINGS_PATH.write_text(yaml.dump(settings, allow_unicode=True, default_flow_style=False), encoding="utf-8")
+    return {"ok": True, "allow_docker_control": settings["allow_docker_control"]}
+
+
+@router.get("/api/settings/llm/discover-containers")
+async def api_discover_containers(_u=Depends(_require_admin)):
+    """List running Docker containers with their mapped ports (for Ollama role assignment)."""
+    if not _docker_socket_ok():
+        return {"containers": [], "error": "Docker socket not available"}
+    try:
+        result = subprocess.run(
+            ["docker", "ps", "--format", "{{.Names}}\t{{.Ports}}"],
+            capture_output=True, text=True, timeout=10,
+        )
+        containers = []
+        for line in result.stdout.strip().splitlines():
+            if not line:
+                continue
+            parts = line.split("\t", 1)
+            name = parts[0]
+            ports_str = parts[1] if len(parts) > 1 else ""
+            # Parse port mappings like "0.0.0.0:11447->11434/tcp"
+            mapped_ports: list[int] = []
+            import re as _re
+            for m in _re.finditer(r":(\d+)->\d+", ports_str):
+                mapped_ports.append(int(m.group(1)))
+            containers.append({"name": name, "ports": mapped_ports})
+        return {"containers": containers}
+    except Exception as e:
+        return {"containers": [], "error": str(e)[:120]}
+
+
+@router.get("/api/settings/llm/vram_overview")
+async def api_get_vram_overview(_u=Depends(_require_admin)):
+    """Return VRAM usage for all loaded Ollama models across all configured instances."""
+    data = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
+    # Collect unique Ollama base_urls
+    seen_urls: set[str] = set()
+    url_to_roles: dict[str, list[str]] = {}
+    for role, cfg in data.items():
+        if cfg.get("provider") == "ollama" and cfg.get("base_url"):
+            url = cfg["base_url"]
+            seen_urls.add(url)
+            url_to_roles.setdefault(url, []).append(role)
+
+    entries: list[dict] = []
+
+    async def _fetch_ps(url: str) -> None:
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as c:
+                r = await c.get(f"{url}/api/ps")
+                if r.status_code != 200:
+                    return
+                for m in r.json().get("models", []):
+                    model_name = m.get("name", "")
+                    vram_bytes = m.get("size_vram", 0)
+                    # Find which role(s) this model belongs to
+                    roles_here = url_to_roles.get(url, [])
+                    matched_role = roles_here[0] if len(roles_here) == 1 else "?"
+                    for role_candidate in roles_here:
+                        cfg = data.get(role_candidate, {})
+                        mr = cfg.get("model_role", role_candidate)
+                        mdata = yaml.safe_load(_MODELS_PATH.read_text(encoding="utf-8")) or {}
+                        configured_model = mdata.get(mr, "")
+                        if configured_model and model_name.startswith(configured_model.split(":")[0]):
+                            matched_role = role_candidate
+                            break
+                    entries.append({
+                        "role": matched_role,
+                        "model": model_name,
+                        "vram_bytes": vram_bytes,
+                        "on_cpu": vram_bytes == 0,
+                        "base_url": url,
+                    })
+        except Exception:
+            pass
+
+    await asyncio.gather(*[_fetch_ps(u) for u in seen_urls])
+    return {"entries": entries}
+
+
+@router.post("/api/settings/llm/{role}/restart_ollama")
+async def api_restart_ollama(role: str, _u=Depends(_require_admin)):
+    """Restart an Ollama Docker container and trigger warmup for the given role."""
+    settings = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
+    if not settings.get("allow_docker_control", False):
+        raise HTTPException(403, "Docker control is disabled in settings")
+    if not _docker_socket_ok():
+        raise HTTPException(503, "Docker socket not available")
+    data = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
+    if role not in data:
+        raise HTTPException(404, f"Role {role} not in llm.yaml")
+    cfg = data[role]
+    if cfg.get("provider") != "ollama":
+        raise HTTPException(400, f"Role {role} is not an Ollama role")
+    container = cfg.get("container")
+    if not container:
+        raise HTTPException(400, f"No container configured for role {role}")
+    try:
+        result = subprocess.run(
+            ["docker", "restart", container],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            return {"ok": False, "error": result.stderr.strip(), "container": container}
+        # Kick off warmup automatically after restart
+        base_url = cfg.get("base_url", "")
+        num_ctx = cfg.get("options", {}).get("num_ctx", 8192)
+        mdata = yaml.safe_load(_MODELS_PATH.read_text(encoding="utf-8")) or {}
+        model = mdata.get(cfg.get("model_role", role), "")
+        if base_url and model:
+            _start_warmup_task(role, base_url, model, num_ctx)
+        return {"ok": True, "container": container, "warmup_started": bool(base_url and model)}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "container": container}
 
 
 @router.get("/api/settings/models")
@@ -1208,7 +1462,7 @@ async def api_get_meeting_roles(_u=Depends(_require_admin)):
     except Exception:
         data = {}
     mr = data.get("meeting_roles", {})
-    ps_role = mr.get("pettersmart", "undersøker")
+    ps_role = mr.get("mechanic", "undersøker")
     mk_role = mr.get("miss_kare", "empatisk")
     ps_custom = _MEETING_ROLE_PS_CUSTOM.read_text(encoding="utf-8") if _MEETING_ROLE_PS_CUSTOM.exists() else ""
     mk_custom = _MEETING_ROLE_MK_CUSTOM.read_text(encoding="utf-8") if _MEETING_ROLE_MK_CUSTOM.exists() else ""
@@ -1217,9 +1471,9 @@ async def api_get_meeting_roles(_u=Depends(_require_admin)):
     ps_default = ps_def_file.read_text(encoding="utf-8") if ps_def_file.exists() else ""
     mk_default = mk_def_file.read_text(encoding="utf-8") if mk_def_file.exists() else ""
     return {
-        "pettersmart":         ps_role,
-        "pettersmart_custom":  ps_custom,
-        "pettersmart_default": ps_default,
+        "mechanic":         ps_role,
+        "mechanic_custom":  ps_custom,
+        "mechanic_default": ps_default,
         "miss_kare":           mk_role,
         "miss_kare_custom":    mk_custom,
         "miss_kare_default":   mk_default,
@@ -1228,17 +1482,17 @@ async def api_get_meeting_roles(_u=Depends(_require_admin)):
 
 @router.put("/api/settings/meeting-roles")
 async def api_put_meeting_roles(payload: dict, _u=Depends(_require_admin)):
-    ps_role = payload.get("pettersmart")
+    ps_role = payload.get("mechanic")
     mk_role = payload.get("miss_kare")
     if ps_role and ps_role not in _VALID_PS_ROLES:
-        raise HTTPException(400, f"pettersmart role must be one of: {_VALID_PS_ROLES}")
+        raise HTTPException(400, f"mechanic role must be one of: {_VALID_PS_ROLES}")
     if mk_role and mk_role not in _VALID_MK_ROLES:
         raise HTTPException(400, f"miss_kare role must be one of: {_VALID_MK_ROLES}")
     try:
         data = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
         data.setdefault("meeting_roles", {})
         if ps_role:
-            data["meeting_roles"]["pettersmart"] = ps_role
+            data["meeting_roles"]["mechanic"] = ps_role
         if mk_role:
             data["meeting_roles"]["miss_kare"] = mk_role
         _SETTINGS_PATH.write_text(
@@ -1247,11 +1501,11 @@ async def api_put_meeting_roles(payload: dict, _u=Depends(_require_admin)):
         )
     except Exception as e:
         raise HTTPException(500, f"Could not write settings.yaml: {e}")
-    if ps_role == "egendefinert" and "pettersmart_custom" in payload:
+    if ps_role == "egendefinert" and "mechanic_custom" in payload:
         try:
-            _MEETING_ROLE_PS_CUSTOM.write_text(str(payload["pettersmart_custom"]), encoding="utf-8")
+            _MEETING_ROLE_PS_CUSTOM.write_text(str(payload["mechanic_custom"]), encoding="utf-8")
         except Exception as e:
-            raise HTTPException(500, f"Could not write pettersmart custom: {e}")
+            raise HTTPException(500, f"Could not write mechanic custom: {e}")
     if mk_role == "egendefinert" and "miss_kare_custom" in payload:
         try:
             _MEETING_ROLE_MK_CUSTOM.write_text(str(payload["miss_kare_custom"]), encoding="utf-8")

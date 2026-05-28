@@ -89,7 +89,7 @@ const TOOL_ROWS: { key: string; indent?: boolean }[] = [
   { key: "kamera" },
   { key: "søk_i_argus" },
   { key: "les_møte" },
-  { key: "pettersmart" },
+  { key: "mechanic" },
   { key: "utforsk_kode" },
   { key: "inspiser_system" },
   { key: "ssh_kommando" },

@@ -681,7 +681,12 @@ async def generate(request: PromptRequest, http: Request):
             print(f"[KÅRE] FASTPATH RESULTAT: {out}")
             _route_log("fastpath_done", rid=rid, ha_result=out)
 
-            return {"text": _action_text(fast["action"], fast["entity_id"])}
+            _fp_text = _action_text(fast["action"], fast["entity_id"])
+            app_state.STM.add_dialog(role="user", text=prompt, user_id=user_id)
+            app_state.STM.record_action(fast["action"], fast["entity_id"], ok=True, user_id=user_id, meta={"source": "fastpath"})
+            app_state.STM.set_entity_state(fast["entity_id"], fast["action"], source="fastpath")
+            app_state.STM.add_dialog(role="assistant", text=_fp_text, user_id=user_id)
+            return {"text": _fp_text}
 
         except Exception as e:
             print(f"[KÅRE FASTPATH FEIL] {e}")

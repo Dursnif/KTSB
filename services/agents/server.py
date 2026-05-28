@@ -1,9 +1,9 @@
 """
-Kåre agent-server – Miss.Library og Pettersmart
+Kåre agent-server – Miss.Library og Mechanic
 Port 11450.
 
 Miss Library: queue-based LLM + Qdrant wiki search (uses library model, port 11447)
-Pettersmart:  tool-using agent (uses miss_kare model, port 11445 — shared with Miss Kåre)
+Mechanic:  tool-using agent (uses miss_kare model, port 11445 — shared with Miss Kåre)
 """
 
 import asyncio
@@ -25,10 +25,10 @@ from qdrant_client.models import (
 )
 
 sys.path.insert(0, "/kaare")
-from kaare_core.agents.pettersmart.tools import (
-    ask_with_tools, PETTERSMART_URL, PETTERSMART_MODEL,
-    PETTERSMART_TOOLS, UNDERSØKER_TOOLS, KRITIKER_TOOLS, ANALYTIKER_TOOLS,
-    MEMORY_PATH as PETTERSMART_MEMORY_PATH,
+from kaare_core.agents.mechanic.tools import (
+    ask_with_tools, MECHANIC_URL, MECHANIC_MODEL,
+    MECHANIC_TOOLS, UNDERSØKER_TOOLS, KRITIKER_TOOLS, ANALYTIKER_TOOLS,
+    MEMORY_PATH as MECHANIC_MEMORY_PATH,
 )
 from kaare_core.config import get_model as _cfg_model, get_llm_config as _llm, is_agent_tool_enabled
 from kaare_core.llm_fallback import is_fallback_active
@@ -61,7 +61,7 @@ log = logging.getLogger("agents")
 _queue: asyncio.Queue = asyncio.Queue()
 app = FastAPI(title="Kåre agents", version="2.0")
 
-# ── Pettersmart job store (in-memory, ephemeral) ──────────────────────────────
+# ── Mechanic job store (in-memory, ephemeral) ──────────────────────────────
 # job_id → {"status": "running"|"done"|"error", "result": str|None, "created_at": float}
 _JOB_TTL = 1800  # 30 minutes
 _jobs: dict[str, dict] = {}
@@ -79,9 +79,9 @@ def _load_personality(agent: str, role: str = "standard") -> str:
     return f"Du er {agent}."
 
 
-def _load_pettersmart_memory() -> str:
+def _load_mechanic_memory() -> str:
     try:
-        content = PETTERSMART_MEMORY_PATH.read_text(encoding="utf-8").strip()
+        content = MECHANIC_MEMORY_PATH.read_text(encoding="utf-8").strip()
         return content if content else ""
     except Exception:
         return ""
@@ -92,7 +92,7 @@ def _tools_for_role(role: str) -> list:
         "undersøker": UNDERSØKER_TOOLS,
         "kritiker":   KRITIKER_TOOLS,
         "analytiker": ANALYTIKER_TOOLS,
-    }.get(role, PETTERSMART_TOOLS)
+    }.get(role, MECHANIC_TOOLS)
 
 # ── Qdrant / embedding ───────────────────────────────────────────────────────
 
@@ -424,12 +424,12 @@ async def wiki_article(req: ArticleRequest):
     result = await _wiki_fetch_article(req.title, req.max_chars)
     return result
 
-# ── Pettersmart søk-og-summer ────────────────────────────────────────────────
+# ── Mechanic søk-og-summer ────────────────────────────────────────────────
 
 _MAX_SØK_CHARS = 12000
 _ALLOWED_BASE  = "/kaare"
 
-async def _pettersmart_fetch_content(req: SearchRequest) -> str:
+async def _mechanic_fetch_content(req: SearchRequest) -> str:
     """Python reads files/runs grep/reads logs. No LLM involved."""
     if req.search_type == "filer":
         if not req.files:
@@ -510,11 +510,11 @@ async def _pettersmart_fetch_content(req: SearchRequest) -> str:
     return "[Ukjent search_type]"
 
 
-async def _pettersmart_llm_call(system: str, user: str) -> str:
-    """One-shot call to Pettersmart 9B — no tool use, just summarize."""
+async def _mechanic_llm_call(system: str, user: str) -> str:
+    """One-shot call to Mechanic 9B — no tool use, just summarize."""
     from kaare_core.model_lock import lock_11445, LockTimeout
     payload = {
-        "model": PETTERSMART_MODEL,
+        "model": MECHANIC_MODEL,
         "stream": False,
         "think": False,
         "options": {
@@ -528,66 +528,66 @@ async def _pettersmart_llm_call(system: str, user: str) -> str:
         ],
     }
     try:
-        async with lock_11445("pettersmart_søk", max_wait=120):
+        async with lock_11445("mechanic_søk", max_wait=120):
             async with httpx.AsyncClient(timeout=90.0) as client:
-                r = await client.post(PETTERSMART_URL, json=payload,
-                                      headers={"x-kaare-source": "pettersmart_sok"})
+                r = await client.post(MECHANIC_URL, json=payload,
+                                      headers={"x-kaare-source": "mechanic_sok"})
                 r.raise_for_status()
                 content = r.json().get("message", {}).get("content", "").strip()
                 return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip() \
-                       or "[Ingen respons fra Pettersmart]"
+                       or "[Ingen respons fra Mechanic]"
     except LockTimeout:
-        return "[Pettersmart er opptatt — prøv igjen om litt]"
+        return "[Mechanic er opptatt — prøv igjen om litt]"
     except Exception as e:
-        return f"[Pettersmart utilgjengelig: {e}]"
+        return f"[Mechanic utilgjengelig: {e}]"
 
 
-@app.post("/ask/pettersmart/søk", response_model=AskResponse)
-async def ask_pettersmart_søk(req: SearchRequest):
+@app.post("/ask/mechanic/søk", response_model=AskResponse)
+async def ask_mechanic_søk(req: SearchRequest):
     """
-    Pettersmart søk-og-summer: Python reads files/grep/logs, 9B summarizes.
-    No tool-calling loop in Pettersmart — one-shot summarization only.
+    Mechanic søk-og-summer: Python reads files/grep/logs, 9B summarizes.
+    No tool-calling loop in Mechanic — one-shot summarization only.
     """
     if is_fallback_active():
         return AskResponse(
-            answer="[Pettersmart ikke tilgjengelig — reservemodus aktiv]",
-            agent="pettersmart",
+            answer="[Mechanic ikke tilgjengelig — reservemodus aktiv]",
+            agent="mechanic",
         )
-    log.info("[Pettersmart/søk] type=%s spørsmål=%s", req.search_type, req.question[:60])
+    log.info("[Mechanic/søk] type=%s spørsmål=%s", req.search_type, req.question[:60])
 
-    content = await _pettersmart_fetch_content(req)
+    content = await _mechanic_fetch_content(req)
     if not content or content.startswith("["):
-        return AskResponse(answer=content or "Fant ingen innhold å søke i.", agent="pettersmart")
+        return AskResponse(answer=content or "Fant ingen innhold å søke i.", agent="mechanic")
 
-    system = _load_personality("pettersmart")
+    system = _load_personality("mechanic")
     user_msg = (
         f"Du har fått følgende innhold:\n\n---\n{content}\n---\n\n"
         f"Spørsmål: {req.question}\n\n"
         "Svar kortfattet og presist. Henvis til konkrete linjenummer eller steder."
     )
-    answer = await _pettersmart_llm_call(system, user_msg)
-    log.info("[Pettersmart/søk] svar: %s", answer[:80])
-    return AskResponse(answer=answer, agent="pettersmart")
+    answer = await _mechanic_llm_call(system, user_msg)
+    log.info("[Mechanic/søk] svar: %s", answer[:80])
+    return AskResponse(answer=answer, agent="mechanic")
 
 
-# ── Pettersmart ───────────────────────────────────────────────────────────────
+# ── Mechanic ───────────────────────────────────────────────────────────────
 
-@app.post("/ask/pettersmart", response_model=AskResponse)
-async def ask_pettersmart(req: TaskRequest):
+@app.post("/ask/mechanic", response_model=AskResponse)
+async def ask_mechanic(req: TaskRequest):
     """
-    Receives a task from Kåre and lets Pettersmart solve it step by step.
+    Receives a task from Kåre and lets Mechanic solve it step by step.
     Returns unavailable while Kåre is in 9B fallback mode (shared GPU).
     """
     if is_fallback_active():
-        log.info("[Pettersmart] reservemodus aktiv — avviser forespørsel")
+        log.info("[Mechanic] reservemodus aktiv — avviser forespørsel")
         return AskResponse(
-            answer="[Pettersmart er ikke tilgjengelig akkurat nå — Kåre bruker reservemodellen. Prøv igjen om litt.]",
-            agent="pettersmart",
+            answer="[Mechanic er ikke tilgjengelig akkurat nå — Kåre bruker reservemodellen. Prøv igjen om litt.]",
+            agent="mechanic",
         )
 
-    log.info("[Pettersmart] rolle=%s oppgave: %s", req.role, req.task[:120])
-    system = _load_personality("pettersmart", req.role)
-    memory = _load_pettersmart_memory()
+    log.info("[Mechanic] rolle=%s oppgave: %s", req.role, req.task[:120])
+    system = _load_personality("mechanic", req.role)
+    memory = _load_mechanic_memory()
     if memory:
         system = system + f"\n\n--- DIN HUKOMMELSE ---\n{memory}"
     task_content = f"{req.context}\n\n{req.task}".strip() if req.context else req.task
@@ -599,19 +599,19 @@ async def ask_pettersmart(req: TaskRequest):
 
     answer = await ask_with_tools(
         messages=messages,
-        url=PETTERSMART_URL,
-        model=PETTERSMART_MODEL,
+        url=MECHANIC_URL,
+        model=MECHANIC_MODEL,
         tools=_tools_for_role(req.role),
     )
-    log.info("[Pettersmart] svar: %s", answer[:80])
-    return AskResponse(answer=answer, agent="pettersmart")
+    log.info("[Mechanic] svar: %s", answer[:80])
+    return AskResponse(answer=answer, agent="mechanic")
 
-# ── Pettersmart async jobs ────────────────────────────────────────────────────
+# ── Mechanic async jobs ────────────────────────────────────────────────────
 
-async def _run_pettersmart_job(job_id: str, task: str, role: str = "standard", context: str = "") -> None:
-    """Background task — runs Pettersmart and stores result in _jobs."""
-    system = _load_personality("pettersmart", role)
-    memory = _load_pettersmart_memory()
+async def _run_mechanic_job(job_id: str, task: str, role: str = "standard", context: str = "") -> None:
+    """Background task — runs Mechanic and stores result in _jobs."""
+    system = _load_personality("mechanic", role)
+    memory = _load_mechanic_memory()
     if memory:
         system = system + f"\n\n--- DIN HUKOMMELSE ---\n{memory}"
     task_content = f"{context}\n\n{task}".strip() if context else task
@@ -623,50 +623,50 @@ async def _run_pettersmart_job(job_id: str, task: str, role: str = "standard", c
     try:
         answer = await ask_with_tools(
             messages=messages,
-            url=PETTERSMART_URL,
-            model=PETTERSMART_MODEL,
+            url=MECHANIC_URL,
+            model=MECHANIC_MODEL,
             job_state=job_state,
             tools=_tools_for_role(role),
         )
         if job_id in _jobs:
             _jobs[job_id]["status"] = "done"
             _jobs[job_id]["result"] = answer
-        log.info("[Pettersmart job %s] done: %s", job_id[:8], answer[:80])
+        log.info("[Mechanic job %s] done: %s", job_id[:8], answer[:80])
     except asyncio.CancelledError:
         if job_id in _jobs:
             _jobs[job_id]["status"] = "cancelled"
             _jobs[job_id]["result"] = "[Job cancelled by user]"
-        log.info("[Pettersmart job %s] cancelled", job_id[:8])
+        log.info("[Mechanic job %s] cancelled", job_id[:8])
         raise
     except Exception as e:
         if job_id in _jobs:
             _jobs[job_id]["status"] = "error"
             _jobs[job_id]["result"] = f"[Job failed: {e}]"
-        log.error("[Pettersmart job %s] error: %s", job_id[:8], e)
+        log.error("[Mechanic job %s] error: %s", job_id[:8], e)
 
 
-@app.post("/jobs/pettersmart", response_model=JobResponse)
-async def start_pettersmart_job(req: TaskRequest):
+@app.post("/jobs/mechanic", response_model=JobResponse)
+async def start_mechanic_job(req: TaskRequest):
     """
-    Fire-and-forget: start a Pettersmart job and return job_id immediately.
-    Kåre can monitor with GET /jobs/pettersmart/{job_id} while using its own tools.
+    Fire-and-forget: start a Mechanic job and return job_id immediately.
+    Kåre can monitor with GET /jobs/mechanic/{job_id} while using its own tools.
     """
     if is_fallback_active():
         return JobResponse(
             job_id="",
             status="error",
-            result="[Pettersmart unavailable — Kåre is in fallback mode]",
+            result="[Mechanic unavailable — Kåre is in fallback mode]",
         )
     job_id = str(uuid.uuid4())
     _jobs[job_id] = {"status": "running", "result": None, "created_at": time.monotonic()}
-    task = asyncio.create_task(_run_pettersmart_job(job_id, req.task, req.role, req.context))
+    task = asyncio.create_task(_run_mechanic_job(job_id, req.task, req.role, req.context))
     _jobs[job_id]["task"] = task  # stored for cancellation via task.cancel()
-    log.info("[Pettersmart job %s] started: %s", job_id[:8], req.task[:80])
+    log.info("[Mechanic job %s] started: %s", job_id[:8], req.task[:80])
     return JobResponse(job_id=job_id, status="running")
 
 
-@app.get("/jobs/pettersmart/{job_id}", response_model=JobResponse)
-async def get_pettersmart_job(job_id: str):
+@app.get("/jobs/mechanic/{job_id}", response_model=JobResponse)
+async def get_mechanic_job(job_id: str):
     """Poll job status. Returns status=running until done/error/cancelled."""
     job = _jobs.get(job_id)
     if job is None:
@@ -674,8 +674,8 @@ async def get_pettersmart_job(job_id: str):
     return JobResponse(job_id=job_id, status=job["status"], result=job["result"])
 
 
-@app.delete("/jobs/pettersmart/{job_id}", response_model=JobResponse)
-async def cancel_pettersmart_job(job_id: str):
+@app.delete("/jobs/mechanic/{job_id}", response_model=JobResponse)
+async def cancel_mechanic_job(job_id: str):
     """Cancel a running job. Cancels the asyncio Task — closes httpx connection — Ollama stops generating."""
     job = _jobs.get(job_id)
     if job is None:
@@ -683,20 +683,20 @@ async def cancel_pettersmart_job(job_id: str):
     task = job.get("task")
     if task and not task.done():
         task.cancel()
-        log.info("[Pettersmart job %s] cancellation requested via DELETE", job_id[:8])
+        log.info("[Mechanic job %s] cancellation requested via DELETE", job_id[:8])
     return JobResponse(job_id=job_id, status=job["status"], result=job.get("result"))
 
 
-@app.patch("/jobs/pettersmart/{job_id}", response_model=JobResponse)
-async def inject_pettersmart_comment(job_id: str, req: InjectRequest):
-    """Inject a user comment into a running job. Pettersmart sees it at the next tool round."""
+@app.patch("/jobs/mechanic/{job_id}", response_model=JobResponse)
+async def inject_mechanic_comment(job_id: str, req: InjectRequest):
+    """Inject a user comment into a running job. Mechanic sees it at the next tool round."""
     job = _jobs.get(job_id)
     if job is None:
         return JobResponse(job_id=job_id, status="error", result="[Job not found — may have expired]")
     if job.get("status") != "running":
         return JobResponse(job_id=job_id, status=job["status"], result="[Job is not running — cannot inject comment]")
     job["injected"] = req.comment
-    log.info("[Pettersmart job %s] comment injected: %s", job_id[:8], req.comment[:60])
+    log.info("[Mechanic job %s] comment injected: %s", job_id[:8], req.comment[:60])
     return JobResponse(job_id=job_id, status="running", result=f"[Comment queued: {req.comment[:60]}]")
 
 
@@ -705,4 +705,4 @@ async def inject_pettersmart_comment(job_id: str, req: InjectRequest):
 @app.get("/")
 async def heartbeat():
     running = sum(1 for j in _jobs.values() if j["status"] == "running")
-    return {"status": "ok", "agents": ["miss_library", "pettersmart"], "active_jobs": running, "total_jobs": len(_jobs)}
+    return {"status": "ok", "agents": ["miss_library", "mechanic"], "active_jobs": running, "total_jobs": len(_jobs)}

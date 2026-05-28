@@ -69,6 +69,7 @@ rsync -av --delete \
   --exclude='claude_memory' \
   --exclude='CLAUDE.md' \
   --exclude='CURRENT.md' \
+  --exclude='PENDING_SYNC.md' \
   --exclude='DEBUG_*.md' \
   --exclude='argus_report.json' \
   --exclude='argus_state.json' \

@@ -6,9 +6,9 @@ Use as async context manager: async with lock_11445("miss_kare"):
 
 Port 11445 is shared by:
   - Miss Kåre evaluator  (kaare.service)
-  - Pettersmart tools    (kaare-agents.service)
+  - Mechanic tools    (kaare-agents.service)
   - Miss Kåre møte      (kaare-reflection.service)
-  - Pettersmart møte    (kaare-dev-meeting)
+  - Mechanic møte    (kaare-dev-meeting)
 """
 
 import asyncio
@@ -98,7 +98,7 @@ async def lock_11445(caller: str = "ukjent", max_wait: float | None = None):
     max_wait: if set and exceeded, raises LockTimeout instead of blocking forever.
     Usage:
         async with lock_11445("miss_kare", max_wait=60): ...
-        async with lock_11445("pettersmart"):             ...  # blocks forever (safe for long jobs)
+        async with lock_11445("mechanic"):             ...  # blocks forever (safe for long jobs)
     """
     if max_wait is not None:
         fd = await asyncio.to_thread(_acquire_timed, _LOCK_11445, caller, max_wait)

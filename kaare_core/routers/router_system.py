@@ -5,7 +5,8 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import datetime
+import base64
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -129,6 +130,141 @@ async def api_get_cameras_storage_usage(_u=Depends(_require_admin)):
     except Exception:
         log_mb = 0.0
     return {"snapshots_mb": snap_mb, "log_mb": log_mb}
+
+
+_FAILED_ANALYSIS_PATTERNS = ["ikke kontakt", "kontakt med noen"]
+
+
+def _is_failed_analysis(text: str) -> bool:
+    if not text or len(text.strip()) < 20:
+        return True
+    for pat in _FAILED_ANALYSIS_PATTERNS:
+        if pat in text:
+            return True
+    return False
+
+
+@router.get("/api/settings/cameras/_analysis_log")
+async def api_get_analysis_log(limit: int = 40, _u=Depends(_require_admin)):
+    """Returns recent Frigate analysis log entries, newest first, deduplicated by event_id."""
+    log_file = Path("/kaare/logs/frigate_analysis.log")
+    snap_dir = Path("/kaare/state/frigate_snapshots")
+
+    if not log_file.exists():
+        return {"entries": []}
+
+    try:
+        lines = [ln for ln in log_file.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    except Exception:
+        return {"entries": []}
+
+    seen: dict[str, dict] = {}
+    for line in lines:
+        try:
+            entry = json.loads(line)
+            eid = entry.get("event_id", "")
+            seen[eid] = entry
+        except Exception:
+            continue
+
+    entries = sorted(seen.values(), key=lambda e: e.get("ts", ""), reverse=True)[:limit]
+
+    result = []
+    for e in entries:
+        eid = e.get("event_id", "")
+        analysis = e.get("analysis", "")
+        result.append({
+            "ts": e.get("ts", ""),
+            "camera": e.get("camera", ""),
+            "display_name": e.get("display_name") or e.get("camera", ""),
+            "role": e.get("role", ""),
+            "label": e.get("label", ""),
+            "score": e.get("score", 0),
+            "top_score": e.get("top_score", e.get("score", 0)),
+            "duration": e.get("duration", 0),
+            "sub_label": e.get("sub_label"),
+            "zones": e.get("zones", []),
+            "event_id": eid,
+            "analysis": analysis,
+            "failed": _is_failed_analysis(analysis),
+            "has_snapshot": bool(eid and (snap_dir / f"{eid}.jpg").is_file()),
+        })
+
+    return {"entries": result}
+
+
+class RetryAnalysisRequest(BaseModel):
+    event_id: str
+    camera: str
+    label: str
+    score: float
+    top_score: float = 0.0
+    duration: float = 0.0
+    sub_label: str | None = None
+    sub_label_score: float | None = None
+    zones: list[str] = []
+
+
+@router.post("/api/settings/cameras/_retry_analysis")
+async def api_retry_analysis(req: RetryAnalysisRequest, _u=Depends(_require_admin)):
+    """Re-runs VLM analysis for a given event. Uses local snapshot if available."""
+    import logging as _logging
+    from kaare_core.domain.frigate_responder import analyze_event, _write_analysis_log, _cfg
+
+    argus_log = _logging.getLogger("frigate_responder")
+    snap_dir = Path("/kaare/state/frigate_snapshots")
+    snap_path = snap_dir / f"{req.event_id}.jpg"
+
+    img_b64_override: str | None = None
+    if snap_path.is_file():
+        try:
+            img_b64_override = base64.b64encode(snap_path.read_bytes()).decode()
+        except Exception as e:
+            argus_log.error("retry_analysis: could not read local snapshot %s: %s", snap_path, e)
+
+    event_dict = {
+        "event_id": req.event_id,
+        "camera": req.camera,
+        "label": req.label,
+        "score": req.score,
+        "top_score": req.top_score or req.score,
+        "duration": req.duration,
+        "sub_label": req.sub_label,
+        "sub_label_score": req.sub_label_score,
+        "zones": req.zones,
+    }
+
+    try:
+        result = await analyze_event(event_dict, img_b64_override=img_b64_override)
+    except Exception as e:
+        argus_log.error("retry_analysis: analyze_event raised for %s: %s", req.event_id, e)
+        raise HTTPException(500, f"Analysis failed: {e}")
+
+    if not result:
+        argus_log.error("retry_analysis: no result for event %s (no snapshot or VLM unreachable)", req.event_id)
+        raise HTTPException(500, "Analysis failed — no snapshot available or VLM unreachable")
+
+    analysis_text = result.get("analysis", "").strip()
+
+    cfg = _cfg()
+    cam_cfg = cfg.get("cameras", {}).get(req.camera, {})
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "camera": req.camera,
+        "display_name": cam_cfg.get("display_name") or req.camera,
+        "role": cam_cfg.get("role", ""),
+        "label": req.label,
+        "score": req.score,
+        "top_score": req.top_score or req.score,
+        "duration": req.duration,
+        "sub_label": req.sub_label,
+        "zones": req.zones,
+        "event_id": req.event_id,
+        "analysis": analysis_text,
+    }
+    _write_analysis_log(entry)
+
+    return {"ok": True, "analysis": analysis_text, "failed": _is_failed_analysis(analysis_text)}
 
 
 @router.put("/api/settings/cameras/_global")
@@ -325,7 +461,7 @@ def _build_service_catalog() -> list[dict]:
          "color": "#f0a500",     "check_url": get_service("internal", "ha_gateway") + "/"},
         {"key": "semantic_embed", "name": "Semantic Embed", "description": "384-dim embedding for semantic memory",
          "color": "#60a5fa",     "check_url": get_service("internal", "semantic_embed") + "/"},
-        {"key": "agents_server", "name": "Agents Server", "description": "Library + Pettersmart HTTP API",
+        {"key": "agents_server", "name": "Agents Server", "description": "Library + Mechanic HTTP API",
          "color": "#5ba8a0",     "check_url": get_service("internal", "agents") + "/"},
         {"key": "voice_bridge",  "name": "Voice Bridge",  "description": "Piper TTS + Whisper STT",
          "color": "#a78bfa",     "check_url": get_service("internal", "voice_bridge") + "/"},
@@ -397,7 +533,7 @@ def _build_model_catalog() -> list[dict]:
         {"key": "llm_miss_kare", "name": "Miss Kåre",           "model": _model("miss_kare"),
          "platform": _platform("miss_kare"), "color": "#c084fc",
          "check_url": _check_url_for("miss_kare")},
-        {"key": "llm_library",   "name": "Library / Pettersmart", "model": _model("library"),
+        {"key": "llm_library",   "name": "Library / Mechanic", "model": _model("library"),
          "platform": _platform("library"),   "color": "#5ba8a0",
          "check_url": _check_url_for("library")},
         {"key": "llm_jing",      "name": "Jing",                "model": "qwen2.5-0.5b-openvino",

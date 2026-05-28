@@ -86,7 +86,7 @@ MODULES = [
     # Agents
     "kaare_core.agents.miss_kare.evaluator",
     "kaare_core.agents.miss_kare.stm",
-    "kaare_core.agents.pettersmart.tools",
+    "kaare_core.agents.mechanic.tools",
     # Domain
     "kaare_core.domain.decision",
     "kaare_core.domain.policy",
