@@ -80,7 +80,7 @@ services:
     volumes:
       - ./configs:/kaare/configs
       - ./state:/kaare/state
-    depends_on: [qdrant, kaare-memory-embed]
+    depends_on: [qdrant, kaare-semantic-embed]
 
   kaare-argus:
     image: ghcr.io/dursnif/kaare:latest
