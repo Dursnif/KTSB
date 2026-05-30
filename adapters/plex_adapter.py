@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from kaare_core.tools.i18n import t
+
 _SERVICES_PATH = Path("/kaare/configs/services.yaml")
 
 
@@ -66,7 +68,7 @@ def _fmt_timestamp(unix_ts: int | None) -> str:
     return dt.strftime("%d.%m.%Y %H:%M")
 
 
-async def get_sessions() -> str:
+async def get_sessions(lang: str = "nb") -> str:
     """Return formatted string of active Plex playback sessions."""
     cfg = _plex_cfg()
     url = cfg["url"]
@@ -78,11 +80,11 @@ async def get_sessions() -> str:
             resp.raise_for_status()
             data = resp.json()
     except Exception as exc:
-        return f"Kunne ikke nå Plex ({exc})."
+        return t("plex_unreachable", lang, error=exc)
 
     metadata = data.get("MediaContainer", {}).get("Metadata") or []
     if not metadata:
-        return "Ingen spiller noe på Plex akkurat nå."
+        return t("plex_nothing_playing", lang)
 
     lines = [f"Aktive Plex-sesjoner ({len(metadata)}):"]
     for item in metadata:
@@ -112,7 +114,8 @@ async def get_sessions() -> str:
         progress = _fmt_progress(item.get("viewOffset"), item.get("duration"))
         progress_str = f" [{progress}]" if progress else ""
 
-        lines.append(f"  • {user} på {device}: {content}{progress_str} ({state_label})")
+        lines.append(t("plex_session_line", lang, user=user, device=device,
+                       content=content, progress=progress_str, state=state_label))
 
     return "\n".join(lines)
 
@@ -187,7 +190,7 @@ async def get_history(user: str | None = None, limit: int = 20) -> str:
     return "\n".join(lines)
 
 
-async def search(query: str, limit: int = 8) -> str:
+async def search(query: str, limit: int = 8, lang: str = "nb") -> str:
     """Search Plex library. Returns title, type, year, and ratingKey for follow-up calls."""
     cfg = _plex_cfg()
     url = cfg["url"]
@@ -203,7 +206,7 @@ async def search(query: str, limit: int = 8) -> str:
             resp.raise_for_status()
             data = resp.json()
     except Exception as exc:
-        return f"Søk feilet ({exc})."
+        return t("plex_search_failed", lang, error=exc)
 
     hubs = data.get("MediaContainer", {}).get("Hub") or []
     results: list[str] = []
@@ -228,7 +231,7 @@ async def search(query: str, limit: int = 8) -> str:
     if not results:
         return f"Ingen resultater for «{query}»."
 
-    return f"Plex-søk: «{query}»\n" + "\n".join(results)
+    return t("plex_search_header", lang, query=query) + "\n" + "\n".join(results)
 
 
 async def get_libraries() -> str:
@@ -297,7 +300,7 @@ async def get_server_machine_id() -> str:
         return resp.json()["MediaContainer"]["machineIdentifier"]
 
 
-async def get_clients() -> str:
+async def get_clients(lang: str = "nb") -> str:
     """Return list of registered Plex clients currently running the Plex app."""
     cfg = _plex_cfg()
     url = cfg["url"]
@@ -309,11 +312,11 @@ async def get_clients() -> str:
             resp.raise_for_status()
             data = resp.json()
     except Exception as exc:
-        return f"Kunne ikke hente Plex-klienter ({exc})."
+        return t("plex_unreachable", lang, error=exc)
 
     devices = data.get("MediaContainer", {}).get("Device") or []
     if not devices:
-        return "Ingen Plex-klienter funnet. Åpne Plex-appen på enheten og prøv igjen."
+        return t("plex_no_clients", lang)
 
     lines = [f"Tilgjengelige Plex-spillere ({len(devices)}):"]
     for d in devices:
@@ -327,7 +330,7 @@ async def get_clients() -> str:
     return "\n".join(lines)
 
 
-async def play_on_client(client_name_or_id: str, rating_key: str, offset_ms: int = 0) -> str:
+async def play_on_client(client_name_or_id: str, rating_key: str, offset_ms: int = 0, lang: str = "nb") -> str:
     """
     Trigger Plex playback on a registered client.
 
@@ -368,7 +371,7 @@ async def play_on_client(client_name_or_id: str, rating_key: str, offset_ms: int
 
             if not target:
                 names = [d.get("name", "?") for d in devices]
-                available = ", ".join(names) if names else "ingen (åpne Plex-appen på enheten)"
+                available = ", ".join(names) if names else t("plex_no_clients_hint", lang)
                 return (
                     f"Fant ingen Plex-klient som matcher «{client_name_or_id}». "
                     f"Tilgjengelige: {available}."
@@ -400,7 +403,7 @@ async def play_on_client(client_name_or_id: str, rating_key: str, offset_ms: int
 
             if play_resp.status_code in (200, 204):
                 offset_str = f" fra {_fmt_duration(offset_ms)}" if offset_ms > 0 else ""
-                return f"▶ Starter avspilling{offset_str} på «{client_name}» ✅"
+                return t("plex_playing_on", lang, offset=offset_str, client=client_name)
 
             return f"Plex svarte {play_resp.status_code}: {play_resp.text[:300]}"
 

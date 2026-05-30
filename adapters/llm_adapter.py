@@ -1,6 +1,8 @@
 # /kaare/adapters/llm_adapter.py
 
+import asyncio
 import base64
+import contextvars
 import fcntl
 import io
 import json
@@ -24,9 +26,18 @@ logger = logging.getLogger(__name__)
 
 GPU_LOCK_PATH = "/kaare/runtime/gpu.lock"
 
-# Intern rask-sjekk: settes True mellom "vi bestemmer oss for kare" og
-# "proxyen faktisk låser gpu.lock". Dekker race-vinduet.
-_kare_active = False
+# Serializes concurrent ask_llm / ask_llm_with_tools calls to vLLM.
+# Lazy-initialized because asyncio.Lock() requires a running event loop.
+_kare_lock: asyncio.Lock | None = None
+
+
+def _get_kare_lock() -> asyncio.Lock:
+    global _kare_lock
+    if _kare_lock is None:
+        _kare_lock = asyncio.Lock()
+    return _kare_lock
+
+_current_rid: contextvars.ContextVar[str] = contextvars.ContextVar("current_rid", default="")
 
 
 def _kare_is_busy() -> bool:
@@ -58,6 +69,7 @@ except Exception:
     _CAPABILITY_MAP: dict = {}
 
 from kaare_core.config import get_model as _get_model, get_local_tz as _get_local_tz, get_tool_permissions as _get_tool_permissions
+from kaare_core.tools.i18n import t, get_lang
 
 # -------------------------------------------------
 # Personlighet
@@ -115,6 +127,27 @@ _PERSONALITY_BEHAVIOR_FALLBACK = _load_text("/kaare/configs/personality_behavior
 if not _PERSONALITIES and _PERSONALITY_BEHAVIOR_FALLBACK:
     _PERSONALITIES["standard"] = _PERSONALITY_BEHAVIOR_FALLBACK
 
+# Language-specific personality variants — loaded at startup, no disk I/O per request
+_PERSONALITIES_EN: dict[str, str] = {}
+_PERSONALITIES_DE: dict[str, str] = {}
+for _name in ("standard", "barnevennlig", "detaljert", "formell"):
+    _t = _load_text(f"/kaare/configs/personalities/{_name}_en.md")
+    if _t:
+        _PERSONALITIES_EN[_name] = _t
+    _t = _load_text(f"/kaare/configs/personalities/{_name}_de.md")
+    if _t:
+        _PERSONALITIES_DE[_name] = _t
+
+
+def _get_personality_variant(variant: str, lang: str) -> str:
+    """Return personality variant content in the given language, falling back to Norwegian."""
+    lang_key = lang if lang in ("nb", "en", "de") else "nb"
+    if lang_key == "en":
+        return _PERSONALITIES_EN.get(variant) or _PERSONALITIES.get(variant, "")
+    if lang_key == "de":
+        return _PERSONALITIES_DE.get(variant) or _PERSONALITIES.get(variant, "")
+    return _PERSONALITIES.get(variant, "")
+
 _SETTINGS_PATH = "/kaare/configs/settings.yaml"
 _LOKASJON_BLOKK = ""
 _ASSISTANT_NAME_BLOKK = ""
@@ -170,17 +203,29 @@ except Exception:
     pass
 
 
-_UKEDAGER = ["mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag", "søndag"]
-_MÅNEDER  = ["januar", "februar", "mars", "april", "mai", "juni",
-             "juli", "august", "september", "oktober", "november", "desember"]
+_WEEKDAYS: dict[str, list[str]] = {
+    "nb": ["mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag", "søndag"],
+    "en": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+    "de": ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"],
+}
+_MONTHS: dict[str, list[str]] = {
+    "nb": ["januar", "februar", "mars", "april", "mai", "juni",
+           "juli", "august", "september", "oktober", "november", "desember"],
+    "en": ["January", "February", "March", "April", "May", "June",
+           "July", "August", "September", "October", "November", "December"],
+    "de": ["Januar", "Februar", "März", "April", "Mai", "Juni",
+           "Juli", "August", "September", "Oktober", "November", "Dezember"],
+}
 
-def _tid_blokk() -> str:
+def _tid_blokk(lang: str = "nb") -> str:
     """Returns current date and time using the timezone from settings.yaml."""
     nå = datetime.now(tz=_LOCAL_TZ)
-    dag   = _UKEDAGER[nå.weekday()]
-    dato  = f"{nå.day}. {_MÅNEDER[nå.month - 1]} {nå.year}"
-    kl    = nå.strftime("%H:%M")
-    return f"# Tid og dato\nNå er det {dag} {dato}, klokken {kl}."
+    days = _WEEKDAYS.get(lang, _WEEKDAYS["nb"])
+    months = _MONTHS.get(lang, _MONTHS["nb"])
+    dag  = days[nå.weekday()]
+    dato = f"{nå.day}. {months[nå.month - 1]} {nå.year}"
+    kl   = nå.strftime("%H:%M")
+    return t("llm_time_header", lang) + "\n" + t("llm_time_now", lang, day=dag, date=dato, time=kl)
 
 
 def _load_kare_huske() -> str:
@@ -221,7 +266,7 @@ def _cap_personality_self(text: str) -> str:
 _PERSONALITY_SELF = _cap_personality_self(_PERSONALITY_SELF_RAW)
 
 
-def _load_user_obs(user_id: str) -> str:
+def _load_user_obs(user_id: str, lang: str = "nb") -> str:
     """
     Laster topp-seksjonen av brukerens observations.md til system-prompten.
     Alt over første '---'-linje = alltid inn. Ingen '---' = siste 14 dager.
@@ -246,7 +291,7 @@ def _load_user_obs(user_id: str) -> str:
             return ""
         if len(top) > 1500:
             top = top[:1500] + "\n[… mer tilgjengelig via les_brukerprofil]"
-        return f"# Kåres observasjoner om {user_id}\n{top}"
+        return t("llm_obs_header", lang, user_id=user_id) + "\n" + top
     except Exception:
         return ""
 
@@ -262,7 +307,7 @@ def _load_user_profile_top(user_id: str) -> str:
         return ""
 
 
-def _current_user_block(user_id: str) -> str:
+def _current_user_block(user_id: str, lang: str = "nb") -> str:
     """Return an unambiguous 'Du snakker nå med X' block for the active user."""
     if not user_id or user_id == "global":
         return ""
@@ -271,16 +316,16 @@ def _current_user_block(user_id: str) -> str:
         name = get_display_name(user_id)
     except Exception:
         name = user_id
-    return f"# Nåværende bruker\nDu snakker nå med **{name}**. Bruk alltid dette navnet — aldri et annet."
+    return t("llm_current_user_header", lang) + "\n" + t("llm_current_user_line", lang, name=name)
 
 
-def _build_disabled_modules_block() -> str:
+def _build_disabled_modules_block(lang: str = "nb") -> str:
     """Return a prompt block listing disabled agents/domains and Mechanic tool limits, or '' if everything is active."""
     disabled: list[str] = []
 
     _agent_labels = {
         "mechanic": "Mechanic",
-        "library":     "Frøken Library",
+        "library":     "Miss Library",
         "image_edit":  "bilderedigering",
     }
     for role, label in _agent_labels.items():
@@ -301,9 +346,8 @@ def _build_disabled_modules_block() -> str:
     if disabled:
         names = ", ".join(disabled)
         parts.append(
-            f"## Deaktiverte moduler\n"
-            f"{names} er slått av av administrator. "
-            f"Ikke tilby, forsøk å bruke, eller henvis til disse funksjonene."
+            t("llm_disabled_modules_header", lang) + "\n"
+            + t("llm_disabled_modules", lang, names=names)
         )
 
     # Mechanic tool-level awareness (only when Mechanic itself is enabled)
@@ -320,9 +364,8 @@ def _build_disabled_modules_block() -> str:
         disabled_tools = [label for key, label in _tool_labels.items() if ps_perms.get(key) is False]
         if disabled_tools:
             parts.append(
-                f"## Mechanic — deaktiverte verktøy\n"
-                f"Mechanic kan ikke bruke: {', '.join(disabled_tools)}. "
-                f"Ikke be Mechanic utføre oppgaver som krever disse verktøyene."
+                t("llm_mechanic_disabled", lang) + "\n"
+                + t("llm_mechanic_cannot_use", lang, tools=", ".join(disabled_tools))
             )
 
     return "\n\n".join(parts)
@@ -340,11 +383,13 @@ def _build_system(base: str, personality: str = "standard", user_id: str = "") -
       egendefinert     → egendefinert kjerne + behavior + personality_self
     _tid_blokk() sist — endres hvert minutt og ville ugyldiggjort KV-cache.
     """
+    lang = get_lang(user_id)
+
     _include_behavior = _PERSONALITY_MODE in ("full", "komplett", "egendefinert")
     _include_self     = _PERSONALITY_MODE not in ("minimal", "letvekt")
     _include_world    = _PERSONALITY_MODE == "komplett"
 
-    behavior = (_PERSONALITIES.get(personality) or _PERSONALITIES.get("standard", "")) if _include_behavior else ""
+    behavior = (_get_personality_variant(personality, lang) or _get_personality_variant("standard", lang)) if _include_behavior else ""
     personality_self = _PERSONALITY_SELF if _include_self else ""
     world_ctx = ""
     if _include_world:
@@ -352,14 +397,14 @@ def _build_system(base: str, personality: str = "standard", user_id: str = "") -
         world_ctx = raw[:2000] if raw else ""
 
     profile_top = _load_user_profile_top(user_id)
-    user_obs = _load_user_obs(user_id)
+    user_obs = _load_user_obs(user_id, lang)
     kare_huske = _load_kare_huske()
-    current_user = _current_user_block(user_id)
+    current_user = _current_user_block(user_id, lang)
     parts = [p for p in [
         _ASSISTANT_NAME_BLOKK, _PERSONALITY_CORE, current_user, behavior,
         _LOKASJON_BLOKK, _LANGUAGE_BLOKK, (base or "").strip(),
         personality_self, kare_huske, _HOUSEHOLD_BLOCK, profile_top, user_obs,
-        world_ctx, _build_disabled_modules_block(), _tid_blokk()
+        world_ctx, _build_disabled_modules_block(lang), _tid_blokk(lang)
     ] if p]
     return "\n\n---\n\n".join(parts)
 
@@ -383,8 +428,36 @@ def _build_system_fallback() -> str:
 
 
 def list_personalities() -> list[dict]:
-    """Returnerer tilgjengelige personlighetsvarianter (nøkkel + filnavn)."""
-    return [{"key": k, "label": k.replace("_", " ").capitalize()} for k in sorted(_PERSONALITIES)]
+    """Return available personality variants (key only — label is resolved client-side via i18n)."""
+    lang_suffixes = ("_en", "_de", "_nb")
+    base_keys = [k for k in sorted(_PERSONALITIES) if not any(k.endswith(s) for s in lang_suffixes)]
+    return [{"key": k, "label": k} for k in base_keys]
+
+
+def _build_prompt_meta(system_prompt: str, user_id: str, is_fallback: bool = False) -> dict:
+    """
+    Build prompt_meta for llm_calls.log. Used for P17 self-monitoring and P24 cache analysis.
+    static_prefix_chars = estimated chars from static parts that land at the top of _build_system().
+    This boundary must stay in sync with _build_system() — update both if order changes (P24 Phase 1).
+    """
+    static_parts = [
+        _ASSISTANT_NAME_BLOKK, _PERSONALITY_CORE,
+        _PERSONALITIES.get("standard", ""),
+        _LOKASJON_BLOKK, _LANGUAGE_BLOKK, _HOUSEHOLD_BLOCK,
+    ]
+    static_prefix_chars = sum(len(p) for p in static_parts if p)
+    system_chars = len(system_prompt)
+    has_user_obs = bool(_load_user_obs(user_id).strip()) if user_id else False
+    return {
+        "mode":                 _PERSONALITY_MODE,
+        "system_chars":         system_chars,
+        "static_prefix_chars":  static_prefix_chars,
+        "dynamic_chars":        max(0, system_chars - static_prefix_chars),
+        "has_personality_self": bool(_PERSONALITY_SELF),
+        "has_world":            _PERSONALITY_MODE == "komplett",
+        "has_user_obs":         has_user_obs,
+        "is_fallback_prompt":   is_fallback,
+    }
 
 
 # -------------------------------------------------
@@ -771,6 +844,7 @@ async def _call_ollama(
     think: bool | None = None,
     options: Dict[str, Any] | None = None,
     system: str | None = None,
+    keep_warm: bool = False,
 ) -> Dict[str, Any]:
     """
     Lavnivå Ollama-kall. Antar at model allerede er resolvet.
@@ -780,6 +854,9 @@ async def _call_ollama(
         "prompt": prompt,
         "stream": stream,
     }
+
+    if keep_warm:
+        payload["keep_alive"] = -1
 
     if system:
         payload["system"] = system
@@ -841,10 +918,8 @@ async def ask_llm(
     raw_prompt  = user text only, no STM (sent to cloud — avoids essays)
     allow_cloud = True only for real chat calls, never for intent/split/repair
     """
-    global _kare_active
-
     cfg         = CFG["default"]
-    kare_busy   = _kare_active or _kare_is_busy()
+    kare_busy   = _kare_is_busy()
     in_fallback = is_fallback_active()
     skip_main   = in_fallback and not should_retry_main()
 
@@ -858,7 +933,7 @@ async def ask_llm(
 
     for instance, base_url in backends:
         if instance == "kare":
-            _kare_active = True
+            await _get_kare_lock().acquire()
 
         try:
             if instance == "cloud":
@@ -909,6 +984,7 @@ async def ask_llm(
                     think=cfg.get("think"),
                     options=cfg.get("options"),
                     system=_build_system(cfg.get("system", "")),
+                    keep_warm=bool(cfg.get("keep_warm", False)),
                 )
 
             if result.get("ok"):
@@ -935,7 +1011,7 @@ async def ask_llm(
 
         finally:
             if instance == "kare":
-                _kare_active = False
+                _get_kare_lock().release()
 
     # ── 9B fallback (generate endpoint) ──────────────────────────────────────
     if in_fallback and CFG.get("fallback", {}).get("enabled", True):
@@ -952,6 +1028,7 @@ async def ask_llm(
                     think=cfg_fb.get("think"),
                     options=cfg_fb.get("options"),
                     system=_build_system_fallback(),
+                    keep_warm=bool(cfg_fb.get("keep_warm", False)),
                 )
             if result.get("ok"):
                 increment_turn()
@@ -993,10 +1070,8 @@ async def ask_llm_with_tools(
       fallback_deactivated True only on the first successful recovery call
       fallback_info        session dict from deactivate_fallback() when deactivated
     """
-    global _kare_active
-
     cfg         = CFG["default"]
-    kare_busy   = _kare_active or _kare_is_busy()
+    kare_busy   = _kare_is_busy()
     in_fallback = is_fallback_active()
     skip_main   = in_fallback and not should_retry_main()
 
@@ -1013,7 +1088,7 @@ async def ask_llm_with_tools(
 
     for instance, base_url in backends:
         if instance == "kare":
-            _kare_active = True
+            await _get_kare_lock().acquire()
 
         _t0 = time.perf_counter()
         try:
@@ -1041,6 +1116,8 @@ async def ask_llm_with_tools(
                     "options":  _clean_ollama_options(cfg.get("options", {})),
                     "think":    think_val,
                 }
+                if cfg.get("keep_warm"):
+                    payload["keep_alive"] = -1
 
                 async with httpx.AsyncClient(timeout=None) as client:
                     r = await client.post(
@@ -1080,6 +1157,7 @@ async def ask_llm_with_tools(
                         prompt_preview=(full_messages[-1].get("content", "") if full_messages else "")[:200],
                         latency_ms=elapsed_ms,
                         recovered=recovered,
+                        rid=rid,
                     )
                     if recovered:
                         content = extract_conclusion(think_content)
@@ -1100,18 +1178,23 @@ async def ask_llm_with_tools(
                     )
                     for m in messages
                 )
+                _sys = ""
+                if full_messages and full_messages[0].get("role") == "system":
+                    _sys = full_messages[0].get("content", "")
                 os.makedirs("/kaare/logs", exist_ok=True)
                 with open("/kaare/logs/llm_calls.log", "a", encoding="utf-8") as _f:
                     _f.write(json.dumps({
-                        "ts":         datetime.now(timezone.utc).isoformat(),
-                        "rid":        rid,
-                        "instance":   instance,
-                        "latency_ms": elapsed_ms,
-                        "has_tools":  bool(tool_calls),
-                        "has_think":  bool(think_content),
-                        "has_images": _has_images,
-                        "recovered":  recovered,
-                        "status":     "ok",
+                        "ts":          datetime.now(timezone.utc).isoformat(),
+                        "rid":         rid,
+                        "source":      "user",
+                        "instance":    instance,
+                        "latency_ms":  elapsed_ms,
+                        "has_tools":   bool(tool_calls),
+                        "has_think":   bool(think_content),
+                        "has_images":  _has_images,
+                        "recovered":   recovered,
+                        "status":      "ok",
+                        "prompt_meta": _build_prompt_meta(_sys, user_id, is_fallback=in_fallback),
                     }, ensure_ascii=False) + "\n")
             except Exception:
                 pass
@@ -1141,7 +1224,7 @@ async def ask_llm_with_tools(
 
         finally:
             if instance == "kare":
-                _kare_active = False
+                _get_kare_lock().release()
 
     # ── 9B fallback (chat endpoint) ───────────────────────────────────────────
     if in_fallback:
@@ -1326,6 +1409,32 @@ async def ask_llm_cloud(prompt: str) -> Dict[str, Any]:
     }
 
 
+def _log_llm_call_bg(
+    rid: str, source: str, role: str, model: str,
+    latency_ms: int, has_tools: bool, has_think: bool,
+    has_images: bool, recovered: bool, ok: bool,
+) -> None:
+    """Log background-job LLM calls to llm_calls.log. Fire-and-forget."""
+    try:
+        os.makedirs("/kaare/logs", exist_ok=True)
+        with open("/kaare/logs/llm_calls.log", "a", encoding="utf-8") as _f:
+            _f.write(json.dumps({
+                "ts":         datetime.now(timezone.utc).isoformat(),
+                "rid":        rid,
+                "source":     source,
+                "instance":   role,
+                "model":      model,
+                "latency_ms": latency_ms,
+                "has_tools":  has_tools,
+                "has_think":  has_think,
+                "has_images": has_images,
+                "recovered":  recovered,
+                "status":     "ok" if ok else "error",
+            }, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 async def call_llm_chat(
     role: str,
     messages: List[Dict[str, Any]],
@@ -1333,6 +1442,8 @@ async def call_llm_chat(
     options: Dict[str, Any] | None = None,
     timeout: float | None = None,
     disable_thinking: bool = False,
+    rid: str = "",
+    source: str = "user",
 ) -> Dict[str, Any]:
     """
     Provider-agnostic multi-turn chat call for background jobs and agents.
@@ -1346,6 +1457,9 @@ async def call_llm_chat(
     if not cfg:
         return {"ok": False, "error": f"unknown_role:{role}", "text": "", "tool_calls": None}
 
+    effective_rid = rid or _current_rid.get()
+    _t0 = time.perf_counter()
+
     base_url = cfg["base_url"]
     model    = _get_model(cfg["model_role"])
     _opts    = options if options is not None else cfg.get("options")
@@ -1354,7 +1468,7 @@ async def call_llm_chat(
 
     if provider == "vllm":
         try:
-            return await _call_vllm_chat(
+            result = await _call_vllm_chat(
                 role=role,
                 base_url=base_url,
                 model=model,
@@ -1364,6 +1478,15 @@ async def call_llm_chat(
                 timeout=_timeout,
                 disable_thinking=disable_thinking,
             )
+            elapsed_ms = int((time.perf_counter() - _t0) * 1000)
+            _log_llm_call_bg(
+                rid=effective_rid, source=source, role=role, model=model,
+                latency_ms=elapsed_ms,
+                has_tools=bool(result.get("tool_calls")),
+                has_think=bool(result.get("meta", {}).get("think_content")),
+                has_images=False, recovered=False, ok=result.get("ok", False),
+            )
+            return result
         except Exception as exc:
             logger.warning("call_llm_chat(%s) vLLM feilet: %s", role, exc)
             return {"ok": False, "error": str(exc), "text": "", "tool_calls": None}
@@ -1376,6 +1499,8 @@ async def call_llm_chat(
         "options":  _opts or {},
         "think":    cfg.get("think", False),
     }
+    if cfg.get("keep_warm"):
+        payload["keep_alive"] = -1
     if tools:
         payload["tools"] = tools
     try:
@@ -1390,9 +1515,19 @@ async def call_llm_chat(
         msg = data.get("message", {})
         content = (msg.get("content") or "").strip()
         think_end = content.upper().find("</THINK>")
+        has_think = False
         if think_end != -1:
+            has_think = True
             content = content[think_end + len("</THINK>"):].strip()
         tool_calls = msg.get("tool_calls")
+        elapsed_ms = int((time.perf_counter() - _t0) * 1000)
+        _log_llm_call_bg(
+            rid=effective_rid, source=source, role=role, model=model,
+            latency_ms=elapsed_ms,
+            has_tools=bool(tool_calls),
+            has_think=has_think,
+            has_images=False, recovered=False, ok=bool(content or tool_calls),
+        )
         return {
             "ok":         bool(content or tool_calls),
             "text":       content,
@@ -1416,6 +1551,7 @@ async def ask_vlm(prompt: str, images: List[str]) -> Dict[str, Any]:
         stream=cfg.get("stream", False),
         options=cfg.get("options"),
         system=cfg.get("system"),
+        keep_warm=bool(cfg.get("keep_warm", False)),
     )
 
 

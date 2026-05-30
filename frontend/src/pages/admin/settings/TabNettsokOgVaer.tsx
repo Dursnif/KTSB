@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import {
   apiGetWeather, apiPutWeather, apiGetWebsearch, apiPutWebsearch,
@@ -13,11 +14,12 @@ import {
 } from "@/services/api";
 import { useSaveState, FieldRow, SaveFeedback, MaskedInput } from "./shared";
 
-const WEATHER_PROVIDERS: { value: WeatherProvider; label: string; needsKey: boolean; keyField?: "owm" | "wapi" }[] = [
-  { value: "met.no",        label: "met.no (gratis, norsk, ingen nøkkel)",         needsKey: false },
-  { value: "open-meteo",    label: "Open-Meteo (gratis, global, ingen nøkkel)",    needsKey: false },
-  { value: "openweathermap",label: "OpenWeatherMap (global, API-nøkkel påkrevd)",  needsKey: true,  keyField: "owm" },
-  { value: "weatherapi",    label: "WeatherAPI.com (global, API-nøkkel påkrevd)",  needsKey: true,  keyField: "wapi" },
+const WEATHER_PROVIDERS: { value: WeatherProvider; label: string; needsKey: boolean; keyField?: "owm" | "wapi" | "pirate" }[] = [
+  { value: "met.no",         label: "met.no (gratis, norsk, ingen nøkkel)",            needsKey: false },
+  { value: "open-meteo",     label: "Open-Meteo (gratis, global, ingen nøkkel)",       needsKey: false },
+  { value: "openweathermap", label: "OpenWeatherMap (global, API-nøkkel påkrevd)",     needsKey: true,  keyField: "owm" },
+  { value: "weatherapi",     label: "WeatherAPI.com (global, API-nøkkel påkrevd)",     needsKey: true,  keyField: "wapi" },
+  { value: "pirateweather",  label: "PirateWeather (global, gratis nøkkel påkrevd)",   needsKey: true,  keyField: "pirate" },
 ];
 
 export default function TabNettsokOgVaer() {
@@ -27,6 +29,27 @@ export default function TabNettsokOgVaer() {
   const [forecastDays, setForecastDays] = useState(2);
   const [owmKey, setOwmKey]       = useState("");
   const [wapiKey, setWapiKey]     = useState("");
+  const [pirateKey, setPirateKey] = useState("");
+  const [showFeelsLike, setShowFeelsLike] = useState(false);
+  const [showUvIndex, setShowUvIndex]     = useState(false);
+  const [showSunTimes, setShowSunTimes]   = useState(false);
+  const [showAlerts, setShowAlerts]       = useState(true);
+  const [showAirQuality, setShowAirQuality] = useState(false);
+  const [useHaSensors, setUseHaSensors]   = useState(false);
+  const [showTides, setShowTides]                   = useState(false);
+  const [tideProvider, setTideProvider]             = useState<string>("auto");
+  const [stormglassKey, setStormglassKey]           = useState("");
+  const [useCameraForWeather, setUseCameraForWeather] = useState(false);
+  const [weatherCamera, setWeatherCamera]           = useState("");
+  const [haTempEntity, setHaTempEntity]           = useState("");
+  const [haWindEntity, setHaWindEntity]           = useState("");
+  const [haWindGustEntity, setHaWindGustEntity]   = useState("");
+  const [haWindDirEntity, setHaWindDirEntity]     = useState("");
+  const [haPrecipEntity, setHaPrecipEntity]       = useState("");
+  const [haPrecipLastHourEntity, setHaPrecipLastHourEntity] = useState("");
+  const [haPrecipTodayEntity, setHaPrecipTodayEntity]       = useState("");
+  const [haHumidityEntity, setHaHumidityEntity]   = useState("");
+  const [haPressureEntity, setHaPressureEntity]   = useState("");
   const ssWeather = useSaveState();
 
   const [, setWs]                 = useState<WebsearchConfig | null>(null);
@@ -52,6 +75,25 @@ export default function TabNettsokOgVaer() {
       setWeather(d);
       setProvider(d.provider);
       setForecastDays(d.forecast_days);
+      setShowFeelsLike(d.show_feels_like ?? false);
+      setShowUvIndex(d.show_uv_index ?? false);
+      setShowSunTimes(d.show_sun_times ?? false);
+      setShowAlerts(d.show_alerts ?? true);
+      setShowAirQuality(d.show_air_quality ?? false);
+      setUseHaSensors(d.use_ha_sensors ?? false);
+      setShowTides(d.show_tides ?? false);
+      setTideProvider(d.tide_provider ?? "auto");
+      setUseCameraForWeather(d.use_camera_for_weather ?? false);
+      setWeatherCamera(d.weather_camera ?? "");
+      setHaTempEntity(d.ha_temp_entity ?? "");
+      setHaWindEntity(d.ha_wind_entity ?? "");
+      setHaWindGustEntity(d.ha_wind_gust_entity ?? "");
+      setHaWindDirEntity(d.ha_wind_direction_entity ?? "");
+      setHaPrecipEntity(d.ha_precip_entity ?? "");
+      setHaPrecipLastHourEntity(d.ha_precip_last_hour_entity ?? "");
+      setHaPrecipTodayEntity(d.ha_precip_today_entity ?? "");
+      setHaHumidityEntity(d.ha_humidity_entity ?? "");
+      setHaPressureEntity(d.ha_pressure_entity ?? "");
     }).catch(() => {});
     apiGetSecrets().then(s => setBraveStatus(s.brave)).catch(() => {});
     apiGetWebsearch().then(d => { setWs(d); setWsLocal(d); }).catch(() => {});
@@ -63,11 +105,32 @@ export default function TabNettsokOgVaer() {
     try {
       await apiPutWeather({
         provider,
-        forecast_days: forecastDays,
-        ...(owmKey  ? { openweathermap_key: owmKey }  : {}),
-        ...(wapiKey ? { weatherapi_key:     wapiKey } : {}),
+        forecast_days:    forecastDays,
+        show_feels_like:  showFeelsLike,
+        show_uv_index:    showUvIndex,
+        show_sun_times:   showSunTimes,
+        show_alerts:      showAlerts,
+        show_air_quality: showAirQuality,
+        use_ha_sensors:    useHaSensors,
+        ha_temp_entity:    haTempEntity.trim(),
+        ha_wind_entity:    haWindEntity.trim(),
+        ha_wind_gust_entity:      haWindGustEntity.trim(),
+        ha_wind_direction_entity: haWindDirEntity.trim(),
+        ha_precip_entity:         haPrecipEntity.trim(),
+        ha_precip_last_hour_entity: haPrecipLastHourEntity.trim(),
+        ha_precip_today_entity:   haPrecipTodayEntity.trim(),
+        ha_humidity_entity: haHumidityEntity.trim(),
+        ha_pressure_entity: haPressureEntity.trim(),
+        show_tides:             showTides,
+        tide_provider:          tideProvider,
+        use_camera_for_weather: useCameraForWeather,
+        weather_camera:         weatherCamera.trim(),
+        ...(owmKey        ? { openweathermap_key: owmKey }        : {}),
+        ...(wapiKey       ? { weatherapi_key:     wapiKey }       : {}),
+        ...(pirateKey     ? { pirateweather_key:  pirateKey }     : {}),
+        ...(stormglassKey ? { stormglass_key:     stormglassKey } : {}),
       });
-      setOwmKey(""); setWapiKey("");
+      setOwmKey(""); setWapiKey(""); setPirateKey(""); setStormglassKey("");
       const fresh = await apiGetWeather();
       setWeather(fresh);
       ssWeather.saved();
@@ -189,10 +252,172 @@ export default function TabNettsokOgVaer() {
               </FieldRow>
             )}
 
+            {provider === "pirateweather" && (
+              <FieldRow
+                label="PirateWeather API-nøkkel"
+                hint={weather?.pirateweather_key_set
+                  ? t("settings.llm.api_key_set_hint", { masked: weather.pirateweather_key_masked })
+                  : "Ikke satt — registrer gratis på pirate-weather.apiable.io"}
+              >
+                <MaskedInput value={pirateKey} onChange={setPirateKey} placeholder={weather?.pirateweather_key_set ? "••• (oppdater)" : "Lim inn nøkkel"} />
+              </FieldRow>
+            )}
+
             {providerInfo?.needsKey && (
               <div className="py-2">
                 <p className="text-xs text-amber-400">{t("settings.nettsok.weather.needs_key_warning")}</p>
               </div>
+            )}
+
+            <FieldRow label={t("settings.nettsok.weather.feels_like_label")} hint={t("settings.nettsok.weather.feels_like_hint")}>
+              <Switch checked={showFeelsLike} onCheckedChange={setShowFeelsLike} />
+            </FieldRow>
+
+            {provider === "open-meteo" && (
+              <FieldRow label={t("settings.nettsok.weather.uv_label")} hint={t("settings.nettsok.weather.uv_hint")}>
+                <Switch checked={showUvIndex} onCheckedChange={setShowUvIndex} />
+              </FieldRow>
+            )}
+
+            <FieldRow label={t("settings.nettsok.weather.sun_label")} hint={t("settings.nettsok.weather.sun_hint")}>
+              <Switch checked={showSunTimes} onCheckedChange={setShowSunTimes} />
+            </FieldRow>
+
+            {provider === "met.no" && (
+              <FieldRow label={t("settings.nettsok.weather.alerts_label")} hint={t("settings.nettsok.weather.alerts_hint")}>
+                <Switch checked={showAlerts} onCheckedChange={setShowAlerts} />
+              </FieldRow>
+            )}
+
+            <FieldRow label={t("settings.nettsok.weather.air_quality_label")} hint={t("settings.nettsok.weather.air_quality_hint")}>
+              <Switch checked={showAirQuality} onCheckedChange={setShowAirQuality} />
+            </FieldRow>
+
+            <FieldRow label={t("settings.nettsok.weather.tides_label")} hint={t("settings.nettsok.weather.tides_hint")}>
+              <Switch checked={showTides} onCheckedChange={setShowTides} />
+            </FieldRow>
+
+            {showTides && (
+              <>
+                <FieldRow label={t("settings.nettsok.weather.tide_provider_label")} hint={t("settings.nettsok.weather.tide_provider_hint")}>
+                  <Select value={tideProvider} onValueChange={(v: string | null) => { if (v) setTideProvider(v); }}>
+                    <SelectTrigger className="w-52">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">auto (Kartverket → Stormglass)</SelectItem>
+                      <SelectItem value="kartverket">Kartverket (norsk kyst)</SelectItem>
+                      <SelectItem value="stormglass">Stormglass (global)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FieldRow>
+                {(tideProvider === "stormglass" || tideProvider === "auto") && (
+                  <FieldRow
+                    label={t("settings.nettsok.weather.stormglass_key_label")}
+                    hint={weather?.stormglass_key_set
+                      ? t("settings.llm.api_key_set_hint", { masked: weather.stormglass_key_masked })
+                      : t("settings.nettsok.weather.stormglass_key_unset_hint")}
+                  >
+                    <MaskedInput value={stormglassKey} onChange={setStormglassKey} placeholder={weather?.stormglass_key_set ? "••• (oppdater)" : "Lim inn nøkkel"} />
+                  </FieldRow>
+                )}
+              </>
+            )}
+
+            <FieldRow label={t("settings.nettsok.weather.camera_weather_label")} hint={t("settings.nettsok.weather.camera_weather_hint")}>
+              <Switch checked={useCameraForWeather} onCheckedChange={setUseCameraForWeather} />
+            </FieldRow>
+
+            {useCameraForWeather && (
+              <FieldRow label={t("settings.nettsok.weather.camera_name_label")} hint={t("settings.nettsok.weather.camera_name_hint")}>
+                <Input
+                  value={weatherCamera}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setWeatherCamera(e.target.value)}
+                  placeholder="pip_kamera"
+                  className="w-64 font-mono text-sm"
+                />
+              </FieldRow>
+            )}
+
+            <FieldRow label={t("settings.nettsok.weather.ha_sensors_label")} hint={t("settings.nettsok.weather.ha_sensors_hint")}>
+              <Switch checked={useHaSensors} onCheckedChange={setUseHaSensors} />
+            </FieldRow>
+
+            {useHaSensors && (
+              <>
+                <FieldRow label={t("settings.nettsok.weather.ha_temp_label")} hint={t("settings.nettsok.weather.ha_temp_hint")}>
+                  <Input
+                    value={haTempEntity}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaTempEntity(e.target.value)}
+                    placeholder="sensor.outdoor_temperature"
+                    className="w-80 font-mono text-sm"
+                  />
+                </FieldRow>
+                <FieldRow label={t("settings.nettsok.weather.ha_wind_label")} hint={t("settings.nettsok.weather.ha_wind_hint")}>
+                  <Input
+                    value={haWindEntity}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaWindEntity(e.target.value)}
+                    placeholder="sensor.outdoor_wind_speed"
+                    className="w-80 font-mono text-sm"
+                  />
+                </FieldRow>
+                <FieldRow label={t("settings.nettsok.weather.ha_wind_gust_label")} hint={t("settings.nettsok.weather.ha_wind_gust_hint")}>
+                  <Input
+                    value={haWindGustEntity}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaWindGustEntity(e.target.value)}
+                    placeholder="sensor.outdoor_wind_gust"
+                    className="w-80 font-mono text-sm"
+                  />
+                </FieldRow>
+                <FieldRow label={t("settings.nettsok.weather.ha_wind_dir_label")} hint={t("settings.nettsok.weather.ha_wind_dir_hint")}>
+                  <Input
+                    value={haWindDirEntity}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaWindDirEntity(e.target.value)}
+                    placeholder="sensor.outdoor_wind_direction"
+                    className="w-80 font-mono text-sm"
+                  />
+                </FieldRow>
+                <FieldRow label={t("settings.nettsok.weather.ha_precip_label")} hint={t("settings.nettsok.weather.ha_precip_hint")}>
+                  <Input
+                    value={haPrecipEntity}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaPrecipEntity(e.target.value)}
+                    placeholder="sensor.outdoor_precipitation"
+                    className="w-80 font-mono text-sm"
+                  />
+                </FieldRow>
+                <FieldRow label={t("settings.nettsok.weather.ha_precip_last_hour_label")} hint={t("settings.nettsok.weather.ha_precip_last_hour_hint")}>
+                  <Input
+                    value={haPrecipLastHourEntity}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaPrecipLastHourEntity(e.target.value)}
+                    placeholder="sensor.outdoor_precipitation_last_hour"
+                    className="w-80 font-mono text-sm"
+                  />
+                </FieldRow>
+                <FieldRow label={t("settings.nettsok.weather.ha_precip_today_label")} hint={t("settings.nettsok.weather.ha_precip_today_hint")}>
+                  <Input
+                    value={haPrecipTodayEntity}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaPrecipTodayEntity(e.target.value)}
+                    placeholder="sensor.outdoor_precipitation_today"
+                    className="w-80 font-mono text-sm"
+                  />
+                </FieldRow>
+                <FieldRow label={t("settings.nettsok.weather.ha_humidity_label")} hint={t("settings.nettsok.weather.ha_humidity_hint")}>
+                  <Input
+                    value={haHumidityEntity}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaHumidityEntity(e.target.value)}
+                    placeholder="sensor.outdoor_humidity"
+                    className="w-80 font-mono text-sm"
+                  />
+                </FieldRow>
+                <FieldRow label={t("settings.nettsok.weather.ha_pressure_label")} hint={t("settings.nettsok.weather.ha_pressure_hint")}>
+                  <Input
+                    value={haPressureEntity}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaPressureEntity(e.target.value)}
+                    placeholder="sensor.outdoor_pressure"
+                    className="w-80 font-mono text-sm"
+                  />
+                </FieldRow>
+              </>
             )}
           </div>
 

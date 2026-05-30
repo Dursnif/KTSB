@@ -52,16 +52,17 @@ def _get_stm_history(date: str | None = None, lang: str = "nb") -> str:
         return t("mem_stm_read_error", lang, date=date, error=e)
 
     parts = []
-    saved_at = data.get("saved_at", "ukjent")[:16].replace("T", " ")
-    parts.append(f"STM-snapshot for {date} (lagret {saved_at} UTC):")
+    saved_at = data.get("saved_at", t("mem_stm_not_found", lang))[:16].replace("T", " ")
+    parts.append(t("mem_stm_header", lang, date=date, saved_at=saved_at))
 
     if data.get("daily_summary"):
-        parts.append(f"\nDaglig sammendrag:\n{data['daily_summary'][:500]}")
+        parts.append(t("mem_daily_summary", lang) + data["daily_summary"][:500])
 
     dialog = data.get("dialog", [])
     if dialog:
-        parts.append(f"\nDialog ({len(dialog)} turns, siste 20 vises):")
-        for turn in dialog[-20:]:
+        shown = min(20, len(dialog))
+        parts.append(t("mem_dialog_header", lang, turns=len(dialog), shown=shown))
+        for turn in dialog[-shown:]:
             role = turn.get("role", "?")
             text = turn.get("text", "")[:200]
             ts = turn.get("ts", "")[:16].replace("T", " ")
@@ -69,8 +70,9 @@ def _get_stm_history(date: str | None = None, lang: str = "nb") -> str:
 
     ok_actions = [a for a in data.get("actions", []) if a.get("ok")]
     if ok_actions:
-        parts.append(f"\nHandlinger (siste 10 vellykkede av {len(ok_actions)}):")
-        for a in ok_actions[-10:]:
+        shown = min(10, len(ok_actions))
+        parts.append(t("mem_actions_header", lang, shown=shown, total=len(ok_actions)))
+        for a in ok_actions[-shown:]:
             ts = a.get("ts", "")[:16].replace("T", " ")
             parts.append(f"  [{ts}] {a['action']} {a['entity_id']}")
 
@@ -165,8 +167,12 @@ def _verify_interactions(ids, verdict: str, user_id: str, lang: str = "nb") -> s
             ids = [x.strip() for x in ids.strip("[] ").split(",") if x.strip()]
         ids_int = [int(i) for i in ids]
         updated = get_ltm().mark_interactions(ids=ids_int, verdict=verdict, user_id=uid)
-        label = {"verified": "bekreftet ✓", "denied": "avvist ✗", "test": "merket som test 🧪"}
-        return f"{updated} interaksjon(er) {label.get(verdict, verdict)}: {ids_int}"
+        verdict_labels = {
+            "verified": t("mem_verdict_verified", lang),
+            "denied":   t("mem_verdict_denied", lang),
+            "test":     t("mem_verdict_test", lang),
+        }
+        return f"{updated} {verdict_labels.get(verdict, verdict)}: {ids_int}"
     except Exception as e:
         return t("mem_mark_error", lang, error=e)
 
@@ -198,32 +204,32 @@ async def dispatch(name: str, arguments: dict) -> str:
 
     if name == "minne":
         action = arguments.get("action", "")
-        if action == "søk":
-            return _search_memory(arguments.get("spørsmål", ""), lang=lang)
-        if action == "hent_ubekreftede":
+        if action == "search":
+            return _search_memory(arguments.get("query", ""), lang=lang)
+        if action == "fetch_unverified":
             return _get_unverified(
                 user_id=arguments.get("_user_id", ""),
-                limit=min(int(arguments.get("antall", 10)), 20),
-                offset=int(arguments.get("hopp_over", 0)),
+                limit=min(int(arguments.get("count", 10)), 20),
+                offset=int(arguments.get("skip", 0)),
                 lang=lang,
             )
-        if action == "bekreft":
+        if action == "confirm":
             return _verify_interactions(
                 ids=arguments.get("ids", []),
                 verdict=arguments.get("dom", "verified"),
                 user_id=arguments.get("_user_id", ""),
                 lang=lang,
             )
-        if action == "hent_stm":
-            return _get_stm_history(arguments.get("dato"), lang=lang)
+        if action == "fetch_stm":
+            return _get_stm_history(arguments.get("date"), lang=lang)
         if action == "hent_gammel_stm":
-            return _get_stm_history(arguments.get("dato"), lang=lang)
-        return f"Unknown action for minne: '{action}'. Valid: søk, hent_ubekreftede, bekreft, hent_stm."
+            return _get_stm_history(arguments.get("date"), lang=lang)
+        return f"Unknown action for minne: '{action}'. Valid: search, fetch_unverified, confirm, fetch_stm."
 
     if name == "les_møte":
-        meeting_type = arguments.get("type", "refleksjon")
-        date = arguments.get("dato")
-        if meeting_type == "utvikling":
+        meeting_type = arguments.get("type", "reflection")
+        date = arguments.get("date")
+        if meeting_type == "development":
             return _read_dev_meeting(date, lang=lang)
         return _read_reflection(date, lang=lang)
 
@@ -231,7 +237,7 @@ async def dispatch(name: str, arguments: dict) -> str:
         return _read_inner_thoughts(lang=lang)
 
     if name == "søk_i_minne":
-        return _search_memory(arguments.get("spørsmål", ""), lang=lang)
+        return _search_memory(arguments.get("query", ""), lang=lang)
 
     if name == "bekreft_interaksjoner":
         return _verify_interactions(
@@ -244,19 +250,19 @@ async def dispatch(name: str, arguments: dict) -> str:
     if name == "hent_ubekreftede":
         return _get_unverified(
             user_id=arguments.get("_user_id", ""),
-            limit=min(int(arguments.get("antall", 10)), 20),
-            offset=int(arguments.get("hopp_over", 0)),
+            limit=min(int(arguments.get("count", 10)), 20),
+            offset=int(arguments.get("skip", 0)),
             lang=lang,
         )
 
     if name == "hent_gammel_stm":
-        return _get_stm_history(arguments.get("dato"), lang=lang)
+        return _get_stm_history(arguments.get("date"), lang=lang)
 
     if name == "les_tankehistorikk":
         entries = read_think_history(
-            n=min(int(arguments.get("antall", 10)), 50),
-            search=arguments.get("søk") or None,
-            recovered_only=bool(arguments.get("kun_recovery", False)),
+            n=min(int(arguments.get("count", 10)), 50),
+            search=arguments.get("filter") or None,
+            recovered_only=bool(arguments.get("only_recovery", False)),
         )
         return format_for_kare(entries)
 

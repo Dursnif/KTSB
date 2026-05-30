@@ -21,6 +21,8 @@ from typing import Any
 
 import yaml
 
+from kaare_core.tools.i18n import t, get_lang
+
 logger = logging.getLogger(__name__)
 
 USERS_DIR    = Path("/kaare/state/users")
@@ -96,6 +98,7 @@ def _is_new_user(user_id: str, prompt_top: dict) -> bool:
 
 def get_profile_prompt_top(user_id: str) -> str:
     """Format prompt_top section of profile.yaml for injection into system prompt."""
+    lang = get_lang(user_id)
     profile = load_profile(user_id)
     top = profile.get("prompt_top")
     if not isinstance(top, dict):
@@ -117,11 +120,7 @@ def get_profile_prompt_top(user_id: str) -> str:
 
     if not lines:
         if new_user:
-            return (
-                f"# Bruker: {name}\n"
-                f"Du kjenner ikke denne personen ennå — du vet ingenting om hvem de er.\n"
-                f"Møt dem med genuin nysgjerrighet. Det er helt naturlig å spørre hvem de er."
-            )
+            return f"# Bruker: {name}\n" + t("prof_unknown_user", lang)
         return ""
 
     return f"# Brukerprofil: {name}\n" + "\n".join(lines)
@@ -230,7 +229,7 @@ def read_profile_yaml_as_text(user_id: str) -> str:
                     lines.append(f"  {k}: {v}")
         elif content is not None and content != "":
             lines.append(f"{section}: {content}")
-    return "\n".join(lines) if lines else "Ingen profildata registrert ennå."
+    return "\n".join(lines) if lines else t("prof_no_data", get_lang(user_id))
 
 
 def get_recent_observations(user_id: str, days: int = 14) -> str:
@@ -246,7 +245,7 @@ def get_recent_observations(user_id: str, days: int = 14) -> str:
             include = line[3:].strip()[:10] >= cutoff
         if include:
             result.append(line)
-    return "\n".join(result).strip() if result else "Ingen nylige observasjoner."
+    return "\n".join(result).strip() if result else t("prof_no_observations", get_lang(user_id))
 
 
 def _trim_observations(user_id: str) -> None:

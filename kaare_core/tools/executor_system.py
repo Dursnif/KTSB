@@ -40,27 +40,46 @@ async def dispatch(name: str, arguments: Dict) -> str:
 
     if name == "utforsk_kode":
         action = arguments.get("action", "")
-        if action == "les":
+        if action == "read":
             return _shared_les_fil(arguments, lang=lang)
-        if action == "liste":
+        if action == "list":
             return _shared_liste_filer(arguments, lang=lang)
-        if action == "søk":
+        if action == "search":
             return _shared_søk_kode(arguments, lang=lang)
-        return f"Unknown action for utforsk_kode: '{action}'. Valid: les, liste, søk."
+        return f"Unknown action for utforsk_kode: '{action}'. Valid: read, list, search."
 
     if name == "inspiser_system":
         action = arguments.get("action", "")
-        if action == "logg":
+        if action == "log":
             return _shared_les_logg(arguments, lang=lang)
-        if action == "tjenester":
+        if action == "services":
             return _shared_sjekk_tjenester(arguments, lang=lang)
-        if action == "ressurser":
+        if action == "resources":
             return _shared_sjekk_ressurser(arguments, lang=lang)
         if action == "git_diff":
             return _shared_git_diff(arguments, lang=lang)
         if action == "git_log":
             return _shared_git_log(arguments, lang=lang)
-        return f"Unknown action for inspiser_system: '{action}'. Valid: logg, tjenester, ressurser, git_diff, git_log."
+        if action == "fetch_trace":
+            from kaare_core.tools.trace_reader import get_trace, format_trace_for_kare
+            rid_arg = arguments.get("rid", "").strip()
+            if not rid_arg:
+                return t("inspiser_system_hent_trace_mangler_rid", lang)
+            trace = get_trace(rid_arg)
+            if not trace.get("stages") and not trace.get("llm_calls") and not trace.get("tool_calls"):
+                return t("inspiser_system_hent_trace_ikke_funnet", lang, rid=rid_arg)
+            return format_trace_for_kare(trace, lang=lang)
+        if action == "trace_patterns":
+            from kaare_core.tools.trace_reader import get_recent_traces, format_patterns_for_kare
+            n      = min(int(arguments.get("count", arguments.get("antall", 50))), 200)
+            source = arguments.get("source", "all")
+            if source not in ("user", "refl", "meet", "all"):
+                source = "all"
+            traces = get_recent_traces(n, source=source)
+            if not traces:
+                return t("inspiser_system_trace_mønstre_ingen", lang)
+            return format_patterns_for_kare(traces, lang=lang)
+        return f"Unknown action for inspiser_system: '{action}'. Valid: log, services, resources, git_diff, git_log, fetch_trace, trace_patterns."
 
     if name == "les_fil":
         return _shared_les_fil(arguments, lang=lang)

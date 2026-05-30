@@ -72,6 +72,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
   const [deletingModel, setDeletingModel]         = useState<string | null>(null);
   const [gpuSaving, setGpuSaving]                 = useState(false);
   const pollingRef                                 = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [keepWarm, setKeepWarm]                    = useState<boolean>(config.keep_warm ?? false);
   const [warmup, setWarmup]                        = useState<WarmupStatus>({ status: "idle" });
   const warmupPollRef                              = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -259,6 +260,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
         const opts = { ...(local.options ?? {}) };
         if (numCtxLocked) delete (opts as Record<string, number>).num_ctx;
         payload.options = opts;
+        payload.keep_warm = keepWarm;
         payload.container = containerName || null;
       } else if (isVllm) {
         const thinkRaw = (local as unknown as Record<string, unknown>)["_thinkStr"] as string | undefined;
@@ -457,6 +459,12 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
                   ))}
                 </SelectContent>
               </Select>
+            </FieldRow>
+          )}
+
+          {isOllama && (
+            <FieldRow label={t("settings.llm.keep_warm_label")} hint={t("settings.llm.keep_warm_hint")}>
+              <Switch checked={keepWarm} onCheckedChange={setKeepWarm} className="data-checked:bg-green-500" />
             </FieldRow>
           )}
 

@@ -75,7 +75,7 @@ const TOOL_ROWS: { key: string; indent?: boolean }[] = [
   { key: "styr_enhet" },
   { key: "les_ha" },
   { key: "timer" },
-  { key: "hent_yr_varsel" },
+  { key: "get_weather" },
   { key: "library" },
   { key: "library_online" },
   { key: "søk_nett" },
@@ -277,7 +277,7 @@ export default function Users() {
               <td style={S.td}>
                 <span style={S.badge(u.role)}>{t(`dashboard.roles.${u.role}`, u.role)}</span>
               </td>
-              <td style={S.td}><code style={{ color: "#aaa", fontSize: 12 }}>{u.personality || "standard"}</code></td>
+              <td style={S.td}><code style={{ color: "#aaa", fontSize: 12 }}>{t(`personality_variants.${u.personality || "standard"}`, u.personality || "standard")}</code></td>
               <td style={S.td}>
                 <span style={{
                   background: VPN_COLORS[u.vpn_access || "local_only"],
@@ -421,7 +421,7 @@ function EditModal({ user, onDone, onError, error }: { user: KaareUser; onDone: 
         </select>
         <label style={S.label}>{t("users.edit.personality")}</label>
         <select style={S.select} value={f.personality} onChange={e => setF({ ...f, personality: e.target.value })}>
-          {personalities.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+          {personalities.map(p => <option key={p.key} value={p.key}>{t(`personality_variants.${p.key}`, p.key)}</option>)}
         </select>
         <label style={S.label}>{t("users.edit.avatar")}</label>
         <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>

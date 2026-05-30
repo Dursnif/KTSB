@@ -10,6 +10,7 @@ cloud:
   system: ""
 default:
   base_url: http://ollama:11434
+  keep_warm: false
   model_role: kare
   options:
     num_predict: 512
@@ -37,6 +38,7 @@ default:
 fallback:
   base_url: http://ollama:11434
   enabled: false
+  keep_warm: false
   model_role: miss_kare
   options:
     num_ctx: 8192
@@ -61,6 +63,7 @@ image_edit:
 library:
   base_url: http://ollama:11434
   enabled: true
+  keep_warm: false
   model_role: library
   options:
     num_ctx: 8192
@@ -73,6 +76,7 @@ library:
 miss_kare:
   base_url: http://ollama:11434
   enabled: true
+  keep_warm: false
   model_role: miss_kare
   options:
     num_ctx: 8192
@@ -85,6 +89,7 @@ miss_kare:
 mechanic:
   base_url: http://ollama:11434
   enabled: true
+  keep_warm: false
   model_role: miss_kare
   options:
     num_ctx: 8192
@@ -96,6 +101,7 @@ mechanic:
   timeout: 120.0
 reason_freely:
   base_url: http://ollama:11434
+  keep_warm: false
   model_role: kare
   options:
     num_predict: 512
@@ -105,6 +111,7 @@ reason_freely:
   think: false
 vision:
   base_url: http://ollama:11434
+  keep_warm: false
   model_role: miss_kare
   options:
     num_ctx: 4096

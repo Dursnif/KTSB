@@ -10,7 +10,7 @@ import { useSaveState, SaveFeedback, RadioOption } from "./shared";
 
 const DEFAULT_AGENT_TOOLS: AgentToolsConfig = {
   mechanic: { utforsk: true, inspiser: true, "nettsøk": true, "søk_argus": true, shell: false, hukommelse: true },
-  miss_kare:   { "spør_frøken_library": true },
+  miss_kare:   { "spør_miss_library": true },
   miss_library: { wiki: false },
 };
 
@@ -90,7 +90,7 @@ export default function TabAgenter() {
     { key: "hukommelse",     label: t("settings.agenter.tools.hukommelse"),     description: t("settings.agenter.tools.hukommelse_desc") },
   ];
   const mkTools: ToolDef[] = [
-    { key: "spør_frøken_library", label: t("settings.agenter.tools.spør_frøken_library"), description: t("settings.agenter.tools.spør_frøken_library_desc") },
+    { key: "spør_miss_library", label: t("settings.agenter.tools.spør_miss_library"), description: t("settings.agenter.tools.spør_miss_library_desc") },
   ];
   const mlTools: ToolDef[] = [
     { key: "wiki", label: t("settings.agenter.tools.wiki"), description: t("settings.agenter.tools.wiki_desc"), defaultOff: true },
@@ -247,7 +247,7 @@ export default function TabAgenter() {
         )}
       </Card>
 
-      {/* ── Frøken Library ── */}
+      {/* ── Miss Library ── */}
       <Card className="bg-[#1a1a1a] border-[#333]">
         <CardHeader className="cursor-pointer select-none pb-3" onClick={() => toggleExpand("miss_library")}>
           <div className="flex items-center justify-between">

@@ -20,12 +20,11 @@ _JANG_TOOLS: list | None = None
 def _get_jang_tools() -> list:
     global _JANG_TOOLS
     if _JANG_TOOLS is None:
-        from kaare_core.tools.definitions import KAARE_TOOLS
+        from kaare_core.tools.definitions import get_tools
         allowed = {
-            "les_selvbilde", "oppdater_selvbilde", "rediger_selvbilde", "slett_fra_selvbilde",
-            "skriv_notat",
+            "selvbilde", "notat",
         }
-        _JANG_TOOLS = [t for t in KAARE_TOOLS if t.get("function", {}).get("name") in allowed]
+        _JANG_TOOLS = [t for t in get_tools("nb") if t.get("function", {}).get("name") in allowed]
     return _JANG_TOOLS
 
 

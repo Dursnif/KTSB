@@ -219,70 +219,70 @@ async def dispatch(name: str, arguments: dict) -> str:
 
     if name == "selvbilde":
         action = arguments.get("action", "")
-        if action == "les":
+        if action == "read":
             try:
                 content = _PERSONALITY_SELF_PATH.read_text(encoding="utf-8").strip()
                 return content if content else t("pers_self_empty", lang)
             except Exception as e:
                 return t("pers_self_read_error", lang, error=e)
-        if action == "oppdater":
+        if action == "update":
             if _is_allowed_self_contributor(user_id):
-                return _update_self_image(arguments.get("observasjon", ""), lang)
+                return _update_self_image((arguments.get("observation") or arguments.get("observasjon") or ""), lang)
             return t("pers_noted", lang)
-        if action == "rediger":
+        if action == "edit":
             if _is_allowed_self_contributor(user_id):
                 return _edit_self_image(
-                    fragment=arguments.get("fragment", ""),
-                    new_text=arguments.get("ny_tekst", ""),
+                    fragment=(arguments.get("fragment") or ""),
+                    new_text=(arguments.get("new_text") or arguments.get("ny_tekst") or ""),
                     lang=lang,
                 )
             return t("pers_noted", lang)
-        if action == "slett":
+        if action == "delete":
             if _is_allowed_self_contributor(user_id):
-                return _delete_from_self_image(arguments.get("fragment", ""), lang)
+                return _delete_from_self_image((arguments.get("fragment") or ""), lang)
             return t("pers_noted", lang)
-        return f"Unknown action for selvbilde: '{action}'. Valid: les, oppdater, rediger, slett."
+        return f"Unknown action for selvbilde: '{action}'. Valid: read, update, edit, delete."
 
     if name == "brukerprofil":
         action = arguments.get("action", "")
-        if action == "les":
+        if action == "read":
             return _read_user_profile(user_id=user_id, lang=lang)
-        if action == "oppdater":
+        if action == "update":
             return _update_user_profile(
-                observation=arguments.get("observasjon", ""),
+                observation=(arguments.get("observation") or arguments.get("observasjon") or ""),
                 user_id=user_id,
                 lang=lang,
             )
-        if action == "sett_felt":
+        if action == "set_field":
             return _set_profile_field(
-                section=arguments.get("seksjon", ""),
-                field=arguments.get("felt", ""),
-                value=arguments.get("verdi", ""),
+                section=(arguments.get("section") or arguments.get("seksjon") or ""),
+                field=(arguments.get("field") or arguments.get("felt") or ""),
+                value=(arguments.get("value") or arguments.get("verdi") or ""),
                 user_id=user_id,
                 lang=lang,
             )
-        if action == "rediger":
+        if action == "edit":
             return _edit_user_profile(
-                fragment=arguments.get("fragment", ""),
-                new_text=arguments.get("ny_tekst", ""),
+                fragment=(arguments.get("fragment") or ""),
+                new_text=(arguments.get("new_text") or arguments.get("ny_tekst") or ""),
                 user_id=user_id,
                 lang=lang,
             )
-        if action == "slett":
+        if action == "delete":
             return _delete_from_user_profile(
-                fragment=arguments.get("fragment", ""),
+                fragment=(arguments.get("fragment") or ""),
                 user_id=user_id,
                 lang=lang,
             )
-        if action == "nysgjerrighet":
+        if action == "curiosity":
             return _update_curiosity(
-                curiosity=arguments.get("nysgjerrighet", ""),
+                curiosity=(arguments.get("text") or arguments.get("nysgjerrighet") or ""),
                 user_id=user_id,
                 lang=lang,
             )
-        if action == "oppdater_hus":
-            field = arguments.get("felt", "")
-            value = arguments.get("verdi", "")
+        if action == "update_house":
+            field = (arguments.get("field") or arguments.get("felt") or "")
+            value = (arguments.get("value") or arguments.get("verdi") or "")
             if not field or not value:
                 return t("pers_house_update_required", lang)
             try:
@@ -295,12 +295,12 @@ async def dispatch(name: str, arguments: dict) -> str:
                     pass
                 try:
                     ltm = get_ltm()
-                    summary = f"Hus-oppdatering: {field} = {value} (bruker: {user_id})"
+                    summary = f"House update: {field} = {value} (user: {user_id})"
                     asyncio.get_event_loop().create_task(
                         ltm.log_interaction(
                             user_id=USER_GLOBAL,
                             prompt=summary,
-                            source="oppdater_hus",
+                            source="update_house",
                             response=result,
                         )
                     )
@@ -309,7 +309,7 @@ async def dispatch(name: str, arguments: dict) -> str:
                 return result
             except Exception as e:
                 return t("pers_house_update_error", lang, error=e)
-        return f"Unknown action for brukerprofil: '{action}'. Valid: les, oppdater, oppdater_hus, sett_felt, rediger, slett, nysgjerrighet."
+        return f"Unknown action for brukerprofil: '{action}'. Valid: read, update, update_house, set_field, edit, delete, curiosity."
 
     if name == "les_selvbilde":
         try:
@@ -320,33 +320,33 @@ async def dispatch(name: str, arguments: dict) -> str:
 
     if name == "slett_fra_selvbilde":
         if _is_allowed_self_contributor(user_id):
-            return _delete_from_self_image(arguments.get("fragment", ""), lang)
+            return _delete_from_self_image((arguments.get("fragment") or ""), lang)
         return t("pers_noted", lang)
 
     if name == "rediger_selvbilde":
         if _is_allowed_self_contributor(user_id):
             return _edit_self_image(
-                fragment=arguments.get("fragment", ""),
-                new_text=arguments.get("ny_tekst", ""),
+                fragment=(arguments.get("fragment") or ""),
+                new_text=(arguments.get("new_text") or arguments.get("ny_tekst") or ""),
                 lang=lang,
             )
         return t("pers_noted", lang)
 
     if name == "oppdater_selvbilde":
         if _is_allowed_self_contributor(user_id):
-            return _update_self_image(arguments.get("observasjon", ""), lang)
+            return _update_self_image((arguments.get("observation") or arguments.get("observasjon") or ""), lang)
         return t("pers_noted", lang)
 
     if name == "oppdater_nysgjerrighet":
         return _update_curiosity(
-            curiosity=arguments.get("nysgjerrighet", ""),
+            curiosity=(arguments.get("text") or arguments.get("nysgjerrighet") or ""),
             user_id=user_id,
             lang=lang,
         )
 
     if name == "oppdater_brukerprofil":
         return _update_user_profile(
-            observation=arguments.get("observasjon", ""),
+            observation=(arguments.get("observation") or arguments.get("observasjon") or ""),
             user_id=user_id,
             lang=lang,
         )
@@ -356,24 +356,24 @@ async def dispatch(name: str, arguments: dict) -> str:
 
     if name == "sett_profilfelt":
         return _set_profile_field(
-            section=arguments.get("seksjon", ""),
-            field=arguments.get("felt", ""),
-            value=arguments.get("verdi", ""),
+            section=(arguments.get("section") or arguments.get("seksjon") or ""),
+            field=(arguments.get("field") or arguments.get("felt") or ""),
+            value=(arguments.get("value") or arguments.get("verdi") or ""),
             user_id=user_id,
             lang=lang,
         )
 
     if name == "slett_fra_brukerprofil":
         return _delete_from_user_profile(
-            fragment=arguments.get("fragment", ""),
+            fragment=(arguments.get("fragment") or ""),
             user_id=user_id,
             lang=lang,
         )
 
     if name == "rediger_brukerprofil":
         return _edit_user_profile(
-            fragment=arguments.get("fragment", ""),
-            new_text=arguments.get("ny_tekst", ""),
+            fragment=(arguments.get("fragment") or ""),
+            new_text=(arguments.get("new_text") or arguments.get("ny_tekst") or ""),
             user_id=user_id,
             lang=lang,
         )

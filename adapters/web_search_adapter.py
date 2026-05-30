@@ -22,6 +22,7 @@ import httpx
 import yaml
 
 from kaare_core.config import get_service
+from kaare_core.tools.i18n import t, get_lang
 
 log = logging.getLogger(__name__)
 
@@ -241,7 +242,7 @@ async def _fetch_content(url: str) -> str:
 
 # ── Miss Library synthesis ────────────────────────────────────────────────
 
-async def _ask_library(query: str, sources: list[dict]) -> str:
+async def _ask_library(query: str, sources: list[dict], lang: str = "nb") -> str:
     try:
         async with httpx.AsyncClient(timeout=_LIBRARY_TIMEOUT) as client:
             r = await client.post(
@@ -258,22 +259,21 @@ async def _ask_library(query: str, sources: list[dict]) -> str:
             for s in sources if s.get("content", "").strip()
         ]
         if parts:
-            return (
-                "Frøken Library er ikke tilgjengelig. Rå søkeresultater:\n\n"
-                + "\n\n---\n\n".join(parts[:2])
-            )
-        return "Frøken Library svarte ikke og ingen kilde ble hentet."
+            return t("search_library_raw", lang) + "\n\n---\n\n".join(parts[:2])
+        return t("search_library_timeout", lang)
 
 
 # ── Main function ──────────────────────────────────────────────────────────
 
-async def søk_nett(query: str) -> str:
+async def søk_nett(query: str, user_id: str = "global") -> str:
     """
     Search the web, fetch page content, and let Miss Library synthesize the answer.
     Tries primary provider first; falls back if it returns no results.
     """
+    lang = get_lang(user_id)
+
     if not query or not query.strip():
-        return "Ingen søketekst oppgitt."
+        return t("search_empty_query", lang)
 
     primary = str(_WS_CFG.get("provider", "ddg"))
     fallback = str(_WS_CFG.get("fallback", "ddg"))
@@ -287,8 +287,8 @@ async def søk_nett(query: str) -> str:
 
     if not results:
         if primary == "brave" and not (_BRAVE_KEY or os.getenv("BRAVE_API_KEY", "")):
-            return "Nettsøk er ikke aktivert (mangler BRAVE_API_KEY). Konfigurer en annen provider i Innstillinger → Nettsøk."
-        return "Fant ingen resultater fra godkjente kilder for dette søket."
+            return t("search_disabled", lang)
+        return t("search_no_results", lang)
 
     contents = await asyncio.gather(
         *[_fetch_content(r["url"]) for r in results],
@@ -300,4 +300,4 @@ async def søk_nett(query: str) -> str:
         for r, c in zip(results, contents)
     ]
 
-    return await _ask_library(query, sources)
+    return await _ask_library(query, sources, lang=lang)

@@ -69,7 +69,7 @@ async def _handle_media(arguments: Dict[str, Any], lang: str = "nb") -> str:
     action = arguments.get("action", "")
 
     if action == "plex_sessions":
-        return await _plex_get_sessions()
+        return await _plex_get_sessions(lang=lang)
 
     if action == "plex_history":
         return await _plex_get_history(
@@ -81,7 +81,7 @@ async def _handle_media(arguments: Dict[str, Any], lang: str = "nb") -> str:
         query = arguments.get("query", "").strip()
         if not query:
             return t("media_no_query", lang)
-        return await _plex_search(query)
+        return await _plex_search(query, lang=lang)
 
     if action == "plex_library":
         return await _plex_get_libraries()
@@ -93,7 +93,7 @@ async def _handle_media(arguments: Dict[str, Any], lang: str = "nb") -> str:
         return await _plex_get_children(key)
 
     if action == "plex_clients":
-        return await _plex_get_clients()
+        return await _plex_get_clients(lang=lang)
 
     if action == "plex_play":
         client = arguments.get("client", "").strip()

@@ -55,18 +55,17 @@ export function LlmInfraCard({ dockerControl, onDockerControlChange }: {
           <div className="space-y-0.5">
             <Label className="text-sm font-medium">{t("settings.llm.docker_control")}</Label>
             <p className="text-xs text-muted-foreground">{t("settings.llm.docker_control_hint")}</p>
-          </div>
-          <div className="flex items-center gap-3">
             {dockerControl.socket_available
               ? <span className="flex items-center gap-1 text-xs text-green-500"><CheckCircle2 className="h-3 w-3" />{t("settings.llm.docker_socket_ok")}</span>
               : <span className="flex items-center gap-1 text-xs text-destructive"><XCircle className="h-3 w-3" />{t("settings.llm.docker_socket_missing")}</span>
             }
-            <Switch
-              checked={dockerControl.allow_docker_control}
-              onCheckedChange={handleToggle}
-              disabled={toggling}
-            />
           </div>
+          <Switch
+            checked={dockerControl.allow_docker_control}
+            onCheckedChange={handleToggle}
+            disabled={toggling}
+            className="data-checked:bg-green-500"
+          />
         </div>
 
         <Separator />

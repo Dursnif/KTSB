@@ -53,7 +53,7 @@ Behind the scenes, Kåre has a small team working alongside it:
 
 - **Miss Kåre** — a quiet evaluator who reviews Kåre's answers before they reach you
 - **Mechanic** — a technical assistant for deep-dives, system inspection, and complex problems
-- **Frøken Library** — searches a local Wikipedia corpus and the web for factual answers
+- **Miss Library** — searches a local Wikipedia corpus and the web for factual answers
 - **Jing and Jang** — background inner voices that process and reflect while you are not watching
 
 Every night at 04:00 they hold a reflection meeting to review the day. At 05:30 a developer meeting investigates any system issues. All of this happens quietly while you sleep.

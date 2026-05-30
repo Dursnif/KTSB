@@ -337,6 +337,8 @@
       "warmup_done": "Modell geladen und bereit",
       "warmup_error": "Fehler beim Laden des Modells in VRAM",
       "warmup_cpu_warning": "Modell läuft auf CPU — Container neu starten, um in VRAM zu laden",
+      "keep_warm_label": "Modell warmhalten",
+      "keep_warm_hint": "Modell bleibt dauerhaft im VRAM geladen. Deaktivieren, damit Ollama den Speicher selbst verwaltet (entlädt nach 5 Min. Inaktivität).",
       "infra_card_title": "Infrastruktur",
       "docker_control": "Docker-Steuerung",
       "docker_control_hint": "Aktiviert Neustart-Schaltflächen für Ollama-Container. Erfordert gemountetes /var/run/docker.sock.",
@@ -363,7 +365,47 @@
         "provider_hint": "Wetter-API auswählen. met.no und Open-Meteo sind kostenlos und benötigen keinen Schlüssel.",
         "days_label": "Vorhersage-Tage",
         "days_hint": "Anzahl der Tage, die Kåre zeigt (1–7). Heute zählt als Tag 1.",
-        "needs_key_warning": "Dieser Anbieter erfordert einen API-Schlüssel. Ohne Schlüssel gibt Kåre eine Fehlermeldung bei Wettervorhersagen aus."
+        "needs_key_warning": "Dieser Anbieter erfordert einen API-Schlüssel. Ohne Schlüssel gibt Kåre eine Fehlermeldung bei Wettervorhersagen aus.",
+        "feels_like_label": "Gefühlte Temperatur",
+        "feels_like_hint": "Zeigt die gefühlte Temperatur zusätzlich zur tatsächlichen Temperatur (alle Anbieter).",
+        "uv_label": "UV-Index",
+        "uv_hint": "Zeigt den maximalen UV-Index pro Tag (nur Open-Meteo).",
+        "sun_label": "Sonnenauf-/-untergang",
+        "sun_hint": "Zeigt Sonnenaufgang und Sonnenuntergang pro Tag (alle Anbieter; OWM nur heute).",
+        "alerts_label": "Wetterwarnungen (MetAlerts)",
+        "alerts_hint": "Zeigt aktive Wetterwarnungen von met.no (gelb/orange/rot/extrem). Nur met.no-Anbieter.",
+        "ha_sensors_label": "Lokale HA-Sensoren verwenden",
+        "ha_sensors_hint": "Ruft aktuelle Messwerte von Außensensoren in Home Assistant ab und zeigt sie vor der Vorhersage an. Entity-IDs in HA → Einstellungen → Geräte & Dienste.",
+        "ha_temp_label": "Temperatursensor",
+        "ha_temp_hint": "Entity-ID für Außentemperatursensor.",
+        "ha_wind_label": "Windgeschwindigkeitssensor",
+        "ha_wind_hint": "Entity-ID für Windgeschwindigkeitssensor (m/s oder km/h).",
+        "ha_wind_gust_label": "Windböensensor",
+        "ha_wind_gust_hint": "Entity-ID für Windböensensor. Wird in Klammern nach der Windgeschwindigkeit angezeigt.",
+        "ha_wind_dir_label": "Windrichtungssensor",
+        "ha_wind_dir_hint": "Entity-ID für Windrichtungssensor. Kann eine Himmelsrichtung (z. B. SW) oder Grad (0–360) zurückgeben.",
+        "ha_precip_label": "Niederschlagssensor (aktuell)",
+        "ha_precip_hint": "Entity-ID für aktuelle Niederschlagsrate (mm/h).",
+        "ha_precip_last_hour_label": "Niederschlagssensor (letzte Stunde)",
+        "ha_precip_last_hour_hint": "Entity-ID für akkumulierten Niederschlag der letzten Stunde (mm).",
+        "ha_precip_today_label": "Niederschlagssensor (heute)",
+        "ha_precip_today_hint": "Entity-ID für akkumulierten Niederschlag seit Mitternacht (mm).",
+        "ha_humidity_label": "Feuchtigkeitssensor",
+        "ha_humidity_hint": "Entity-ID für Außen-Relativfeuchte-Sensor (%).",
+        "ha_pressure_label": "Luftdrucksensor",
+        "ha_pressure_hint": "Entity-ID für Luftdrucksensor (hPa).",
+        "air_quality_label": "Luftqualität",
+        "air_quality_hint": "Zeigt AQI und wichtige Luftschadstoffparameter (PM2.5, PM10, NO₂, O₃). Unterstützt von: met.no (nur Norwegen), Open-Meteo, OpenWeatherMap und WeatherAPI. Nicht verfügbar für PirateWeather.",
+        "tides_label": "Gezeiten",
+        "tides_hint": "Zeigt Hoch-/Niedrigwasser pro Tag. Kartverket (kostenlos, norwegische Küste) oder Stormglass (global, API-Schlüssel erforderlich).",
+        "tide_provider_label": "Gezeiten-Anbieter",
+        "tide_provider_hint": "auto = Kartverket an der norwegischen Küste, sonst Stormglass. Kartverket ist kostenlos und benötigt keinen Schlüssel.",
+        "stormglass_key_label": "Stormglass API-Schlüssel",
+        "stormglass_key_unset_hint": "Nicht gesetzt — kostenloser Schlüssel auf stormglass.io (10 Abfragen/Tag). Für Gezeiten außerhalb Norwegens erforderlich.",
+        "camera_weather_label": "Kamera zum Wetterschauen verwenden",
+        "camera_weather_hint": "Macht einen Schnappschuss von einer Frigate-Kamera und nutzt KI zur Beschreibung der sichtbaren Wetterbedingungen. Erfordert laufendes Frigate und eine himmelwärts gerichtete Kamera.",
+        "camera_name_label": "Kameraname",
+        "camera_name_hint": "Frigate API-Name der Kamera (gleicher Name wie im Kamera-Werkzeug, z. B. dach_kamera)."
       },
       "websearch": {
         "title": "Websuche",
@@ -539,7 +581,7 @@
       },
       "miss_kare": {
         "label": "Miss Kåre",
-        "description": "Evaluator – sitzt am Spielfeldrand und kommentiert das Gespräch. Kann Fakten bei Frøken Library nachschlagen.",
+        "description": "Evaluator – sitzt am Spielfeldrand und kommentiert das Gespräch. Kann Fakten bei Miss Library nachschlagen.",
         "roles": {
           "empatisk_label": "Empathisch",
           "empatisk_desc": "Warm und fürsorglich – Fokus auf das Gefühlsleben und die menschliche Seite des Nutzers. Standardverhalten.",
@@ -552,7 +594,7 @@
         }
       },
       "miss_library": {
-        "label": "Frøken Library",
+        "label": "Miss Library",
         "description": "Bibliothekarin und Wissenswächterin. Websuche ist immer an – lokales Wiki erfordert den Download der Datenbank."
       },
       "tools": {
@@ -568,8 +610,8 @@
         "shell_desc": "Shell-Befehle lokal oder auf verbundenen Knoten ausführen. Nur bei Bedarf aktivieren.",
         "hukommelse": "hukommelse",
         "hukommelse_desc": "Mechanics persönliches Gedächtnis – bleibt zwischen Meetings erhalten.",
-        "spør_frøken_library": "spør_frøken_library",
-        "spør_frøken_library_desc": "Miss Kåre erlauben, bei Frøken Library Fakten zu prüfen.",
+        "spør_miss_library": "spør_miss_library",
+        "spør_miss_library_desc": "Miss Kåre erlauben, bei Miss Library Fakten zu prüfen.",
         "wiki": "wiki (lokal)",
         "wiki_desc": "Lokale Wikipedia-Datenbank (Qdrant). Erfordert den Download der wiki_no-Sammlung."
       }
@@ -933,7 +975,7 @@
         "styr_enhet": "Gerät steuern (HA)",
         "les_ha": "HA-Status lesen",
         "timer": "Timer / Uhr",
-        "hent_yr_varsel": "Wetter (met.no)",
+        "get_weather": "Wetter",
         "library": "Miss Library (Wiki)",
         "library_online": "Online LLM",
         "søk_nett": "Websuche",
@@ -1211,5 +1253,11 @@
     "preview_user": "So sehen deine Nachrichten jetzt aus",
     "preview_kare": "Und so antwortet dir Kåre",
     "reset": "Auf Standard zurücksetzen"
+  },
+  "personality_variants": {
+    "standard": "Standard",
+    "barnevennlig": "Kinderfreundlich",
+    "detaljert": "Detailliert",
+    "formell": "Formell"
   }
 }

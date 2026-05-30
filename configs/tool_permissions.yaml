@@ -9,7 +9,7 @@ roles:
   - styr_enhet
   - les_ha
   - timer
-  - hent_yr_varsel
+  - get_weather
   - library
   - kare_image
   - se_bilder
@@ -21,7 +21,7 @@ roles:
   - styr_enhet
   - les_ha
   - timer
-  - hent_yr_varsel
+  - get_weather
   - library
   - library_online
   - søk_nett
@@ -35,7 +35,7 @@ roles:
   - styr_enhet
   - les_ha
   - timer
-  - hent_yr_varsel
+  - get_weather
   - library
   - library_online
   - søk_nett
@@ -50,7 +50,7 @@ roles:
   - styr_enhet
   - les_ha
   - timer
-  - hent_yr_varsel
+  - get_weather
   - library
   - library_online
   - søk_nett
@@ -73,6 +73,6 @@ agent_tools:
     shell: false
     hukommelse: true
   miss_kare:
-    spør_frøken_library: true
+    spør_miss_library: true
   miss_library:
     wiki: true

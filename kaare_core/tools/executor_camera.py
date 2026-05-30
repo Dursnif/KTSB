@@ -28,6 +28,23 @@ CAMERA_TOOLS = {
 }
 
 
+async def describe_snapshot(camera: str, prompt: str) -> str | None:
+    """
+    Fetch a Frigate snapshot and return a VLM description.
+    Returns None on any failure — never raises.
+    Used by weather_adapter and any other caller that needs a single-camera description.
+    """
+    try:
+        img_b64 = await fetch_snapshot_b64(camera)
+        vlm_result = await ask_llm(prompt=prompt, images=[img_b64])
+        if not vlm_result.get("ok"):
+            return None
+        return vlm_result.get("text", "").strip() or None
+    except Exception as exc:
+        logger.warning("[camera] describe_snapshot failed for '%s': %s", camera, exc)
+        return None
+
+
 async def dispatch(name: str, arguments: Dict) -> str:
     lang = get_lang(arguments.get("_user_id", "global"))
 
@@ -81,6 +98,8 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
             prompt = f"Kameraer: {', '.join(cam_names)}.\n{spørsmål}"
             try:
                 vlm_result = await ask_llm(prompt=prompt, images=images)
+                if not vlm_result.get("ok"):
+                    return t("cam_analysis_failed", lang, ts=ts, error="VLM returned empty response")
                 description = vlm_result.get("text", "").strip() or t("cam_empty_vlm", lang)
             except Exception as e:
                 return t("cam_analysis_failed", lang, ts=ts, error=e)
@@ -89,8 +108,8 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
                 result += f"\n\nKunne ikke hente: {', '.join(failed)}"
             return result
 
-        kamera_navn = arguments.get("kamera", "").strip()
-        spørsmål = arguments.get("spørsmål", "").strip() or "Beskriv hva du ser på bildet. Nevn personer, kjøretøy, dyr og eventuelle hendelser."
+        kamera_navn = (arguments.get("camera") or arguments.get("kamera") or "").strip()
+        spørsmål = (arguments.get("query") or arguments.get("spørsmål") or "").strip() or "Beskriv hva du ser på bildet. Nevn personer, kjøretøy, dyr og eventuelle hendelser."
         if not kamera_navn:
             cams = await get_cameras()
             cam_list = ", ".join(f"{c['friendly_name']} ({c['api_name']})" for c in cams)
@@ -105,14 +124,16 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
             return t("cam_snapshot_error", lang, camera=kamera_navn, error=e)
         try:
             vlm_result = await ask_llm(prompt=spørsmål, images=[img_b64])
+            if not vlm_result.get("ok"):
+                return t("cam_snapshot_analysis_failed", lang, ts=ts, error="VLM returned empty response")
             description = vlm_result.get("text", "").strip() or t("cam_empty_vlm", lang)
         except Exception as e:
             return t("cam_snapshot_analysis_failed", lang, ts=ts, error=e)
         return f"[{kamera_navn} — {ts}]\n{description}"
 
-    if action == "hendelser":
-        navn_filter = (arguments.get("navn") or "").strip().lower()
-        timer_tilbake = min(int(arguments.get("timer_tilbake", 24)), 48)
+    if action == "events":
+        navn_filter = (arguments.get("name") or arguments.get("navn") or "").strip().lower()
+        timer_tilbake = min(int(arguments.get("hours_back", arguments.get("timer_tilbake", 24))), 48)
         face_path = Path("/kaare/state/argus/face_events.txt")
         if not face_path.exists():
             return t("cam_no_events", lang)
@@ -143,7 +164,7 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
                 continue
             filtered.append(line)
         if not filtered:
-            label = f" for «{arguments['navn']}»" if arguments.get("navn") else ""
+            label = f" for «{arguments.get('name') or arguments.get('navn', '')}»" if (arguments.get("name") or arguments.get("navn")) else ""
             return t("cam_no_events_filtered", lang, label=label, hours=timer_tilbake)
         count = len(filtered)
         suffix = "r" if count != 1 else ""
@@ -151,10 +172,10 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
         return header + "\n" + "\n".join(filtered)
 
     if action == "frigate":
-        kamera_navn = arguments.get("kamera", "").strip() or None
+        kamera_navn = (arguments.get("camera") or arguments.get("kamera") or "").strip() or None
         label = arguments.get("label", "").strip() or None
-        antall = min(int(arguments.get("antall", 10)), 50)
-        kun_ansikter = bool(arguments.get("kun_ansikter", False))
+        antall = min(int(arguments.get("count", arguments.get("antall", 10))), 50)
+        kun_ansikter = bool(arguments.get("faces_only", arguments.get("kun_ansikter", False)))
         try:
             if kun_ansikter:
                 events = await fetch_face_events(limit=antall)
@@ -179,7 +200,7 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
             lines.append(f"[{ts_str}] {cam}: {lbl} ({int(float(conf)*100)}%){face_str}")
         return "\n".join(lines)
 
-    if action == "liste":
+    if action == "list":
         try:
             cams = await get_cameras()
         except Exception as e:
@@ -189,8 +210,8 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
         lines = [f"  {c['friendly_name']} → {c['api_name']}" for c in cams]
         return t("cam_list_header", lang, count=len(cams)) + "\n" + "\n".join(lines)
 
-    if action == "analyser":
-        antall = min(int(arguments.get("antall", 10)), 50)
+    if action == "analyze":
+        antall = min(int(arguments.get("count", arguments.get("antall", 10))), 50)
         log_path = Path("/kaare/logs/frigate_analysis.log")
         if not log_path.exists():
             return t("cam_no_analysis", lang)
@@ -213,7 +234,7 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
             parts.append(f"[{ts}] {cam} — {label}{sub} ({dur:.0f}s)\n{analysis}\nevent_id: {eid}")
         return "\n\n---\n\n".join(parts)
 
-    if action == "vis_hendelse":
+    if action == "show_event":
         event_id = arguments.get("event_id", "").strip()
         if not event_id:
             return t("cam_event_id_required", lang)
@@ -254,7 +275,7 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
         if stored_analysis:
             context += f"\n\nDen automatiske analysen sa:\n{stored_analysis}"
         context += "\n\nBeskriv hva du ser på bildet og om den lagrede analysen stemmer. Svar på norsk."
-        spørsmål = arguments.get("spørsmål", "").strip() or context
+        spørsmål = (arguments.get("query") or arguments.get("spørsmål") or "").strip() or context
         try:
             result = await ask_llm(spørsmål, images=[img_b64])
             analysis = result.get("text", "").strip() or t("cam_empty_vlm_response", lang)
@@ -264,7 +285,7 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
             return f"{analysis}\n\nBildet er klart: {_img_url}"
         return analysis
 
-    return f"Unknown action for kamera: '{action}'. Valid: snapshot, hendelser, frigate, liste, analyser, vis_hendelse."
+    return f"Unknown action for kamera: '{action}'. Valid: snapshot, events, frigate, list, analyze, show_event."
 
 
 async def _compat_hent_snapshot(arguments: Dict, lang: str = "nb") -> str:

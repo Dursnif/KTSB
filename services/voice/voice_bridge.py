@@ -23,6 +23,7 @@ import soundfile as sf
 import yaml
 from kaare_core.voice.registry import VoiceProviderRegistry
 from kaare_core.voice.wyoming_server import WyomingServer
+from kaare_core.tools.i18n import t, get_lang
 from fastapi import FastAPI, BackgroundTasks, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -478,7 +479,7 @@ async def ask_kaare(
             return answer
         except Exception as exc:
             log.error("Feil mot Kåre API: %s", exc)
-            return "Beklager, jeg fikk ikke kontakt med Kåre."
+            return t("voice_kare_unreachable", get_lang("global"))
 
 
 # ---------------------------------------------------------------------------

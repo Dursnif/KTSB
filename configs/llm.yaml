@@ -35,7 +35,7 @@ default:
 
     - Miss Kåre: varm, moderlig stemme. Følger med fra sidelinjen og bryr seg om folk.
 
-    - Frøken Library: bibliotekar og kunnskapsvokter. Bruk spør_frøken_library-verktøyet
+    - Miss Library: bibliotekar og kunnskapsvokter. Bruk spør_miss_library-verktøyet
     for faktaspørsmål.
 
     - Mechanic: praktisk problemløser med bredt teknisk spekter.
@@ -61,6 +61,7 @@ fallback:
   base_url: http://127.0.0.1:11445
   container: ollama-miss_kare
   enabled: true
+  keep_warm: true
   model_role: miss_kare
   options:
     num_ctx: 8192
@@ -86,6 +87,7 @@ library:
   base_url: http://127.0.0.1:11447
   container: ollama-agents
   enabled: true
+  keep_warm: true
   model_role: library
   options:
     num_ctx: 8192
@@ -95,23 +97,11 @@ library:
   stream: false
   think: false
   timeout: 120
-miss_kare:
-  base_url: http://127.0.0.1:11445
-  container: ollama-miss_kare
-  enabled: true
-  model_role: miss_kare
-  options:
-    num_ctx: 8192
-    num_predict: 2048
-    temperature: 0.4
-  provider: ollama
-  stream: false
-  think: false
-  timeout: 90
 mechanic:
   base_url: http://127.0.0.1:11445
   container: ollama-miss_kare
   enabled: true
+  keep_warm: true
   model_role: miss_kare
   options:
     num_ctx: 8192
@@ -121,6 +111,20 @@ mechanic:
   stream: false
   think: false
   timeout: 120
+miss_kare:
+  base_url: http://127.0.0.1:11445
+  container: ollama-miss_kare
+  enabled: true
+  keep_warm: true
+  model_role: miss_kare
+  options:
+    num_ctx: 8192
+    num_predict: 2048
+    temperature: 0.4
+  provider: ollama
+  stream: false
+  think: false
+  timeout: 90
 reason_freely:
   base_url: http://127.0.0.1:11440
   model_role: kare

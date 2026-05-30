@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict
 from zoneinfo import ZoneInfo
 
-from adapters.yr_adapter import hent_yr_varsel as _hent_yr_varsel
+from adapters.weather_adapter import fetch_weather as _fetch_weather
 from kaare_core.config import get_service as _svc, get_llm_config as _llm_cfg
 from kaare_core.tools.i18n import t, get_lang
 from kaare_core.tools.notisblokk import skriv_notat, les_notater, slett_notat, tøm_notater
@@ -88,10 +88,10 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
 
     if name == "timer":
         action = arguments.get("action", "")
-        if action == "klokke":
+        if action == "clock":
             now = datetime.now()
             return t("timer_clock", lang, time=now.strftime('%H:%M'), date=now.strftime('%d.%m.%Y'))
-        if action == "sett":
+        if action == "set":
             return sett_timer(
                 prompt=arguments.get("prompt", ""),
                 in_seconds=int(arguments.get("in_seconds", 0)),
@@ -100,11 +100,11 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
                 at_time=arguments.get("at_time") or None,
                 lang=lang,
             )
-        if action == "avbryt":
+        if action == "cancel":
             return avbryt_timer(arguments.get("timer_id", ""), lang=lang)
-        if action == "liste":
+        if action == "list":
             return liste_timere(lang=lang)
-        return f"Unknown action for timer: '{action}'. Valid: klokke, sett, avbryt, liste."
+        return f"Unknown action for timer: '{action}'. Valid: clock, set, cancel, list."
 
     if name in executor_memory.MEMORY_TOOLS:
         return await executor_memory.dispatch(name, arguments)
@@ -120,73 +120,73 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
 
     if name == "notat":
         action = arguments.get("action", "")
-        liste = arguments.get("liste", "arkitekt")
+        liste = arguments.get("list_name", arguments.get("liste", "arkitekt"))
         user_id = arguments.get("_user_id", "global")
 
         if liste == "handle":
-            if action in ("skriv", "legg_til"):
+            if action in ("write", "add"):
                 return handle_legg_til(
-                    tekst=arguments.get("tekst", ""),
-                    mengde=arguments.get("mengde", ""),
-                    enhet=arguments.get("enhet", ""),
+                    tekst=(arguments.get("text") or arguments.get("tekst") or ""),
+                    mengde=(arguments.get("quantity") or arguments.get("mengde") or ""),
+                    enhet=(arguments.get("unit") or arguments.get("enhet") or ""),
                     lagt_til_av=user_id,
                 )
-            if action == "les":
+            if action == "read":
                 return handle_les()
-            if action == "merk_kjøpt":
-                return handle_merk_kjøpt(arguments.get("notat_id", ""))
-            if action == "slett":
-                return handle_slett(arguments.get("notat_id", ""))
-            if action in ("tøm", "tøm_kjøpte"):
+            if action == "mark_bought":
+                return handle_merk_kjøpt((arguments.get("note_id") or arguments.get("notat_id") or ""))
+            if action == "delete":
+                return handle_slett((arguments.get("note_id") or arguments.get("notat_id") or ""))
+            if action in ("clear", "clear_bought"):
                 return handle_tøm_kjøpte()
-            if action == "tøm_alt":
+            if action == "clear_all":
                 return handle_tøm()
-            return f"Unknown action for handle-liste: '{action}'. Valid: skriv, les, merk_kjøpt, slett, tøm, tøm_alt."
+            return f"Unknown action for handle-liste: '{action}'. Valid: write, read, mark_bought, delete, clear, clear_all."
 
         if liste == "huske":
-            if action in ("skriv", "husk"):
+            if action in ("write", "add"):
                 return huske_husk(
-                    tekst=arguments.get("tekst", ""),
+                    tekst=(arguments.get("text") or arguments.get("tekst") or ""),
                     user_id=user_id,
-                    påminn_ved_login=bool(arguments.get("påminn_ved_login", False)),
+                    påminn_ved_login=bool(arguments.get("remind_on_login", arguments.get("påminn_ved_login", False))),
                 )
-            if action == "les":
+            if action == "read":
                 return huske_les(user_id=user_id)
-            if action == "ferdig":
-                return huske_ferdig(arguments.get("notat_id", ""), user_id=user_id)
-            if action == "slett":
-                return huske_slett(arguments.get("notat_id", ""), user_id=user_id)
-            if action == "tøm":
+            if action == "done":
+                return huske_ferdig((arguments.get("note_id") or arguments.get("notat_id") or ""), user_id=user_id)
+            if action == "delete":
+                return huske_slett((arguments.get("note_id") or arguments.get("notat_id") or ""), user_id=user_id)
+            if action == "clear":
                 return huske_tøm(user_id=user_id)
-            return f"Unknown action for huskeliste: '{action}'. Valid: skriv, les, ferdig, slett, tøm."
+            return f"Unknown action for huskeliste: '{action}'. Valid: write, read, done, delete, clear."
 
         if liste == "kare":
-            if action in ("skriv", "husk"):
+            if action in ("write", "add"):
                 return kare_husk(
-                    tekst=arguments.get("tekst", ""),
-                    kontekst=arguments.get("kontekst", ""),
+                    tekst=(arguments.get("text") or arguments.get("tekst") or ""),
+                    kontekst=(arguments.get("context") or arguments.get("kontekst") or ""),
                 )
-            if action == "les":
+            if action == "read":
                 return kare_les()
-            if action in ("ferdig", "slett"):
-                return kare_ferdig(arguments.get("notat_id", ""))
-            if action == "tøm":
+            if action in ("done", "delete"):
+                return kare_ferdig((arguments.get("note_id") or arguments.get("notat_id") or ""))
+            if action == "clear":
                 return kare_tøm()
-            return f"Unknown action for kare-liste: '{action}'. Valid: skriv, les, ferdig, slett, tøm."
+            return f"Unknown action for kare-liste: '{action}'. Valid: write, read, done, delete, clear."
 
-        if action == "skriv":
+        if action == "write":
             return skriv_notat(
-                tekst=arguments.get("tekst", ""),
-                kategori=arguments.get("kategori", "diverse"),
+                tekst=(arguments.get("text") or arguments.get("tekst") or ""),
+                kategori=(arguments.get("category") or arguments.get("kategori") or "diverse"),
                 lang=lang,
             )
-        if action == "les":
-            return les_notater(arguments.get("kategori"), lang=lang)
-        if action == "slett":
-            return slett_notat(arguments.get("notat_id", ""), lang=lang)
-        if action == "tøm":
-            return tøm_notater(arguments.get("kategori"), lang=lang)
-        return f"Unknown action for notat: '{action}'. Valid: skriv, les, slett, tøm."
+        if action == "read":
+            return les_notater((arguments.get("category") or arguments.get("kategori")), lang=lang)
+        if action == "delete":
+            return slett_notat((arguments.get("note_id") or arguments.get("notat_id") or ""), lang=lang)
+        if action == "clear":
+            return tøm_notater((arguments.get("category") or arguments.get("kategori")), lang=lang)
+        return f"Unknown action for notat: '{action}'. Valid: write, read, delete, clear."
 
     if name in executor_system.SYSTEM_TOOLS:
         return await executor_system.dispatch(name, arguments)
@@ -194,8 +194,8 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
     if name in executor_camera.CAMERA_TOOLS:
         return await executor_camera.dispatch(name, arguments)
 
-    if name == "hent_yr_varsel":
-        return await _hent_yr_varsel(arguments.get("sted"))
+    if name in ("get_weather", "hent_yr_varsel"):
+        return await _fetch_weather(arguments.get("location"), lang=lang)
 
     if name == "hent_klokke":
         now = datetime.now()
@@ -304,7 +304,7 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
     if name in executor_media.MEDIA_TOOLS:
         return await executor_media.dispatch(name, arguments)
 
-    return f"Ukjent tool: '{name}'."
+    return t("exec_unknown_tool", lang, name=name)
 
 
 async def execute_tool(name: str, arguments: Dict[str, Any]) -> str:

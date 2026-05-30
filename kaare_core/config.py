@@ -190,9 +190,9 @@ def filter_tools_by_model(tools: list, size_b: float) -> list:
     return result
 
 
-def get_tools_for_role(role: str) -> list:
+def get_tools_for_role(role: str, user_id: str = "") -> list:
     """
-    Return the filtered KAARE_TOOLS list for the given user role.
+    Return the filtered tool list for the given user role and language.
 
     Reads tool_permissions.yaml. The always_included tools are always appended.
     library_online in a role's list upgrades the library tool to include the online action.
@@ -200,25 +200,30 @@ def get_tools_for_role(role: str) -> list:
     - cloud.enabled=false  → library tool loses the online action
     - agents service off   → library tool removed, søk_nett added as fallback
     """
-    from kaare_core.tools.definitions import KAARE_TOOLS, LIBRARY_NO_ONLINE
+    from kaare_core.tools.definitions import get_tools, get_library_no_online
+    from kaare_core.tools.i18n import get_lang
+
+    lang = get_lang(user_id) if user_id else "nb"
+    all_tools = get_tools(lang)
+    lib_no_online = get_library_no_online(lang)
 
     always_names: set[str] = set(_TOOL_PERMISSIONS.get("always_included", []))
     roles_cfg: dict = _TOOL_PERMISSIONS.get("roles", {})
     role_list: list[str] = roles_cfg.get(role, roles_cfg.get("adult", []))
 
     if "all" in role_list:
-        candidate = list(KAARE_TOOLS)
+        candidate = list(all_tools)
     else:
         allowed: set[str] = set(role_list)
         has_library_online = "library_online" in allowed
         candidate = []
-        for tool in KAARE_TOOLS:
+        for tool in all_tools:
             name: str = tool["function"]["name"]
             if name in always_names:
                 candidate.append(tool)
             elif name == "library":
                 if "library" in allowed:
-                    candidate.append(tool if has_library_online else LIBRARY_NO_ONLINE)
+                    candidate.append(tool if has_library_online else lib_no_online)
             elif name in allowed:
                 candidate.append(tool)
 
@@ -236,13 +241,13 @@ def get_tools_for_role(role: str) -> list:
             had_library = True
             if not agents_enabled:
                 continue  # library needs agents; søk_nett added below as fallback
-            result.append(tool if cloud_enabled else LIBRARY_NO_ONLINE)
+            result.append(tool if cloud_enabled else lib_no_online)
         else:
             result.append(tool)
 
     # If agents off and role had library but not søk_nett → add direct web search
     if had_library and not agents_enabled and not has_søk_nett:
-        for tool in KAARE_TOOLS:
+        for tool in get_tools(lang):
             if tool["function"]["name"] == "søk_nett":
                 result.append(tool)
                 break

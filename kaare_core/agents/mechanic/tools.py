@@ -37,6 +37,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from kaare_core.model_lock import lock_11445, LockTimeout
+from kaare_core.tools.i18n import t, get_lang
 from kaare_core.config import get_model as _cfg_model, get_llm_config as _llm, get_service as _svc, is_agent_tool_enabled
 from kaare_core.tools.shared_tools import (
     les_fil as _shared_les_fil,
@@ -295,7 +296,7 @@ async def execute_tool(name: str, arguments: dict) -> str:
         elif name == "nettsøk":
             query = arguments.get("query", "").strip()
             if not query:
-                return "[Tomt søk]"
+                return t("mech_empty_search", get_lang("global"))
             sys.path.insert(0, "/kaare")
             from adapters.web_search_adapter import søk_nett
             return await søk_nett(query)
@@ -304,7 +305,7 @@ async def execute_tool(name: str, arguments: dict) -> str:
             query  = arguments.get("query", "").strip()
             grense = max(1, min(int(arguments.get("grense", 10)), 20))
             if not query:
-                return "[Tomt søk]"
+                return t("mech_empty_search", get_lang("global"))
             qdrant_url = _svc("storage", "qdrant")
             embed_url  = _svc("ollama", "embed") + "/api/embed"
             try:
@@ -323,7 +324,7 @@ async def execute_tool(name: str, arguments: dict) -> str:
                 return f"[Argus utilgjengelig: {e}]"
             hits = data.get("result", {}).get("points", [])
             if not hits:
-                return f"[Ingen treff på '{query}' i systemloggen]"
+                return t("mech_no_log_results", get_lang("global"), query=query)
             lines = [f"Argus: {len(hits)} treff — '{query}'\n"]
             for h in hits:
                 f     = h.get("payload", {})
@@ -425,14 +426,14 @@ async def execute_tool(name: str, arguments: dict) -> str:
             action = arguments.get("action", "les")
             if action == "les":
                 if not MEMORY_PATH.exists():
-                    return "[Ingen hukommelse lagret ennå]"
+                    return t("mech_no_memory", get_lang("global"))
                 content = MEMORY_PATH.read_text(encoding="utf-8").strip()
                 return content if content else "[Tom hukommelse]"
 
             elif action == "skriv":
                 tekst = arguments.get("tekst", "").strip()
                 if not tekst:
-                    return "[Feil: tekst kan ikke være tom]"
+                    return t("mech_empty_memory", get_lang("global"))
                 MEMORY_PATH.parent.mkdir(parents=True, exist_ok=True)
                 ts = date.today().isoformat()
                 entry = f"\n- [{ts}] {tekst}"
@@ -443,7 +444,7 @@ async def execute_tool(name: str, arguments: dict) -> str:
             elif action == "slett_gammel":
                 dager = int(arguments.get("dager", 30))
                 if not MEMORY_PATH.exists():
-                    return "[Ingen hukommelse å slette]"
+                    return t("mech_no_memory_del", get_lang("global"))
                 cutoff = date.today() - timedelta(days=dager)
                 lines = MEMORY_PATH.read_text(encoding="utf-8").splitlines()
                 kept, removed = [], 0
@@ -461,15 +462,15 @@ async def execute_tool(name: str, arguments: dict) -> str:
                     else:
                         kept.append(line)
                 MEMORY_PATH.write_text("\n".join(kept), encoding="utf-8")
-                return f"[Slettet {removed} oppføringer eldre enn {dager} dager]"
+                return t("mech_memory_deleted", get_lang("global"), count=removed, days=dager)
 
             return f"[Ukjent action for hukommelse: {action}]"
 
-        return f"[Ukjent verktøy: {name}]"
+        return t("mech_unknown_tool", get_lang("global"), name=name)
 
     except Exception as e:
         log.error("Verktøyfeil %s: %s", name, e)
-        return f"[Verktøyfeil {name}: {e}]"
+        return t("mech_tool_error", get_lang("global"), name=name, error=e)
 
 
 # ── Tool-loop (kjøres av agents-server og dev-møtet) ─────────────────────────
@@ -538,7 +539,7 @@ async def ask_with_tools(
                     resp = r.json()
         except LockTimeout as e:
             log.error("Mechanic: %s", e)
-            return "[Mechanic: modellen er opptatt (lock timeout 300s) — prøv igjen om litt]"
+            return t("mech_model_busy", get_lang("global"))
         except Exception as e:
             log.error("Mechanic LLM-kall feilet (runde %d): %s", round_num, e)
             return f"[Mechanic utilgjengelig: {e}]"

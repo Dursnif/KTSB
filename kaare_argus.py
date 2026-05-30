@@ -35,6 +35,7 @@ from qdrant_client.models import Distance, PointStruct, VectorParams
 sys.path.insert(0, "/kaare")
 import yaml
 from kaare_core.config import get_service as _svc
+from kaare_core.tools.i18n import t, get_lang
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Konfigurasjon
@@ -323,8 +324,8 @@ def make_message(ev: dict, source: str) -> str:
         if name:
             sl_score = ev.get("sub_label_score")
             sl_pct = f" {int(float(sl_score) * 100)}%" if sl_score is not None else ""
-            return f"[Ansikt] {name}{sl_pct} på {cam} ({lbl} {pct}%)"
-        return f"Frigate: {lbl} på {cam} ({pct}%)"
+            return t("argus_face_event", get_lang("global"), name=name, pct=sl_pct, cam=cam, label=lbl, score=pct)
+        return t("argus_motion_event", get_lang("global"), label=lbl, cam=cam, pct=pct)
 
     # route_decisions.log (source == "kaare")
     if stage == "ha_handled_done":
@@ -391,11 +392,12 @@ def _flush_face_session(name: str, session: dict) -> None:
     cameras   = session["cameras"]
     cam_strs  = ", ".join(_friendly_cam(c) for c in cameras)
     n_cams    = len(cameras)
-    label_type = "person" if session["label"] == "person" else "kjøretøy"
     pct       = int(session["max_score"] * 100)
 
-    cam_word = f"{n_cams} kamera{'er' if n_cams > 1 else ''}"
-    line = f"[{time_str}] {label_type} {name} på {cam_word}: {cam_strs} (maks {pct}%)\n"
+    lang       = get_lang("global")
+    label_type = t("argus_label_person" if session["label"] == "person" else "argus_label_vehicle", lang)
+    cam_word   = t("argus_cam_word_s" if n_cams == 1 else "argus_cam_word_p", lang, n=n_cams)
+    line       = t("argus_face_session", lang, time=time_str, label=label_type, name=name, cam_word=cam_word, cams=cam_strs, pct=pct) + "\n"
 
     try:
         FACE_EVENTS_PATH.parent.mkdir(parents=True, exist_ok=True)

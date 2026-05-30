@@ -30,7 +30,7 @@ def _load_personality() -> str:
 
 
 async def _ask_library(spørsmål: str, user_id: str = "global") -> str:
-    """Kaller Frøken Library direkte (port 11450). Returnerer svar eller tom streng."""
+    """Kaller Miss Library direkte (port 11450). Returnerer svar eller tom streng."""
     if not _llm("library").get("enabled", True):
         return ""
     try:
@@ -58,7 +58,7 @@ async def _ask_library(spørsmål: str, user_id: str = "global") -> str:
 
         return svar
     except Exception as e:
-        log.warning("[Miss Kåre] Frøken Library-kall feilet: %s", e)
+        log.warning("[Miss Kåre] Miss Library-kall feilet: %s", e)
         return ""
 
 
@@ -92,7 +92,7 @@ async def evaluate(
     she knows she's being spoken to and should respond rather than just observe.
 
     If Miss Kåre replies with [SJEKK: <question>] she looks it up in
-    Frøken Library's wiki and responds with that information.
+    Miss Library's wiki and responds with that information.
     """
     # Kåre is using the 9B model himself — Miss Kåre stays silent so they
     # don't compete for the same resource.
@@ -119,8 +119,8 @@ async def evaluate(
         "\n\n---\n\n"
         + user_block
         + situation
-        + "Hvis du vil slå opp noe faktisk i wikien til Frøken Library, svar kun med:\n"
-        "[SJEKK: <presist spørsmål til Frøken Library>]\n\n"
+        + "Hvis du vil slå opp noe faktisk i wikien til Miss Library, svar kun med:\n"
+        "[SJEKK: <presist spørsmål til Miss Library>]\n\n"
         "Hvis du vil si noe direkte: si det varmt, maks 3 setninger. Ingen innledning."
     )
 
@@ -140,15 +140,15 @@ async def evaluate(
             reply = await _llm_call(messages)
         log.info("[Miss Kåre] første svar: %s", reply[:100])
 
-        # Sjekk om Miss Kåre vil slå opp noe hos Frøken Library (port 11450 – ingen lås)
-        if reply.startswith("[SJEKK:") and "]" in reply and is_agent_tool_enabled("miss_kare", "spør_frøken_library", default=True):
+        # Sjekk om Miss Kåre vil slå opp noe hos Miss Library (port 11450 – ingen lås)
+        if reply.startswith("[SJEKK:") and "]" in reply and is_agent_tool_enabled("miss_kare", "spør_miss_library", default=True):
             spørsmål = reply[7:reply.index("]")].strip()
-            log.info("[Miss Kåre] ber Frøken Library om: %s", spørsmål)
+            log.info("[Miss Kåre] ber Miss Library om: %s", spørsmål)
             bibliotek_svar = await _ask_library(spørsmål, user_id)
             if bibliotek_svar:
                 messages.append({"role": "assistant", "content": reply})
                 messages.append({"role": "user", "content": (
-                    f"Frøken Library svarte:\n{bibliotek_svar}\n\n"
+                    f"Miss Library svarte:\n{bibliotek_svar}\n\n"
                     "Bruk dette til å si noe varmt og konkret til brukeren. Maks 3 setninger."
                 )})
                 # Runde 2: andre LLM-kall med biblioteksvar

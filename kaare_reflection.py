@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
 """
-Kåre refleksjonsjobb – kjøres kl. 04:00 via systemd timer.
+Kåre reflection job — runs at 04:00 via systemd timer.
 
-Formål: Kåre, Miss Kåre og Møteleder reflekterer over BRUKEREN – hvem de er,
-        hva de liker, hva de trenger, hva som kan bekymre og glede dem.
-        Innsikt lagres til per-bruker profil (state/users/{user_id}/).
+Purpose: Kåre, Miss Kåre and Meeting Leader reflect on THE USER — who they are,
+         what they like, what they need, what might worry or delight them.
+         Insights are saved to per-user profile (state/users/{user_id}/).
 
-Åpningssekvens:
-  1. Møteleder åpner og inviterer til temaforslag
-  2. Kåre foreslår ett tema om brukeren
-  3. Miss Kåre foreslår ett tema om brukeren
-  4. Møteleder trekker ut ett tema fra hver → setter agenda
+Opening sequence:
+  1. Meeting leader opens and invites topic proposals
+  2. Kåre proposes one topic about the user to explore
+  3. Miss Kåre proposes one topic about the user to explore
+  4. Meeting leader picks one topic from each → sets agenda
 
-Struktur:
-  - Møteleder (27B, GPU-proxy) styrer flyten og beslutter om vi fortsetter.
-  - Kåre (27B, GPU-proxy) og Miss Kåre (9B, 5060 Ti) er deltakere.
-  - Grupper av 3 lokale runder → Online-sjekk → møteleders vurdering.
-  - Maks 6 runder totalt (2 grupper).
+Structure:
+  - Meeting leader (27B, GPU-proxy) controls flow and decides whether to continue.
+  - Kåre (27B, GPU-proxy) and Miss Kåre (9B, 5060 Ti) are participants.
+  - Groups of 3 local rounds → online check → meeting leader evaluation.
+  - Max 6 rounds total (2 groups).
 
 Output: /kaare/state/memory/reflections/YYYY-MM-DD.md
         /kaare/state/memory/reflection_latest.md
-        /kaare/state/users/{user_id}/profile.yaml  (oppdatert)
-        /kaare/state/users/{user_id}/observations.md  (ny oppføring)
+        /kaare/state/users/{user_id}/profile.yaml  (updated)
+        /kaare/state/users/{user_id}/observations.md  (new entry)
 """
 
 import asyncio
@@ -31,6 +31,7 @@ import os
 import re
 import socket
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -63,6 +64,7 @@ from kaare_core.users.profile_manager import (
     write_vault_entry,
 )
 from kaare_core import session_keys as _session_keys
+from kaare_core.tools.i18n import t, get_lang
 
 logging.basicConfig(
     level=logging.INFO,
@@ -71,11 +73,11 @@ logging.basicConfig(
 )
 log = logging.getLogger("reflection")
 
-# ── Konfigurasjon ─────────────────────────────────────────────────────────────
+# ── Configuration ─────────────────────────────────────────────────────────────
 REFLECTIONS_BASE = Path("/kaare/state/memory/reflections")
 
-USER_ID         = os.getenv("REFLECTION_USER_ID", "stian")   # Settes av runner eller env
-_active_user_id = USER_ID   # Oppdateres av main() – brukes av tool-funksjoner
+USER_ID         = os.getenv("REFLECTION_USER_ID", "stian")   # set by runner or env
+_active_user_id = USER_ID   # updated by main() — used by tool functions
 
 from kaare_core.config import get_service as _svc
 
@@ -108,6 +110,11 @@ _LEDER_PRESET_DIR_R  = Path("/kaare/configs/meeting_leder")
 _LEDER_CUSTOM_PATH_R = Path("/kaare/configs/meeting_leder/reflection_egendefinert.md")
 _VALID_LEDER_PRESETS_R = ("standard", "analytisk", "utfordrende", "egendefinert")
 
+# Sentinel prefix prepended to all _ask_leder() error returns.
+# Callers use result.startswith(_LEDER_FAIL) — language-independent.
+_LEDER_FAIL = "\x00leder_fail"
+
+
 def _load_reflection_meeting_cfg() -> dict:
     try:
         return yaml.safe_load(_SETTINGS_PATH_R.read_text(encoding="utf-8")).get("kare_reflection", {})
@@ -128,7 +135,7 @@ _KARE_NUM_CTX      = _llm("default")["options"].get("num_ctx", 8192)
 _MISS_KARE_NUM_CTX = _llm("miss_kare")["options"]["num_ctx"]
 
 
-# ── Hjelpefunksjoner ──────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 _MK_AGENT_DIR = Path(__file__).parent / "kaare_core" / "agents" / "miss_kare"
 
@@ -148,7 +155,7 @@ def _load_miss_kare_meeting_pers() -> str:
         role = data.get("meeting_roles", {}).get("miss_kare", "empatisk")
     except Exception:
         role = "empatisk"
-    log.info("[Refleksjonsmøte] Miss Kåre-rolle: %s", role)
+    log.info("[reflection] Miss Kåre role: %s", role)
 
     if role == "egendefinert":
         custom = Path("/kaare/configs/meeting_role_miss_kare_custom.md")
@@ -184,7 +191,7 @@ def _load_env(path: str) -> dict:
 
 
 def _trim(messages: list[dict], window: int) -> list[dict]:
-    """Behold system-prompt + siste `window` meldinger."""
+    """Keep system prompt + last `window` messages."""
     system = [m for m in messages if m.get("role") == "system"]
     rest   = [m for m in messages if m.get("role") != "system"]
     return system + rest[-window:]
@@ -194,7 +201,7 @@ KARE_CORE     = _load("/kaare/configs/personality_core.md")
 KARE_BEHAVIOR = _load("/kaare/configs/personality_behavior.md")
 
 
-# ── Hent brukerkontekst ───────────────────────────────────────────────────────
+# ── User context ──────────────────────────────────────────────────────────────
 def _get_recent_interactions(n: int = 5, user_id: str | None = None) -> str:
     """Fetch the last N compressed episodes from LTM (SQLite)."""
     try:
@@ -212,14 +219,14 @@ def _get_recent_interactions(n: int = 5, user_id: str | None = None) -> str:
         rows = cur.fetchall()
         conn.close()
         if not rows:
-            return "Ingen registrerte interaksjoner."
+            return "No recorded interactions."
         lines = []
         for i, (narrative, topics) in enumerate(reversed(rows), 1):
-            lines.append(f"Interaksjon {i} (temaer: {topics or 'ukjent'}):\n{narrative}")
+            lines.append(f"Interaction {i} (topics: {topics or 'unknown'}):\n{narrative}")
         return "\n\n".join(lines)
     except Exception as e:
-        log.warning("Kunne ikke hente interaksjoner: %s", e)
-        return "Interaksjoner utilgjengelige."
+        log.warning("Could not fetch interactions: %s", e)
+        return "Interactions unavailable."
 
 
 def _get_stm_daily_summaries(days: int = 3) -> str:
@@ -231,7 +238,7 @@ def _get_stm_daily_summaries(days: int = 3) -> str:
             return ""
         lines = []
         for e in reversed(entries):
-            lines.append(f"[{e['date']}] ({e['count']} interaksjoner):\n{e['summary']}")
+            lines.append(f"[{e['date']}] ({e['count']} interactions):\n{e['summary']}")
         return "\n\n".join(lines)
     except Exception as e:
         log.warning("Could not load STM daily summaries: %s", e)
@@ -248,18 +255,18 @@ def _get_user_context(user_id: str) -> tuple[str, str, str, str]:
     return profile_text, observations_text, interactions_text, stm_text
 
 
-# ── LLM-kall (provider-agnostisk for Kåre, Ollama for Miss Kåre) ─────────────
+# ── LLM calls (provider-agnostic for Kåre, direct Ollama for Miss Kåre) ──────
 async def _ask_kare(
     messages: list[dict],
     temperature: float = 0.4,
     timeout: float = TIMEOUT_SECS,
     max_tokens: int = KARE_MAX_TOKENS,
 ) -> str:
-    """Kaller default-rollen (Kåre). Provider (vLLM/Ollama) leses fra llm.yaml."""
+    """Call the default role (Kåre). Provider (vLLM/Ollama) is read from llm.yaml."""
     from adapters.llm_adapter import call_llm_chat
     options = {"num_predict": max_tokens, "temperature": temperature, "num_ctx": _KARE_NUM_CTX}
     result = await call_llm_chat("default", messages, options=options, timeout=timeout)
-    return result.get("text") or "[Ingen respons]"
+    return result.get("text") or "[No response]"
 
 
 async def _ask_ollama(
@@ -268,7 +275,7 @@ async def _ask_ollama(
     max_tokens: int = KARE_MAX_TOKENS, num_thread: int | None = None,
     num_ctx: int = _MISS_KARE_NUM_CTX,
 ) -> str:
-    """Kaller Ollama /api/chat direkte — kun for Miss Kåre (alltid Ollama)."""
+    """Call Ollama /api/chat directly — only for Miss Kåre (always Ollama)."""
     options: dict = {"temperature": temperature, "num_ctx": num_ctx, "num_predict": max_tokens}
     if num_thread is not None:
         options["num_thread"] = num_thread
@@ -285,18 +292,18 @@ async def _ask_ollama(
             r = await client.post(url, json=payload, headers=headers)
             r.raise_for_status()
             content = r.json().get("message", {}).get("content", "").strip()
-            return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip() or "[Ingen respons]"
+            return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip() or "[No response]"
     except Exception as e:
-        log.error("Ollama-kall feilet (%s): %s", url, e)
-        return f"[Utilgjengelig: {e}]"
+        log.error("Ollama call failed (%s): %s", url, e)
+        return f"[Unavailable: {e}]"
 
 
-# ── Kall Online LLM ───────────────────────────────────────────────────────────
+# ── Online LLM call ───────────────────────────────────────────────────────────
 async def _ask_cloud(conversation: str, is_final: bool) -> str:
     env = _load_env("/kaare/configs/nvidia.env")
     api_key = env.get("NVIDIA_API_KEY", "")
     if not api_key:
-        return "[Ingen API-nøkkel – cloud ikke tilgjengelig]"
+        return t("meet_no_api_key", get_lang("global"))
 
     if is_final:
         instruction = (
@@ -334,13 +341,13 @@ async def _ask_cloud(conversation: str, is_final: bool) -> str:
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             )
             r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"].strip() or "[Cloud svarte ikke]"
+            return r.json()["choices"][0]["message"]["content"].strip() or "[Cloud did not respond]"
     except Exception as e:
-        log.error("Cloud-kall feilet: %s", e)
-        return f"[Cloud utilgjengelig: {e}]"
+        log.error("Cloud call failed: %s", e)
+        return f"[Cloud unavailable: {e}]"
 
 
-# ── Møteleders verktøy ────────────────────────────────────────────────────────
+# ── Meeting leader tools ──────────────────────────────────────────────────────
 _LEDER_TOOLS = [
     {
         "type": "function",
@@ -379,33 +386,37 @@ async def _execute_leder_tool(name: str, arguments: dict) -> str:
     try:
         if name == "les_brukerprofil":
             profile = load_profile(_active_user_id)
-            return f"Brukerprofil:\n{yaml.dump(profile, allow_unicode=True, default_flow_style=False)}"
+            return f"User profile:\n{yaml.dump(profile, allow_unicode=True, default_flow_style=False)}"
 
         elif name == "hent_bruker_aktivitet":
             interactions = _get_recent_interactions(n=10, user_id=_active_user_id)
             observations = get_recent_observations(_active_user_id, days=7)
             stm_summaries = _get_stm_daily_summaries(days=3)
-            stm_section = f"\n\nDaglige STM-sammendrag (siste 3 dager):\n{stm_summaries}" if stm_summaries else ""
+            stm_section = f"\n\nDaily STM summaries (last 3 days):\n{stm_summaries}" if stm_summaries else ""
             return (
-                f"Siste interaksjoner (komprimerte episoder):\n{interactions}\n\n"
-                f"Siste observasjoner (7 dager):\n{observations}"
+                f"Recent interactions (compressed episodes):\n{interactions}\n\n"
+                f"Recent observations (7 days):\n{observations}"
                 f"{stm_section}"
             )
 
         elif name == "nettsøk":
             query = arguments.get("query", "").strip()
             if not query:
-                return "[Tomt søk]"
+                return t("meet_empty_search", get_lang("global"))
             from adapters.web_search_adapter import søk_nett
             return await søk_nett(query)
 
-        return f"[Ukjent verktøy: {name}]"
+        return t("meet_unknown_tool", get_lang("global"), name=name)
     except Exception as e:
-        return f"[Verktøyfeil {name}: {e}]"
+        return t("meet_tool_error", get_lang("global"), name=name, error=e)
 
 
 async def _ask_leder(messages: list[dict], with_tools: bool = False) -> str:
-    """Kaller møteleder med valgfri verktøytilgang. Provider-agnostisk via call_llm_chat."""
+    """Call meeting leader with optional tool access. Provider-agnostic via call_llm_chat.
+
+    On failure returns _LEDER_FAIL + translated error string.
+    Callers detect errors with result.startswith(_LEDER_FAIL).
+    """
     from adapters.llm_adapter import call_llm_chat
     options = {"temperature": 0.3, "num_predict": KARE_MAX_TOKENS, "num_ctx": _KARE_NUM_CTX}
     tools = _LEDER_TOOLS if with_tools else None
@@ -418,13 +429,13 @@ async def _ask_leder(messages: list[dict], with_tools: bool = False) -> str:
             disable_thinking=True,
         )
         if not result.get("ok"):
-            log.error("Møteleder-kall feilet: %s", result.get("error", "ukjent"))
-            return f"[Møteleder utilgjengelig: {result.get('error', 'ukjent feil')}]"
+            log.error("Meeting leader call failed: %s", result.get("error", "unknown"))
+            return _LEDER_FAIL + t("meet_leader_unavailable", get_lang("global"), error=result.get("error", "ukjent feil"))
 
         tool_calls = result.get("tool_calls")
 
         if not tool_calls or not with_tools or tool_round >= LEDER_TOOL_ROUNDS:
-            return result.get("text") or "[Ingen respons]"
+            return result.get("text") or "[No response]"
 
         current_messages.append(
             result.get("message") or {"role": "assistant", "content": result.get("text", ""), "tool_calls": tool_calls}
@@ -437,11 +448,11 @@ async def _ask_leder(messages: list[dict], with_tools: bool = False) -> str:
                 args = raw if isinstance(raw, dict) else (json.loads(raw) if raw else {})
             except Exception:
                 args = {}
-            log.info("[Møteleder verktøy] %s(%s)", tool_name, args)
+            log.info("[meeting leader tool] %s(%s)", tool_name, args)
             tool_result = await _execute_leder_tool(tool_name, args)
             current_messages.append({"role": "tool", "content": tool_result, "name": tool_name})
 
-    return "[Ingen respons]"
+    return "[No response]"
 
 
 def _get_kare_language_r() -> str:
@@ -498,9 +509,9 @@ def _build_leder_system() -> str:
     return preset_text.format(mk_desc=mk_desc, hostname=hostname, time=now)
 
 
-# ── Åpningssekvens: temaforslag fra deltakerne ────────────────────────────────
+# ── Opening sequence: topic proposals from participants ───────────────────────
 async def _kare_temaforslag(kare_messages: list[dict], user_context: str) -> str:
-    """Ber Kåre foreslå ett tema om brukeren han vil utforske i møtet."""
+    """Ask Kåre to propose one topic about the user to explore in the meeting."""
     kare_messages.append({"role": "user", "content": (
         "Møtet starter. Vi skal snakke om brukeren i dag – hvem de er, hva de liker, "
         "hva de trenger. Foreslå ÉTT konkret tema om brukeren du ønsker å utforske. "
@@ -512,7 +523,7 @@ async def _kare_temaforslag(kare_messages: list[dict], user_context: str) -> str
 
 
 async def _miss_kare_temaforslag(miss_kare_messages: list[dict], kare_tema: str) -> str:
-    """Ber Miss Kåre foreslå ett tema om brukeren hun vil utforske."""
+    """Ask Miss Kåre to propose one topic about the user to explore."""
     miss_kare_messages.append({"role": "user", "content": (
         f"Kåre ønsker å utforske dette i møtet: «{kare_tema}»\n\n"
         "Foreslå DU ÉTT annet konkret tema om brukeren – noe du synes er viktig å belyse. "
@@ -531,7 +542,7 @@ async def _miss_kare_temaforslag(miss_kare_messages: list[dict], kare_tema: str)
 
 
 async def _leder_presenter_admin_input(admin_input: str) -> str:
-    """Møteleder løfter admin-innspill som første sak etter åpningssekvensen."""
+    """Meeting leader presents admin input as the first item after the opening sequence."""
     messages = [
         {"role": "system", "content": _build_leder_system()},
         {"role": "user", "content": (
@@ -542,13 +553,13 @@ async def _leder_presenter_admin_input(admin_input: str) -> str:
         )},
     ]
     result = await _ask_leder(messages, with_tools=False)
-    if result.startswith("[Møteleder utilgjengelig"):
+    if result.startswith(_LEDER_FAIL):
         return f"Admin har sendt inn et tema: «{admin_input}» – la oss se på dette."
     return result
 
 
 async def _leder_sett_agenda(kare_tema: str, miss_kare_tema: str, user_context: str) -> str:
-    """Møteleder trekker ut ett tema fra hver og setter agenda."""
+    """Meeting leader picks one topic from each participant and sets the agenda."""
     messages = [
         {"role": "system", "content": _build_leder_system()},
         {"role": "user", "content": (
@@ -561,13 +572,13 @@ async def _leder_sett_agenda(kare_tema: str, miss_kare_tema: str, user_context: 
         )},
     ]
     result = await _ask_leder(messages, with_tools=True)
-    if result.startswith("[Møteleder utilgjengelig"):
-        return f"[Møteleder utilgjengelig – bruker foreslåtte temaer direkte]\nKåre: {kare_tema}\nMiss Kåre: {miss_kare_tema}"
+    if result.startswith(_LEDER_FAIL):
+        return t("meet_leader_unavailable", get_lang("global"), error="bruker foreslåtte temaer direkte") + f"\nKåre: {kare_tema}\nMiss Kåre: {miss_kare_tema}"
     return result
 
 
 async def _leder_intro_gruppe2(prev_summary: str) -> str:
-    """Møteleder setter agenda for gruppe 2."""
+    """Meeting leader sets agenda for group 2."""
     messages = [
         {"role": "system", "content": _build_leder_system()},
         {"role": "user", "content": (
@@ -577,13 +588,13 @@ async def _leder_intro_gruppe2(prev_summary: str) -> str:
         )},
     ]
     result = await _ask_leder(messages, with_tools=False)
-    if result.startswith("[Møteleder utilgjengelig"):
-        return "[Møteleder utilgjengelig – gruppe 2 starter uten intro]"
+    if result.startswith(_LEDER_FAIL):
+        return t("meet_leader_unavailable", get_lang("global"), error="gruppe 2 starter uten intro")
     return result
 
 
 async def _leder_runde_sjekk(conversation_tail: str, global_round: int) -> tuple[str, str]:
-    """Kort sjekk etter en runde. Returnerer (action, value)."""
+    """Brief check after a round. Returns (action, value)."""
     messages = [
         {
             "role": "system",
@@ -607,7 +618,7 @@ async def _leder_runde_sjekk(conversation_tail: str, global_round: int) -> tuple
     ]
     svar = await _ask_leder(messages, with_tools=False)
     svar = svar.strip()
-    log.info("[Møteleder runde %d] %s", global_round, svar[:100])
+    log.info("[meeting leader round %d] %s", global_round, svar[:100])
 
     if svar.upper().startswith("HENT_AKTIVITET"):
         return "hent_aktivitet", ""
@@ -625,7 +636,7 @@ async def _handle_leder_action(
     kare_messages: list, miss_kare_messages: list,
     exchanges: list,
 ) -> None:
-    """Utfør møtelederens forespørsel og injiser resultat i samtalen."""
+    """Execute meeting leader's requested action and inject result into the conversation."""
     if action == "fortsett":
         return
 
@@ -634,19 +645,19 @@ async def _handle_leder_action(
         result = await _execute_leder_tool("hent_bruker_aktivitet", {})
         exchanges.append(("Kåre [brukeraktivitet]", result))
         inject = f"Møteleder hentet brukeraktivitet:\n{result}"
-        log.info("[Brukeraktivitet hentet] %s…", result[:80])
+        log.info("[user activity fetched] %s…", result[:80])
 
     elif action == "nettsøk":
         exchanges.append(("Møteleder", f"La meg søke etter: {value}"))
         result = await _execute_leder_tool("nettsøk", {"query": value})
         exchanges.append(("Kåre [nettsøk]", result))
         inject = f"Møteleder søkte etter «{value}». Resultat:\n{result}"
-        log.info("[Nettsøk '%s'] %s…", value, result[:80])
+        log.info("[web search '%s'] %s…", value, result[:80])
 
     elif action == "innspill":
         exchanges.append(("Møteleder", value))
         inject = f"Møteleder: {value}"
-        log.info("[Møteleder innspill] %s", value[:80])
+        log.info("[meeting leader input] %s", value[:80])
 
     else:
         return
@@ -656,8 +667,9 @@ async def _handle_leder_action(
 
 
 async def _leder_vurder(conversation: str, group: int, max_groups: int) -> tuple[bool, str]:
+    """Meeting leader evaluates whether to continue. Returns (should_continue, reason)."""
     if group >= max_groups:
-        return False, "Maks antall grupper nådd."
+        return False, t("meet_max_groups", get_lang("global"))
 
     messages = [
         {"role": "system", "content": _build_leder_system()},
@@ -668,17 +680,17 @@ async def _leder_vurder(conversation: str, group: int, max_groups: int) -> tuple
         )},
     ]
     svar = await _ask_leder(messages, with_tools=False)
-    log.info("[Møteleder vurdering] %s", svar[:100])
+    log.info("[meeting leader evaluation] %s", svar[:100])
 
-    if svar.startswith("[Møteleder utilgjengelig"):
-        log.warning("Møteleder utilgjengelig – fortsetter automatisk")
-        return True, f"[Møteleder utilgjengelig – fortsetter til gruppe {group + 1}]"
+    if svar.startswith(_LEDER_FAIL):
+        log.warning("Meeting leader unavailable — continuing automatically")
+        return True, t("meet_leader_unavailable", get_lang("global"), error=f"fortsetter til gruppe {group + 1}")
 
     fortsett = svar.upper().startswith("FORTSETT")
     return fortsett, svar
 
 
-# ── Lagre møteinnsikt til brukerprofil ───────────────────────────────────────
+# ── Save meeting insights to user profile ─────────────────────────────────────
 
 def _user_is_online(user_id: str) -> bool:
     """True if the user has an active session key in RAM."""
@@ -702,7 +714,7 @@ def _vault_or_update_profile(user_id: str, field: str, value: Any, reason: str) 
 
 
 def _save_meeting_insights(user_id: str, kare_closing: str) -> None:
-    """Parser Kåres avslutning og lagrer innsikt til brukerprofil."""
+    """Parse Kåre's closing statement and save insights to user profile."""
     try:
         obs_match      = re.search(r"OBSERVASJON:\s*(.+?)(?=LIKER:|BEKYMRING:|GLEDE:|$)",      kare_closing, re.DOTALL | re.IGNORECASE)
         liker_match    = re.search(r"LIKER:\s*(.+?)(?=OBSERVASJON:|BEKYMRING:|GLEDE:|$)",       kare_closing, re.DOTALL | re.IGNORECASE)
@@ -718,39 +730,39 @@ def _save_meeting_insights(user_id: str, kare_closing: str) -> None:
         if liker_match:
             liker_text = liker_match.group(1).strip()
             if liker_text.lower() not in ("ingenting nytt", "ingenting", "ingen"):
-                obs_lines.append(f"Liker: {liker_text}")
+                obs_lines.append(f"Likes: {liker_text}")
                 profile = load_profile(user_id)
                 prefs = profile.get("preferences", {})
-                prefs[f"observert_{date_str}"] = liker_text
-                _vault_or_update_profile(user_id, "preferences", prefs, "Fra refleksjonsmøte")
+                prefs[f"observed_{date_str}"] = liker_text
+                _vault_or_update_profile(user_id, "preferences", prefs, "From reflection meeting")
 
         if bekymring_match:
             bekymring_text = bekymring_match.group(1).strip()
             if bekymring_text.lower() not in ("ingen", "ingenting"):
-                obs_lines.append(f"Bekymring: {bekymring_text}")
+                obs_lines.append(f"Concern: {bekymring_text}")
                 profile = load_profile(user_id)
                 concerns = profile.get("concerns", [])
                 concerns.append({"date": date_str, "text": bekymring_text})
-                _vault_or_update_profile(user_id, "concerns", concerns[-10:], "Fra refleksjonsmøte")
+                _vault_or_update_profile(user_id, "concerns", concerns[-10:], "From reflection meeting")
 
         if glede_match:
             glede_text = glede_match.group(1).strip()
             if glede_text.lower() not in ("ingen", "ingenting"):
-                obs_lines.append(f"Kan glede: {glede_text}")
+                obs_lines.append(f"Delight: {glede_text}")
                 profile = load_profile(user_id)
                 delights = profile.get("delights", [])
                 delights.append({"date": date_str, "text": glede_text})
-                _vault_or_update_profile(user_id, "delights", delights[-20:], "Fra refleksjonsmøte")
+                _vault_or_update_profile(user_id, "delights", delights[-20:], "From reflection meeting")
 
-        observation_text = "\n".join(obs_lines) if obs_lines else f"Møtet ble avholdt.\n{kare_closing[:300]}"
+        observation_text = "\n".join(obs_lines) if obs_lines else f"Meeting held.\n{kare_closing[:300]}"
         _vault_or_write_observation(user_id, observation_text)
-        log.info("Brukerinnsikt lagret til profil for %s", user_id)
+        log.info("Meeting insights saved to profile for %s", user_id)
 
     except Exception as e:
-        log.error("Feil ved lagring av møteinnsikt: %s", e)
+        log.error("Failed to save meeting insights: %s", e)
 
 
-# ── Skriv refleksjonsfil atomisk ──────────────────────────────────────────────
+# ── Write reflection file (atomic) ────────────────────────────────────────────
 def _write_reflection(user_id: str, date_str: str, exchanges: list[tuple[str, str]]) -> Path:
     out_dir = REFLECTIONS_BASE / user_id
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -758,12 +770,12 @@ def _write_reflection(user_id: str, date_str: str, exchanges: list[tuple[str, st
 
     participants = sorted(set(agent for agent, _ in exchanges))
     lines = [
-        f"# Refleksjon – {date_str}",
+        f"# Reflection – {date_str}",
         "",
-        "## Deltakere",
+        "## Participants",
         *[f"- {p}" for p in participants],
         "",
-        "## Samtale",
+        "## Conversation",
         "",
     ]
     for agent, text in exchanges:
@@ -776,23 +788,26 @@ def _write_reflection(user_id: str, date_str: str, exchanges: list[tuple[str, st
     tmp.write_text(content, encoding="utf-8")
     tmp.replace(out_path)
     (out_dir / "latest.md").write_text(content, encoding="utf-8")
-    log.info("Refleksjon skrevet: %s", out_path)
+    log.info("Reflection written: %s", out_path)
     return out_path
 
 
-# ── Hovedflyt ─────────────────────────────────────────────────────────────────
+# ── Main flow ──────────────────────────────────────────────────────────────────
 async def main(user_id: str | None = None) -> None:
     global _active_user_id
+    from adapters.llm_adapter import _current_rid as _rid_ctx_refl
+    _refl_rid   = f"rid-refl-{int(time.time()*1000)}"
+    _refl_token = _rid_ctx_refl.set(_refl_rid)
     user_id         = user_id or USER_ID
     _active_user_id = user_id
     date_str        = datetime.now().strftime("%Y-%m-%d")
     exchanges: list[tuple[str, str]] = []
     max_groups = MAX_ROUNDS // ROUNDS_PER_GROUP
 
-    log.info("=== Refleksjonsmøte starter – %s (bruker: %s) ===", date_str, user_id)
-    log.info("Maks %d runder, %d grupper, møteleder+kåre deler %s på GPU", MAX_ROUNDS, max_groups, LEDER_MODEL)
+    log.info("=== Reflection meeting starting — %s (user: %s) ===", date_str, user_id)
+    log.info("Max %d rounds, %d groups, meeting leader + Kåre share %s on GPU", MAX_ROUNDS, max_groups, LEDER_MODEL)
 
-    # Les tema fra admin (tøm etter bruk — kun første bruker får det)
+    # Read admin topic (clear after use — only first user gets it)
     _topics_file = Path("/kaare/state/meeting_topics.json")
     _admin_topic = ""
     try:
@@ -802,17 +817,17 @@ async def main(user_id: str | None = None) -> None:
         if _admin_topic:
             _topics["reflection"] = ""
             _topics_file.write_text(_json.dumps(_topics, ensure_ascii=False, indent=2), encoding="utf-8")
-            log.info("Admin-tema lest og tømt: %s", _admin_topic[:80])
+            log.info("Admin topic read and cleared: %s", _admin_topic[:80])
     except Exception:
         pass
 
     profile_text, observations_text, interactions_text, stm_text = _get_user_context(user_id)
 
-    _stm_section = f"\n\nDaglige STM-sammendrag (siste 3 dager):\n{stm_text}" if stm_text else ""
+    _stm_section = f"\n\nDaily STM summaries (last 3 days):\n{stm_text}" if stm_text else ""
     user_context_summary = (
-        f"Brukerprofil:\n{profile_text}\n\n"
-        f"Siste observasjoner (14 dager):\n{observations_text}\n\n"
-        f"Siste interaksjoner (komprimerte episoder):\n{interactions_text}"
+        f"User profile:\n{profile_text}\n\n"
+        f"Recent observations (14 days):\n{observations_text}\n\n"
+        f"Recent interactions (compressed episodes):\n{interactions_text}"
         f"{_stm_section}"
     )
 
@@ -855,31 +870,31 @@ async def main(user_id: str | None = None) -> None:
     kare_messages      = [{"role": "system", "content": kare_system}]
     miss_kare_messages = [{"role": "system", "content": miss_kare_system}]
 
-    # ── Åpningssekvens: temaforslag ───────────────────────────────────────────
-    log.info("=== Åpningssekvens – temaforslag ===")
+    # ── Opening sequence: topic proposals ────────────────────────────────────
+    log.info("=== Opening sequence — topic proposals ===")
 
     kare_tema = await _kare_temaforslag(kare_messages, user_context_summary)
     exchanges.append(("Kåre", kare_tema))
-    log.info("[Kåre tema] %s", kare_tema[:120])
+    log.info("[Kåre topic] %s", kare_tema[:120])
 
     miss_kare_tema = await _miss_kare_temaforslag(miss_kare_messages, kare_tema)
     exchanges.append(("Miss Kåre", miss_kare_tema))
-    log.info("[Miss Kåre tema] %s", miss_kare_tema[:120])
+    log.info("[Miss Kåre topic] %s", miss_kare_tema[:120])
 
     agenda = await _leder_sett_agenda(kare_tema, miss_kare_tema, user_context_summary)
     exchanges.append(("Møteleder", agenda))
-    log.info("[Møteleder agenda] %s", agenda[:120])
+    log.info("[meeting leader agenda] %s", agenda[:120])
 
     agenda_msg = f"Møteleder setter agenda: {agenda}"
     kare_messages.append({"role": "user", "content": agenda_msg})
     miss_kare_messages.append({"role": "user", "content": agenda_msg})
 
-    # ── Admin-innspillsrunde (én ekstra runde hvis admin har sendt noe) ───────
+    # ── Admin input round (one extra round if admin submitted a topic) ────────
     if _admin_topic:
-        log.info("=== Admin-innspillsrunde ===")
+        log.info("=== Admin input round ===")
         admin_intro = await _leder_presenter_admin_input(_admin_topic)
         exchanges.append(("Møteleder", admin_intro))
-        log.info("[Møteleder admin-intro] %s", admin_intro[:120])
+        log.info("[meeting leader admin intro] %s", admin_intro[:120])
 
         admin_msg = f"Møteleder sier: {admin_intro}"
         kare_messages.append({"role": "user", "content": admin_msg})
@@ -889,7 +904,7 @@ async def main(user_id: str | None = None) -> None:
         kare_reply = await _ask_kare(_trim(kare_messages, KARE_WINDOW))
         kare_messages.append({"role": "assistant", "content": kare_reply})
         exchanges.append(("Kåre", kare_reply))
-        log.info("[Kåre admin-runde] %s", kare_reply[:120])
+        log.info("[Kåre admin round] %s", kare_reply[:120])
 
         miss_kare_messages.append({"role": "user", "content": f"Kåre sa:\n{kare_reply}\n\nDin tur – hva tenker du om admin sitt innspill?"})
         async with lock_11445("miss_kare_refleksjon"):
@@ -903,25 +918,25 @@ async def main(user_id: str | None = None) -> None:
         miss_kare_messages.append({"role": "assistant", "content": miss_reply})
         kare_messages.append({"role": "user", "content": f"Miss Kåre sier: {miss_reply}"})
         exchanges.append(("Miss Kåre", miss_reply))
-        log.info("[Miss Kåre admin-runde] %s", miss_reply[:120])
+        log.info("[Miss Kåre admin round] %s", miss_reply[:120])
 
-    # ── Grupperunder ──────────────────────────────────────────────────────────
+    # ── Group rounds ──────────────────────────────────────────────────────────
     global_round = 0
     prev_summary = ""
 
     for group in range(1, max_groups + 1):
-        log.info("=== Gruppe %d av %d ===", group, max_groups)
+        log.info("=== Group %d of %d ===", group, max_groups)
 
         if group > 1:
             intro = await _leder_intro_gruppe2(prev_summary)
             exchanges.append(("Møteleder", intro))
-            log.info("[Møteleder gruppe 2] %s", intro[:120])
+            log.info("[meeting leader group 2] %s", intro[:120])
             kare_messages.append({"role": "user", "content": f"Møteleder sier: {intro}"})
             miss_kare_messages.append({"role": "user", "content": f"Møteleder sier: {intro}"})
 
         for local_round in range(ROUNDS_PER_GROUP):
             global_round += 1
-            log.info("--- Runde %d/%d (gruppe %d, lokal %d) ---",
+            log.info("--- Round %d/%d (group %d, local %d) ---",
                      global_round, MAX_ROUNDS, group, local_round + 1)
 
             kare_prompt = "Din tur."
@@ -951,7 +966,7 @@ async def main(user_id: str | None = None) -> None:
                 await _handle_leder_action(action, value, kare_messages, miss_kare_messages, exchanges)
 
         is_final_group = group == max_groups
-        log.info("--- Online (gruppe %d) ---", group)
+        log.info("--- Online (group %d) ---", group)
         conversation_text = "\n\n".join(f"{a}: {t}" for a, t in exchanges)
         cloud_reply = await _ask_cloud(conversation_text, is_final=is_final_group)
         exchanges.append(("Online", cloud_reply))
@@ -966,18 +981,18 @@ async def main(user_id: str | None = None) -> None:
         prev_summary = begrunnelse
 
         if not fortsett:
-            log.info("Møteleder avslutter etter gruppe %d: %s", group, begrunnelse)
+            log.info("Meeting leader ends after group %d: %s", group, begrunnelse)
             break
 
-    # ── Frie avslutningsrunder (maks 4) ──────────────────────────────────────
-    log.info("--- Frie avslutningsrunder ---")
+    # ── Free closing rounds (max 4) ───────────────────────────────────────────
+    log.info("--- Free closing rounds ---")
     CLOSING_PROMPT = (
         "Møtet nærmer seg slutten. Har du noe mer å si om brukeren – "
         "noe du ikke fikk sagt, eller en tanke du synes er viktig? "
         "Hvis du ikke har noe relevant å tilføye, svar KUN med ordet INGENTING."
     )
     for closing_round in range(1, 5):
-        log.info("--- Avslutningsrunde %d/4 ---", closing_round)
+        log.info("--- Closing round %d/4 ---", closing_round)
         noen_svarte = False
 
         kare_messages.append({"role": "user", "content": CLOSING_PROMPT})
@@ -986,11 +1001,11 @@ async def main(user_id: str | None = None) -> None:
         if kare_free.strip().upper() != "INGENTING":
             exchanges.append(("Kåre", kare_free))
             miss_kare_messages.append({"role": "user", "content": f"Kåre sier: {kare_free}\n\n{CLOSING_PROMPT}"})
-            log.info("[Kåre fri] %s", kare_free[:120])
+            log.info("[Kåre free] %s", kare_free[:120])
             noen_svarte = True
         else:
             miss_kare_messages.append({"role": "user", "content": CLOSING_PROMPT})
-            log.info("[Kåre fri] INGENTING")
+            log.info("[Kåre free] INGENTING")
 
         async with lock_11445("miss_kare_refleksjon"):
             miss_kare_free = await _ask_ollama(
@@ -1004,17 +1019,17 @@ async def main(user_id: str | None = None) -> None:
         if miss_kare_free.strip().upper() != "INGENTING":
             exchanges.append(("Miss Kåre", miss_kare_free))
             kare_messages.append({"role": "user", "content": f"Miss Kåre sier: {miss_kare_free}"})
-            log.info("[Miss Kåre fri] %s", miss_kare_free[:120])
+            log.info("[Miss Kåre free] %s", miss_kare_free[:120])
             noen_svarte = True
         else:
-            log.info("[Miss Kåre fri] INGENTING")
+            log.info("[Miss Kåre free] INGENTING")
 
         if not noen_svarte:
-            log.info("Ingen hadde mer – avslutter frie runder etter runde %d", closing_round)
+            log.info("No one had more to say — ending free rounds after round %d", closing_round)
             break
 
-    # ── Kåres avslutning – lagres til brukerprofil ────────────────────────────
-    log.info("--- Kåres avslutning ---")
+    # ── Kåre's closing — saved to user profile ────────────────────────────────
+    log.info("--- Kåre closing statement ---")
     kare_messages.append({"role": "user", "content": (
         "Møtet er over. Skriv en strukturert avslutning med disse taggene:\n"
         "OBSERVASJON: <1-3 setninger om hva dere lærte om brukeren i dag>\n"
@@ -1024,11 +1039,12 @@ async def main(user_id: str | None = None) -> None:
     )})
     kare_closing = await _ask_kare(_trim(kare_messages, KARE_WINDOW))
     exchanges.append(("Kåre", kare_closing))
-    log.info("[Kåre avslutning] %s", kare_closing[:120])
+    log.info("[Kåre closing] %s", kare_closing[:120])
 
     _write_reflection(user_id, date_str, exchanges)
     _save_meeting_insights(user_id, kare_closing)
-    log.info("=== Refleksjonsmøte ferdig – %d lokale runder ===", global_round)
+    log.info("=== Reflection meeting done — %d local rounds ===", global_round)
+    _rid_ctx_refl.reset(_refl_token)
 
 
 if __name__ == "__main__":

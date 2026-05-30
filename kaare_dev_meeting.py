@@ -27,6 +27,7 @@ import os
 import re
 import socket
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -35,6 +36,7 @@ import yaml
 
 sys.path.insert(0, "/kaare")
 from kaare_core.config import get_model as _cfg_model, get_llm_config as _llm, get_tool_permissions as _get_tool_perms
+from kaare_core.tools.i18n import t, get_lang
 from kaare_core.agents.mechanic.tools import (
     ask_with_tools as _mechanic_ask,
     MECHANIC_URL,
@@ -314,7 +316,7 @@ async def _run_health_check() -> str:
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=35)
         data = json.loads(stdout.decode())
     except asyncio.TimeoutError:
-        return "[Systemsjekk: timeout (>35s) — kjøres manuelt ved behov]"
+        return t("meet_system_timeout", get_lang("global"))
     except Exception as e:
         return f"[Systemsjekk feilet: {e}]"
 
@@ -360,12 +362,9 @@ async def _run_health_check() -> str:
 
     total_errors = data.get("total_errors", 0)
     if total_errors == 0:
-        lines.append("  → System er grønt. Møtet kan fokusere på funksjonalitet og forbedringer.")
+        lines.append(t("meet_system_ok", get_lang("global")))
     else:
-        lines.append(
-            f"  → {total_errors} feil funnet. Møteleder bør åpne møtet med å prioritere feilsøking "
-            f"fremfor planlagte forbedringer."
-        )
+        lines.append(t("meet_system_errors", get_lang("global"), count=total_errors))
     return "\n".join(lines)
 
 
@@ -399,10 +398,10 @@ async def _kare_investigate(system_prompt: str) -> str:
                 resp = r.json()
         except httpx.HTTPStatusError as e:
             log.error("Kåre investigate-kall feilet: %s\nBody: %s", e, e.response.text[:1000])
-            return f"[Kåre utilgjengelig: {e}]"
+            return t("meet_kare_unavailable", get_lang("global"), error=e)
         except Exception as e:
             log.error("Kåre investigate-kall feilet: %s", e)
-            return f"[Kåre utilgjengelig: {e}]"
+            return t("meet_kare_unavailable", get_lang("global"), error=e)
 
         content, tool_calls = _parse_kare_resp(resp)
 
@@ -439,7 +438,7 @@ async def _kare_investigate(system_prompt: str) -> str:
             args["_user_id"] = "kare"
             result = await _kare_dev_execute_tool(name, args)
             if len(result) > 3000:
-                result = result[:3000] + "\n[...avkortet — bruk mer spesifikke parametere for å se mer...]"
+                result = result[:3000] + "\n" + t("meet_truncated", get_lang("global"))
             messages.append({"role": "tool", "content": result, "name": name})
 
     # Force a summary after max rounds — always without thinking to avoid empty responses
@@ -456,9 +455,9 @@ async def _kare_investigate(system_prompt: str) -> str:
             return _strip_think(content) or "[Ingen funn]"
     except httpx.HTTPStatusError as e:
         log.error("Kåre investigate-oppsummering feilet: %s\nBody: %s", e, e.response.text[:1000])
-        return f"[Kåre svar feilet: {e}]"
+        return t("meet_kare_failed", get_lang("global"), error=e)
     except Exception as e:
-        return f"[Kåre svar feilet: {e}]"
+        return t("meet_kare_failed", get_lang("global"), error=e)
 
 
 async def _ask_kare(messages: list[dict]) -> str:
@@ -477,10 +476,10 @@ async def _ask_kare(messages: list[dict]) -> str:
                 resp = r.json()
         except httpx.HTTPStatusError as e:
             log.error("Kåre diskusjon-kall feilet: %s\nBody: %s", e, e.response.text[:1000])
-            return f"[Kåre utilgjengelig: {e}]"
+            return t("meet_kare_unavailable", get_lang("global"), error=e)
         except Exception as e:
             log.error("Kåre diskusjon-kall feilet: %s", e)
-            return f"[Kåre utilgjengelig: {e}]"
+            return t("meet_kare_unavailable", get_lang("global"), error=e)
 
         content, tool_calls = _parse_kare_resp(resp)
 
@@ -517,7 +516,7 @@ async def _ask_kare(messages: list[dict]) -> str:
             args["_user_id"] = "kare"
             result = await _kare_dev_execute_tool(name, args)
             if len(result) > 3000:
-                result = result[:3000] + "\n[...avkortet — bruk mer spesifikke parametere for å se mer...]"
+                result = result[:3000] + "\n" + t("meet_truncated", get_lang("global"))
             current.append({"role": "tool", "content": result, "name": name})
 
     # Force reply after max tool rounds — always without thinking to avoid empty responses
@@ -548,6 +547,10 @@ async def _mechanic_investigate(system_prompt: str) -> str:
             "Undersøk systemet. Bruk søk_argus, les_logg, git_log, sjekk_tjenester "
             "og sjekk_ressurser for å finne reelle problemer fra siste 24 timer. "
             "Start bredt – logger, tjenestestatus, siste kodeendringer. "
+            "Kall også inspiser_system(action='trace_mønstre', antall=100, source='all') og inkluder i rapporten: "
+            "antall traces per source (user/refl/meet), gjennomsnittlig latency, hyppigste tools, "
+            "andel 9B-fallback per source (korrelerer de med bestemt tidspunkt?), "
+            "og traces med unormalt høy latency eller recovered=True (tomme svar). "
             "Oppsummer funnene konkret til slutt. Ikke gjett. "
             "Avslutt med hukommelse(action='skriv') for å lagre 1–2 viktige tekniske observasjoner."
         )},
@@ -695,12 +698,12 @@ async def _execute_leder_tool(name: str, arguments: dict) -> str:
     if name == "nettsøk":
         query = arguments.get("query", "").strip()
         if not query:
-            return "[Tomt søk]"
+            return t("meet_empty_search", get_lang("global"))
         from adapters.web_search_adapter import søk_nett
         return await søk_nett(query)
     if name == "systemsjekk":
         return await _run_health_check()
-    return f"[Ukjent verktøy: {name}]"
+    return t("meet_unknown_tool", get_lang("global"), name=name)
 
 
 async def _ask_leder(messages: list[dict], with_tools: bool = False) -> str:
@@ -719,7 +722,7 @@ async def _ask_leder(messages: list[dict], with_tools: bool = False) -> str:
                 resp = r.json()
         except Exception as e:
             log.error("Møteleder-kall feilet: %s", e)
-            return f"[Møteleder utilgjengelig: {e}]"
+            return t("meet_leader_unavailable", get_lang("global"), error=e)
 
         content, tool_calls = _parse_kare_resp(resp)
 
@@ -812,7 +815,7 @@ async def _leder_presenter_admin_input(admin_input: str, kare_funn: str, mechani
 async def _leder_vurder(conv_text: str, group: int, max_groups: int) -> tuple[bool, str]:
     """Møteleder avgjør om vi fortsetter til neste gruppe."""
     if group >= max_groups:
-        return False, "Maks antall grupper nådd."
+        return False, t("meet_max_groups", get_lang("global"))
     messages = [
         {"role": "system", "content": _build_leder_system()},
         {"role": "user", "content": (
@@ -831,7 +834,7 @@ async def _ask_cloud(conversation: str, is_final: bool) -> str:
     env     = _load_env("/kaare/configs/nvidia.env")
     api_key = env.get("NVIDIA_API_KEY", "")
     if not api_key:
-        return "[Ingen API-nøkkel – cloud ikke tilgjengelig]"
+        return t("meet_no_api_key", get_lang("global"))
 
     instruction = (
         "Gi en avsluttende vurdering av forslagene. Hvilke er mest verdifulle? Er det noe de gikk glipp av? Maks 5 setninger."
@@ -922,6 +925,9 @@ def _write_report(
 
 # ── Hovedflyt ─────────────────────────────────────────────────────────────────
 async def main() -> None:
+    from adapters.llm_adapter import _current_rid as _rid_ctx_meet
+    _meet_rid   = f"rid-meet-{int(time.time()*1000)}"
+    _meet_token = _rid_ctx_meet.set(_meet_rid)
     now       = datetime.now()
     date_str  = now.strftime("%Y-%m-%d")
     now_str   = now.strftime("%Y-%m-%d %H:%M")
@@ -1147,6 +1153,7 @@ async def main() -> None:
 
     _write_report(date_str, kare_funn, mechanic_funn, exchanges)
     log.info("=== Utviklingsmøte ferdig – %d runder ===", global_round)
+    _rid_ctx_meet.reset(_meet_token)
 
 
 if __name__ == "__main__":

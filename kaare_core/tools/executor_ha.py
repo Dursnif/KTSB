@@ -1,11 +1,18 @@
+import asyncio
+import logging
 import os
-import yaml
-import httpx
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict
+from zoneinfo import ZoneInfo
+
+import httpx
+import yaml
 
 from kaare_core.config import get_service as _svc
 from kaare_core.tools.i18n import t, get_lang
+
+log = logging.getLogger(__name__)
 
 _HA_TOKEN_PATH = Path("/kaare/configs/ha_token.env")
 _NODES_PATH = Path("/kaare/configs/nodes.yaml")
@@ -20,19 +27,10 @@ HA_TOOLS = {
     "styr_enhet",
 }
 
-_DOMAIN_LABELS: Dict[str, str] = {
-    "light":         "lys — kan styres (turn_on/turn_off/set_level/set_color_temp/set_color)",
-    "switch":        "bryter — kan styres (turn_on/turn_off)",
-    "climate":       "temperaturkontroll — kan styres",
-    "media_player":  "mediaspiller — kan styres",
-    "vacuum":        "støvsuger — kan styres",
-    "cover":         "gardin/port — kan styres",
-    "sensor":        "sensor — kun lesbar, bruk les_ha_status",
-    "binary_sensor": "sensor — kun lesbar, bruk les_ha_status",
-    "camera":        "kamera — ikke styrbar",
-    "person":        "person — tilstedeværelse",
-    "input_boolean": "bryter — kan styres",
-}
+def _domain_label(domain: str, lang: str) -> str:
+    key = f"ha_domain_{domain}"
+    from kaare_core.tools.i18n import _T
+    return t(key, lang) if key in _T else domain
 
 
 def get_ha_token() -> str:
@@ -84,7 +82,7 @@ def _format_aliases(room: str | None = None, lang: str = "nb") -> str:
 
     def _label(entity_id: str) -> str:
         domain = entity_id.split(".")[0] if "." in entity_id else ""
-        return _DOMAIN_LABELS.get(domain, domain)
+        return _domain_label(domain, lang)
 
     room_kw: Dict[str, list] = {
         r: [str(k).lower() for k in kws]
@@ -179,6 +177,142 @@ async def _control_entity(
         return t("ha_call_error", lang, error=e)
 
 
+def _read_ha_url() -> str:
+    """Return the HA base URL from services.yaml, or empty string if not configured."""
+    try:
+        return (_svc("home_assistant", "url") or "").rstrip("/")
+    except Exception:
+        return ""
+
+
+async def _ha_sensor_history(entity_id: str, days: int, period: str, lang: str) -> str:
+    """
+    Fetch long-term statistics for a HA sensor using the recorder statistics API.
+
+    Uses POST /api/recorder/statistics_during_period which returns aggregated
+    mean/min/max/change values per day/week/month. Only works for sensors that
+    have state_class configured in HA (enabling long-term statistics).
+    """
+    ha_url = _read_ha_url()
+    try:
+        token = get_ha_token()
+    except ValueError:
+        return t("ha_history_not_configured", lang)
+    if not ha_url:
+        return t("ha_history_not_configured", lang)
+
+    # Build time range in UTC
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(days=days)
+    start_str = start.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    end_str   = now.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "start_time": start_str,
+        "end_time":   end_str,
+        "statistic_ids": [entity_id],
+        "period": period,
+        "types": ["mean", "min", "max", "change"],
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Fetch statistics and entity unit in parallel
+            stats_resp, state_resp = await asyncio.gather(
+                client.post(
+                    f"{ha_url}/api/recorder/statistics_during_period",
+                    json=payload,
+                    headers=headers,
+                ),
+                client.get(f"{ha_url}/api/states/{entity_id}", headers=headers),
+                return_exceptions=True,
+            )
+    except Exception as exc:
+        return t("ha_history_error", lang, entity_id=entity_id, error=exc)
+
+    # Parse unit from entity state (best effort)
+    unit = ""
+    if not isinstance(state_resp, Exception) and state_resp.status_code == 200:
+        unit_raw = state_resp.json().get("attributes", {}).get("unit_of_measurement", "")
+        unit = f" {unit_raw}" if unit_raw else ""
+
+    if isinstance(stats_resp, Exception):
+        return t("ha_history_error", lang, entity_id=entity_id, error=stats_resp)
+    if stats_resp.status_code != 200:
+        return t("ha_history_error", lang, entity_id=entity_id, error=f"HTTP {stats_resp.status_code}")
+
+    entries: list[dict] = stats_resp.json().get(entity_id, [])
+    if not entries:
+        return t("ha_history_no_data", lang, entity_id=entity_id)
+
+    # Resolve period label for header
+    period_label = t(f"ha_history_period_{period}", lang)
+    header = t("ha_history_header", lang, entity_id=entity_id, days=days, period=period_label)
+
+    # Build per-period rows
+    # Use local timezone for date display if available
+    try:
+        from kaare_core.config import get_local_tz
+        local_tz = get_local_tz()
+    except Exception:
+        local_tz = ZoneInfo("UTC")
+
+    rows: list[str] = []
+    all_means: list[float] = []
+    all_mins:  list[float] = []
+    all_maxes: list[float] = []
+    all_changes: list[float] = []
+
+    for entry in entries:
+        try:
+            start_dt = datetime.fromisoformat(entry["start"]).astimezone(local_tz)
+            date_str = start_dt.strftime("%Y-%m-%d")
+        except Exception:
+            date_str = entry.get("start", "?")[:10]
+
+        parts: list[str] = []
+        if (v := entry.get("mean")) is not None:
+            all_means.append(float(v))
+            parts.append(f"snitt {float(v):.1f}{unit}" if lang == "nb" else
+                         f"avg {float(v):.1f}{unit}" if lang == "en" else
+                         f"Durchschn. {float(v):.1f}{unit}")
+        if (v := entry.get("min")) is not None:
+            all_mins.append(float(v))
+            parts.append(f"min {float(v):.1f}{unit}")
+        if (v := entry.get("max")) is not None:
+            all_maxes.append(float(v))
+            parts.append(f"maks {float(v):.1f}{unit}" if lang == "nb" else
+                         f"max {float(v):.1f}{unit}")
+        if (v := entry.get("change")) is not None and v is not None:
+            all_changes.append(float(v))
+            parts.append(f"Δ {float(v):.1f}{unit}")
+        rows.append(f"  {date_str}: {', '.join(parts)}" if parts else f"  {date_str}: —")
+
+    # Build summary
+    summary_parts: list[str] = []
+    if all_maxes:
+        summary_parts.append(t("ha_history_summary", lang,
+                                max_val=max(all_maxes),
+                                mean_val=sum(all_means) / len(all_means) if all_means else 0,
+                                min_val=min(all_mins) if all_mins else 0,
+                                unit=unit))
+    # Accumulated total from change values (useful for precipitation sensors that reset daily)
+    if all_changes:
+        total = sum(all_changes)
+        summary_parts.append(t("ha_history_total", lang, total=total, unit=unit))
+
+    lines = [header] + rows
+    if summary_parts:
+        lines.append("")
+        lines.extend(summary_parts)
+
+    return "\n".join(lines)
+
+
 async def _read_ha_status(entity_id: str, lang: str = "nb") -> str:
     if not entity_id:
         return t("ha_entity_id_required", lang)
@@ -203,26 +337,38 @@ async def dispatch(name: str, arguments: dict) -> str:
 
     if name == "les_ha":
         action = arguments.get("action", "")
-        if action == "rom_liste":
+        if action == "room_list":
             return _format_aliases(None, lang=lang)
-        if action == "rom_enheter":
-            return _format_aliases(arguments.get("rom"), lang=lang)
+        if action == "room_devices":
+            return _format_aliases(arguments.get("room"), lang=lang)
         if action == "status":
             return await _read_ha_status(arguments.get("entity_id", ""), lang=lang)
-        return f"Unknown action for les_ha: '{action}'. Valid: rom_liste, rom_enheter, status."
+        return f"Unknown action for les_ha: '{action}'. Valid: room_list, room_devices, status."
 
     if name == "les_alias_lista":
-        return _format_aliases(arguments.get("rom"), lang=lang)
+        return _format_aliases(arguments.get("room"), lang=lang)
 
     if name == "les_ha_status":
         return await _read_ha_status(arguments.get("entity_id", ""), lang=lang)
 
     if name == "styr_enhet":
+        action = arguments.get("action", "")
+
+        if action == "ha_history":
+            entity_id = arguments.get("entity_id", "").strip()
+            if not entity_id:
+                return t("ha_history_no_entity", lang)
+            days   = max(1, min(int(arguments.get("history_days", 7)), 365))
+            period = arguments.get("history_period", "day")
+            if period not in ("day", "week", "month"):
+                period = "day"
+            return await _ha_sensor_history(entity_id, days, period, lang)
+
         if arguments.get("_block_ha_write"):
             return t("ha_blocked_external", lang)
         return await _control_entity(
             entity_id=arguments.get("entity_id", ""),
-            action=arguments.get("action", ""),
+            action=action,
             brightness_pct=arguments.get("brightness_pct"),
             color_temp_kelvin=arguments.get("color_temp_kelvin"),
             rgb_color=arguments.get("rgb_color"),

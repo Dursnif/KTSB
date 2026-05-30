@@ -59,3 +59,26 @@ token_expiry_hours: 4
 # cors_origins: ["http://192.168.0.232:5173", "https://yourdomain.com"]
 cors_origins:
   - "*"
+
+weather:
+  forecast_days: 2
+  ha_humidity_entity: ''
+  ha_precip_entity: ''
+  ha_precip_last_hour_entity: ''
+  ha_precip_today_entity: ''
+  ha_pressure_entity: ''
+  ha_temp_entity: ''
+  ha_wind_entity: ''
+  ha_wind_gust_entity: ''
+  ha_wind_direction_entity: ''
+  provider: met.no
+  show_air_quality: false
+  show_alerts: true
+  show_feels_like: false
+  show_sun_times: false
+  show_tides: false
+  show_uv_index: false
+  tide_provider: auto
+  use_camera_for_weather: false
+  weather_camera: ''
+  use_ha_sensors: false

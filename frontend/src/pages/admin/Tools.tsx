@@ -68,7 +68,7 @@ function eventColor(call: ToolCall): string {
   const label = call.tool ?? call.event ?? "";
   if (label.includes("timer"))                               return SOURCE_COLOR.timer;
   if (label.includes("styr"))                               return "#e07070";
-  if (label.includes("frøken") || label.includes("library")) return SOURCE_COLOR.miss_library;
+  if (label.includes("library")) return SOURCE_COLOR.miss_library;
   if (label.includes("søk"))                                 return SOURCE_COLOR.jing;
   return "#555";
 }

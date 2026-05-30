@@ -13,6 +13,8 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from kaare_core.tools.i18n import t
+
 _LISTER_DIR = Path("/kaare/state/lister")
 _HANDLE_PATH = _LISTER_DIR / "handleliste.json"
 _KARE_PATH = _LISTER_DIR / "kare_huske.json"
@@ -51,9 +53,9 @@ def _dato() -> str:
 # HANDLELISTE
 # ─────────────────────────────────────────────
 
-def handle_legg_til(tekst: str, mengde: str = "", enhet: str = "", lagt_til_av: str = "") -> str:
+def handle_legg_til(tekst: str, mengde: str = "", enhet: str = "", lagt_til_av: str = "", lang: str = "nb") -> str:
     if not tekst.strip():
-        return "Feil: tekst kan ikke være tom."
+        return t("list_empty_text", lang)
     items = _les(_HANDLE_PATH)
     item = {
         "id": _ny_id(),
@@ -70,16 +72,16 @@ def handle_legg_til(tekst: str, mengde: str = "", enhet: str = "", lagt_til_av: 
     items.append(item)
     _skriv(_HANDLE_PATH, items)
     mengde_str = f" ({mengde} {enhet})".rstrip() if mengde else ""
-    return f"Lagt til på handlelisten: {tekst}{mengde_str} [{item['id']}]"
+    return t("list_added", lang, text=tekst, amount=mengde_str, id=item["id"])
 
 
-def handle_les(kun_uhandlet: bool = True) -> str:
+def handle_les(kun_uhandlet: bool = True, lang: str = "nb") -> str:
     items = _les(_HANDLE_PATH)
     if not items:
         return "Handlelisten er tom."
     vis = [i for i in items if not i.get("kjøpt")] if kun_uhandlet else items
     if not vis:
-        return "Alt er allerede kjøpt. Bruk tøm_kjøpte for å rydde listen."
+        return t("list_all_bought", lang)
     lines = [f"Handleliste ({len(vis)} vare{'r' if len(vis) != 1 else ''}):\n"]
     for i in vis:
         mengde = f" — {i['mengde']} {i.get('enhet', '')}".rstrip() if i.get("mengde") else ""
@@ -88,7 +90,7 @@ def handle_les(kun_uhandlet: bool = True) -> str:
     return "\n".join(lines)
 
 
-def handle_merk_kjøpt(notat_id: str) -> str:
+def handle_merk_kjøpt(notat_id: str, lang: str = "nb") -> str:
     if not notat_id.strip():
         return "Feil: id mangler."
     items = _les(_HANDLE_PATH)
@@ -96,44 +98,44 @@ def handle_merk_kjøpt(notat_id: str) -> str:
         if item.get("id") == notat_id.strip():
             item["kjøpt"] = True
             _skriv(_HANDLE_PATH, items)
-            return f"Merket som kjøpt: {item['tekst']}"
-    return f"Fant ingen vare med id '{notat_id}'."
+            return t("list_marked_bought", lang, text=item["tekst"])
+    return t("list_item_not_found", lang, id=notat_id)
 
 
-def handle_slett(notat_id: str) -> str:
+def handle_slett(notat_id: str, lang: str = "nb") -> str:
     if not notat_id.strip():
         return "Feil: id mangler."
     items = _les(_HANDLE_PATH)
     ny = [i for i in items if i.get("id") != notat_id.strip()]
     if len(ny) == len(items):
-        return f"Fant ingen vare med id '{notat_id}'."
+        return t("list_item_not_found", lang, id=notat_id)
     _skriv(_HANDLE_PATH, ny)
-    return f"Vare slettet fra handlelisten."
+    return t("list_item_deleted", lang)
 
 
-def handle_tøm_kjøpte() -> str:
+def handle_tøm_kjøpte(lang: str = "nb") -> str:
     items = _les(_HANDLE_PATH)
     ny = [i for i in items if not i.get("kjøpt")]
     antall = len(items) - len(ny)
     if antall == 0:
-        return "Ingen kjøpte varer å rydde."
+        return t("list_no_bought_to_clear", lang)
     _skriv(_HANDLE_PATH, ny)
-    return f"Fjernet {antall} kjøpte vare(r) fra handlelisten."
+    return t("list_cleared_bought", lang, count=antall)
 
 
-def handle_tøm() -> str:
+def handle_tøm(lang: str = "nb") -> str:
     antall = len(_les(_HANDLE_PATH))
     _skriv(_HANDLE_PATH, [])
-    return f"Handlelisten tømt ({antall} vare(r) slettet)."
+    return t("list_cleared_all", lang, count=antall)
 
 
 # ─────────────────────────────────────────────
 # BRUKER-HUSKELISTE
 # ─────────────────────────────────────────────
 
-def huske_husk(tekst: str, user_id: str, påminn_ved_login: bool = False) -> str:
+def huske_husk(tekst: str, user_id: str, påminn_ved_login: bool = False, lang: str = "nb") -> str:
     if not tekst.strip():
-        return "Feil: tekst kan ikke være tom."
+        return t("list_empty_text", lang)
     if not user_id or user_id == "global":
         return "Feil: ingen innlogget bruker."
     path = _huske_path(user_id)
@@ -147,8 +149,8 @@ def huske_husk(tekst: str, user_id: str, påminn_ved_login: bool = False) -> str
     }
     items.append(item)
     _skriv(path, items)
-    påminn_str = " (påminnelse ved innlogging)" if påminn_ved_login else ""
-    return f"Notert på huskelisten din: {tekst}{påminn_str} [{item['id']}]"
+    påminn_str = t("list_remind_on_login", lang) if påminn_ved_login else ""
+    return t("list_reminder_added", lang, text=tekst, remind=påminn_str, id=item["id"])
 
 
 def huske_les(user_id: str, kun_aktive: bool = True) -> str:
@@ -197,13 +199,13 @@ def huske_slett(notat_id: str, user_id: str) -> str:
     return "Huskenotat slettet."
 
 
-def huske_tøm(user_id: str) -> str:
+def huske_tøm(user_id: str, lang: str = "nb") -> str:
     if not user_id or user_id == "global":
         return "Feil: ingen innlogget bruker."
     path = _huske_path(user_id)
     antall = len(_les(path))
     _skriv(path, [])
-    return f"Huskelisten tømt ({antall} punkt(er) slettet)."
+    return t("list_reminder_cleared", lang, count=antall)
 
 
 def huske_hent_påminnelser(user_id: str) -> list[str]:
@@ -218,9 +220,9 @@ def huske_hent_påminnelser(user_id: str) -> list[str]:
 # KÅRES HUSKELISTE
 # ─────────────────────────────────────────────
 
-def kare_husk(tekst: str, kontekst: str = "") -> str:
+def kare_husk(tekst: str, kontekst: str = "", lang: str = "nb") -> str:
     if not tekst.strip():
-        return "Feil: tekst kan ikke være tom."
+        return t("list_empty_text", lang)
     items = _les(_KARE_PATH)
     item = {
         "id": _ny_id(),
@@ -232,7 +234,7 @@ def kare_husk(tekst: str, kontekst: str = "") -> str:
     items.append(item)
     _skriv(_KARE_PATH, items)
     kontekst_str = f" (kontekst: {kontekst})" if kontekst else ""
-    return f"Notert på min egen huskeliste: {tekst}{kontekst_str} [{item['id']}]"
+    return t("list_kare_added", lang, text=tekst, context=kontekst_str, id=item["id"])
 
 
 def kare_les() -> str:
@@ -261,10 +263,10 @@ def kare_slett(notat_id: str) -> str:
     return kare_ferdig(notat_id)
 
 
-def kare_tøm() -> str:
+def kare_tøm(lang: str = "nb") -> str:
     antall = len(_les(_KARE_PATH))
     _skriv(_KARE_PATH, [])
-    return f"Min huskeliste tømt ({antall} punkt(er) slettet)."
+    return t("list_kare_cleared", lang, count=antall)
 
 
 def kare_les_for_injeksjon() -> str:

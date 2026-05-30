@@ -25,6 +25,7 @@ from adapters.llm_adapter import ask_llm_with_tools, get_model_size_b
 from kaare_core.config import get_tools_for_role as _get_tools_for_role, filter_tools_by_model, get_llm_config, get_model
 from kaare_core.users import store as _user_store
 from kaare_core.llm_fallback import is_fallback_active
+from kaare_core.tools.i18n import get_lang as _get_lang, t as _t_i18n
 
 
 def _hhmm() -> str:
@@ -97,8 +98,9 @@ async def handle_generate(
     print("[ROUTER] === handle_generate start (tool-mode) ===")
 
     user_text = (prompt or "").strip()
+    lang = _get_lang(user_id)
     if not user_text:
-        return {"text": "Jeg fikk en tom melding."}
+        return {"text": _t_i18n("gen_empty_message", lang)}
 
     print(f"[ROUTER] user_id={user_id} source={source}")
 
@@ -168,7 +170,7 @@ async def handle_generate(
     # =========================================================
     print("[ROUTER] tool-løkke start")
 
-    stt_note = "\nOBS: Dette er transkribert tale (STT). Ta hensyn til mulige talefeil, dialekt og feilstavinger.\n" if source == "stt" else ""
+    stt_note = ("\n" + _t_i18n("gen_stt_note", lang) + "\n") if source == "stt" else ""
 
     _ver_preview = ""
     if _ask_verification:
@@ -223,9 +225,11 @@ async def handle_generate(
         else "[Tilkobling: lokal — brukeren er hjemme.]"
     )
 
-    # Notater som gjelder kun dette kallet (STT, verifikasjon, Miss Kåre, nettverk)
+    rid_note = _t_i18n("rid_note", _get_lang(user_id), rid=rid) if rid else ""
+
+    # Notater som gjelder kun dette kallet (STT, verifikasjon, Miss Kåre, nettverk, rid)
     current_content = "\n\n".join(
-        p for p in [stt_note, ver_note, mk_note, network_note, user_text] if p
+        p for p in [stt_note, ver_note, mk_note, network_note, rid_note, user_text] if p
     ).strip()
 
     # Hent siste 4 (bruker, kåre)-par fra STM som ekte meldingsobjekter.
@@ -267,7 +271,7 @@ async def handle_generate(
     _user_rec = _user_store.get_user(user_id) if user_id != USER_GLOBAL else None
     _personality = (_user_rec or {}).get("personality", "standard") or "standard"
     _user_role = (_user_rec or {}).get("role", "admin")
-    _tools = _get_tools_for_role(_user_role)
+    _tools = _get_tools_for_role(_user_role, user_id)
 
     _kare_cfg   = get_llm_config("default")
     _kare_model = get_model(_kare_cfg.get("model_role", "kare"))
@@ -296,7 +300,7 @@ async def handle_generate(
             )
         except Exception as _llm_exc:
             print(f"[ROUTER] LLM-kall feilet (runde {round_num + 1}): {_llm_exc}")
-            text_out = "Jeg fikk ikke kontakt med systemene akkurat nå."
+            text_out = _t_i18n("gen_no_contact", lang)
             break
 
         # ── Fallback state transitions → STM markers ─────────────────────────
@@ -339,7 +343,7 @@ async def handle_generate(
 
         if not tool_calls:
             # Endelig svar — Kåre er ferdig
-            text_out = result.get("text", "").strip() or "Jeg fikk ikke noe fornuftig svar."
+            text_out = result.get("text", "").strip() or _t_i18n("gen_no_response", lang)
 
             # Promise interceptor: if Kåre claimed to note/remember something but
             # never called the "notat" tool, force one correction round.
@@ -355,11 +359,7 @@ async def handle_generate(
                 messages.append(result["message"])
                 messages.append({
                     "role": "user",
-                    "content": (
-                        "[SYSTEM: Du sa at du ville notere eller huske noe, men du kalte ikke "
-                        "notat-verktøyet. Gjør det nå: kall notat(action='skriv', liste='kare') "
-                        "med det du lovet å huske. Kun tool-kall — ingen forklarende tekst.]"
-                    ),
+                    "content": _t_i18n("gen_promise_correction", lang),
                 })
                 continue
 
@@ -420,7 +420,7 @@ async def handle_generate(
         if _round_vision:
             messages.append({
                 "role": "user",
-                "content": "[SYSTEM: Her er bildet du nettopp lastet med se_bilder. Beskriv det i svaret ditt.]",
+                "content": _t_i18n("gen_image_note", lang),
                 "images": _round_vision,
             })
 
@@ -445,7 +445,7 @@ async def handle_generate(
         print("[ROUTER] runde 7 (output-only): tvinger svar til bruker")
         messages.append({
             "role": "user",
-            "content": "[SYSTEM: Du har nå brukt alle 6 tool-runder. Svar brukeren direkte med det du har funnet — ingen flere tool-kall er mulig.]"
+            "content": _t_i18n("gen_tool_limit", lang)
         })
         try:
             _final = await ask_llm_with_tools(
@@ -454,7 +454,7 @@ async def handle_generate(
             text_out = (_final.get("text") or "").strip()
         except Exception as e:
             print(f"[ROUTER] output-runde feilet: {e}")
-        text_out = text_out or "Kåre kom ikke frem til et svar innen rimelig tid."
+        text_out = text_out or _t_i18n("gen_timeout", lang)
 
     # Append any generated image URLs that the LLM forgot to include in its reply
     for _img_url in _generated_image_urls:

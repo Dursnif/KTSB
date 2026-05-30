@@ -1,4 +1,5 @@
 import asyncio
+import json
 import subprocess
 from pathlib import Path
 import httpx
@@ -43,7 +44,7 @@ _VLLM_OPTION_KEYS     = {"max_tokens", "temperature", "top_p", "presence_penalty
 _VLLM_DOCKER_KEYS     = {"max_model_len", "kv_cache_dtype", "gpu_memory_utilization", "max_num_seqs", "gpu_id"}
 _OLLAMA_ENV_KEYS      = {"num_threads", "num_parallel", "max_loaded_models", "flash_attention", "kv_cache_type"}
 
-_WEATHER_PROVIDERS              = {"met.no", "open-meteo", "openweathermap", "weatherapi"}
+_WEATHER_PROVIDERS              = {"met.no", "open-meteo", "openweathermap", "weatherapi", "pirateweather"}
 _VALID_LEDER_DEV_PRESETS        = {"standard", "streng", "utforskende", "egendefinert"}
 _VALID_LEDER_REFLECTION_PRESETS = {"standard", "analytisk", "utfordrende", "egendefinert"}
 _VALID_CONTRIBUTOR_MODES        = {"all", "selected", "admin_only"}
@@ -61,9 +62,95 @@ _PERSONALITY_CORE_BY_LANG = {
 _warmup_status: dict[str, dict] = {}
 _warmup_tasks: dict[str, "asyncio.Task[None]"] = {}
 
+# vLLM docker restart state
+_vllm_restart_status: dict[str, dict] = {}
+_vllm_restart_tasks: dict[str, "asyncio.Task[None]"] = {}
 
-async def _run_ollama_warmup(role: str, base_url: str, model: str, num_ctx: int) -> None:
-    """Load an Ollama model into VRAM after a config change or pull."""
+# Maps llm.yaml vllm_docker keys → CLI flags passed to vllm serve
+_VLLM_ARG_MAP = {
+    "max_model_len":          "--max-model-len",
+    "kv_cache_dtype":         "--kv-cache-dtype",
+    "gpu_memory_utilization": "--gpu-memory-utilization",
+    "max_num_seqs":           "--max-num-seqs",
+}
+
+
+async def _run_vllm_restart(role: str, container: str, vllm_cfg: dict) -> None:
+    """Stop, remove, and re-create a vLLM Docker container with updated args from llm.yaml."""
+    loop = asyncio.get_event_loop()
+    _vllm_restart_status[role] = {"status": "inspecting"}
+    try:
+        # 1. Inspect current container to get static args, volumes, ports, image
+        inspect_raw = await loop.run_in_executor(None, lambda: subprocess.run(
+            ["docker", "inspect", container],
+            capture_output=True, text=True, timeout=10,
+        ))
+        if inspect_raw.returncode != 0:
+            _vllm_restart_status[role] = {"status": "error", "detail": f"Container '{container}' not found"}
+            return
+
+        info = json.loads(inspect_raw.stdout)[0]
+        image    = info["Config"]["Image"]
+        old_cmd  = list(info["Config"].get("Cmd") or [])
+        host_cfg = info["HostConfig"]
+
+        # 2. Replace dynamic args in the command with values from vllm_cfg
+        new_cmd  = list(old_cmd)
+        replaced: set[str] = set()
+        i = 0
+        while i < len(new_cmd):
+            for cfg_key, cli_flag in _VLLM_ARG_MAP.items():
+                if new_cmd[i] == cli_flag and i + 1 < len(new_cmd) and cfg_key in vllm_cfg:
+                    new_cmd[i + 1] = str(vllm_cfg[cfg_key])
+                    replaced.add(cli_flag)
+            i += 1
+        # Append any flags that were not already in the original command
+        for cfg_key, cli_flag in _VLLM_ARG_MAP.items():
+            if cli_flag not in replaced and cfg_key in vllm_cfg:
+                new_cmd.extend([cli_flag, str(vllm_cfg[cfg_key])])
+
+        # 3. Build the new docker run command
+        gpu_id = vllm_cfg.get("gpu_id", 0)
+        docker_run = ["docker", "run", "-d", "--name", container, "--gpus", f"device={gpu_id}"]
+        for bind in (host_cfg.get("Binds") or []):
+            docker_run.extend(["-v", bind])
+        for cport, bindings in (host_cfg.get("PortBindings") or {}).items():
+            for b in (bindings or []):
+                host_port = b.get("HostPort", "")
+                docker_run.extend(["-p", f"{host_port}:{cport.split('/')[0]}"])
+        docker_run.append(image)
+        docker_run.extend(new_cmd)
+
+        # 4. Stop old container
+        _vllm_restart_status[role] = {"status": "stopping"}
+        await loop.run_in_executor(None, lambda: subprocess.run(
+            ["docker", "stop", container], capture_output=True, timeout=30
+        ))
+
+        # 5. Remove old container
+        await loop.run_in_executor(None, lambda: subprocess.run(
+            ["docker", "rm", container], capture_output=True, timeout=10
+        ))
+
+        # 6. Start new container
+        _vllm_restart_status[role] = {"status": "starting"}
+        result = await loop.run_in_executor(None, lambda: subprocess.run(
+            docker_run, capture_output=True, text=True, timeout=15
+        ))
+        if result.returncode != 0:
+            _vllm_restart_status[role] = {"status": "error", "detail": result.stderr.strip()[:300]}
+        else:
+            _vllm_restart_status[role] = {"status": "started"}
+    except Exception as exc:
+        _vllm_restart_status[role] = {"status": "error", "detail": str(exc)[:300]}
+
+
+async def _run_ollama_warmup(role: str, base_url: str, model: str, num_ctx: int, keep_warm: bool = True) -> None:
+    """Load an Ollama model into VRAM after a config change or pull.
+
+    keep_warm=True  → send keep_alive=-1 (model stays in VRAM indefinitely)
+    keep_warm=False → omit keep_alive (Ollama default: 5-min idle TTL)
+    """
     _warmup_status[role] = {"status": "waiting", "model": model}
     ready = False
     for _ in range(40):  # max 120 s (40 × 3 s)
@@ -81,14 +168,16 @@ async def _run_ollama_warmup(role: str, base_url: str, model: str, num_ctx: int)
         return
     _warmup_status[role] = {"status": "loading", "model": model}
     try:
+        payload: dict = {
+            "model":   model,
+            "prompt":  "",
+            "stream":  False,
+            "options": {"num_ctx": num_ctx, "num_predict": 1},
+        }
+        if keep_warm:
+            payload["keep_alive"] = -1
         async with httpx.AsyncClient(timeout=300.0) as c:
-            r = await c.post(f"{base_url}/api/generate", json={
-                "model": model,
-                "prompt": "",
-                "keep_alive": -1,
-                "stream": False,
-                "options": {"num_ctx": num_ctx, "num_predict": 1},
-            })
+            r = await c.post(f"{base_url}/api/generate", json=payload)
             r.raise_for_status()
         # Check whether model actually loaded into VRAM or fell back to CPU
         vram_bytes = await _get_model_vram(base_url, model)
@@ -114,11 +203,11 @@ async def _get_model_vram(base_url: str, model: str) -> int:
     return 0
 
 
-def _start_warmup_task(role: str, base_url: str, model: str, num_ctx: int) -> None:
+def _start_warmup_task(role: str, base_url: str, model: str, num_ctx: int, keep_warm: bool = True) -> None:
     if role in _warmup_tasks and not _warmup_tasks[role].done():
         _warmup_tasks[role].cancel()
     _warmup_tasks[role] = asyncio.create_task(
-        _run_ollama_warmup(role, base_url, model, num_ctx)
+        _run_ollama_warmup(role, base_url, model, num_ctx, keep_warm=keep_warm)
     )
 
 
@@ -317,6 +406,7 @@ def api_get_llm(_u=Depends(_require_auth)):
             entry["enabled"] = bool(s.get("enabled", True))
         if provider == "ollama":
             entry["think"] = s.get("think")
+            entry["keep_warm"] = bool(s.get("keep_warm", False))
             entry["options"] = {k: v for k, v in (s.get("options") or {}).items() if k in _OLLAMA_OPTION_KEYS}
             entry["gpu_id"] = s.get("gpu_id")
             entry["ollama_env"] = {k: v for k, v in (s.get("ollama_env") or {}).items() if k in _OLLAMA_ENV_KEYS}
@@ -418,6 +508,8 @@ async def api_put_llm_role(role: str, payload: dict, _u=Depends(_require_admin))
             s.pop("gpu_id", None)
         else:
             s["gpu_id"] = int(payload["gpu_id"])
+    if provider == "ollama" and "keep_warm" in payload:
+        s["keep_warm"] = bool(payload["keep_warm"])
     if provider == "ollama" and "ollama_env" in payload and isinstance(payload["ollama_env"], dict):
         s.setdefault("ollama_env", {})
         for k, v in payload["ollama_env"].items():
@@ -443,7 +535,14 @@ async def api_put_llm_role(role: str, payload: dict, _u=Depends(_require_admin))
         # Auto-warmup whenever an Ollama model is saved (load into VRAM if needed)
         if provider == "ollama" and new_model and s.get("base_url"):
             num_ctx = s.get("options", {}).get("num_ctx", 8192)
-            _start_warmup_task(role, s["base_url"], new_model, num_ctx)
+            _start_warmup_task(role, s["base_url"], new_model, num_ctx, keep_warm=bool(s.get("keep_warm", False)))
+            warmup_started = True
+    elif provider == "ollama" and payload.get("keep_warm") and s.get("base_url"):
+        # keep_warm just enabled — pre-load the current model
+        current_model = get_model(s.get("model_role", role))
+        if current_model:
+            num_ctx = s.get("options", {}).get("num_ctx", 8192)
+            _start_warmup_task(role, s["base_url"], current_model, num_ctx, keep_warm=True)
             warmup_started = True
     if role == "image_edit" and "model_edit" in payload and payload["model_edit"]:
         mdata = yaml.safe_load(_MODELS_PATH.read_text(encoding="utf-8")) or {}
@@ -457,21 +556,21 @@ async def api_restart_vllm_docker(role: str, _u=Depends(_require_admin)):
     data = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
     if role not in data:
         raise HTTPException(404, f"Role {role} not in llm.yaml")
-    provider = data[role].get("provider", "ollama")
+    s = data[role]
+    provider = s.get("provider", "ollama")
     if provider != "vllm":
         raise HTTPException(400, f"Role {role} uses provider={provider}, not vllm")
-    # Container name follows convention vllm-{role}
     container = f"vllm-{role}"
-    try:
-        result = subprocess.run(
-            ["docker", "restart", container],
-            capture_output=True, text=True, timeout=30,
-        )
-        if result.returncode != 0:
-            return {"ok": False, "error": result.stderr.strip(), "container": container}
-        return {"ok": True, "container": container}
-    except Exception as e:
-        return {"ok": False, "error": str(e), "container": container}
+    vllm_cfg  = s.get("vllm_docker", {})
+    if role in _vllm_restart_tasks and not _vllm_restart_tasks[role].done():
+        return {"ok": False, "error": "Restart already in progress", "container": container}
+    _vllm_restart_tasks[role] = asyncio.create_task(_run_vllm_restart(role, container, vllm_cfg))
+    return {"ok": True, "container": container, "status": "restarting"}
+
+
+@router.get("/api/settings/llm/{role}/restart_docker_status")
+async def api_restart_docker_status(role: str, _u=Depends(_require_admin)):
+    return _vllm_restart_status.get(role, {"status": "idle"})
 
 
 @router.post("/api/settings/llm/{role}/warmup")
@@ -493,7 +592,7 @@ async def api_trigger_warmup(role: str, payload: dict, _u=Depends(_require_admin
     model = payload.get("model") or get_model(s.get("model_role", role))
     if not model:
         raise HTTPException(400, "No model configured for this role")
-    _start_warmup_task(role, base_url, model, num_ctx)
+    _start_warmup_task(role, base_url, model, num_ctx, keep_warm=bool(s.get("keep_warm", False)))
     return {"ok": True, "model": model}
 
 
@@ -1000,15 +1099,40 @@ async def api_get_weather(_u=Depends(_require_admin)):
     except Exception:
         data = {}
     wcfg = data.get("weather", {"provider": "met.no", "forecast_days": 2})
-    owm_key  = _read_env_key(_WEATHER_ENV_PATH, "OPENWEATHERMAP_API_KEY")
-    wapi_key = _read_env_key(_WEATHER_ENV_PATH, "WEATHERAPI_KEY")
+    owm_key       = _read_env_key(_WEATHER_ENV_PATH, "OPENWEATHERMAP_API_KEY")
+    wapi_key      = _read_env_key(_WEATHER_ENV_PATH, "WEATHERAPI_KEY")
+    pirate_key    = _read_env_key(_WEATHER_ENV_PATH, "PIRATEWEATHER_API_KEY")
+    stormglass_key = _read_env_key(_WEATHER_ENV_PATH, "STORMGLASS_API_KEY")
     return {
         "provider":      wcfg.get("provider", "met.no"),
         "forecast_days": int(wcfg.get("forecast_days", 2)),
-        "openweathermap_key_set": bool(owm_key),
+        "show_feels_like":  bool(wcfg.get("show_feels_like", False)),
+        "show_uv_index":    bool(wcfg.get("show_uv_index", False)),
+        "show_sun_times":   bool(wcfg.get("show_sun_times", False)),
+        "show_alerts":      bool(wcfg.get("show_alerts", True)),
+        "show_air_quality": bool(wcfg.get("show_air_quality", False)),
+        "use_ha_sensors":    bool(wcfg.get("use_ha_sensors", False)),
+        "ha_temp_entity":    wcfg.get("ha_temp_entity", ""),
+        "ha_wind_entity":    wcfg.get("ha_wind_entity", ""),
+        "ha_wind_gust_entity":      wcfg.get("ha_wind_gust_entity", ""),
+        "ha_wind_direction_entity": wcfg.get("ha_wind_direction_entity", ""),
+        "ha_precip_entity":         wcfg.get("ha_precip_entity", ""),
+        "ha_precip_last_hour_entity": wcfg.get("ha_precip_last_hour_entity", ""),
+        "ha_precip_today_entity":   wcfg.get("ha_precip_today_entity", ""),
+        "ha_humidity_entity": wcfg.get("ha_humidity_entity", ""),
+        "ha_pressure_entity": wcfg.get("ha_pressure_entity", ""),
+        "show_tides":               bool(wcfg.get("show_tides", False)),
+        "tide_provider":            wcfg.get("tide_provider", "auto"),
+        "use_camera_for_weather":   bool(wcfg.get("use_camera_for_weather", False)),
+        "weather_camera":           wcfg.get("weather_camera", ""),
+        "openweathermap_key_set":    bool(owm_key),
         "openweathermap_key_masked": _mask_token(owm_key) if owm_key else "",
-        "weatherapi_key_set": bool(wapi_key),
-        "weatherapi_key_masked": _mask_token(wapi_key) if wapi_key else "",
+        "weatherapi_key_set":        bool(wapi_key),
+        "weatherapi_key_masked":     _mask_token(wapi_key) if wapi_key else "",
+        "pirateweather_key_set":     bool(pirate_key),
+        "pirateweather_key_masked":  _mask_token(pirate_key) if pirate_key else "",
+        "stormglass_key_set":        bool(stormglass_key),
+        "stormglass_key_masked":     _mask_token(stormglass_key) if stormglass_key else "",
     }
 
 
@@ -1022,7 +1146,29 @@ async def api_put_weather(payload: dict, _u=Depends(_require_admin)):
         raise HTTPException(400, "forecast_days must be 1–7")
     try:
         data = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
-        data["weather"] = {"provider": provider, "forecast_days": forecast_days}
+        data["weather"] = {
+            "provider":        provider,
+            "forecast_days":   forecast_days,
+            "show_feels_like":  bool(payload.get("show_feels_like", False)),
+            "show_uv_index":    bool(payload.get("show_uv_index", False)),
+            "show_sun_times":   bool(payload.get("show_sun_times", False)),
+            "show_alerts":      bool(payload.get("show_alerts", True)),
+            "show_air_quality": bool(payload.get("show_air_quality", False)),
+            "use_ha_sensors":    bool(payload.get("use_ha_sensors", False)),
+            "ha_temp_entity":    payload.get("ha_temp_entity", "").strip(),
+            "ha_wind_entity":    payload.get("ha_wind_entity", "").strip(),
+            "ha_wind_gust_entity":      payload.get("ha_wind_gust_entity", "").strip(),
+            "ha_wind_direction_entity": payload.get("ha_wind_direction_entity", "").strip(),
+            "ha_precip_entity":         payload.get("ha_precip_entity", "").strip(),
+            "ha_precip_last_hour_entity": payload.get("ha_precip_last_hour_entity", "").strip(),
+            "ha_precip_today_entity":   payload.get("ha_precip_today_entity", "").strip(),
+            "ha_humidity_entity": payload.get("ha_humidity_entity", "").strip(),
+            "ha_pressure_entity": payload.get("ha_pressure_entity", "").strip(),
+            "show_tides":               bool(payload.get("show_tides", False)),
+            "tide_provider":            payload.get("tide_provider", "auto"),
+            "use_camera_for_weather":   bool(payload.get("use_camera_for_weather", False)),
+            "weather_camera":           payload.get("weather_camera", "").strip(),
+        }
         _SETTINGS_PATH.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False), encoding="utf-8")
     except Exception as e:
         raise HTTPException(500, f"Could not write settings.yaml: {e}")
@@ -1030,6 +1176,10 @@ async def api_put_weather(payload: dict, _u=Depends(_require_admin)):
         _write_env_key(_WEATHER_ENV_PATH, "OPENWEATHERMAP_API_KEY", key)
     if key := payload.get("weatherapi_key", "").strip():
         _write_env_key(_WEATHER_ENV_PATH, "WEATHERAPI_KEY", key)
+    if key := payload.get("pirateweather_key", "").strip():
+        _write_env_key(_WEATHER_ENV_PATH, "PIRATEWEATHER_API_KEY", key)
+    if key := payload.get("stormglass_key", "").strip():
+        _write_env_key(_WEATHER_ENV_PATH, "STORMGLASS_API_KEY", key)
     return {"ok": True, "provider": provider, "forecast_days": forecast_days}
 
 

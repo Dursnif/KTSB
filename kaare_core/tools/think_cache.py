@@ -79,6 +79,7 @@ def log_think(
     prompt_preview: str = "",
     latency_ms: int = 0,
     recovered: bool = False,
+    rid: str = "",
 ) -> None:
     """
     Append one think-block entry to the rolling cache.
@@ -91,6 +92,7 @@ def log_think(
         entry = {
             "id":             uuid.uuid4().hex[:12],
             "ts":             datetime.now(timezone.utc).isoformat(),
+            "rid":            rid,
             "role":           role,
             "model":          model,
             "prompt_preview": prompt_preview[:200],

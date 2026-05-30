@@ -26,7 +26,7 @@ const AGENT_COLORS: Record<string, string> = {
 const AGENT_LABELS: Record<string, string> = {
   kare:         "Kåre",
   miss_kare:    "Miss Kåre",
-  miss_library: "Frøken Library",
+  miss_library: "Miss Library",
   mechanic:  "Mechanic",
   jing:         "Jing",
   jang:         "Jang",

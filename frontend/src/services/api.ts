@@ -322,6 +322,7 @@ export type LlmRoleConfig = {
   response_format?: string;
   enabled?: boolean;
   gpu_id?: number;
+  keep_warm?: boolean;
   ollama_env?: OllamaEnvConfig;
   container?: string | null;
 };
@@ -609,15 +610,38 @@ export async function apiSettingsRollback(): Promise<{ ok: boolean; restored: st
 
 // ── Settings: Weather ─────────────────────────────────────────────────────────
 
-export type WeatherProvider = "met.no" | "open-meteo" | "openweathermap" | "weatherapi";
+export type WeatherProvider = "met.no" | "open-meteo" | "openweathermap" | "weatherapi" | "pirateweather";
 
 export type WeatherConfig = {
   provider: WeatherProvider;
   forecast_days: number;
+  show_feels_like: boolean;
+  show_uv_index: boolean;
+  show_sun_times: boolean;
+  show_alerts: boolean;
+  show_air_quality: boolean;
+  use_ha_sensors: boolean;
+  ha_temp_entity: string;
+  ha_wind_entity: string;
+  ha_wind_gust_entity: string;
+  ha_wind_direction_entity: string;
+  ha_precip_entity: string;
+  ha_precip_last_hour_entity: string;
+  ha_precip_today_entity: string;
+  ha_humidity_entity: string;
+  ha_pressure_entity: string;
+  show_tides: boolean;
+  tide_provider: "auto" | "kartverket" | "stormglass";
+  use_camera_for_weather: boolean;
+  weather_camera: string;
   openweathermap_key_set: boolean;
   openweathermap_key_masked: string;
   weatherapi_key_set: boolean;
   weatherapi_key_masked: string;
+  pirateweather_key_set: boolean;
+  pirateweather_key_masked: string;
+  stormglass_key_set: boolean;
+  stormglass_key_masked: string;
 };
 
 export async function apiGetWeather(): Promise<WeatherConfig> {
@@ -628,8 +652,29 @@ export async function apiGetWeather(): Promise<WeatherConfig> {
 export async function apiPutWeather(payload: {
   provider: WeatherProvider;
   forecast_days: number;
+  show_feels_like: boolean;
+  show_uv_index: boolean;
+  show_sun_times: boolean;
+  show_alerts: boolean;
+  show_air_quality: boolean;
+  use_ha_sensors: boolean;
+  ha_temp_entity: string;
+  ha_wind_entity: string;
+  ha_wind_gust_entity: string;
+  ha_wind_direction_entity: string;
+  ha_precip_entity: string;
+  ha_precip_last_hour_entity: string;
+  ha_precip_today_entity: string;
+  ha_humidity_entity: string;
+  ha_pressure_entity: string;
+  show_tides?: boolean;
+  tide_provider?: string;
+  use_camera_for_weather?: boolean;
+  weather_camera?: string;
   openweathermap_key?: string;
   weatherapi_key?: string;
+  pirateweather_key?: string;
+  stormglass_key?: string;
 }) {
   const { data } = await api.put("/api/settings/weather", payload);
   return data as { ok: boolean };

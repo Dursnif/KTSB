@@ -120,33 +120,33 @@ async def dispatch(name: str, arguments: Dict) -> str:
 
     if name == "mechanic":
         action = arguments.get("action", "")
-        if action == "søk":
-            search_type = arguments.get("type", "filer")
-            spørsmål    = arguments.get("spørsmål", "Oppsummer innholdet.")
+        if action == "search":
+            search_type = arguments.get("type", "files")
+            query       = arguments.get("query", "Summarize the content.")
             if not _llm_cfg("mechanic").get("enabled", True):
                 return t("agent_mechanic_disabled", lang)
-            raw_filer = arguments.get("filer", [])
-            if isinstance(raw_filer, str):
+            raw_files = arguments.get("files", [])
+            if isinstance(raw_files, str):
                 try:
-                    raw_filer = _json.loads(raw_filer)
+                    raw_files = _json.loads(raw_files)
                 except Exception:
-                    raw_filer = []
+                    raw_files = []
             try:
                 async with httpx.AsyncClient(timeout=120.0) as client:
                     r = await client.post(
                         f"{_svc('internal', 'agents')}/ask/mechanic/søk",
                         json={
                             "search_type": search_type,
-                            "files":       raw_filer,
-                            "from_line":   arguments.get("fra_linje"),
-                            "to_line":     arguments.get("til_linje"),
-                            "pattern":     arguments.get("mønster", ""),
-                            "directory":   arguments.get("mappe", "/kaare"),
-                            "service":     arguments.get("tjeneste", ""),
-                            "log_file":    arguments.get("logg_fil", ""),
-                            "lines":       arguments.get("linjer", 100),
+                            "files":       raw_files,
+                            "from_line":   arguments.get("from_line"),
+                            "to_line":     arguments.get("to_line"),
+                            "pattern":     arguments.get("pattern", ""),
+                            "directory":   arguments.get("directory", "/kaare"),
+                            "service":     arguments.get("service", ""),
+                            "log_file":    arguments.get("log_file", ""),
+                            "lines":       arguments.get("lines", 100),
                             "log_filter":  arguments.get("filter", ""),
-                            "question":    spørsmål,
+                            "question":    query,
                         },
                     )
                     r.raise_for_status()
@@ -154,7 +154,7 @@ async def dispatch(name: str, arguments: Dict) -> str:
                 try:
                     asyncio.create_task(get_ltm().log_agent_message(
                         from_agent="kare", to_agent="mechanic",
-                        query=spørsmål, response=svar,
+                        query=query, response=svar,
                         rid=arguments.get("_rid", ""),
                         user_id=arguments.get("_user_id", "global"),
                     ))
@@ -164,15 +164,15 @@ async def dispatch(name: str, arguments: Dict) -> str:
             except Exception as e:
                 return t("agent_mechanic_search_failed", lang, error=e)
 
-        if action == "deleger":
-            oppgave = arguments.get("oppgave", "").strip()
-            if not oppgave:
-                return "Error: oppgave cannot be empty."
+        if action == "delegate":
+            task = arguments.get("task", "").strip()
+            if not task:
+                return "Error: task cannot be empty."
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     r = await client.post(
                         f"{_svc('internal', 'agents')}/jobs/mechanic",
-                        json={"task": oppgave},
+                        json={"task": task},
                     )
                     r.raise_for_status()
                     data = r.json()
@@ -184,12 +184,12 @@ async def dispatch(name: str, arguments: Dict) -> str:
                     f"Job started. job_id={job_id}\n"
                     f"Mechanic is working in the background. "
                     f"Monitor with ssh_kommando/local_kommando, "
-                    f"then poll with mechanic(action='svar', job_id='{job_id}')."
+                    f"then poll with mechanic(action='result', job_id='{job_id}')."
                 )
             except Exception as e:
-                return f"mechanic deleger failed: {e}"
+                return f"mechanic delegate failed: {e}"
 
-        if action == "svar":
+        if action == "result":
             job_id = arguments.get("job_id", "").strip()
             if not job_id:
                 return "Error: job_id is required."
@@ -206,9 +206,9 @@ async def dispatch(name: str, arguments: Dict) -> str:
                     return f"[Job {job_id[:8]}…] Still running — check again in a moment."
                 return f"[Job {job_id[:8]}…] {status.upper()}\n{result or '(no output)'}"
             except Exception as e:
-                return f"mechanic svar failed: {e}"
+                return f"mechanic result failed: {e}"
 
-        if action == "avbryt":
+        if action == "cancel":
             job_id = arguments.get("job_id", "").strip()
             if not job_id:
                 return "Error: job_id is required."
@@ -225,9 +225,9 @@ async def dispatch(name: str, arguments: Dict) -> str:
                     "Mechanic's current LLM call is being aborted."
                 )
             except Exception as e:
-                return f"mechanic avbryt failed: {e}"
+                return f"mechanic cancel failed: {e}"
 
-        if action == "kommenter":
+        if action == "comment":
             job_id = arguments.get("job_id", "").strip()
             comment = arguments.get("comment", "").strip()
             if not job_id or not comment:
@@ -244,29 +244,29 @@ async def dispatch(name: str, arguments: Dict) -> str:
                     return f"[Job {job_id[:8]}…] Job is no longer running — comment not delivered."
                 return f"[Job {job_id[:8]}…] Comment queued. Mechanic will see it at the next tool round."
             except Exception as e:
-                return f"mechanic kommenter failed: {e}"
+                return f"mechanic comment failed: {e}"
 
-        return f"Unknown action for mechanic: '{action}'. Valid: søk, deleger, svar, avbryt, kommenter."
+        return f"Unknown action for mechanic: '{action}'. Valid: search, delegate, result, cancel, comment."
 
     if name == "søk_i_argus":
         return await _søk_i_argus(
-            spørsmål=arguments.get("spørsmål", ""),
-            grense=int(arguments.get("grense", 8)),
+            spørsmål=arguments.get("query", ""),
+            grense=int(arguments.get("limit", 8)),
             lang=lang,
         )
 
     if name == "spør_mechanic":
-        return await _spør_mechanic(arguments.get("oppgave", ""), arguments, lang)
+        return await _spør_mechanic(arguments.get("task", ""), arguments, lang)
 
     if name == "deleger_til_mechanic":
-        oppgave = arguments.get("oppgave", "").strip()
-        if not oppgave:
-            return "Error: oppgave cannot be empty."
+        task = arguments.get("task", "").strip()
+        if not task:
+            return "Error: task cannot be empty."
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 r = await client.post(
                     f"{_svc('internal', 'agents')}/jobs/mechanic",
-                    json={"task": oppgave},
+                    json={"task": task},
                 )
                 r.raise_for_status()
                 data = r.json()

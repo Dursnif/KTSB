@@ -206,65 +206,65 @@ async def dispatch(name: str, arguments: dict) -> str:
 
     if name == "verden":
         action = arguments.get("action", "")
-        if action == "les":
+        if action == "read":
             return _read_world(lang)
-        if action == "oppdater_felt":
+        if action == "update_field":
             return _update_world_field(
-                category=arguments.get("kategori", ""),
-                field=arguments.get("felt", ""),
-                value=arguments.get("verdi", ""),
+                category=(arguments.get("category") or arguments.get("kategori") or ""),
+                field=(arguments.get("field") or arguments.get("felt") or ""),
+                value=(arguments.get("value") or arguments.get("verdi") or ""),
                 lang=lang,
             )
-        if action == "legg_til":
+        if action == "add":
             return _add_to_world(
-                category=arguments.get("kategori", ""),
-                text=arguments.get("tekst", ""),
+                category=(arguments.get("category") or arguments.get("kategori") or ""),
+                text=(arguments.get("text") or arguments.get("tekst") or ""),
                 lang=lang,
             )
-        if action == "slett":
-            return _delete_from_world(arguments.get("fragment", ""), lang)
-        if action == "rediger":
+        if action == "delete":
+            return _delete_from_world((arguments.get("fragment") or ""), lang)
+        if action == "edit":
             return _edit_world(
-                fragment=arguments.get("fragment", ""),
-                new_text=arguments.get("ny_tekst", ""),
+                fragment=(arguments.get("fragment") or ""),
+                new_text=(arguments.get("new_text") or arguments.get("ny_tekst") or ""),
                 lang=lang,
             )
-        if action == "les_var":
-            return _world_get_var(arguments.get("nokkel", ""), lang)
+        if action == "read_var":
+            return _world_get_var((arguments.get("key") or arguments.get("nokkel") or ""), lang)
         if action == "sett_var":
             return _world_set_var(
-                key=arguments.get("nokkel", ""),
-                value=arguments.get("verdi", ""),
-                description=arguments.get("beskrivelse", ""),
+                key=(arguments.get("key") or arguments.get("nokkel") or ""),
+                value=(arguments.get("value") or arguments.get("verdi") or ""),
+                description=(arguments.get("description") or arguments.get("beskrivelse") or ""),
                 lang=lang,
             )
-        if action == "slett_var":
-            return _world_delete_var(arguments.get("nokkel", ""), lang)
-        if action == "liste_vars":
+        if action == "delete_var":
+            return _world_delete_var((arguments.get("key") or arguments.get("nokkel") or ""), lang)
+        if action == "list_vars":
             return _world_list_vars(lang)
-        return f"Unknown action for verden: '{action}'. Valid: les, oppdater_felt, legg_til, slett, rediger, les_var, sett_var, slett_var, liste_vars."
+        return f"Unknown action for verden: '{action}'. Valid: read, update_field, add, delete, edit, read_var, sett_var, delete_var, list_vars."
 
     if name == "les_verden":
         return _read_world(lang)
     if name == "oppdater_felt_i_verden":
         return _update_world_field(
-            category=arguments.get("kategori", ""),
-            field=arguments.get("felt", ""),
-            value=arguments.get("verdi", ""),
+            category=(arguments.get("category") or arguments.get("kategori") or ""),
+            field=(arguments.get("field") or arguments.get("felt") or ""),
+            value=(arguments.get("value") or arguments.get("verdi") or ""),
             lang=lang,
         )
     if name == "legg_til_i_verden":
         return _add_to_world(
-            category=arguments.get("kategori", ""),
-            text=arguments.get("tekst", ""),
+            category=(arguments.get("category") or arguments.get("kategori") or ""),
+            text=(arguments.get("text") or arguments.get("tekst") or ""),
             lang=lang,
         )
     if name == "slett_fra_verden":
-        return _delete_from_world(arguments.get("fragment", ""), lang)
+        return _delete_from_world((arguments.get("fragment") or ""), lang)
     if name == "rediger_verden":
         return _edit_world(
-            fragment=arguments.get("fragment", ""),
-            new_text=arguments.get("ny_tekst", ""),
+            fragment=(arguments.get("fragment") or ""),
+            new_text=(arguments.get("new_text") or arguments.get("ny_tekst") or ""),
             lang=lang,
         )
 

@@ -118,7 +118,7 @@ MODULES = [
     "adapters.mqtt_adapter",
     "adapters.plex_adapter",
     "adapters.web_search_adapter",
-    "adapters.yr_adapter",
+    "adapters.weather_adapter",
     "adapters.image_generation_adapter",
 ]
 

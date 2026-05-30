@@ -3,7 +3,7 @@ import httpx
 import yaml
 from pathlib import Path
 
-from adapters.web_search_adapter import søk_nett as _søk_nett
+from adapters.web_search_adapter import søk_nett as _søk_nett, _fetch_content as _direct_fetch, _is_trusted as _url_trusted
 from kaare_core.config import get_service as _svc, get_model as _cfg_model, get_llm_config as _llm_cfg
 from kaare_core.memory.long_term import get_ltm
 from kaare_core.tools.executor_personality import PERSONALITY_CORE_TEXT
@@ -17,8 +17,8 @@ _OLLAMA_PROXY_URL = _llm_cfg("default")["base_url"]
 LIBRARY_TOOLS = {
     "søk_nett",
     "library",
-    "spør_frøken_library_online",
-    "spør_frøken_library",
+    "spør_miss_library_online",
+    "spør_miss_library",
     "hent_wiki_artikkel",
     "reason_freely",
 }
@@ -33,9 +33,9 @@ def _build_location_prefix() -> str:
     city = loc.get("city") or loc.get("sted", "")
     country = loc.get("country") or loc.get("land", "")
     if city and country:
-        return f"[Kontekst: {city}, {country}] "
+        return t("lib_context_city_country", "nb", city=city, country=country)
     if country:
-        return f"[Kontekst: {country}] "
+        return t("lib_context_country", "nb", country=country)
     return ""
 
 _LOCATION_PREFIX = _build_location_prefix()
@@ -128,6 +128,13 @@ async def _fetch_wiki_article(title: str, max_chars: int = 8000, lang: str = "nb
 async def _fetch_url(url: str, arguments: dict, lang: str = "nb") -> str:
     if not url.strip():
         return t("lib_empty_url", lang)
+    if not _llm_cfg("library").get("enabled", True):
+        if not _url_trusted(url):
+            return t("lib_url_not_trusted", lang, url=url)
+        content = await _direct_fetch(url)
+        if not content:
+            return t("lib_url_direct_no_content", lang)
+        return content
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             r = await client.post(
@@ -159,10 +166,7 @@ async def _reason_freely(query: str, lang: str = "nb") -> str:
     system = (
         PERSONALITY_CORE_TEXT
         + "\n\n---\n\n"
-        "Du bruker nå din fulle interne kunnskap fritt. "
-        "Ingen smarthus-begrensninger gjelder her. "
-        "Tenk åpent og presist basert på det du vet fra treningen. "
-        "Dette er et internt verktøykall — svaret integreres i din vanlige respons til brukeren."
+        + t("lib_reason_freely_system", lang)
     )
     try:
         base_url = rf_cfg.get("base_url", _OLLAMA_PROXY_URL)
@@ -265,25 +269,25 @@ async def dispatch(name: str, arguments: dict) -> str:
 
     if name == "library":
         action = arguments.get("action", "")
-        if action == "søk":
-            return await _ask_library(arguments.get("spørsmål", ""), arguments, lang)
-        if action == "hent_artikkel":
+        if action == "search":
+            return await _ask_library(arguments.get("query", ""), arguments, lang)
+        if action == "fetch_article":
             return await _fetch_wiki_article(
                 arguments.get("title", ""),
                 arguments.get("max_chars", 8000),
                 lang,
             )
-        if action == "hent_url":
+        if action == "fetch_url":
             return await _fetch_url(arguments.get("url", ""), arguments, lang)
         if action == "online":
-            return await _ask_library_online(arguments.get("spørsmål", ""), arguments, lang)
-        return f"Unknown action for library: '{action}'. Valid: søk, hent_artikkel, hent_url, online."
+            return await _ask_library_online(arguments.get("query", ""), arguments, lang)
+        return f"Unknown action for library: '{action}'. Valid: search, fetch_article, fetch_url, online."
 
-    if name == "spør_frøken_library_online":
-        return await _ask_library_online(arguments.get("spørsmål", ""), arguments, lang)
+    if name == "spør_miss_library_online":
+        return await _ask_library_online(arguments.get("query", ""), arguments, lang)
 
-    if name == "spør_frøken_library":
-        return await _ask_library(arguments.get("spørsmål", ""), arguments, lang)
+    if name == "spør_miss_library":
+        return await _ask_library(arguments.get("query", ""), arguments, lang)
 
     if name == "hent_wiki_artikkel":
         return await _fetch_wiki_article(

@@ -25,6 +25,7 @@ from qdrant_client.models import (
 )
 
 sys.path.insert(0, "/kaare")
+from kaare_core.tools.i18n import t, get_lang
 from kaare_core.agents.mechanic.tools import (
     ask_with_tools, MECHANIC_URL, MECHANIC_MODEL,
     MECHANIC_TOOLS, UNDERSØKER_TOOLS, KRITIKER_TOOLS, ANALYTIKER_TOOLS,
@@ -248,7 +249,7 @@ class InjectRequest(BaseModel):
     comment: str
 
 class SearchRequest(BaseModel):
-    search_type: str = "filer"      # "filer" | "grep" | "logg"
+    search_type: str = "files"      # "files" | "grep" | "log"
     files: list[str] = []           # absolute paths under /kaare
     from_line: int | None = None
     to_line: int | None = None
@@ -339,9 +340,10 @@ async def ask_miss_library_hent_url(req: UrlRequest):
     import yaml as _yaml
     from urllib.parse import urlparse
 
+    _lang = get_lang("global")
     url = req.url.strip()
     if not url:
-        return AskResponse(answer="Feil: url kan ikke være tom.", agent="miss_library")
+        return AskResponse(answer=t("svc_empty_url", _lang), agent="miss_library")
 
     # Trusted-domain check
     try:
@@ -358,7 +360,7 @@ async def ask_miss_library_hent_url(req: UrlRequest):
             if not any(host == d or host.endswith("." + d) for d in trusted):
                 return AskResponse(
                     answer=f"Domenet «{host}» er ikke i listen over godkjente kilder. "
-                           "Legg det til under Innstillinger → Nettsøk → Godkjente kilder.",
+                           + t("svc_trusted_hint", _lang),
                     agent="miss_library",
                 )
     except Exception as e:
@@ -384,7 +386,7 @@ async def ask_miss_library_hent_url(req: UrlRequest):
         if len(text) > 6000:
             text = text[:6000] + "…"
         if not text:
-            return AskResponse(answer=f"Klarte ikke å hente lesbart innhold fra {url}.", agent="miss_library")
+            return AskResponse(answer=t("svc_url_fetch_failed", _lang, url=url), agent="miss_library")
     except Exception as e:
         return AskResponse(answer=f"Henting av {url} feilet: {e}", agent="miss_library")
 
@@ -431,7 +433,7 @@ _ALLOWED_BASE  = "/kaare"
 
 async def _mechanic_fetch_content(req: SearchRequest) -> str:
     """Python reads files/runs grep/reads logs. No LLM involved."""
-    if req.search_type == "filer":
+    if req.search_type in ("files", "filer"):
         if not req.files:
             return ""
         parts = []
@@ -458,8 +460,9 @@ async def _mechanic_fetch_content(req: SearchRequest) -> str:
         return "\n\n".join(parts)
 
     elif req.search_type == "grep":
+        _lang_grep = get_lang("global")
         if not req.pattern:
-            return "[Feil: mønster mangler for grep-søk]"
+            return t("svc_no_grep_pattern", _lang_grep)
         mappe = req.directory if req.directory.startswith(_ALLOWED_BASE) else _ALLOWED_BASE
         try:
             result = subprocess.run(
@@ -470,11 +473,11 @@ async def _mechanic_fetch_content(req: SearchRequest) -> str:
                 capture_output=True, text=True, encoding="utf-8", timeout=15,
             )
             out = result.stdout.strip()
-            return out[:_MAX_SØK_CHARS] if out else f"[Ingen treff på '{req.pattern}' i {mappe}]"
+            return out[:_MAX_SØK_CHARS] if out else t("svc_no_grep_results", _lang_grep, pattern=req.pattern, path=mappe)
         except Exception as e:
             return f"[Grep feilet: {e}]"
 
-    elif req.search_type == "logg":
+    elif req.search_type in ("log", "logg"):
         n = min(max(req.lines, 10), 500)
         if req.service:
             try:
@@ -527,6 +530,7 @@ async def _mechanic_llm_call(system: str, user: str) -> str:
             {"role": "user",   "content": user},
         ],
     }
+    _lang_mech = get_lang("global")
     try:
         async with lock_11445("mechanic_søk", max_wait=120):
             async with httpx.AsyncClient(timeout=90.0) as client:
@@ -537,7 +541,7 @@ async def _mechanic_llm_call(system: str, user: str) -> str:
                 return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip() \
                        or "[Ingen respons fra Mechanic]"
     except LockTimeout:
-        return "[Mechanic er opptatt — prøv igjen om litt]"
+        return t("svc_mechanic_busy", _lang_mech)
     except Exception as e:
         return f"[Mechanic utilgjengelig: {e}]"
 
@@ -557,7 +561,7 @@ async def ask_mechanic_søk(req: SearchRequest):
 
     content = await _mechanic_fetch_content(req)
     if not content or content.startswith("["):
-        return AskResponse(answer=content or "Fant ingen innhold å søke i.", agent="mechanic")
+        return AskResponse(answer=content or t("svc_no_content", get_lang("global")), agent="mechanic")
 
     system = _load_personality("mechanic")
     user_msg = (

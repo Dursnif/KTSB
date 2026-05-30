@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from adapters.llm_adapter import ask_llm, ask_llm_cloud, ask_llm_with_tools, ask_vlm
+from kaare_core.tools.i18n import t, get_lang
 from kaare_core.agents.miss_kare.evaluator import evaluate as _miss_kare_evaluate
 from kaare_core.agents.miss_kare.stm import MissKareSTM
 from kaare_core.config import get_model, get_service, reload_capability_services
@@ -414,7 +415,7 @@ if _voice_manager_ok:
 
 @app.get("/")
 def read_root():
-    return {"message": "Hei fra Kåre! Hoved-AI kjører."}
+    return {"message": t("api_hello", get_lang("global"))}
 
 
 @app.post("/api/reload")
@@ -961,14 +962,10 @@ async def api_ask_cloud(req: LLMRequest):
 
 @app.post("/api/intent_to_ha")
 async def api_intent_to_ha(req: dict):
-    return {"ok": False, "error": "intent_to_ha_removed", "message": "Bruk Kåre direkte via /api/generate."}
+    return {"ok": False, "error": "intent_to_ha_removed", "message": t("api_use_generate", get_lang("global"))}
 
 async def exec_ha_direct(entity_id: str, action: str) -> dict:
-    """
-    Direktekall til HA-gateway med kjent entity_id og action.
-    Brukes når vi allerede vet hva vi vil gjøre (reparasjon, kontekstoppløsning).
-    Typisk bruk: reparasjon og kontekstoppløsning.
-    """
+    """Direct call to HA-gateway with a known entity_id and action."""
     rid = f"rid-{int(time.time()*1000)}"
     payload = {
         "prompt": f"{action} {entity_id}",
