@@ -300,7 +300,7 @@ def has_keypair(username: str) -> bool:
     return get_keypair_data(username) is not None
 
 
-def update_pin(username: str, new_pin: str) -> bool:
+def delete_user(username: str) -> bool:
     """Sletter bruker. Admin-brukeren kan ikke slettes hvis det er siste admin."""
     conn = _get_conn()
     try:
