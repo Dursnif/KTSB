@@ -68,7 +68,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "personality" not in existing:
         conn.execute("ALTER TABLE users ADD COLUMN personality TEXT NOT NULL DEFAULT 'standard'")
     if "vpn_access" not in existing:
-        conn.execute("ALTER TABLE users ADD COLUMN vpn_access TEXT NOT NULL DEFAULT 'local_only'")
+        conn.execute("ALTER TABLE users ADD COLUMN vpn_access TEXT NOT NULL DEFAULT 'full_access'")
     # Crypto columns (per-user encryption)
     if "public_key" not in existing:
         conn.execute("ALTER TABLE users ADD COLUMN public_key TEXT")
@@ -112,7 +112,7 @@ def _row_to_dict(row) -> dict:
     d["is_active"] = bool(d["is_active"])
     d["must_change_pin"] = bool(d.get("must_change_pin", 0))
     d.setdefault("personality", "standard")
-    d.setdefault("vpn_access", "local_only")
+    d.setdefault("vpn_access", "full_access")
     return d
 
 

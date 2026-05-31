@@ -61,7 +61,7 @@ Every night at 04:00 they hold a reflection meeting to review the day. At 05:30 
 ### Multi-user with proper access control
 Create separate accounts for everyone in your household. Each user gets a PIN, a role (Child, Teen, Adult, Admin), and their own memory and conversation history. Sensitive tools — web search, system inspection, camera access — are gated by role.
 
-Remote access via WireGuard VPN is built in, with per-user access levels: local only, AI chat only, or full smart home access from anywhere.
+Remote access via WireGuard VPN is available as an optional service, with per-user access levels: local only, AI chat only, or full smart home access from anywhere.
 
 ### Flexible AI backend
 Kåre uses **Ollama** for local LLM inference out of the box. No cloud account required. If you have a capable GPU, models run fast and privately on your own hardware. If you do not have a GPU, or want a more powerful model for complex reasoning, you can connect any OpenAI-compatible provider: OpenAI, NVIDIA NIM, vLLM, HuggingFace, or others.
@@ -228,7 +228,7 @@ Kåre includes **Caddy**, which obtains a free Let's Encrypt certificate automat
 
 Voice input will work as soon as the certificate is issued — usually within 30 seconds of first start.
 
-Access Kåre at `https://mykaare.duckdns.org` from any device on your network or over VPN.
+Access Kåre at `https://mykaare.duckdns.org` from any device on your local network.
 
 > For local use without voice, the default `KAARE_DOMAIN=localhost` works fine.
 
@@ -248,6 +248,50 @@ Set `COMPOSE_PROFILES` in your `.env` file to control which optional services st
 # .env
 COMPOSE_PROFILES=medium
 ```
+
+---
+
+## Remote access (VPN)
+
+To access Kåre securely from outside your home network, enable the built-in WireGuard VPN service.
+
+**Requirements:** a public hostname (DuckDNS recommended — you can reuse `KAARE_DOMAIN`) and UDP port 51820 open in your router.
+
+### Setup
+
+1. Open port **51820 UDP** in your router's port forwarding settings.
+2. Generate a password hash for the VPN management web UI:
+   ```bash
+   docker run --rm ghcr.io/wg-easy/wg-easy:15 wg-easy --hash YourPassword
+   ```
+3. Add to your `.env` file:
+   ```
+   WG_HOST=mykaare.duckdns.org
+   WG_PASSWORD_HASH=$$2a$$12$$...   # note: $$ escapes $ in Docker .env files
+   ```
+4. Add `vpn` to `COMPOSE_PROFILES` in `.env`:
+   ```
+   COMPOSE_PROFILES=medium,vpn
+   ```
+5. Restart: `docker compose up -d`
+
+The VPN management UI is now available at `http://your-machine-ip:51821`. Add a client there, download its config or scan the QR code, and connect from your phone or laptop.
+
+Once connected via VPN, Kåre detects you automatically as a VPN user.
+
+### Per-user access levels
+
+In **Admin → Users**, set each user's remote access level:
+
+| Level | What it allows |
+|---|---|
+| **Local only** | Access only from your home network |
+| **AI chat only** | Full chat and memory over VPN, no smart home control |
+| **Full access** | All features available remotely |
+
+New users default to **Full access**. Restrict individual users under Admin → Users if needed.
+
+> **Note:** The VPN service requires `NET_ADMIN` and `SYS_MODULE` kernel capabilities. These work on standard Linux hosts. Some cloud VPS providers restrict kernel modules — check your host's documentation if wg-easy fails to start.
 
 ---
 

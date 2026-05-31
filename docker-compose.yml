@@ -56,7 +56,7 @@ services:
     image: ghcr.io/dursnif/kaare:latest
     restart: unless-stopped
     ports: ["8002:8002"]
-    command: uvicorn kaare_ha_gateway:app --host 0.0.0.0 --port 8002
+    command: uvicorn kaare_ha_gateway:app --host 0.0.0.0 --port 8002 --proxy-headers --forwarded-allow-ips=172.16.0.0/12
     volumes:
       - ./configs:/kaare/configs
       - ./state:/kaare/state
@@ -76,7 +76,7 @@ services:
     image: ghcr.io/dursnif/kaare:latest
     restart: unless-stopped
     ports: ["11450:11450"]
-    command: uvicorn services.agents.server:app --host 0.0.0.0 --port 11450
+    command: uvicorn services.agents.server:app --host 0.0.0.0 --port 11450 --proxy-headers --forwarded-allow-ips=172.16.0.0/12
     volumes:
       - ./configs:/kaare/configs
       - ./state:/kaare/state
@@ -113,6 +113,34 @@ services:
     image: ghcr.io/dursnif/kaare-frontend:latest
     restart: unless-stopped
     ports: ["5173:80"]
+
+  # ── VPN (optional — add "vpn" to COMPOSE_PROFILES to enable) ─────────────────
+  # Requires: open UDP 51820 in your router, set WG_HOST and WG_PASSWORD_HASH in .env
+  # Web UI for adding clients: http://your-ip:51821
+  # WireGuard subnet must match vpn_subnet in configs/settings.yaml (default: 10.0.0.0/24)
+  wg-easy:
+    image: ghcr.io/wg-easy/wg-easy:15
+    restart: unless-stopped
+    environment:
+      WG_HOST: ${WG_HOST}
+      PASSWORD_HASH: ${WG_PASSWORD_HASH}
+      WG_DEFAULT_ADDRESS: "10.0.0.x"
+      WG_DEFAULT_DNS: "1.1.1.1"
+      WG_PORT: 51820
+      PORT: 51821
+    ports:
+      - "51820:51820/udp"
+      - "51821:51821/tcp"
+    volumes:
+      - ./state/wireguard:/etc/wireguard
+      - /lib/modules:/lib/modules:ro
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+    profiles: [vpn]
 
   # Night job — run manually: docker compose run --rm kaare-nightjob
   kaare-nightjob:

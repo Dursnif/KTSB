@@ -209,17 +209,24 @@ def get_all_last_seen() -> dict[str, str]:
 
 def get_network_context(client_ip: str) -> str:
     """Returns 'local', 'vpn', or 'external' based on client IP.
-    Reads subnet ranges from configs/settings.yaml. Fails safe to 'local'."""
+    Reads subnet ranges from configs/settings.yaml. Fails safe to 'local'.
+    Docker bridge (172.16.0.0/12) is always treated as local regardless of config."""
     try:
         ip = ipaddress.ip_address(client_ip)
         if ip.is_loopback:
             return "local"
+        if ip in ipaddress.ip_network("172.16.0.0/12"):
+            return "local"
         settings = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
         net = settings.get("network", {})
-        local_net = ipaddress.ip_network(net.get("local_subnet", "192.168.0.0/24"), strict=False)
+        # Support both local_subnets (list) and legacy local_subnet (string)
+        raw = net.get("local_subnets") or [net.get("local_subnet", "192.168.0.0/24")]
+        if isinstance(raw, str):
+            raw = [raw]
+        for subnet_str in raw:
+            if ip in ipaddress.ip_network(subnet_str, strict=False):
+                return "local"
         vpn_net = ipaddress.ip_network(net.get("vpn_subnet", "10.0.0.0/24"), strict=False)
-        if ip in local_net:
-            return "local"
         if ip in vpn_net:
             return "vpn"
         return "external"

@@ -30,6 +30,27 @@ def deep_merge(default: dict, existing: dict) -> dict:
     return result
 
 
+def _migrate_network_config(config_file: Path, changed: list) -> None:
+    """Migrate network.local_subnet (string) to network.local_subnets (list)."""
+    if not config_file.exists():
+        return
+    try:
+        data = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return
+    net = data.get("network", {})
+    if not isinstance(net, dict):
+        return
+    if "local_subnets" in net or "local_subnet" not in net:
+        return
+    # Convert string to list
+    data["network"]["local_subnets"] = [net["local_subnet"]]
+    del data["network"]["local_subnet"]
+    with open(config_file, "w", encoding="utf-8") as f:
+        yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    changed.append(f"  migrated {config_file.name}: network.local_subnet → network.local_subnets")
+
+
 def migrate():
     CONFIGS_DIR.mkdir(exist_ok=True)
     changed = []
@@ -61,6 +82,8 @@ def migrate():
             with open(config_file, "w", encoding="utf-8") as f:
                 yaml.dump(merged, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
             changed.append(f"  updated {config_file.name} (added missing keys)")
+
+    _migrate_network_config(CONFIGS_DIR / "settings.yaml", changed)
 
     if changed:
         print("[migrate] Config changes applied:", flush=True)

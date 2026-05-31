@@ -60,6 +60,11 @@ token_expiry_hours: 4
 cors_origins:
   - "*"
 
+network:
+  local_subnets:
+    - "192.168.0.0/24"
+  vpn_subnet: "10.0.0.0/24"
+
 weather:
   forecast_days: 2
   ha_humidity_entity: ''

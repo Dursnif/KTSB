@@ -621,7 +621,16 @@ async def api_get_warmup_status(role: str, _u=Depends(_require_admin)):
 async def api_discover_ollama(_u=Depends(_require_admin)):
     import ipaddress
     settings = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
-    subnet_str = settings.get("network", {}).get("local_subnet", "192.168.0.0/24")
+    net_cfg = settings.get("network", {})
+    subnets = net_cfg.get("local_subnets") or [net_cfg.get("local_subnet", "192.168.0.0/24")]
+    if isinstance(subnets, str):
+        subnets = [subnets]
+    # Use first non-Docker-bridge subnet for Ollama host scan
+    subnet_str = next(
+        (s for s in subnets if not ipaddress.ip_network(s, strict=False).overlaps(
+            ipaddress.ip_network("172.16.0.0/12"))),
+        "192.168.0.0/24"
+    )
     candidates: list[str] = [
         "http://127.0.0.1:11434",
         "http://localhost:11434",

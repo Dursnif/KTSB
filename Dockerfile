@@ -13,4 +13,4 @@ COPY scripts/docker_entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["uvicorn", "kaare_api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "kaare_api:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=172.16.0.0/12"]
