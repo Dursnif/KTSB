@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import QRCode from "react-qr-code";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import {
   apiListUsers, apiCreateUser, apiUpdateUser,
   apiUpdatePin, apiDeleteUser, apiListPersonalities,
@@ -239,8 +240,80 @@ function ToolPermissionsMatrix() {
   );
 }
 
+// ── Mobile user cards ─────────────────────────────────────────────────────────
+
+function UserCards({ users, onModal, setError }: {
+  users: KaareUser[];
+  onModal: (m: Modal) => void;
+  setError: (e: string) => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {users.map(u => (
+        <div key={u.username} style={{
+          background: "#1a1a1a",
+          borderRadius: 10,
+          border: "1px solid #333",
+          overflow: "hidden",
+        }}>
+          <div style={{ padding: "14px 16px", borderBottom: "1px solid #222" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 22 }}>{u.avatar}</span>
+                <span style={{ color: "#fff", fontSize: 15, fontWeight: 600 }}>{u.display_name}</span>
+              </div>
+              <span style={S.badge(u.role)}>{t(`dashboard.roles.${u.role}`, u.role)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <code style={{ color: "#888", fontSize: 12 }}>@{u.username}</code>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{
+                  background: VPN_COLORS[u.vpn_access || "local_only"],
+                  color: "#ddd", padding: "2px 8px", borderRadius: 10, fontSize: 11,
+                }}>
+                  {t(`users.vpn_access.${u.vpn_access || "local_only"}`)}
+                </span>
+                <span style={{ color: u.is_active ? "#4caf50" : "#888", fontSize: 13 }}>
+                  {u.is_active ? "●" : "○"}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div style={{ padding: "10px 12px", display: "flex", gap: 8, flexWrap: "wrap" as const }}>
+            <button style={{ ...S.btn("#1a3a3a"), flex: 1 }}
+              onClick={() => { setError(""); onModal({ type: "vpn", user: u }); }}>
+              {t("users.actions.vpn")}
+            </button>
+            <button style={{ ...S.btn("#1a2a4a"), flex: 1 }}
+              onClick={() => { setError(""); onModal({ type: "voice", user: u }); }}>
+              {t("users.actions.voice")}
+            </button>
+            <button style={{ ...S.btn("#2a2a4a"), flex: 1 }}
+              onClick={() => { setError(""); onModal({ type: "edit", user: u }); }}>
+              {t("users.actions.edit")}
+            </button>
+            <button style={{ ...S.btn("#2a3a2a"), flex: "0 0 auto" as const }}
+              onClick={() => { setError(""); onModal({ type: "pin", user: u }); }}>
+              {t("users.actions.pin")}
+            </button>
+            <button style={{ ...S.btn("#3a1a1a"), flex: "0 0 auto" as const }}
+              onClick={() => { setError(""); onModal({ type: "delete", user: u }); }}>
+              {t("users.actions.delete")}
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Main Users page ───────────────────────────────────────────────────────────
+
 export default function Users() {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [users, setUsers] = useState<KaareUser[]>([]);
   const [modal, setModal] = useState<Modal>(null);
   const [error, setError] = useState("");
@@ -250,65 +323,81 @@ export default function Users() {
 
   return (
     <div style={S.page}>
-      <div style={S.header}>
+      <div style={{
+        ...S.header,
+        ...(isMobile ? { flexDirection: "column", alignItems: "stretch", gap: 12 } : {}),
+      }}>
         <h1 style={S.h1}>{t("users.title")}</h1>
-        <button style={S.btn()} onClick={() => { setError(""); setModal({ type: "create" }); }}>
+        <button
+          style={{ ...S.btn(), ...(isMobile ? { padding: "12px 18px", fontSize: 15 } : {}) }}
+          onClick={() => { setError(""); setModal({ type: "create" }); }}
+        >
           {t("users.new_user")}
         </button>
       </div>
 
-      <table style={S.table}>
-        <thead>
-          <tr>
-            <th style={S.th}>{t("users.table.user")}</th>
-            <th style={S.th}>{t("users.table.username")}</th>
-            <th style={S.th}>{t("users.table.role")}</th>
-            <th style={S.th}>{t("users.table.personality")}</th>
-            <th style={S.th}>{t("users.table.vpn_access")}</th>
-            <th style={S.th}>{t("users.table.status")}</th>
-            <th style={S.th}>{t("users.table.actions")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map(u => (
-            <tr key={u.username}>
-              <td style={S.td}>{u.avatar} {u.display_name}</td>
-              <td style={S.td}><code style={{ color: "#888" }}>{u.username}</code></td>
-              <td style={S.td}>
-                <span style={S.badge(u.role)}>{t(`dashboard.roles.${u.role}`, u.role)}</span>
-              </td>
-              <td style={S.td}><code style={{ color: "#aaa", fontSize: 12 }}>{t(`personality_variants.${u.personality || "standard"}`, u.personality || "standard")}</code></td>
-              <td style={S.td}>
-                <span style={{
-                  background: VPN_COLORS[u.vpn_access || "local_only"],
-                  color: "#ddd", padding: "3px 10px", borderRadius: 12, fontSize: 12,
-                }}>
-                  {t(`users.vpn_access.${u.vpn_access || "local_only"}`)}
-                </span>
-              </td>
-              <td style={S.td}>
-                <span style={{ color: u.is_active ? "#4caf50" : "#888" }}>
-                  {u.is_active ? t("users.status.active") : t("users.status.inactive")}
-                </span>
-              </td>
-              <td style={S.td}>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button style={S.btn("#2a2a4a")} onClick={() => { setError(""); setModal({ type: "edit", user: u }); }}>{t("users.actions.edit")}</button>
-                  <button style={S.btn("#2a3a2a")} onClick={() => { setError(""); setModal({ type: "pin", user: u }); }}>{t("users.actions.pin")}</button>
-                  <button style={S.btn("#1a3a3a")} onClick={() => { setError(""); setModal({ type: "vpn", user: u }); }}>{t("users.actions.vpn")}</button>
-                  <button style={S.btn("#1a2a4a")} onClick={() => { setError(""); setModal({ type: "voice", user: u }); }}>{t("users.actions.voice")}</button>
-                  <button style={S.btn("#3a1a1a")} onClick={() => { setError(""); setModal({ type: "delete", user: u }); }}>{t("users.actions.delete")}</button>
-                </div>
-              </td>
+      {isMobile ? (
+        <UserCards users={users} onModal={setModal} setError={setError} />
+      ) : (
+        <table style={S.table}>
+          <thead>
+            <tr>
+              <th style={S.th}>{t("users.table.user")}</th>
+              <th style={S.th}>{t("users.table.username")}</th>
+              <th style={S.th}>{t("users.table.role")}</th>
+              <th style={S.th}>{t("users.table.personality")}</th>
+              <th style={S.th}>{t("users.table.vpn_access")}</th>
+              <th style={S.th}>{t("users.table.status")}</th>
+              <th style={S.th}>{t("users.table.actions")}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {users.map(u => (
+              <tr key={u.username}>
+                <td style={S.td}>{u.avatar} {u.display_name}</td>
+                <td style={S.td}><code style={{ color: "#888" }}>{u.username}</code></td>
+                <td style={S.td}>
+                  <span style={S.badge(u.role)}>{t(`dashboard.roles.${u.role}`, u.role)}</span>
+                </td>
+                <td style={S.td}><code style={{ color: "#aaa", fontSize: 12 }}>{t(`personality_variants.${u.personality || "standard"}`, u.personality || "standard")}</code></td>
+                <td style={S.td}>
+                  <span style={{
+                    background: VPN_COLORS[u.vpn_access || "local_only"],
+                    color: "#ddd", padding: "3px 10px", borderRadius: 12, fontSize: 12,
+                  }}>
+                    {t(`users.vpn_access.${u.vpn_access || "local_only"}`)}
+                  </span>
+                </td>
+                <td style={S.td}>
+                  <span style={{ color: u.is_active ? "#4caf50" : "#888" }}>
+                    {u.is_active ? t("users.status.active") : t("users.status.inactive")}
+                  </span>
+                </td>
+                <td style={S.td}>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button style={S.btn("#2a2a4a")} onClick={() => { setError(""); setModal({ type: "edit", user: u }); }}>{t("users.actions.edit")}</button>
+                    <button style={S.btn("#2a3a2a")} onClick={() => { setError(""); setModal({ type: "pin", user: u }); }}>{t("users.actions.pin")}</button>
+                    <button style={S.btn("#1a3a3a")} onClick={() => { setError(""); setModal({ type: "vpn", user: u }); }}>{t("users.actions.vpn")}</button>
+                    <button style={S.btn("#1a2a4a")} onClick={() => { setError(""); setModal({ type: "voice", user: u }); }}>{t("users.actions.voice")}</button>
+                    <button style={S.btn("#3a1a1a")} onClick={() => { setError(""); setModal({ type: "delete", user: u }); }}>{t("users.actions.delete")}</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
-      <ToolPermissionsMatrix />
+      {!isMobile && <ToolPermissionsMatrix />}
 
       {modal && (
-        <div style={S.overlay} onClick={e => e.target === e.currentTarget && setModal(null)}>
+        <div
+          style={{
+            ...S.overlay,
+            ...(isMobile ? { alignItems: "flex-start", paddingTop: 16, overflowY: "auto" } : {}),
+          }}
+          onClick={e => e.target === e.currentTarget && setModal(null)}
+        >
           {modal.type === "create" && (
             <CreateModal onDone={() => { load(); setModal(null); }} onError={setError} error={error} />
           )}
@@ -337,6 +426,7 @@ export default function Users() {
 
 function CreateModal({ onDone, onError, error }: { onDone: () => void; onError: (e: string) => void; error: string }) {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [f, setF] = useState({ username: "", display_name: "", role: "adult" as Role, pin: "", avatar: "👤" });
 
   const submit = async (e: React.FormEvent) => {
@@ -350,7 +440,7 @@ function CreateModal({ onDone, onError, error }: { onDone: () => void; onError: 
   };
 
   return (
-    <div style={S.modal}>
+    <div style={{ ...S.modal, width: isMobile ? "calc(100vw - 32px)" : 420, maxHeight: "90vh", overflowY: "auto" }}>
       <div style={S.mTitle}>{t("users.create.title")}</div>
       <form onSubmit={submit}>
         <label style={S.label}>{t("users.create.display_name")}</label>
@@ -385,6 +475,7 @@ function CreateModal({ onDone, onError, error }: { onDone: () => void; onError: 
 
 function EditModal({ user, onDone, onError, error }: { user: KaareUser; onDone: () => void; onError: (e: string) => void; error: string }) {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [f, setF] = useState({
     display_name: user.display_name,
     role: user.role,
@@ -410,7 +501,7 @@ function EditModal({ user, onDone, onError, error }: { user: KaareUser; onDone: 
   };
 
   return (
-    <div style={S.modal}>
+    <div style={{ ...S.modal, width: isMobile ? "calc(100vw - 32px)" : 420, maxHeight: "90vh", overflowY: "auto" }}>
       <div style={S.mTitle}>{t("users.edit.title", { name: user.display_name })}</div>
       <form onSubmit={submit}>
         <label style={S.label}>{t("users.edit.display_name")}</label>
@@ -454,6 +545,7 @@ function EditModal({ user, onDone, onError, error }: { user: KaareUser; onDone: 
 
 function PinModal({ user, onDone, onError, error }: { user: KaareUser; onDone: () => void; onError: (e: string) => void; error: string }) {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [pin, setPin] = useState("");
 
   const submit = async (e: React.FormEvent) => {
@@ -467,7 +559,7 @@ function PinModal({ user, onDone, onError, error }: { user: KaareUser; onDone: (
   };
 
   return (
-    <div style={S.modal}>
+    <div style={{ ...S.modal, width: isMobile ? "calc(100vw - 32px)" : 420, maxHeight: "90vh", overflowY: "auto" }}>
       <div style={S.mTitle}>{t("users.pin_modal.title", { name: user.display_name })}</div>
       <form onSubmit={submit}>
         <label style={S.label}>{t("users.pin_modal.new_pin")}</label>
@@ -487,6 +579,7 @@ function PinModal({ user, onDone, onError, error }: { user: KaareUser; onDone: (
 
 function VpnModal({ user, onDone, onError, error }: { user: KaareUser; onDone: () => void; onError: (e: string) => void; error: string }) {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [clients, setClients] = useState<VpnClient[]>([]);
   const [deviceName, setDeviceName] = useState("");
   const [generatedConfig, setGeneratedConfig] = useState<string | null>(null);
@@ -531,7 +624,7 @@ function VpnModal({ user, onDone, onError, error }: { user: KaareUser; onDone: (
   };
 
   return (
-    <div style={{ ...S.modal, width: 480 }}>
+    <div style={{ ...S.modal, width: isMobile ? "calc(100vw - 32px)" : 480, maxHeight: "90vh", overflowY: "auto" }}>
       <div style={S.mTitle}>{t("users.vpn_modal.title", { name: user.display_name })}</div>
 
       {clients.length > 0 && (
@@ -555,7 +648,7 @@ function VpnModal({ user, onDone, onError, error }: { user: KaareUser; onDone: (
 
       <form onSubmit={generate}>
         <label style={S.label}>{t("users.vpn_modal.new_device_label")}</label>
-        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: isMobile ? "wrap" : "nowrap" }}>
           <input
             style={{ ...S.input, flex: 1, marginBottom: 0 }}
             value={deviceName}
@@ -563,7 +656,7 @@ function VpnModal({ user, onDone, onError, error }: { user: KaareUser; onDone: (
             placeholder={t("users.vpn_modal.new_device_ph")}
             disabled={loading}
           />
-          <button type="submit" style={{ ...S.btn("#1a4a3a"), whiteSpace: "nowrap" }} disabled={loading}>
+          <button type="submit" style={{ ...S.btn("#1a4a3a"), whiteSpace: "nowrap", ...(isMobile ? { width: "100%", marginTop: 8 } : {}) }} disabled={loading}>
             {loading ? t("users.vpn_modal.generating") : t("users.vpn_modal.generate_qr")}
           </button>
         </div>
@@ -580,7 +673,7 @@ function VpnModal({ user, onDone, onError, error }: { user: KaareUser; onDone: (
             background: "#fff", padding: 16, borderRadius: 8,
             display: "inline-block",
           }}>
-            <QRCode value={generatedConfig} size={220} />
+            <QRCode value={generatedConfig} size={isMobile ? 200 : 220} />
           </div>
           <div style={{ marginTop: 12 }}>
             <details>
@@ -639,6 +732,7 @@ const MAX_RECORD_SEC = 15;
 
 function VoiceModal({ user, onDone, onError, error }: { user: KaareUser; onDone: () => void; onError: (e: string) => void; error: string }) {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [hasVoiceprint, setHasVoiceprint] = useState<boolean | null>(null);
   const [recordState, setRecordState] = useState<RecordState>("idle");
   const [elapsed, setElapsed] = useState(0);
@@ -728,7 +822,7 @@ function VoiceModal({ user, onDone, onError, error }: { user: KaareUser; onDone:
   const progress = Math.round((elapsed / MAX_RECORD_SEC) * 100);
 
   return (
-    <div style={{ ...S.modal, width: 460 }}>
+    <div style={{ ...S.modal, width: isMobile ? "calc(100vw - 32px)" : 460, maxHeight: "90vh", overflowY: "auto" }}>
       <div style={S.mTitle}>{t("users.voice_modal.title", { name: user.display_name })}</div>
 
       <div style={{ marginBottom: 20 }}>
@@ -762,7 +856,10 @@ function VoiceModal({ user, onDone, onError, error }: { user: KaareUser; onDone:
       </div>
 
       {recordState === "idle" || recordState === "done" || recordState === "error" ? (
-        <button style={S.btn("#1a4a3a")} onClick={startRecording}>
+        <button
+          style={{ ...S.btn("#1a4a3a"), ...(isMobile ? { width: "100%", padding: "14px 18px", fontSize: 16 } : {}) }}
+          onClick={startRecording}
+        >
           {hasVoiceprint ? t("users.voice_modal.re_record") : t("users.voice_modal.start")}
         </button>
       ) : recordState === "recording" ? (
@@ -797,6 +894,7 @@ function VoiceModal({ user, onDone, onError, error }: { user: KaareUser; onDone:
 
 function DeleteModal({ user, onDone, onError, error }: { user: KaareUser; onDone: () => void; onError: (e: string) => void; error: string }) {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
 
   const submit = async () => {
     try {
@@ -808,7 +906,7 @@ function DeleteModal({ user, onDone, onError, error }: { user: KaareUser; onDone
   };
 
   return (
-    <div style={S.modal}>
+    <div style={{ ...S.modal, width: isMobile ? "calc(100vw - 32px)" : 420, maxHeight: "90vh", overflowY: "auto" }}>
       <div style={S.mTitle}>{t("users.delete_modal.title")}</div>
       <p style={{ color: "#ccc" }}>{t("users.delete_modal.confirm", { name: user.display_name })}</p>
       {error && <div style={S.err}>{error}</div>}

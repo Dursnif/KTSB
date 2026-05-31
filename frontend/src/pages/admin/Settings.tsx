@@ -11,6 +11,7 @@ import TabKareInnstillinger from "./settings/TabKareInnstillinger";
 import TabIntegrasjoner from "./settings/TabIntegrasjoner";
 import TabDistribusjon from "./settings/TabDistribusjon";
 import TabAgenter from "./settings/TabAgenter";
+import TabForklaringer from "./settings/TabForklaringer";
 
 export default function Settings() {
   const { t } = useTranslation();
@@ -36,6 +37,7 @@ export default function Settings() {
             <TabsTrigger value="integrasjoner" className="gap-1 whitespace-nowrap">{dot("#55efc4")}{t("settings.tabs.integrasjoner")}</TabsTrigger>
             <TabsTrigger value="distribusjon"  className="gap-1 whitespace-nowrap">{dot("#fdcb6e")}{t("settings.tabs.distribusjon")}</TabsTrigger>
             <TabsTrigger value="agenter"       className="gap-1 whitespace-nowrap">{dot("#74b9ff")}{t("settings.tabs.agenter")}</TabsTrigger>
+            <TabsTrigger value="forklaringer"  className="gap-1 whitespace-nowrap">{dot("#c0c0c0")}{t("settings.tabs.forklaringer")}</TabsTrigger>
           </TabsList>
         </div>
 
@@ -50,6 +52,7 @@ export default function Settings() {
         <TabsContent value="integrasjoner"> <div data-tab="integrasjoner"><TabIntegrasjoner /></div></TabsContent>
         <TabsContent value="distribusjon">  <div data-tab="distribusjon"><TabDistribusjon /></div></TabsContent>
         <TabsContent value="agenter">       <div data-tab="agenter"><TabAgenter /></div></TabsContent>
+        <TabsContent value="forklaringer">  <div data-tab="forklaringer"><TabForklaringer /></div></TabsContent>
       </Tabs>
     </div>
   );

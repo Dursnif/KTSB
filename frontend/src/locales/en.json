@@ -71,7 +71,8 @@
       "kare": "Kåre Settings",
       "integrasjoner": "Integrations",
       "distribusjon": "Distribution",
-      "agenter": "Agent Settings"
+      "agenter": "Agent Settings",
+      "forklaringer": "Explanations"
     },
     "generelt": {
       "location": {
@@ -1253,6 +1254,258 @@
     "preview_user": "This is how your messages look now",
     "preview_kare": "And this is how Kåre replies to you",
     "reset": "Reset to defaults"
+  },
+  "forklaringer": {
+    "title": "What is what in Kåre?",
+    "subtitle": "Explanation of all pages and features — for users without a technical background",
+    "group_overview": "Overview and users",
+    "group_admin": "Administration and maintenance",
+    "group_internal": "Kåre's inner life",
+    "group_settings": "Settings",
+    "group_user": "As a user",
+    "dashboard": {
+      "title": "Dashboard",
+      "summary": "Real-time overview of Kåre's services",
+      "body": "The dashboard shows the status for all running services. A green dot means OK, red means there's a problem. Press «Refresh» for the latest status.",
+      "item_1": "Green dot = service is responding normally",
+      "item_2": "Red dot = service is down or unreachable",
+      "item_3": "The model card shows the active AI model and latest response time",
+      "item_4": "The «Refresh» button fetches fresh status from all services"
+    },
+    "users": {
+      "title": "Users",
+      "summary": "Manage users, roles and permissions",
+      "body": "Each family member has their own account with a role, PIN and individual permissions. The role determines what Kåre can help with.",
+      "roles_intro": "The user role determines what Kåre can help with:",
+      "roles": {
+        "child": "Child — Limited to child-friendly content. No smart home control.",
+        "teen": "Teen — Internet access and more of Kåre, with some restrictions.",
+        "young_adult": "Young adult — Full access except admin functions.",
+        "adult": "Adult — Full access to all user features.",
+        "admin": "Admin — Controls the entire system, including settings and other users."
+      },
+      "vpn_intro": "VPN access level determines what the user can do from outside the home network:",
+      "vpn": {
+        "local_only": "Local only — VPN access is blocked for this user.",
+        "ai_only": "Kåre only — Can chat via VPN, but cannot control smart home.",
+        "full_access": "Full access — Can do everything via VPN, including smart home control."
+      },
+      "tools_intro": "Tools are actions Kåre can perform. Under Settings → Agent settings you choose what each role has access to:",
+      "tools": {
+        "styr_enhet": "Turn lights, heating and other HA devices on/off",
+        "les_ha": "Fetch status from sensors and devices in the smart home system",
+        "timer": "Set reminders and countdowns",
+        "get_weather": "Fetch weather forecast for home location",
+        "library": "Search local Wikipedia copy (Miss Library)",
+        "søk_nett": "Search the internet via DuckDuckGo, SearXNG or Brave",
+        "kare_image": "Generate images with AI (FLUX via HuggingFace)",
+        "se_bilder": "View previously generated images",
+        "media": "Play music, radio and Plex content",
+        "notat": "Write and read notes in Kåre's notepad",
+        "announce": "Send voice announcements to speakers in the house",
+        "reason_freely": "Kåre thinks carefully through complex questions",
+        "minne": "Search and retrieve older conversations from long-term memory",
+        "kamera": "Take a photo from Frigate cameras and fetch motion events",
+        "søk_i_argus": "Search system log and event history",
+        "les_møte": "Read minutes from reflection meetings",
+        "mechanic": "Delegate technical tasks to Mechanic",
+        "utforsk_kode": "Read files and code on the system (admin only)",
+        "inspiser_system": "Check services, logs and resource usage",
+        "ssh_kommando": "Run commands on other machines on the network",
+        "local_kommando": "Run commands directly on the AI PC",
+        "restart_docker_container": "Restart Docker containers"
+      },
+      "pin": "PIN is a numeric code that protects the account. Used for login and to unlock private meeting minutes.",
+      "voice_reg": "Voice registration lets Kåre recognise who is speaking. The user reads a few sentences and Kåre learns the voice profile.",
+      "vpn_qr": "The VPN QR code contains all settings for connecting to the home network from outside. Scan it in the WireGuard app.",
+      "warning_delete": "⚠ Deleting a user is irreversible — all history and profile disappear permanently.",
+      "warning_vpn": "⚠ Deleting a VPN profile immediately removes external access for that user."
+    },
+    "vedlikehold": {
+      "title": "Maintenance",
+      "summary": "System maintenance, refresh and reset",
+      "body": "Maintenance gives you control over Kåre's runtime without the terminal.",
+      "item_1": "Hot-reload — updates aliases and settings without a restart. Kåre stays available the whole time.",
+      "item_2": "Full restart — restarts the Kåre service. Takes 5–30 seconds.",
+      "item_3": "System check — verifies that all services respond and connections work.",
+      "item_4": "Memory compression — transfers short-term memory (STM) to long-term memory (LTM). Runs automatically each night.",
+      "item_5": "⚠ Rollback — resets ALL settings to factory defaults. Custom settings are lost."
+    },
+    "verktoy": {
+      "title": "Tools",
+      "summary": "Insight into Kåre's tool usage and active timers",
+      "body": "The tools page is read-only — you can see what Kåre has done, but cannot control anything here.",
+      "item_1": "The timer overview shows active countdowns and reminders Kåre is tracking.",
+      "item_2": "The tool log shows the most recent actions Kåre has performed.",
+      "item_3": "You can see who asked for what, the timestamp, and whether it succeeded."
+    },
+    "aliaser": {
+      "title": "Aliases",
+      "summary": "Norwegian names and synonyms for smart home devices",
+      "body": "Aliases let you speak naturally to Kåre. Instead of «light.living_room» you say «the living room light» and Kåre knows what you mean.",
+      "item_1": "Aliases — maps text to a HA entity ID (e.g. «the living room light» → «light.living_room»)",
+      "item_2": "Rooms — defines room names and synonyms (e.g. «lounge» = «living room»)",
+      "item_3": "Room entities — lists which devices belong to each room",
+      "item_4": "Changes take effect immediately (hot-reload) — no restart needed"
+    },
+    "noder": {
+      "title": "Nodes",
+      "summary": "TTS speakers and media devices Kåre can speak through",
+      "body": "A «node» is an audio device Kåre can speak through or send music to — smart speaker, TV, Chromecast or custom board.",
+      "types_intro": "Supported node types:",
+      "types": {
+        "ha_media_player": "HA Media Player — Device controlled by Home Assistant (Nest Hub, Google TV, smart speaker via HA)",
+        "esp32": "ESP32 — Custom microcontroller board with speaker",
+        "wyoming": "Wyoming — Voice satellites with microphone in and audio out (HA Voice protocol)",
+        "chromecast": "Chromecast — Google Chromecast or Google TV, direct connection",
+        "snapcast": "Snapcast — Synchronised multiroom audio over the local network",
+        "airplay": "AirPlay — Apple protocol for wireless audio (HomePod, Apple TV, AirPlay speakers)",
+        "dlna": "DLNA — Standard for wireless audio to compatible TVs and stereos"
+      }
+    },
+    "kameraer": {
+      "title": "Cameras",
+      "summary": "Settings for Frigate camera analysis",
+      "item_1": "Cameras are connected via the Frigate integration under Settings → Integrations.",
+      "item_2": "Confidence level — How certain Kåre must be about a detection (e.g. that it's a person) before reporting it. High = fewer false alarms.",
+      "item_3": "Storage limit — Maximum number of images and total size (MB) Kåre stores per user.",
+      "item_4": "Snapshot — Kåre takes an instant photo from a camera on request.",
+      "item_5": "Events — Kåre fetches motion events and object detection from Frigate."
+    },
+    "agenter": {
+      "title": "Agent Messages",
+      "summary": "Messages from Kåre's inner agents",
+      "body": "Kåre does not work alone. Several agents contribute behind the scenes. This page shows messages and thoughts they have shared — read-only.",
+      "miss_kare": "Miss Kåre — Evaluates Kåre's responses in real time. Adds side comments and alerts Kåre to inaccuracies. Runs on the 9B model.",
+      "miss_library": "Miss Library — A dusty librarian AI. Searches local Wikipedia and the internet when Kåre needs facts.",
+      "mechanic": "Mechanic — A technical assistant Kåre can delegate tasks to. Thinks independently and delivers answers.",
+      "jing": "Jing — Kåre's fast inner voice. Runs on the NUC machine, sends short thoughts.",
+      "jang": "Jang — Kåre's deep, slow inner voice. Runs nightly reflections and sends longer thoughts."
+    },
+    "refleksjoner": {
+      "title": "Reflections",
+      "summary": "Kåre's nightly meetings and self-development",
+      "body": "Kåre holds two meetings every night. It is his way of learning from the day and growing as an assistant.",
+      "item_1": "Reflection meeting (04:00) — Kåre and Miss Kåre review the day's conversations. Kåre updates his self-description and world model.",
+      "item_2": "Developer meeting (05:30) — Technical review of system health, errors and improvement suggestions.",
+      "item_3": "PIN protection — Meeting minutes are locked with the user's PIN. Only you can read your own minutes.",
+      "item_4": "Topic field — You can suggest a topic for Kåre to address in the next nightly meeting."
+    },
+    "innst_generelt": {
+      "title": "Settings → General",
+      "summary": "Location, time zone and language",
+      "item_1": "Location — Home location used for weather, sunrise/sunset and geographic context. Stored locally.",
+      "item_2": "Time zone — Kåre uses this to understand time and date correctly.",
+      "item_3": "Language — Kåre's response language and GUI language. Choose between Norwegian, English and German."
+    },
+    "innst_ha": {
+      "title": "Settings → Home Assistant",
+      "summary": "Connection to the smart home hub",
+      "body": "Home Assistant (HA) is the brain of the smart home system. Kåre uses HA to control lights, heating and sensors.",
+      "item_1": "HA URL — The address of Home Assistant on the local network (e.g. http://192.168.0.100:8123).",
+      "item_2": "Token — A one-time key you create in HA under Profile → Long-lived access tokens. Kåre uses this to authenticate.",
+      "item_3": "Timeout — How long Kåre waits for a response from HA. Increase if the network is slow."
+    },
+    "innst_mqtt": {
+      "title": "Settings → MQTT / VPN",
+      "summary": "Message protocol and VPN access from outside",
+      "item_1": "MQTT — Lightweight message protocol used by Frigate to send camera events to Kåre. Only needed if you use Frigate cameras.",
+      "item_2": "MQTT broker — The server that relays MQTT messages. Usually the Mosquitto add-on in Home Assistant.",
+      "item_3": "WireGuard VPN — Lets you use Kåre securely from outside your home network. Generate QR codes for users on the Users page.",
+      "item_4": "DuckDNS — Free DNS service that gives your home a fixed domain name even if the IP address changes. Used by VPN."
+    },
+    "innst_llm": {
+      "title": "Settings → LLM / Models",
+      "summary": "Kåre's AI brain and supporting models",
+      "body": "LLM (Large Language Model) is the AI model that makes Kåre intelligent. Here you configure which models are used for what.",
+      "role_kare": "Kåre — The main model. Answers all questions. Runs locally on GPU.",
+      "role_miss_kare": "Miss Kåre — The evaluator model. Checks Kåre's responses. Runs on a dedicated GPU.",
+      "role_library": "Miss Library — The library model. Searches wiki and the internet.",
+      "role_mechanic": "Mechanic — Technical assistant. Shares hardware with Miss Kåre.",
+      "role_fallback": "Fallback — Used if the main model is unavailable.",
+      "role_sky": "Cloud — Cloud-based model (DeepSeek) as a safety net when local capacity is full.",
+      "item_1": "Whisper — The speech-to-text model. Converts your voice to text Kåre can understand.",
+      "item_2": "Embedding — Creates searchable memory. Used for semantic memory search.",
+      "item_3": "Local vs. cloud — Local models are faster and private. Cloud is a safety net if something fails.",
+      "item_4": "num_ctx — The context window. How much of the conversation the model remembers in one run."
+    },
+    "innst_refleksjon": {
+      "title": "Settings → Reflection",
+      "summary": "Adjust Kåre's nightly meetings",
+      "item_1": "Meeting leader style — The tone of the meetings: Standard, Strict, Exploratory or Custom.",
+      "item_2": "Enabled/Disabled — Temporarily turn off reflection meetings.",
+      "item_3": "Max rounds — Number of exchanges between Kåre and Miss Kåre per meeting.",
+      "item_4": "Jang interval — How often Jang sends thought messages to Kåre between meetings."
+    },
+    "innst_nett": {
+      "title": "Settings → Web Search & Weather",
+      "summary": "Search provider, weather and local sensors",
+      "item_1": "Search provider — DuckDuckGo (default, no account), SearXNG (self-hosted) or Brave Search.",
+      "item_2": "Weather provider — met.no, OpenWeatherMap, PirateWeather, WeatherAPI or local HA sensors.",
+      "item_3": "Local HA sensors — Kåre can read indoor sensors (temperature, humidity) from Home Assistant.",
+      "item_4": "Tide — Tide data from the Norwegian Mapping Authority (Norwegian coastal locations).",
+      "item_5": "Trusted sources — Domains Kåre prefers and filters in web searches."
+    },
+    "innst_bilder": {
+      "title": "Settings → Images",
+      "summary": "Image generation and storage limits",
+      "item_1": "Kåre can generate images with AI (FLUX model via HuggingFace).",
+      "item_2": "Storage limit per user — Maximum number of images and total size (MB).",
+      "item_3": "Images are stored locally and only visible to the user who requested them.",
+      "item_4": "Old images are deleted automatically when the limit is reached (oldest first)."
+    },
+    "innst_kare": {
+      "title": "Settings → Kåre Settings",
+      "summary": "Personality, name and contributors",
+      "item_1": "Assistant name — What Kåre is called in your home. Default is «Kåre», but you can choose freely.",
+      "item_2": "Hotword — The activation word Kåre listens for to start voice recognition.",
+      "item_3": "Personality mode — Determines the depth and tone of Kåre's responses:",
+      "item_4": "Minimal — Extra fast. Short and concise answers, almost no personality.",
+      "item_5": "Lightweight — Balanced. Friendly and helpful, but not too long.",
+      "item_6": "Standard — Full personality with humour, honesty and curiosity.",
+      "item_7": "Complete — Uses all context: inner thoughts, self-image and world model.",
+      "item_8": "Custom — You write Kåre's personality yourself.",
+      "item_9": "Who influences Kåre — Choose which users can shape Kåre's personality through conversations."
+    },
+    "innst_integrasjoner": {
+      "title": "Settings → Integrations",
+      "summary": "Frigate camera NVR and Plex media server",
+      "item_1": "Frigate — Camera NVR with AI detection. Kåre uses Frigate to take photos and fetch events.",
+      "item_2": "Plex — Media server (NAS or PC). Kåre can search Plex and cast media to TV.",
+      "item_3": "Plex token — Obtained from your Plex account and lets Kåre communicate with the server."
+    },
+    "innst_distribusjon": {
+      "title": "Settings → Distribution",
+      "summary": "Profile, domains and active services",
+      "item_1": "Profile — Full (GPU + all services), Medium (limited GPU) or Lightweight (CPU only).",
+      "item_2": "The profile determines which services are available, but not which LLM provider you use.",
+      "item_3": "Domains — Kåre's local and external addresses (for VPN and reverse proxy).",
+      "item_4": "Services — Shows which background services (embedding, wiki, Qdrant) are enabled."
+    },
+    "innst_agenter": {
+      "title": "Settings → Agent Settings",
+      "summary": "Configure Mechanic and Miss Kåre's permissions",
+      "item_1": "Mechanic — Choose which tools Mechanic can use on behalf of Kåre.",
+      "item_2": "Miss Kåre — Choose whether and how Miss Kåre participates in reflection meetings.",
+      "item_3": "Tool matrix — Adjust which tools are allowed per user role. Changes take effect immediately."
+    },
+    "bruker_chat": {
+      "title": "Chat (Home page)",
+      "summary": "Kåre's main conversation interface",
+      "item_1": "Text field — Type your message and press Enter or the Send button.",
+      "item_2": "Voice button — Hold to speak. Kåre transcribes and responds by voice.",
+      "item_3": "Images — Drag and drop an image into the chat, or click the image icon to analyse it.",
+      "item_4": "Miss Kåre panel — Shown below Kåre's response with side comments and alternative perspectives.",
+      "item_5": "Trace view — Press the arrow below a response to see which tools Kåre used."
+    },
+    "bruker_refleksjoner": {
+      "title": "My reflections",
+      "summary": "Personal meeting minutes from Kåre's nightly meetings",
+      "item_1": "Shows all reflection meetings where you were the topic.",
+      "item_2": "PIN protection — Enter your PIN to read the content. Only you have access.",
+      "item_3": "Meeting minutes are stored locally and never sent to third parties.",
+      "item_4": "PIN buffering — Kåre remembers your PIN within the same browser session so you do not need to enter it for each meeting."
+    }
   },
   "personality_variants": {
     "standard": "Standard",

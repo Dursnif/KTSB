@@ -1,0 +1,11 @@
+{
+  "name": "Kåre The Smart Butler",
+  "short_name": "Kåre",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d0d0d",
+  "theme_color": "#7c6aff",
+  "icons": [
+    { "src": "/vite.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
