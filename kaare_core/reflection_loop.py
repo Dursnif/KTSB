@@ -138,7 +138,7 @@ async def _run_jang_reflection() -> None:
             result = await ask_llm_with_tools(
                 messages=messages,
                 tools=tools,
-                rid=f"jang-{int(time.time()*1000)}",
+                rid=f"rid-refl-{int(time.time()*1000)}",
                 user_id="kare",
             )
         except Exception as e:

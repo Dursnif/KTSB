@@ -208,6 +208,8 @@
       "think_enabled": "Aktiviert (vollständiges Reasoning)",
       "think_disabled": "Deaktiviert",
       "role_fallback_desc": "Schritt 2 von 3 — aktiviert wenn 27B fehlschlägt, Cloud-LLM ist letzter Ausweg",
+      "share_with_label": "Modell mit Miss Kåre teilen",
+      "share_with_active_note": "Mechanic teilt Modell und Einstellungen mit Miss Kåre. Im Miss-Kåre-Karte ändern. Erfordert Neustart von kaare-agents.",
       "providers": {
         "ollama": "Ollama (lokal)",
         "vllm": "vLLM (lokal, OpenAI-kompatibel)",

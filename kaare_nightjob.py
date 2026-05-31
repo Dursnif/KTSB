@@ -199,19 +199,13 @@ def _build_stm_summary_prompt(interactions: list[dict]) -> str:
 
 
 async def compress_daily_stm(conn: sqlite3.Connection) -> None:
-    """Compress yesterday's interactions into a single daily STM summary and save to DB."""
+    """Compress yesterday's interactions into per-user daily STM summaries and save to DB."""
+    from collections import defaultdict
     from datetime import date, timedelta
     from kaare_core.memory.long_term import save_daily_summary
 
     today     = date.today().isoformat()
     yesterday = (date.today() - timedelta(days=1)).isoformat()
-
-    existing = conn.execute(
-        "SELECT id FROM stm_daily_summary WHERE date = ?", (today,)
-    ).fetchone()
-    if existing:
-        log.info("STM daily summary for %s already exists — skipping.", today)
-        return
 
     rows = conn.execute(
         """SELECT id, ts, user_id, prompt, response, entity_id, intent, outcome
@@ -225,29 +219,36 @@ async def compress_daily_stm(conn: sqlite3.Connection) -> None:
         log.info("No interactions for %s — skipping STM daily summary.", yesterday)
         return
 
-    interactions = [
-        dict(zip(["id", "ts", "user_id", "prompt", "response", "entity_id", "intent", "outcome"], r))
-        for r in rows
-    ]
-    log.info("Building STM daily summary for %s (%d interactions).", yesterday, len(interactions))
+    fields = ["id", "ts", "user_id", "prompt", "response", "entity_id", "intent", "outcome"]
+    by_user: dict[str, list] = defaultdict(list)
+    for r in rows:
+        ix = dict(zip(fields, r))
+        by_user[ix["user_id"]].append(ix)
 
-    prompt = _build_stm_summary_prompt(interactions)
-    result = await _llm_chat(
-        "default",
-        [{"role": "user", "content": prompt}],
-        options={"temperature": 0.2, "num_predict": 350},
-    )
-    if not result.get("ok"):
-        log.warning("STM daily summary LLM call failed: %s", result.get("error", "ukjent"))
-        return
-    summary = result.get("text", "").strip()
+    for uid, interactions in by_user.items():
+        existing = conn.execute(
+            "SELECT id FROM stm_daily_summary WHERE date = ? AND user_id = ?", (today, uid)
+        ).fetchone()
+        if existing:
+            log.info("STM daily summary for %s/%s already exists — skipping.", today, uid)
+            continue
 
-    if not summary:
-        log.warning("LLM returned empty STM daily summary — skipping.")
-        return
-
-    save_daily_summary(today, summary, len(interactions))
-    log.info("STM daily summary saved for %s: %s…", today, summary[:120])
+        log.info("Building STM daily summary for %s user=%s (%d interactions).", yesterday, uid, len(interactions))
+        prompt = _build_stm_summary_prompt(interactions)
+        result = await _llm_chat(
+            "default",
+            [{"role": "user", "content": prompt}],
+            options={"temperature": 0.2, "num_predict": 350},
+        )
+        if not result.get("ok"):
+            log.warning("STM daily summary LLM call failed for %s: %s", uid, result.get("error", "ukjent"))
+            continue
+        summary = result.get("text", "").strip()
+        if not summary:
+            log.warning("LLM returned empty STM daily summary for %s — skipping.", uid)
+            continue
+        save_daily_summary(today, summary, len(interactions), user_id=uid)
+        log.info("STM daily summary saved for %s/%s: %s…", today, uid, summary[:80])
 
 
 # ──────────────────────────────────────────────────────────────────────────────

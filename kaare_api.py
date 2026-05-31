@@ -25,7 +25,7 @@ from kaare_core.agents.miss_kare.evaluator import evaluate as _miss_kare_evaluat
 from kaare_core.agents.miss_kare.stm import MissKareSTM
 from kaare_core.config import get_model, get_service, reload_capability_services
 from kaare_core.ha.clarification import ha_clarification_rescue
-from kaare_core.memory.short_term import ShortTermMemory
+from kaare_core.memory.short_term import ShortTermMemory, STMRegistry
 from kaare_core.routers.router_generate import handle_generate
 from kaare_core.routers.router_users import router as users_router
 from kaare_core.users import store as _user_store
@@ -232,27 +232,11 @@ _logging.getLogger("uvicorn.access").addFilter(_SuppressPolls())
 async def _startup():
     from kaare_core.tools.timer_service import restore_timers
     restore_timers()
-    _load_stm_snapshot()
-    _load_stm_daily_summary()
-    _configure_stm_autosave()
+    _restore_stm()
     asyncio.create_task(_start_mqtt())
     from kaare_core.reflection_loop import start_reflection_loop
     asyncio.create_task(start_reflection_loop())
     asyncio.create_task(_stm_snapshot_loop())
-
-
-def _load_stm_daily_summary() -> None:
-    """Load yesterday's compressed STM summary into RAM at startup."""
-    try:
-        from kaare_core.memory.long_term import load_latest_daily_summary
-        summary = load_latest_daily_summary()
-        if summary:
-            app_state.STM.set_daily_summary(summary)
-            import logging
-            logging.getLogger("kaare_api").info("STM daily summary loaded (%d chars)", len(summary))
-    except Exception as e:
-        import logging
-        logging.getLogger("kaare_api").warning("Could not load STM daily summary: %s", e)
 
 
 def _stm_cfg() -> dict:
@@ -262,42 +246,43 @@ def _stm_cfg() -> dict:
         return {}
 
 
-def _configure_stm_autosave() -> None:
-    """Tell STM where to autosave after each mutation."""
-    cfg = _stm_cfg()
-    path = cfg.get("snapshot_path", "/kaare/state/stm_snapshot.json")
-    interval = float(cfg.get("autosave_min_interval_seconds", 5.0))
-    app_state.STM.configure_autosave(path, min_interval=interval)
+def _restore_stm() -> None:
+    """Migrate legacy snapshot to per-user files, load snapshots, load per-user daily summaries."""
     import logging
-    logging.getLogger("kaare_api").info("STM autosave configured: %s (min interval %.0fs)", path, interval)
-
-
-def _load_stm_snapshot() -> None:
-    """Restore STM from the last periodic snapshot if it exists."""
-    cfg = _stm_cfg()
-    path = cfg.get("snapshot_path", "/kaare/state/stm_snapshot.json")
+    logger = logging.getLogger("kaare_api")
+    new_dir = "/kaare/state/stm_users"
+    old_path = "/kaare/state/stm_snapshot.json"
     try:
-        ok = app_state.STM.load_snapshot(path)
-        import logging
-        if ok:
-            counts = app_state.STM.snapshot_counts()
-            logging.getLogger("kaare_api").info(
-                "STM snapshot restored: %d dialog turns, %d actions, %d state keys",
-                counts["dialog_turns"], counts["actions"], counts["state_keys"],
-            )
+        if not Path(new_dir).exists() and Path(old_path).exists():
+            migrated = app_state.STM_REGISTRY.migrate_legacy_snapshot(old_path, new_dir)
+            if migrated:
+                logger.info("STM: migrated legacy snapshot to per-user files in %s", new_dir)
+        app_state.STM_REGISTRY.load_snapshots(new_dir)
+        counts = app_state.STM_REGISTRY.snapshot_counts()
+        logger.info("STM snapshots restored: %s", counts)
     except Exception as e:
-        import logging
-        logging.getLogger("kaare_api").warning("Could not load STM snapshot: %s", e)
+        logger.warning("STM restore failed: %s", e)
+    try:
+        from kaare_core.memory.long_term import load_latest_daily_summary
+        from kaare_core.users.store import list_users
+        all_user_ids = [u["username"] for u in list_users()] + ["global"]
+        for uid in all_user_ids:
+            summary = load_latest_daily_summary(user_id=uid)
+            if summary:
+                app_state.STM_REGISTRY.get(uid).set_daily_summary(summary)
+                logger.info("STM daily summary loaded for %s (%d chars)", uid, len(summary))
+    except Exception as e:
+        logger.warning("Could not load STM daily summaries: %s", e)
 
 
 async def _stm_snapshot_loop() -> None:
-    """Background task: save STM snapshot every N seconds; rotate daily history."""
+    """Background task: save per-user STM snapshots every N seconds; rotate daily history."""
     from datetime import timedelta
     import logging
     logger = logging.getLogger("kaare_api")
 
     cfg = _stm_cfg()
-    snapshot_path = cfg.get("snapshot_path", "/kaare/state/stm_snapshot.json")
+    snapshot_dir = "/kaare/state/stm_users"
     history_dir = Path(cfg.get("history_dir", "/kaare/state/stm_history"))
     interval = int(cfg.get("snapshot_interval_seconds", 300))
     history_days = int(cfg.get("history_days", 7))
@@ -307,23 +292,23 @@ async def _stm_snapshot_loop() -> None:
     while True:
         await asyncio.sleep(interval)
         try:
-            app_state.STM.save_snapshot(snapshot_path)
+            app_state.STM_REGISTRY.snapshot_all(snapshot_dir)
 
             today = datetime.now(timezone.utc).date()
             if today != last_date:
-                # Save yesterday as a dated archive
-                daily_path = str(history_dir / f"{last_date.isoformat()}.json")
-                app_state.STM.save_snapshot(daily_path)
+                daily_dir = history_dir / last_date.isoformat()
+                app_state.STM_REGISTRY.snapshot_all(str(daily_dir))
                 last_date = today
-                logger.info("STM daily snapshot saved: %s", daily_path)
+                logger.info("STM daily snapshot saved: %s", daily_dir)
 
-                # Prune snapshots older than history_days
+                # Prune history older than history_days
                 if history_dir.exists():
                     cutoff = today - timedelta(days=history_days)
-                    for f in history_dir.glob("*.json"):
+                    for f in history_dir.glob("????-??-??"):
                         try:
-                            if datetime.strptime(f.stem, "%Y-%m-%d").date() < cutoff:
-                                f.unlink()
+                            if datetime.strptime(f.name, "%Y-%m-%d").date() < cutoff:
+                                import shutil
+                                shutil.rmtree(f)
                                 logger.info("STM history pruned: %s", f.name)
                         except Exception:
                             pass
@@ -385,12 +370,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SecurityHeadersMiddleware)
 
 
-def _create_stm() -> ShortTermMemory:
-    """Create STM with parameters from settings.yaml, falling back to safe defaults."""
+def _create_stm_registry() -> STMRegistry:
+    """Create STMRegistry with per-user STM parameters from settings.yaml."""
     try:
         cfg = yaml.safe_load(Path("/kaare/configs/settings.yaml").read_text())
         c = cfg.get("stm", {})
-        return ShortTermMemory(
+        kwargs = dict(
             dialog_max_turns=int(c.get("dialog_max_turns", 40)),
             dialog_max_text=int(c.get("dialog_max_text", 600)),
             actions_max=int(c.get("actions_max", 80)),
@@ -404,11 +389,12 @@ def _create_stm() -> ShortTermMemory:
     except Exception as _e:
         import logging as _l
         _l.getLogger("kaare_api").warning("STM config read failed, using defaults: %s", _e)
-        return ShortTermMemory()
+        kwargs = {}
+    return STMRegistry(stm_kwargs=kwargs)
 
 
 # Parameters come from configs/settings.yaml [stm:]
-app_state.STM = _create_stm()
+app_state.STM_REGISTRY = _create_stm_registry()
 
 if _voice_manager_ok:
     register_voice_endpoints(app)
@@ -683,10 +669,11 @@ async def generate(request: PromptRequest, http: Request):
             _route_log("fastpath_done", rid=rid, ha_result=out)
 
             _fp_text = _action_text(fast["action"], fast["entity_id"])
-            app_state.STM.add_dialog(role="user", text=prompt, user_id=user_id)
-            app_state.STM.record_action(fast["action"], fast["entity_id"], ok=True, user_id=user_id, meta={"source": "fastpath"})
-            app_state.STM.set_entity_state(fast["entity_id"], fast["action"], source="fastpath")
-            app_state.STM.add_dialog(role="assistant", text=_fp_text, user_id=user_id)
+            _user_stm = app_state.get_stm(user_id)
+            _user_stm.add_dialog(role="user", text=prompt, user_id=user_id)
+            _user_stm.record_action(fast["action"], fast["entity_id"], ok=True, user_id=user_id, meta={"source": "fastpath"})
+            app_state.STM_REGISTRY.set_entity_state(fast["entity_id"], fast["action"], source="fastpath")
+            _user_stm.add_dialog(role="assistant", text=_fp_text, user_id=user_id)
             return {"text": _fp_text}
 
         except Exception as e:
@@ -704,7 +691,7 @@ async def generate(request: PromptRequest, http: Request):
         source=source,
         rid=rid,
         user_id=user_id,
-        memory=app_state.STM,
+        memory=app_state.get_stm(user_id),
         miss_kare_addressed=mk_addressed,
         api_intent_to_ha=api_intent_to_ha,
         api_exec_ha_direct=exec_ha_direct,
@@ -755,9 +742,10 @@ async def api_chat_history(user_id: str = "global", limit: int = 60, _u=Depends(
     Only returns user/assistant turns (skips internal system turns).
     """
     limit = max(1, min(limit, 200))
-    with app_state.STM._lock:
+    _user_stm = app_state.get_stm(user_id)
+    with _user_stm._lock:
         turns = [
-            t for t in app_state.STM._dialog
+            t for t in _user_stm._dialog
             if t.user_id == user_id and t.role in ("user", "assistant")
         ]
     turns = turns[-limit:]

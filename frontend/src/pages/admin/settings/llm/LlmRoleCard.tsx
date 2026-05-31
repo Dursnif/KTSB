@@ -73,6 +73,9 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
   const [gpuSaving, setGpuSaving]                 = useState(false);
   const pollingRef                                 = useRef<ReturnType<typeof setInterval> | null>(null);
   const [keepWarm, setKeepWarm]                    = useState<boolean>(config.keep_warm ?? false);
+  const isMechanic = role === "mechanic";
+  const [shareWith, setShareWith]                  = useState<string | null>(config.share_with ?? null);
+  const isShared = isMechanic && !!shareWith;
   const [warmup, setWarmup]                        = useState<WarmupStatus>({ status: "idle" });
   const warmupPollRef                              = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -278,6 +281,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
         if (apiKey) payload.api_key = apiKey;
       }
       if (isToggleable) payload.enabled = agentEnabled;
+      if (isMechanic) payload.share_with = shareWith ?? null;
       await apiPutLlmRole(role, payload as Parameters<typeof apiPutLlmRole>[1]);
       setApiKey("");
       ss.saved();
@@ -349,6 +353,12 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
                 <Switch checked={agentEnabled} onCheckedChange={toggleEnabled} className="data-checked:bg-green-600 data-unchecked:bg-red-600" />
               </div>
             )}
+            {isMechanic && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{t("settings.llm.share_with_label")}</span>
+                <Switch checked={!!shareWith} onCheckedChange={v => setShareWith(v ? "miss_kare" : null)} />
+              </div>
+            )}
             <Badge variant="outline" className="font-mono text-xs">{role}</Badge>
           </div>
         </div>
@@ -367,7 +377,17 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
           </Button>
         </div>
       </CardHeader>
-      {!collapsed && <CardContent>
+      {!collapsed && isShared && (
+        <CardContent>
+          <p className="text-sm text-muted-foreground italic py-2">{t("settings.llm.share_with_active_note")}</p>
+          <Button onClick={save} disabled={ss.state === "saving"} size="sm" className="mt-2">
+            {ss.state === "saving" ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+            {t("common.save")}
+          </Button>
+          <SaveFeedback state={ss.state} />
+        </CardContent>
+      )}
+      {!collapsed && !isShared && <CardContent>
         <div className="divide-y divide-border">
           <FieldRow label={t("settings.llm.model_label")} hint={t("settings.llm.model_hint")}>
             <input
@@ -921,3 +941,4 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
     </Card>
   );
 }
+

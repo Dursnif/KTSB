@@ -91,8 +91,15 @@ def get_model(role: str) -> str:
 
 
 def get_llm_config(section: str) -> dict:
-    """Return the full llm.yaml section (options, timeout, base_url, …) for a role."""
-    return _LLM_CFG[section]
+    """Return effective llm.yaml config for a role. Resolves share_with transparently."""
+    cfg = _LLM_CFG[section]
+    shared = cfg.get("share_with")
+    if not shared:
+        return cfg
+    base = dict(_LLM_CFG[shared])
+    base["share_with"] = shared
+    base["enabled"] = cfg.get("enabled", True)
+    return base
 
 
 def get_local_tz() -> ZoneInfo:

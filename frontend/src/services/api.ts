@@ -325,6 +325,7 @@ export type LlmRoleConfig = {
   keep_warm?: boolean;
   ollama_env?: OllamaEnvConfig;
   container?: string | null;
+  share_with?: string | null;
 };
 
 export async function apiGetLlmSettings(): Promise<Record<string, LlmRoleConfig>> {

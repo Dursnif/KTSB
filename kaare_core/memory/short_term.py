@@ -458,3 +458,90 @@ class ShortTermMemory:
             return True
         except Exception:
             return False
+
+
+class STMRegistry:
+    """Holds one ShortTermMemory per user_id (lazy create). Entity state is broadcast to all users."""
+
+    def __init__(self, stm_kwargs: dict | None = None) -> None:
+        self._kwargs = stm_kwargs or {}
+        self._users: dict[str, ShortTermMemory] = {}
+        self._lock = RLock()
+
+    def get(self, user_id: str) -> ShortTermMemory:
+        with self._lock:
+            if user_id not in self._users:
+                self._users[user_id] = ShortTermMemory(**self._kwargs)
+            return self._users[user_id]
+
+    def set_entity_state(self, entity_id: str, state_value: Any,
+                         source: str = "ha", meta: dict | None = None) -> None:
+        with self._lock:
+            for stm in self._users.values():
+                stm.set_entity_state(entity_id, state_value, source, meta)
+
+    def set_state(self, key: str, value: Any, source: str = "unknown",
+                  meta: dict | None = None) -> None:
+        with self._lock:
+            for stm in self._users.values():
+                stm.set_state(key, value, source, meta)
+
+    def snapshot_all(self, directory: str) -> None:
+        p = Path(directory)
+        p.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            users_copy = dict(self._users)
+        for uid, stm in users_copy.items():
+            stm.save_snapshot(str(p / f"{uid}.json"))
+
+    def load_snapshots(self, directory: str) -> None:
+        p = Path(directory)
+        if not p.exists():
+            return
+        for f in p.glob("*.json"):
+            uid = f.stem
+            with self._lock:
+                if uid not in self._users:
+                    self._users[uid] = ShortTermMemory(**self._kwargs)
+            self._users[uid].load_snapshot(str(f))
+
+    def migrate_legacy_snapshot(self, old_path: str, new_dir: str) -> bool:
+        """Read old stm_snapshot.json and split into per-user files."""
+        op = Path(old_path)
+        if not op.exists():
+            return False
+        try:
+            data = _json.loads(op.read_text(encoding="utf-8"))
+        except Exception:
+            return False
+        users: dict[str, dict] = {}
+        for t in data.get("dialog", []):
+            uid = t.get("user_id", "global")
+            users.setdefault(uid, {"dialog": [], "actions": [], "state": {}})
+            users[uid]["dialog"].append(t)
+        for a in data.get("actions", []):
+            uid = a.get("user_id", "global")
+            users.setdefault(uid, {"dialog": [], "actions": [], "state": {}})
+            users[uid]["actions"].append(a)
+        global_state = data.get("state", {})
+        for uid in users:
+            users[uid]["state"] = global_state
+        p = Path(new_dir)
+        p.mkdir(parents=True, exist_ok=True)
+        for uid, udata in users.items():
+            payload = {"version": 1, "saved_at": _utc_ts(),
+                       "daily_summary": "", "dialog": udata["dialog"],
+                       "actions": udata["actions"], "state": udata["state"]}
+            (p / f"{uid}.json").write_text(
+                _json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+            )
+        op.rename(str(op) + ".migrated")
+        return True
+
+    def all_user_ids(self) -> list[str]:
+        with self._lock:
+            return list(self._users.keys())
+
+    def snapshot_counts(self) -> dict:
+        with self._lock:
+            return {uid: stm.snapshot_counts() for uid, stm in self._users.items()}

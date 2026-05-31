@@ -208,6 +208,8 @@
       "think_enabled": "Enabled (full reasoning)",
       "think_disabled": "Disabled",
       "role_fallback_desc": "Step 2 of 3 — activated if 27B fails, cloud LLM is last resort",
+      "share_with_label": "Share model with Miss Kåre",
+      "share_with_active_note": "Mechanic shares model and settings with Miss Kåre. Edit in the Miss Kåre card. Requires restart of kaare-agents to take effect.",
       "providers": {
         "ollama": "Ollama (local)",
         "vllm": "vLLM (local, OpenAI-compatible)",

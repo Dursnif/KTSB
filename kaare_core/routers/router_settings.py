@@ -393,6 +393,13 @@ def api_get_llm(_u=Depends(_require_auth)):
         if role not in data:
             continue
         s = data[role]
+        # Resolve share_with: build entry from parent config so all fields are available
+        share_with = s.get("share_with")
+        if share_with and share_with in data:
+            resolved = dict(data[share_with])
+            resolved["share_with"] = share_with
+            resolved["enabled"] = s.get("enabled", True)
+            s = resolved
         provider = s.get("provider", "ollama")
         model_role_key = s.get("model_role", role)
         entry: dict = {
@@ -437,6 +444,7 @@ def api_get_llm(_u=Depends(_require_auth)):
             tok = _read_env_key(_LLM_KEYS_PATH, api_key_env) or _read_env_key(_NVIDIA_ENV_PATH, api_key_env)
             entry["api_key_set"] = bool(tok)
             entry["api_key_masked"] = _mask_token(tok)
+        entry["share_with"] = s.get("share_with")
         result[role] = entry
     return result
 
@@ -522,6 +530,13 @@ async def api_put_llm_role(role: str, payload: dict, _u=Depends(_require_admin))
             s.pop("ollama_env", None)
     if role in _AGENT_TOGGLEABLE and "enabled" in payload:
         s["enabled"] = bool(payload["enabled"])
+    if "share_with" in payload:
+        if payload["share_with"]:
+            # Toggle ON: strip all fields — only share_with + enabled remain
+            data[role] = {"share_with": str(payload["share_with"]), "enabled": s.get("enabled", True)}
+        else:
+            # Toggle OFF: remove share_with flag (payload fields already set above)
+            s.pop("share_with", None)
     _LLM_PATH.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False), encoding="utf-8")
     _reload_agent_enabled()
     warmup_started = False

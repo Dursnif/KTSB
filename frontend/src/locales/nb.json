@@ -208,6 +208,8 @@
       "think_enabled": "Aktivert (full tenking)",
       "think_disabled": "Deaktivert",
       "role_fallback_desc": "Steg 2 av 3 — aktiveres om 27B feiler, sky-LLM er siste utvei",
+      "share_with_label": "Del modell med Miss Kåre",
+      "share_with_active_note": "Mechanic deler modell og innstillinger med Miss Kåre. Endre i Miss Kåre-kortet. Krever omstart av kaare-agents for å tre i kraft.",
       "providers": {
         "ollama": "Ollama (lokal)",
         "vllm": "vLLM (lokal, OpenAI-kompatibel)",

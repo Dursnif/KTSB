@@ -2,9 +2,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from kaare_core.memory.short_term import ShortTermMemory
+    from kaare_core.memory.short_term import ShortTermMemory, STMRegistry
 
-STM: "ShortTermMemory | None" = None
+STM_REGISTRY: "STMRegistry | None" = None
+
+
+def get_stm(user_id: str) -> "ShortTermMemory":
+    return STM_REGISTRY.get(user_id)
 
 CAPABILITY_MAP: dict = {}
 ALIASES: dict = {}
