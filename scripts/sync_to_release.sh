@@ -102,6 +102,7 @@ rsync -av --delete \
   --exclude='configs/nodes.yaml' \
   --exclude='configs/services.yaml' \
   --exclude='configs/llm.yaml' \
+  --exclude='configs/models.yaml' \
   --exclude='configs/frigate_cameras.yaml' \
   --exclude='capability_map.yaml' \
   --exclude='configs/*.save' \
