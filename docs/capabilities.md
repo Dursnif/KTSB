@@ -201,7 +201,7 @@ distinct role.
 | **Kåre** | Primary assistant. Handles all user interaction, orchestrates tools, forms responses. |
 | **Miss Kåre** | Evaluator. Reads Kåre's responses and adds a short human comment when something touches her — warmth, worry, a quiet observation. Never technical. Also synthesises the nightly user portrait. |
 | **Mechanic** | Technical generalist. Code, logs, hardware, system inspection. Called by Kåre via the `mechanic` tool or by the developer meeting. |
-| **Miss Library** | Knowledge agent. Searches the local Wikipedia corpus and synthesises web search results. Does not use training data — only sources it can cite. |
+| **Miss Library** | Knowledge agent. Searches the web and synthesises results into cited answers. Does not use training data — only sources it can read and cite. |
 | **Jing** | Fast inner voice. Runs continuously, digesting Home Assistant events and system events into short thought fragments. |
 | **Jang** | Slow reflection. Wakes periodically, reads Jing's thoughts, and decides whether to update Kåre's self-image or add a note. |
 
@@ -360,12 +360,6 @@ Three providers supported, with automatic fallback:
 **Flow:** search → fetch page content (trafilatura) → Miss Library synthesises → answer.
 Miss Library only uses what she can read from the pages. A trusted-sources filter
 (`configs/trusted_sources.yaml`) can restrict results to known-good domains.
-
-### Local Wikipedia
-
-The `medium` and `full` profiles include a BGE-M3 embedding service (1024-dim dense +
-sparse, OpenVINO) and a Qdrant collection (`wiki_no`) with over one million Wikipedia
-articles. Miss Library searches this corpus first before going online.
 
 ### Weather
 
@@ -544,7 +538,7 @@ manual YAML editing required after the initial install.
 | Assistant Settings | Personality mode (6 levels: minimal / lightweight / standard / full / complete / custom with editable text); assistant name; hotword; self-image contributor control (all users / selected users / admin only) |
 | Integrations | Frigate URL, timeout, enable/disable; Plex URL and token |
 | Distribution | Three preset profiles (full / medium / lightweight) with one-click apply; per-domain enable/disable toggles (Home Assistant, Frigate, weather, time etc.); per-service enable/disable toggles (embedding, agents, voice, Jing, Jang) with availability badges |
-| Agents | Per-agent tool toggles (Mechanic: code exploration, system inspection, web search, Argus search, shell, memory; Miss Kåre: consult Miss Library; Miss Library: wiki search); Mechanic role for developer meetings (investigator / critic / analyst / custom); Miss Kåre role for reflection meetings (empathic / analytical / challenging / custom) |
+| Agents | Per-agent tool toggles (Mechanic: code exploration, system inspection, web search, Argus search, shell, memory; Miss Kåre: consult Miss Library; Miss Library: consult Miss Library toggle); Mechanic role for developer meetings (investigator / critic / analyst / custom); Miss Kåre role for reflection meetings (empathic / analytical / challenging / custom) |
 | Explanations | Plain-language guide to every setting (read-only) |
 
 ---
@@ -657,10 +651,10 @@ and waits.
 | Frigate | REST + MQTT | Camera snapshots, motion events, face recognition |
 | Plex | Plex API | Media library search and casting |
 | MQTT broker | MQTT | Frigate events, sensor data, device triggers |
-| Qdrant | HTTP | Vector storage for semantic memory, wiki search, and Argus events |
+| Qdrant | HTTP | Vector storage for semantic memory and Argus events |
 | WireGuard | VPN tunnel | Secure remote access |
 | DuckDNS + Caddy | DNS + HTTPS | Automatic TLS certificates and remote hostname |
-| BGE-M3 | HTTP | 1024-dim dense + sparse embeddings (wiki search, Argus indexing) |
+| BGE-M3 | HTTP | 1024-dim dense + sparse embeddings (Argus indexing) |
 
 ---
 
@@ -673,7 +667,7 @@ Set `COMPOSE_PROFILES` in your `.env` to control which services start. Profiles 
 |---------|---------------|-------|
 | *(none)* | Core: API, GUI, agents, HA-gateway, Argus, semantic-embed, Qdrant, Caddy | Requires a cloud or external LLM |
 | `ollama` | Local Ollama LLM server | Recommended for GPU installs |
-| `medium` | BGE-M3 embedding service (port 11446) | Enables wiki search and Argus memory |
+| `medium` | BGE-M3 embedding service (port 11446) | Enables Argus semantic memory |
 | `full` | Voice bridge — Whisper STT + Piper TTS (port 8011) | Enables voice input/output |
 | `vpn` | WireGuard via wg-easy | Enables remote access |
 
@@ -717,7 +711,7 @@ Set `COMPOSE_PROFILES` in your `.env` to control which services start. Profiles 
 | 5-role access control | ✅ | Core | `kaare_core/users/auth.py` |
 | WireGuard VPN | ✅ | vpn | `kaare_core/vpn.py` |
 | Web search (DDG/Brave/SearXNG) | ✅ | Core | `adapters/web_search_adapter.py` |
-| Local Wikipedia search | ✅ | medium | `kaare_core/agents/miss_library/` |
+| Local Wikipedia search | 📋 | medium | `kaare_core/agents/miss_library/` |
 | Weather (5 providers) | ✅ | Core | `adapters/weather_adapter.py` |
 | HA local sensors (weather) | ✅ | Core | `adapters/weather_adapter.py` |
 | Plex media control | ✅ | Core | `adapters/plex_adapter.py` |
