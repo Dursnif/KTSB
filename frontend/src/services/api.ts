@@ -1133,6 +1133,33 @@ export async function apiPutPiperActivate(lang: string, model_path: string): Pro
   return data;
 }
 
+// ── Inner voices (Jing + Jang) ────────────────────────────────────────────────
+
+export type InnerVoicesData = {
+  jing: { provider: string; model_path: string; interval_seconds: number; max_tokens: number };
+  jang: { provider: string; model_path: string; interval_seconds: number; max_tokens: number; turns_back: number; inner_thoughts_retention_hours: number };
+  node_label: string;
+  push_token: string;
+};
+
+export async function apiGetInnerVoices(): Promise<InnerVoicesData> {
+  const { data } = await api.get("/api/settings/inner-voices");
+  return data;
+}
+
+export async function apiPutInnerVoices(payload: {
+  jing_provider?: string;
+  jing_model_path?: string;
+  jang_provider?: string;
+  jang_model_path?: string;
+  node_label?: string;
+  push_token?: string;
+  generate_token?: boolean;
+}): Promise<{ ok: boolean }> {
+  const { data } = await api.put("/api/settings/inner-voices", payload);
+  return data;
+}
+
 // ── Voice: browser STT/TTS ────────────────────────────────────────────────────
 
 const VOICE_BRIDGE = `http://${window.location.hostname}:8011`;

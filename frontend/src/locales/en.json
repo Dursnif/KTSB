@@ -51,6 +51,8 @@
     "restart_failed": "Restart failed",
     "test": "Test",
     "testing": "Testing...",
+    "copy": "Copy",
+    "copied": "Copied!",
     "no_images": "No images saved yet.",
     "no_domains": "No domains — click 'Add domain'",
     "no_websites": "No websites configured yet.",
@@ -358,7 +360,28 @@
       "container_name_hint": "The container name running this Ollama instance (e.g. ollama-agents)",
       "container_discover": "Search for containers on this port",
       "restart_ollama": "Restart container",
-      "container_name_required": "Set container name to enable restart"
+      "container_name_required": "Set container name to enable restart",
+      "inner_voices": {
+        "title": "Inner Voices (Jing & Jang)",
+        "description": "Kåre's sensing and reflection layer. Jing (0.6B) scans events every 3 minutes. Jang (4B) distills them into deeper thoughts every 10 minutes.",
+        "provider": "Provider",
+        "providers": {
+          "openvino": "OpenVINO (Intel CPU/NPU)",
+          "mlx": "MLX (Apple Silicon)",
+          "cpu": "CPU (generic, slow)",
+          "remote": "Remote machine (push)"
+        },
+        "model_path": "Model directory",
+        "model_path_placeholder": "empty = default local path",
+        "model_path_hint": "Local path to OpenVINO IR model. Empty = uses services/inner_voices/models/{jing|jang}/",
+        "interval": "Interval",
+        "node_label": "Node label",
+        "node_label_hint": "Shown in the dashboard under Jing/Jang status (e.g. \"Local\" or \"NUC\")",
+        "remote_section_title": "— Remote machine —",
+        "remote_section_hint": "The remote machine pushes Jing/Jang thoughts here. Copy the token to that machine's configs/services.yaml (inner_voices.push_token).",
+        "push_token": "Push token",
+        "generate_token": "Generate new"
+      }
     },
     "nettsok": {
       "weather": {
@@ -1487,8 +1510,8 @@
       "miss_kare": "Miss Kåre — Evaluates Kåre's responses in real time. Adds side comments and alerts Kåre to inaccuracies. Runs on the 9B model.",
       "miss_library": "Miss Library — A dusty librarian AI. Searches local Wikipedia and the internet when Kåre needs facts.",
       "mechanic": "Mechanic — A technical assistant Kåre can delegate tasks to. Thinks independently and delivers answers.",
-      "jing": "Jing — Kåre's fast inner voice. Runs on the NUC machine, sends short thoughts.",
-      "jang": "Jang — Kåre's deep, slow inner voice. Runs nightly reflections and sends longer thoughts."
+      "jing": "Jing — Kåre's fast inner voice. Scans HA events every 3 minutes and sends short thought fragments. Runs locally (OpenVINO/CPU) or on a remote machine.",
+      "jang": "Jang — Kåre's deep, slow inner voice. Reads Jing's thought fragments every 10 minutes and updates Kåre's self-image. Runs locally or on a remote machine."
     },
     "refleksjoner": {
       "title": "Reflections",

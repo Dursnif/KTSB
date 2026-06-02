@@ -51,6 +51,8 @@
     "restart_failed": "Restart feilet",
     "test": "Test",
     "testing": "Tester…",
+    "copy": "Kopier",
+    "copied": "Kopiert!",
     "no_images": "Ingen bilder lagret ennå.",
     "no_domains": "Ingen domener — klikk «Legg til domene»",
     "no_websites": "Ingen nettsider konfigurert ennå.",
@@ -358,7 +360,28 @@
       "container_name_hint": "Containernavnet som kjører denne Ollama-instansen (f.eks. ollama-agents)",
       "container_discover": "Søk etter containere på denne porten",
       "restart_ollama": "Restart container",
-      "container_name_required": "Sett container-navn for å aktivere restart"
+      "container_name_required": "Sett container-navn for å aktivere restart",
+      "inner_voices": {
+        "title": "Indre stemmer (Jing & Jang)",
+        "description": "Kåres sanselag og refleksjon. Jing (0.6B) skanner hendelser hvert 3. minutt. Jang (4B) destillerer til dype tanker hvert 10. minutt.",
+        "provider": "Provider",
+        "providers": {
+          "openvino": "OpenVINO (Intel CPU/NPU)",
+          "mlx": "MLX (Apple Silicon)",
+          "cpu": "CPU (generisk, sakte)",
+          "remote": "Ekstern maskin (push)"
+        },
+        "model_path": "Modellmappe",
+        "model_path_placeholder": "tom = standard lokal sti",
+        "model_path_hint": "Lokal sti til OpenVINO IR-modell. Tom = bruker services/inner_voices/models/{jing|jang}/",
+        "interval": "Intervall",
+        "node_label": "Node-etikett",
+        "node_label_hint": "Vises i dashbord under Jing/Jang-status (f.eks. \"Local\" eller \"NUC\")",
+        "remote_section_title": "— Ekstern maskin —",
+        "remote_section_hint": "Den eksterne maskinen sender Jing/Jang-tanker hit. Kopier token til maskinens configs/services.yaml (inner_voices.push_token).",
+        "push_token": "Push-token",
+        "generate_token": "Generer ny"
+      }
     },
     "nettsok": {
       "weather": {
@@ -1487,8 +1510,8 @@
       "miss_kare": "Miss Kåre — Evaluerer Kåres svar i sanntid. Legger til sidekommentarer og varsler Kåre om unøyaktigheter. Kjører på 9B-modellen.",
       "miss_library": "Miss Library — En støvete bibliotekar-AI. Søker i lokal Wikipedia og på internett når Kåre trenger fakta.",
       "mechanic": "Mechanic — Teknisk assistent Kåre kan delegere oppgaver til. Tenker selvstendig og leverer svar.",
-      "jing": "Jing — Kåres raske indre stemme. Kjører på NUC-maskinen, sender korte tanker.",
-      "jang": "Jang — Kåres dype, langsomme indre stemme. Kjører nattlige refleksjoner og sender lengre tanker."
+      "jing": "Jing — Kåres raske indre stemme. Skanner HA-hendelser hvert 3. minutt og sender korte tankefragmenter. Kjører lokalt (OpenVINO/CPU) eller på en fjernmaskin.",
+      "jang": "Jang — Kåres dype, langsomme indre stemme. Leser Jings tankefragmenter hvert 10. minutt og oppdaterer Kåres selvbilde. Kjører lokalt eller på en fjernmaskin."
     },
     "refleksjoner": {
       "title": "Refleksjoner",

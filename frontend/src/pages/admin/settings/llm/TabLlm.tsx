@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  apiGetLlmSettings, apiGetServices, apiGetDockerControl,
-  type LlmRoleConfig, type DockerControlSettings,
+  apiGetLlmSettings, apiGetServices, apiGetDockerControl, apiGetInnerVoices,
+  type LlmRoleConfig, type DockerControlSettings, type InnerVoicesData,
 } from "@/services/api";
 import { LlmInfraCard } from "./LlmInfraCard";
 import { LlmRoleCard } from "./LlmRoleCard";
@@ -11,6 +11,7 @@ import { WhisperCard, type VoiceServicesData } from "./WhisperCard";
 import { PiperCard } from "./PiperCard";
 import { EmbeddingCard, type EmbServicesData } from "./EmbeddingCard";
 import { MemoryEmbedCard, type MemoryEmbedData } from "./MemoryEmbedCard";
+import { InnerVoicesCard } from "./InnerVoicesCard";
 
 export function TabLlm() {
   const { t } = useTranslation();
@@ -23,6 +24,12 @@ export function TabLlm() {
     device: "NPU", hf_model: "BAAI/bge-m3", model_path: "", emb_enabled: true,
   });
   const [memEmbData, setMemEmbData] = useState<MemoryEmbedData>({ enabled: false, model_dir: "" });
+  const [innerVoicesData, setInnerVoicesData] = useState<InnerVoicesData>({
+    jing: { provider: "openvino", model_path: "", interval_seconds: 180, max_tokens: 300 },
+    jang: { provider: "openvino", model_path: "", interval_seconds: 600, max_tokens: 2048, turns_back: 3, inner_thoughts_retention_hours: 24 },
+    node_label: "Local",
+    push_token: "",
+  });
   const [loading, setLoading] = useState(true);
   const [dockerControl, setDockerControl] = useState<DockerControlSettings>({
     allow_docker_control: false,
@@ -34,7 +41,8 @@ export function TabLlm() {
       apiGetLlmSettings(),
       apiGetServices(),
       apiGetDockerControl(),
-    ]).then(([llm, svc, dc]) => {
+      apiGetInnerVoices(),
+    ]).then(([llm, svc, dc, iv]) => {
       setConfigs(llm);
       setDockerControl(dc);
       const s = svc as any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -56,6 +64,7 @@ export function TabLlm() {
         enabled:   s.memory_embed?.enabled   ?? false,
         model_dir: s.memory_embed?.model_dir ?? "",
       });
+      setInnerVoicesData(iv);
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
@@ -81,10 +90,11 @@ export function TabLlm() {
           ? <ImageRoleCard key={role} role={role} config={configs[role]} onSaved={load} />
           : <LlmRoleCard   key={role} role={role} config={configs[role]} onSaved={load} allConfigs={configs} allowDockerControl={dockerControl.allow_docker_control} />
       ))}
-      <WhisperCard      data={voiceData}   onSaved={load} />
-      <PiperCard                           onSaved={load} />
-      <EmbeddingCard    data={embData}     onSaved={load} />
-      <MemoryEmbedCard  data={memEmbData}  onSaved={load} />
+      <WhisperCard        data={voiceData}       onSaved={load} />
+      <PiperCard                               onSaved={load} />
+      <EmbeddingCard      data={embData}        onSaved={load} />
+      <MemoryEmbedCard    data={memEmbData}     onSaved={load} />
+      <InnerVoicesCard    data={innerVoicesData} onSaved={load} />
     </div>
   );
 }

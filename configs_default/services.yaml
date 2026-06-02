@@ -70,3 +70,16 @@ web_search:
   max_results: 3
   provider: ddg
   searxng_url: ''
+jing:
+  provider: openvino
+  model_path: ''
+  push_url: ''
+  push_token: ''
+jang:
+  provider: openvino
+  model_path: ''
+  push_url: ''
+  push_token: ''
+inner_voices:
+  node_label: Local
+  push_token: ''

@@ -1976,3 +1976,111 @@ async def api_put_timer_settings(payload: dict, _u=Depends(_require_admin)):
     except Exception as e:
         raise HTTPException(500, f"Could not write settings.yaml: {e}")
     return {"ok": True, "max_per_user": max_per_user}
+
+
+# ---------------------------------------------------------------------------
+# Inner voices (Jing + Jang)
+# ---------------------------------------------------------------------------
+
+_JING_THOUGHTS_PATH  = Path("/kaare/state/jing_thoughts.txt")
+_INNER_THOUGHTS_PATH = Path("/kaare/state/inner_thoughts.txt")
+_VALID_PROVIDERS = {"openvino", "mlx", "cpu", "remote"}
+
+
+@router.get("/api/settings/inner-voices")
+async def api_get_inner_voices(_u=Depends(_require_admin)):
+    svc = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
+    cfg = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
+    return {
+        "jing": {
+            "provider":   svc.get("jing", {}).get("provider", "openvino"),
+            "model_path": svc.get("jing", {}).get("model_path", ""),
+            "push_url":   svc.get("jing", {}).get("push_url", ""),
+            "interval_seconds": cfg.get("jing", {}).get("interval_seconds", 180),
+            "max_tokens":       cfg.get("jing", {}).get("max_tokens", 300),
+        },
+        "jang": {
+            "provider":   svc.get("jang", {}).get("provider", "openvino"),
+            "model_path": svc.get("jang", {}).get("model_path", ""),
+            "push_url":   svc.get("jang", {}).get("push_url", ""),
+            "interval_seconds":           cfg.get("jang", {}).get("interval_seconds", 600),
+            "max_tokens":                 cfg.get("jang", {}).get("max_tokens", 2048),
+            "turns_back":                 cfg.get("jang", {}).get("turns_back", 3),
+            "inner_thoughts_retention_hours": cfg.get("jang", {}).get("inner_thoughts_retention_hours", 24),
+        },
+        "node_label": svc.get("inner_voices", {}).get("node_label", "Local"),
+        "push_token":  svc.get("inner_voices", {}).get("push_token", ""),
+    }
+
+
+@router.put("/api/settings/inner-voices")
+async def api_put_inner_voices(payload: dict, _u=Depends(_require_admin)):
+    _svc_keys = {"jing_provider", "jing_model_path", "jing_push_url",
+                 "jang_provider", "jang_model_path", "jang_push_url",
+                 "node_label", "push_token", "generate_token"}
+    unknown = set(payload) - _svc_keys
+    if unknown:
+        raise HTTPException(400, f"Unknown fields: {unknown}")
+
+    svc = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
+    jing_svc = svc.setdefault("jing", {})
+    jang_svc = svc.setdefault("jang", {})
+    iv_svc   = svc.setdefault("inner_voices", {})
+
+    for name, sub in (("jing", jing_svc), ("jang", jang_svc)):
+        prov_key = f"{name}_provider"
+        if prov_key in payload:
+            if payload[prov_key] not in _VALID_PROVIDERS:
+                raise HTTPException(400, f"{prov_key} must be one of: {_VALID_PROVIDERS}")
+            sub["provider"] = payload[prov_key]
+        if f"{name}_model_path" in payload:
+            sub["model_path"] = str(payload[f"{name}_model_path"])
+        if f"{name}_push_url" in payload:
+            sub["push_url"] = str(payload[f"{name}_push_url"])
+
+    if "node_label" in payload:
+        iv_svc["node_label"] = str(payload["node_label"])
+    if payload.get("generate_token"):
+        iv_svc["push_token"] = str(_uuid.uuid4())
+    elif "push_token" in payload:
+        iv_svc["push_token"] = str(payload["push_token"])
+
+    _SERVICES_PATH.write_text(
+        yaml.dump(svc, allow_unicode=True, default_flow_style=False), encoding="utf-8"
+    )
+    return {"ok": True}
+
+
+@router.post("/api/inner-voices/push")
+async def api_inner_voices_push(payload: dict):
+    """Receive generated thoughts from a remote inner voice machine."""
+    import time as _time
+
+    source  = payload.get("source", "")
+    content = (payload.get("content") or "").strip()
+    token   = payload.get("token") or ""
+
+    # Auth: Bearer header or token field in body
+    svc = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
+    expected = (svc.get("inner_voices", {}).get("push_token") or "").strip()
+    if not expected or token != expected:
+        raise HTTPException(401, "Invalid or missing push token")
+
+    if source not in ("jing", "jang"):
+        raise HTTPException(400, "source must be 'jing' or 'jang'")
+    if not content:
+        raise HTTPException(400, "content is empty")
+
+    if source == "jing":
+        _JING_THOUGHTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        timestamp = _time.strftime("%H:%M")
+        block = f"[Jing {timestamp}]\n{content}"
+        with _JING_THOUGHTS_PATH.open("a") as f:
+            f.write(f"\n\n{block}")
+    else:
+        _INNER_THOUGHTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        timestamp = _time.strftime("%Y-%m-%d %H:%M")
+        with _INNER_THOUGHTS_PATH.open("a") as f:
+            f.write(f"\n\n[Jang {timestamp}]\n{content}")
+
+    return {"ok": True}

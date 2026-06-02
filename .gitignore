@@ -10,7 +10,6 @@ configs/*.save.*
 configs/kare_ha_bridgealiases.yaml.txt
 configs/prism/
 docs/*.md
-!docs/capabilities.md
 .env
 
 # Runtime state — instance-specific, recreated on first run
@@ -105,6 +104,9 @@ vaktmester_monthly.py
 # Internal developer files
 CLAUDE.md
 CURRENT.md
+
+# Personal deploy scripts (contain local hostnames and user paths)
+scripts/deploy_inner_voices_ainuc.sh
 
 # System directories owned by kaare user
 .ssh/

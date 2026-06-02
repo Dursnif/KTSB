@@ -172,7 +172,7 @@ meeting produces new observations that are written to the profile automatically.
 
 Kåre maintains a free-text self-description (`state/personality_self.md`) that it writes
 and edits itself via the `selvbilde` tool. This is injected at the end of the system
-prompt on every request. Jang (the slow reflection agent on the NUC) updates it every
+prompt on every request. Jang (the slow reflection agent) updates it every
 10 minutes based on recent events. Over time, Kåre's self-image evolves based on its
 interactions.
 
@@ -220,14 +220,19 @@ evaluator has a 60-second timeout and silently skips rather than block a respons
 Mechanic will wait up to 5 minutes; Kåre's fallback waits indefinitely until the lock
 is free.
 
-Jing and Jang are designed to run on a separate low-power device (CPU / NPU via OpenVINO)
-and have no GPU dependency.
+Jing and Jang are designed to run on any hardware — locally via OpenVINO (Intel CPU/NPU),
+MLX (Apple Silicon), or generic CPU. They can also run on a separate low-power device
+with results pushed to KTSB via HTTP. No GPU dependency. Platform and model path are
+configured in `configs/services.yaml` under `inner_voices:`. In Docker Compose they are
+deployed as the `inner_voices` profile (`Dockerfile.inner_voices`) — not included in the
+standard image and not required for any other feature.
 
 **Agent tool access** is configured in `configs/tool_permissions.yaml`. Miss Kåre can
 consult Miss Library directly during evaluation via a structured query format.
 
 **Key files:** `kaare_core/agents/miss_kare/`, `kaare_core/agents/mechanic/`,
-`kaare_core/agents/miss_library/`, `kaare_core/model_lock.py`, `kaare_core/reflection_loop.py`
+`kaare_core/agents/miss_library/`, `services/inner_voices/`, `kaare_core/model_lock.py`,
+`kaare_core/reflection_loop.py`
 
 ---
 
@@ -723,8 +728,8 @@ Set `COMPOSE_PROFILES` in your `.env` to control which services start. Profiles 
 | Miss Kåre evaluator | ✅ | Core | `kaare_core/agents/miss_kare/` |
 | Mechanic technical agent | ✅ | Core | `kaare_core/agents/mechanic/` |
 | Miss Library knowledge agent | ✅ | Core | `kaare_core/agents/miss_library/` |
-| Jing (fast inner voice) | ✅ | Core | NUC systemd service |
-| Jang (slow reflection) | ✅ | Core | `kaare_core/reflection_loop.py` |
+| Jing (fast inner voice) | ✅ | Core | `services/inner_voices/jing_runner.py` |
+| Jang (slow reflection) | ✅ | Core | `services/inner_voices/jang_runner.py` |
 | Nightly sequential job (03:00) | ✅ | Core | `kaare_night_sequence.py` |
 | Nightly reflection meeting | ✅ | Core | `kaare_reflection.py` |
 | Nightly developer meeting | ✅ | Core | `kaare_dev_meeting.py` |

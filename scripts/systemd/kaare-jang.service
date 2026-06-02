@@ -1,0 +1,18 @@
+[Unit]
+Description=Kåre Inner Voice – Jang (4B reflection curator)
+After=network.target kaare.service kaare-jing.service
+
+[Service]
+UMask=0002
+User=kaare
+WorkingDirectory=/kaare/services/inner_voices
+Environment=PATH=/kaare/services/inner_voices/venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONPATH=/kaare/services/inner_voices
+ExecStart=/kaare/services/inner_voices/venv/bin/python3 jang_runner.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

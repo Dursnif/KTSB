@@ -51,6 +51,8 @@
     "restart_failed": "Neustart fehlgeschlagen",
     "test": "Testen",
     "testing": "Testet...",
+    "copy": "Kopieren",
+    "copied": "Kopiert!",
     "no_images": "Noch keine Bilder gespeichert.",
     "no_domains": "Keine Domains — klicken Sie auf «Domain hinzufügen»",
     "no_websites": "Noch keine Webseiten konfiguriert.",
@@ -358,7 +360,28 @@
       "container_name_hint": "Der Containername, der diese Ollama-Instanz betreibt (z.B. ollama-agents)",
       "container_discover": "Container auf diesem Port suchen",
       "restart_ollama": "Container neu starten",
-      "container_name_required": "Containername setzen, um Neustart zu aktivieren"
+      "container_name_required": "Containername setzen, um Neustart zu aktivieren",
+      "inner_voices": {
+        "title": "Innere Stimmen (Jing & Jang)",
+        "description": "Kåres Wahrnehmungs- und Reflexionsschicht. Jing (0.6B) scannt Ereignisse alle 3 Minuten. Jang (4B) destilliert sie alle 10 Minuten zu tieferen Gedanken.",
+        "provider": "Anbieter",
+        "providers": {
+          "openvino": "OpenVINO (Intel CPU/NPU)",
+          "mlx": "MLX (Apple Silicon)",
+          "cpu": "CPU (generisch, langsam)",
+          "remote": "Externes Gerät (Push)"
+        },
+        "model_path": "Modellverzeichnis",
+        "model_path_placeholder": "leer = Standard-lokaler Pfad",
+        "model_path_hint": "Lokaler Pfad zum OpenVINO IR-Modell. Leer = verwendet services/inner_voices/models/{jing|jang}/",
+        "interval": "Intervall",
+        "node_label": "Node-Bezeichnung",
+        "node_label_hint": "Wird im Dashboard unter Jing/Jang-Status angezeigt (z.B. \"Local\" oder \"NUC\")",
+        "remote_section_title": "— Externes Gerät —",
+        "remote_section_hint": "Das externe Gerät sendet Jing/Jang-Gedanken hierher. Token in die configs/services.yaml des Geräts kopieren (inner_voices.push_token).",
+        "push_token": "Push-Token",
+        "generate_token": "Neu generieren"
+      }
     },
     "nettsok": {
       "weather": {
@@ -1487,8 +1510,8 @@
       "miss_kare": "Miss Kåre — Bewertet Kåres Antworten in Echtzeit. Fügt Seitenkommentare hinzu und warnt Kåre vor Ungenauigkeiten. Läuft auf dem 9B-Modell.",
       "miss_library": "Miss Library — Eine verstaubte Bibliothekar-KI. Durchsucht die lokale Wikipedia und das Internet, wenn Kåre Fakten benötigt.",
       "mechanic": "Mechanic — Ein technischer Assistent, an den Kåre Aufgaben delegieren kann. Denkt selbstständig und liefert Antworten.",
-      "jing": "Jing — Kåres schnelle innere Stimme. Läuft auf der NUC-Maschine, sendet kurze Gedanken.",
-      "jang": "Jang — Kåres tiefe, langsame innere Stimme. Führt nächtliche Reflexionen durch und sendet längere Gedanken."
+      "jing": "Jing — Kåres schnelle innere Stimme. Scannt HA-Ereignisse alle 3 Minuten und sendet kurze Gedankenfragmente. Läuft lokal (OpenVINO/CPU) oder auf einem Remote-Gerät.",
+      "jang": "Jang — Kåres tiefe, langsame innere Stimme. Liest Jings Gedankenfragmente alle 10 Minuten und aktualisiert Kåres Selbstbild. Läuft lokal oder auf einem Remote-Gerät."
     },
     "refleksjoner": {
       "title": "Reflexionen",

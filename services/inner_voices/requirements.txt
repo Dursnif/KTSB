@@ -1,0 +1,15 @@
+# Base (always required)
+pyyaml>=6.0
+
+# Provider: openvino (Intel CPU/NPU — default on Linux)
+# Install with: pip install -r requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+openvino-genai>=2025.0
+optimum-intel>=1.20.0
+
+# Provider: mlx (Apple Silicon — macOS arm64 only)
+# mlx>=0.21.0
+# mlx-lm>=0.21.0
+
+# Provider: cpu (generic fallback — slow, no GPU required)
+# torch>=2.3.0
+# transformers>=4.44.0

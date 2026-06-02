@@ -1,0 +1,21 @@
+FROM python:3.12-slim
+
+# Build arg selects which provider to install (openvino | mlx | cpu)
+ARG PROVIDER=openvino
+
+WORKDIR /kaare/services/inner_voices
+
+COPY services/inner_voices/requirements.txt .
+
+RUN pip install --no-cache-dir pyyaml && \
+    if [ "$PROVIDER" = "openvino" ]; then \
+        pip install --no-cache-dir "openvino-genai>=2025.0" "optimum-intel>=1.20.0"; \
+    elif [ "$PROVIDER" = "mlx" ]; then \
+        pip install --no-cache-dir mlx mlx-lm; \
+    elif [ "$PROVIDER" = "cpu" ]; then \
+        pip install --no-cache-dir torch transformers; \
+    fi
+
+COPY services/inner_voices/ .
+
+ENV PYTHONPATH=/kaare/services/inner_voices

@@ -166,3 +166,33 @@ services:
       - ./state:/kaare/state
       - ./models:/kaare/models
     profiles: [full]
+
+  kaare-jing:
+    build:
+      context: .
+      dockerfile: Dockerfile.inner_voices
+      args:
+        PROVIDER: openvino
+    restart: unless-stopped
+    command: ["python3", "jing_runner.py"]
+    volumes:
+      - ./configs:/kaare/configs
+      - ./state:/kaare/state
+      - ./services/inner_voices/models:/kaare/services/inner_voices/models
+      - ./services/inner_voices/ov_cache:/kaare/services/inner_voices/ov_cache
+    profiles: [inner_voices]
+
+  kaare-jang:
+    build:
+      context: .
+      dockerfile: Dockerfile.inner_voices
+      args:
+        PROVIDER: openvino
+    restart: unless-stopped
+    command: ["python3", "jang_runner.py"]
+    volumes:
+      - ./configs:/kaare/configs
+      - ./state:/kaare/state
+      - ./services/inner_voices/models:/kaare/services/inner_voices/models
+      - ./services/inner_voices/ov_cache:/kaare/services/inner_voices/ov_cache
+    profiles: [inner_voices]

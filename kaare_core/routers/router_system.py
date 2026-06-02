@@ -527,16 +527,16 @@ def _build_service_catalog() -> list[dict]:
          "color": "#16a34a",      "check_url": get_service("storage", "qdrant") + "/readyz"},
         {"key": "argus",          "name": "Argus",          "description": "System log monitor and alerter",
          "color": "#fb7185",      "check_url": "file:///kaare/state/argus/report.json:600"},
-        {"key": "jing_svc",       "name": "Jing (NUC)",     "description": "Fast inner voice service",
+        {"key": "jing_svc",       "name": "Jing",           "description": "Fast inner voice service",
          "color": "#e879f9",      "check_url": "file:///kaare/state/jing_thoughts.txt:600"},
-        {"key": "jang_svc",       "name": "Jang (NUC)",     "description": "Slow inner voice service",
+        {"key": "jang_svc",       "name": "Jang",           "description": "Slow inner voice service",
          "color": "#f472b6",      "check_url": "file:///kaare/state/inner_thoughts.txt:2100"},
     ]
 
 
 def _build_model_catalog() -> list[dict]:
     """LLM/ML models being served. Model names and platforms derived from llm.yaml + models.yaml.
-    OpenVINO models on the NUC and Whisper are checked via file age / voice-bridge."""
+    Inner voice models and Whisper are checked via file age / voice-bridge."""
     try:
         _llm = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
     except Exception:
@@ -594,11 +594,13 @@ def _build_model_catalog() -> list[dict]:
         {"key": "llm_library",   "name": "Library",            "model": _model("library"),
          "platform": _platform("library"),   "color": "#4ade80",
          "check_url": _check_url_for("library")},
-        {"key": "llm_jing",      "name": "Jing",                "model": "qwen2.5-0.5b-openvino",
-         "platform": "NUC (OpenVINO)",     "color": "#e879f9",
+        {"key": "llm_jing",      "name": "Jing",                "model": "Qwen3-0.6B",
+         "platform": f"{_svc.get('inner_voices', {}).get('node_label', 'Local')} ({_svc.get('jing', {}).get('provider', 'openvino')})",
+         "color": "#e879f9",
          "check_url": "file:///kaare/state/jing_thoughts.txt:600"},
-        {"key": "llm_jang",      "name": "Jang",                "model": "qwen2.5-3b-openvino",
-         "platform": "NUC (OpenVINO)",     "color": "#f472b6",
+        {"key": "llm_jang",      "name": "Jang",                "model": "Qwen3-4B",
+         "platform": f"{_svc.get('inner_voices', {}).get('node_label', 'Local')} ({_svc.get('jang', {}).get('provider', 'openvino')})",
+         "color": "#f472b6",
          "check_url": "file:///kaare/state/inner_thoughts.txt:2100"},
         {"key": "whisper",       "name": "Whisper STT",         "model": "nb-whisper-large",
          "platform": "Voice Bridge",         "color": "#a78bfa",
