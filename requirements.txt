@@ -34,6 +34,9 @@ trafilatura>=2.0.0
 numpy>=1.26.0
 tqdm>=4.66.0
 
+# ── Testing ────────────────────────────────────────────────────────────────────
+pytest>=8.0.0
+
 # ── Semantic memory embedder (memory_embed_server) ─────────────────────────────
 onnxruntime>=1.17.0
 tokenizers>=0.15.0
