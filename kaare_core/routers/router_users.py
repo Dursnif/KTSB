@@ -43,7 +43,7 @@ def _clear_login_fail(ip: str) -> None:
     _login_failures.pop(ip, None)
 
 from kaare_core.users import store
-from kaare_core.users.profile_manager import init_profile
+from kaare_core.users.profile_manager import init_profile, get_profile_flag, set_profile_flag
 from kaare_core.users.auth import (
     login,
     require_auth,
@@ -82,6 +82,7 @@ class UpdateUserRequest(BaseModel):
     is_active: Optional[bool] = None
     personality: Optional[str] = None
     vpn_access: Optional[str] = None
+    can_manage_child_timers: Optional[bool] = None
 
 class UpdatePinRequest(BaseModel):
     new_pin: str
@@ -152,6 +153,7 @@ def api_list_users(payload: dict = Depends(require_admin)):
     for u in users:
         u["is_online"] = is_user_online(u["username"])
         u["last_seen"] = last_seen.get(u["username"])
+        u["can_manage_child_timers"] = get_profile_flag(u["username"], "can_manage_child_timers")
     return users
 
 
@@ -196,6 +198,9 @@ def api_update_user(username: str, req: UpdateUserRequest,
         raise HTTPException(status_code=400, detail=str(e))
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
+    if req.can_manage_child_timers is not None:
+        set_profile_flag(username, "can_manage_child_timers", req.can_manage_child_timers)
+    user["can_manage_child_timers"] = get_profile_flag(username, "can_manage_child_timers")
     return user
 
 

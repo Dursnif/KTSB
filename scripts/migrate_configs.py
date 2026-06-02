@@ -30,6 +30,32 @@ def deep_merge(default: dict, existing: dict) -> dict:
     return result
 
 
+def _migrate_nodes(config_file: Path, changed: list) -> None:
+    """Migrate is_tv: true → has_display: true + has_audio: true."""
+    if not config_file.exists():
+        return
+    try:
+        data = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return
+    nodes = data.get("nodes", {})
+    if not isinstance(nodes, dict):
+        return
+    migrated_count = 0
+    for node_id, node in nodes.items():
+        if not isinstance(node, dict):
+            continue
+        if "is_tv" in node:
+            node.setdefault("has_display", True)
+            node.setdefault("has_audio", True)
+            del node["is_tv"]
+            migrated_count += 1
+    if migrated_count:
+        with open(config_file, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        changed.append(f"  migrated nodes.yaml: {migrated_count} node(s) is_tv → has_display/has_audio")
+
+
 def _migrate_network_config(config_file: Path, changed: list) -> None:
     """Migrate network.local_subnet (string) to network.local_subnets (list)."""
     if not config_file.exists():
@@ -84,6 +110,7 @@ def migrate():
             changed.append(f"  updated {config_file.name} (added missing keys)")
 
     _migrate_network_config(CONFIGS_DIR / "settings.yaml", changed)
+    _migrate_nodes(CONFIGS_DIR / "nodes.yaml", changed)
 
     if changed:
         print("[migrate] Config changes applied:", flush=True)

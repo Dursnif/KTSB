@@ -217,18 +217,18 @@ _MONTHS: dict[str, list[str]] = {
            "Juli", "August", "September", "Oktober", "November", "Dezember"],
 }
 
-def _tid_blokk(lang: str = "nb") -> str:
+def _time_block(lang: str = "nb") -> str:
     """Returns current date and time using the timezone from settings.yaml."""
-    nå = datetime.now(tz=_LOCAL_TZ)
+    now = datetime.now(tz=_LOCAL_TZ)
     days = _WEEKDAYS.get(lang, _WEEKDAYS["nb"])
     months = _MONTHS.get(lang, _MONTHS["nb"])
-    dag  = days[nå.weekday()]
-    dato = f"{nå.day}. {months[nå.month - 1]} {nå.year}"
-    kl   = nå.strftime("%H:%M")
-    return t("llm_time_header", lang) + "\n" + t("llm_time_now", lang, day=dag, date=dato, time=kl)
+    day_name = days[now.weekday()]
+    date_str = f"{now.day}. {months[now.month - 1]} {now.year}"
+    time_str = now.strftime("%H:%M")
+    return t("llm_time_header", lang) + "\n" + t("llm_time_now", lang, day=day_name, date=date_str, time=time_str)
 
 
-def _load_kare_huske() -> str:
+def _load_kare_reminders() -> str:
     """Kompakt injeksjon av Kåres huskeliste. Tom streng hvis listen er tom."""
     try:
         from kaare_core.tools.lister import kare_les_for_injeksjon
@@ -381,7 +381,7 @@ def _build_system(base: str, personality: str = "standard", user_id: str = "") -
       full             → kjerne + behavior + personality_self
       komplett         → kjerne + behavior + personality_self + world.md (maks 2000 tegn)
       egendefinert     → egendefinert kjerne + behavior + personality_self
-    _tid_blokk() sist — endres hvert minutt og ville ugyldiggjort KV-cache.
+    _time_block() sist — endres hvert minutt og ville ugyldiggjort KV-cache.
     """
     lang = get_lang(user_id)
 
@@ -398,13 +398,13 @@ def _build_system(base: str, personality: str = "standard", user_id: str = "") -
 
     profile_top = _load_user_profile_top(user_id)
     user_obs = _load_user_obs(user_id, lang)
-    kare_huske = _load_kare_huske()
+    kare_reminders = _load_kare_reminders()
     current_user = _current_user_block(user_id, lang)
     parts = [p for p in [
         _ASSISTANT_NAME_BLOKK, _PERSONALITY_CORE, current_user, behavior,
         _LOKASJON_BLOKK, _LANGUAGE_BLOKK, (base or "").strip(),
-        personality_self, kare_huske, _HOUSEHOLD_BLOCK, profile_top, user_obs,
-        world_ctx, _build_disabled_modules_block(lang), _tid_blokk(lang)
+        personality_self, kare_reminders, _HOUSEHOLD_BLOCK, profile_top, user_obs,
+        world_ctx, _build_disabled_modules_block(lang), _time_block(lang)
     ] if p]
     return "\n\n---\n\n".join(parts)
 
@@ -423,7 +423,7 @@ def _build_system_fallback() -> str:
         "Svar kort og direkte. Prioriter smarthjem og enkle spørsmål. "
         "Unngå lange resonnement og komplekse flertrinnsoppgaver."
     )
-    parts = [p for p in [_PERSONALITY_CORE, fallback_note, _tid_blokk()] if p]
+    parts = [p for p in [_PERSONALITY_CORE, fallback_note, _time_block()] if p]
     return "\n\n---\n\n".join(parts)
 
 

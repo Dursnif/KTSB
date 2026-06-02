@@ -5,10 +5,10 @@ Uses fcntl.flock with LOCK_NB polling — released automatically if the process 
 Use as async context manager: async with lock_11445("miss_kare"):
 
 Port 11445 is shared by:
-  - Miss Kåre evaluator  (kaare.service)
-  - Mechanic tools    (kaare-agents.service)
-  - Miss Kåre møte      (kaare-reflection.service)
-  - Mechanic møte    (kaare-dev-meeting)
+  - Miss Kare evaluator  (kaare.service)
+  - Mechanic tools       (kaare.service — in-process via job_store)
+  - Miss Kare reflection (kaare-reflection.service)
+  - Mechanic dev-meeting (kaare-dev-meeting.service)
 """
 
 import asyncio

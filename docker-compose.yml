@@ -72,16 +72,6 @@ services:
       - ./configs:/kaare/configs
       - ./state:/kaare/state
 
-  kaare-agents:
-    image: ghcr.io/dursnif/kaare:latest
-    restart: unless-stopped
-    ports: ["11450:11450"]
-    command: uvicorn services.agents.server:app --host 0.0.0.0 --port 11450 --proxy-headers --forwarded-allow-ips=172.16.0.0/12
-    volumes:
-      - ./configs:/kaare/configs
-      - ./state:/kaare/state
-    depends_on: [qdrant, kaare-semantic-embed]
-
   kaare-argus:
     image: ghcr.io/dursnif/kaare:latest
     restart: unless-stopped

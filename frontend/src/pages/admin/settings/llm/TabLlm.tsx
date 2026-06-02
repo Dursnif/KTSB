@@ -8,6 +8,7 @@ import { LlmInfraCard } from "./LlmInfraCard";
 import { LlmRoleCard } from "./LlmRoleCard";
 import { ImageRoleCard } from "./ImageRoleCard";
 import { WhisperCard, type VoiceServicesData } from "./WhisperCard";
+import { PiperCard } from "./PiperCard";
 import { EmbeddingCard, type EmbServicesData } from "./EmbeddingCard";
 import { MemoryEmbedCard, type MemoryEmbedData } from "./MemoryEmbedCard";
 
@@ -81,6 +82,7 @@ export function TabLlm() {
           : <LlmRoleCard   key={role} role={role} config={configs[role]} onSaved={load} allConfigs={configs} allowDockerControl={dockerControl.allow_docker_control} />
       ))}
       <WhisperCard      data={voiceData}   onSaved={load} />
+      <PiperCard                           onSaved={load} />
       <EmbeddingCard    data={embData}     onSaved={load} />
       <MemoryEmbedCard  data={memEmbData}  onSaved={load} />
     </div>

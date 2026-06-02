@@ -120,6 +120,46 @@ function SubHeading({ text }: { text: string }) {
   );
 }
 
+function SubSection({
+  sectionKey, title, color, children, open, onToggle,
+}: {
+  sectionKey: string;
+  title: string;
+  color: string;
+  children: React.ReactNode;
+  open: boolean;
+  onToggle: (key: string) => void;
+}) {
+  return (
+    <div style={{
+      borderLeft: `2px solid ${color}40`,
+      borderRadius: "0 4px 4px 0",
+      marginTop: 8,
+      background: "rgba(255,255,255,0.015)",
+      overflow: "hidden",
+    }}>
+      <button
+        onClick={() => onToggle(sectionKey)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", gap: 8,
+          padding: "8px 12px", background: "transparent",
+          border: "none", cursor: "pointer", textAlign: "left",
+        }}
+      >
+        <span style={{ color, opacity: 0.75, flexShrink: 0, display: "flex" }}>
+          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </span>
+        <span style={{ fontWeight: 600, fontSize: 12, color: "#c0c0c0" }}>{title}</span>
+      </button>
+      {open && (
+        <div style={{ padding: "4px 12px 12px 12px", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RoleList({ rows }: { rows: { label: string; desc: string; color?: string }[] }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -176,6 +216,19 @@ export default function TabForklaringer() {
     >
       {children}
     </Section>
+  );
+
+  const sub = (key: string, color: string, children: React.ReactNode) => (
+    <SubSection
+      key={key}
+      sectionKey={key}
+      title={t(`forklaringer.${key}.title`)}
+      color={color}
+      open={isOpen(key)}
+      onToggle={toggle}
+    >
+      {children}
+    </SubSection>
   );
 
   const items = (key: string, count: number) =>
@@ -245,7 +298,25 @@ export default function TabForklaringer() {
 
         {sec("verktoy", GROUP_COLORS.admin, <>
           <Body text={t("forklaringer.verktoy.body")} />
-          <Items items={items("verktoy", 3)} />
+
+          {sub("verktoy_ssh", TAB_COLORS.nettsok, <>
+            <Body text={t("forklaringer.verktoy_ssh.body")} />
+            <Items items={items("verktoy_ssh", 3)} />
+          </>)}
+
+          {sub("verktoy_timer", TAB_COLORS.mqtt, <>
+            <Items items={[
+              t("forklaringer.verktoy.item_1"),
+              t("forklaringer.verktoy_timer.item_1"),
+            ]} />
+          </>)}
+
+          {sub("verktoy_log", GROUP_COLORS.admin, <>
+            <Items items={[
+              t("forklaringer.verktoy.item_2"),
+              t("forklaringer.verktoy.item_3"),
+            ]} />
+          </>)}
         </>)}
 
         {sec("aliaser", GROUP_COLORS.admin, <>
@@ -255,16 +326,34 @@ export default function TabForklaringer() {
 
         {sec("noder", GROUP_COLORS.admin, <>
           <Body text={t("forklaringer.noder.body")} />
-          <SubHeading text={t("forklaringer.noder.types_intro")} />
-          <RoleList rows={[
-            { label: "ha_media_player", desc: t("forklaringer.noder.types.ha_media_player"), color: TAB_COLORS.ha },
-            { label: "esp32",           desc: t("forklaringer.noder.types.esp32"),           color: TAB_COLORS.nettsok },
-            { label: "wyoming",         desc: t("forklaringer.noder.types.wyoming"),         color: TAB_COLORS.kare },
-            { label: "chromecast",      desc: t("forklaringer.noder.types.chromecast"),      color: TAB_COLORS.mqtt },
-            { label: "snapcast",        desc: t("forklaringer.noder.types.snapcast"),        color: TAB_COLORS.llm },
-            { label: "airplay",         desc: t("forklaringer.noder.types.airplay"),         color: TAB_COLORS.refleksjon },
-            { label: "dlna",            desc: t("forklaringer.noder.types.dlna"),            color: TAB_COLORS.bilder },
-          ]} />
+
+          {sub("noder_kategorier", TAB_COLORS.kare, <>
+            <Items items={items("noder_kategorier", 3)} />
+          </>)}
+
+          {sub("noder_lyd_typer", TAB_COLORS.mqtt, <>
+            <RoleList rows={[
+              { label: "ha_media_player", desc: t("forklaringer.noder.types.ha_media_player"), color: TAB_COLORS.ha },
+              { label: "esp32",           desc: t("forklaringer.noder.types.esp32"),           color: TAB_COLORS.nettsok },
+              { label: "wyoming",         desc: t("forklaringer.noder.types.wyoming"),         color: TAB_COLORS.kare },
+              { label: "chromecast",      desc: t("forklaringer.noder.types.chromecast"),      color: TAB_COLORS.mqtt },
+              { label: "snapcast",        desc: t("forklaringer.noder.types.snapcast"),        color: TAB_COLORS.llm },
+              { label: "airplay",         desc: t("forklaringer.noder.types.airplay"),         color: TAB_COLORS.refleksjon },
+              { label: "dlna",            desc: t("forklaringer.noder.types.dlna"),            color: TAB_COLORS.bilder },
+            ]} />
+          </>)}
+
+          {sub("noder_skjerm_typer", TAB_COLORS.bilder, <>
+            <RoleList rows={[
+              { label: "apple_tv",   desc: t("forklaringer.noder.types.apple_tv"),   color: TAB_COLORS.integrasjoner },
+              { label: "samsung_tv", desc: t("forklaringer.noder.types.samsung_tv"), color: TAB_COLORS.ha },
+              { label: "android_tv", desc: t("forklaringer.noder.types.android_tv"), color: TAB_COLORS.llm },
+              { label: "google_tv",  desc: t("forklaringer.noder.types.google_tv"),  color: TAB_COLORS.nettsok },
+              { label: "fire_tv",    desc: t("forklaringer.noder.types.fire_tv"),    color: TAB_COLORS.mqtt },
+              { label: "lg_tv",      desc: t("forklaringer.noder.types.lg_tv"),      color: TAB_COLORS.refleksjon },
+              { label: "projector",  desc: t("forklaringer.noder.types.projector"),  color: TAB_COLORS.generelt },
+            ]} />
+          </>)}
         </>)}
 
         {sec("kameraer", GROUP_COLORS.admin, <>
@@ -289,7 +378,7 @@ export default function TabForklaringer() {
 
         {sec("refleksjoner", GROUP_COLORS.internal, <>
           <Body text={t("forklaringer.refleksjoner.body")} />
-          <Items items={items("refleksjoner", 4)} />
+          <Items items={items("refleksjoner", 5)} />
         </>)}
       </div>
 
@@ -322,7 +411,7 @@ export default function TabForklaringer() {
             { label: "Sky",         desc: t("forklaringer.innst_llm.role_sky"),       color: TAB_COLORS.kare },
           ]} />
           <SubHeading text="Andre begreper:" />
-          <Items items={items("innst_llm", 4)} />
+          <Items items={items("innst_llm", 5)} />
         </>)}
 
         {sec("innst_refleksjon", TAB_COLORS.refleksjon, <>
@@ -359,7 +448,7 @@ export default function TabForklaringer() {
         <GroupHeader label={t("forklaringer.group_user")} color={GROUP_COLORS.user} />
 
         {sec("bruker_chat", GROUP_COLORS.user, <>
-          <Items items={items("bruker_chat", 5)} />
+          <Items items={items("bruker_chat", 6)} />
         </>)}
 
         {sec("bruker_refleksjoner", GROUP_COLORS.user, <>

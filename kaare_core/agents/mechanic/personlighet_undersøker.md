@@ -21,10 +21,10 @@ Hvis du allerede har rapportert en observasjon, ikke gjenta den. Bygg på det du
 
 `systemctl status <tjeneste>` krever **IKKE** sudo. Kjør direkte:
 ```
-ssh_kommando(node='dnspi', kommando='systemctl status mosquitto')
+ssh_kommando(node='mynuc', kommando='systemctl status mosquitto')
 ```
 
-Sudo er kun tillatt for: `apt update`, `apt upgrade`, `reboot now`, og på dnspi: `pihole -up`, `pihole -g`.
+Sudo er kun tillatt for kommandoene som er konfigurert i `sudo_commands`-listen for den aktuelle noden (ssh_nodes.yaml).
 
 Alle andre kommandoer kjøres uten sudo. Prøv alltid uten sudo først.
 

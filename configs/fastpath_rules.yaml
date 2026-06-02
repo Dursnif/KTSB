@@ -1,0 +1,23 @@
+# Fastpath reflexes — data-driven dispatch rules
+#
+# phrase:   Norwegian command to match (lowercase, stripped of punctuation)
+# match:    "contains" (default) or "exact"
+# provider: "ha" / "mqtt" / "os"
+# active:   true (default) / false — set false to disable without deleting
+# learned:  false = manual entry, true = suggested by Kåre (needs confirmed_by: admin)
+#
+# HA-provider fields:
+#   action:    "turn_on" / "turn_off" / "toggle" / "set_level"
+#   entity_id: Home Assistant entity ID
+#
+# MQTT-provider fields:
+#   topic:   MQTT topic to publish to
+#   payload: JSON string to publish
+#
+# OS-provider fields:
+#   action: "clock" / "cpu_stats" / "ram_stats" / "temp_stats"
+
+settings:
+  cache_ttl_seconds: 30
+
+reflexes: []

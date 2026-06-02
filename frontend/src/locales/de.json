@@ -778,13 +778,20 @@
     },
     "rollback": {
       "title": "Auf Standard zurücksetzen",
-      "description": "Stellt die vier Haupt-Konfigurationsdateien aus dem eingefrorenen Snapshot in configs_default/ wieder her. Verwenden Sie dies, wenn Sie die Konfiguration beschädigt haben und neu beginnen möchten.",
-      "confirm": "Dies setzt settings.yaml, llm.yaml, models.yaml und services.yaml auf die eingefrorene Standardversion zurück. Fortfahren?",
+      "description": "Stellt alle Konfigurationsdateien aus den eingefrorenen Werkseinstellungen in configs_default/ wieder her. Verwenden Sie dies für einen Neustart mit einer sauberen Installation.",
+      "confirm": "Dadurch werden ALLE Konfigurationsdateien auf Werksstandard zurückgesetzt. Alle benutzerdefinierten Einstellungen, Modelle und Dienst-URLs gehen verloren. Fortfahren?",
       "button": "Auf Standard zurücksetzen",
       "loading": "Wird zurückgesetzt…",
       "ok": "Wiederhergestellt: {{files}}",
       "error_suffix": "Fehler: ",
-      "error": "Fehler — konnte nicht zurücksetzen"
+      "error": "Fehler — konnte nicht zurücksetzen",
+      "pin_title": "Mit PIN bestätigen",
+      "pin_warning": "⚠️ Dies setzt alle Einstellungen auf Werksstandard zurück — wie bei einer Neuinstallation. Alle benutzerdefinierten Werte gehen verloren. Wiederherstellungspunkte bleiben erhalten.",
+      "pin_placeholder": "Ihre PIN…",
+      "pin_confirm_button": "Auf Werksstandard zurücksetzen",
+      "pin_cancel": "Abbrechen",
+      "pin_error": "Falsche PIN — erneut versuchen",
+      "verifying": "Wird überprüft…"
     },
     "github": {
       "title": "GitHub-Veröffentlichung",
@@ -810,6 +817,40 @@
       "ram_gb": "{{gb}} GB",
       "note_gpu": "GPU erkannt — aktivieren Sie GPU, indem Sie COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml zu .env hinzufügen und setup.sh ausführen",
       "error": "Hardware-Informationen konnten nicht abgerufen werden"
+    },
+    "snapshots": {
+      "title": "Wiederherstellungspunkte",
+      "description": "Benannte Snapshots aller Konfigurationsdateien speichern und bei Bedarf wiederherstellen.",
+      "name_placeholder": "Name des Snapshots…",
+      "save_button": "Snapshot speichern",
+      "saving": "Speichert…",
+      "counter": "{{count}}/10 Snapshots",
+      "max_reached": "Maximum 10 erreicht — einen löschen, um einen neuen zu speichern",
+      "empty": "Noch keine Snapshots gespeichert.",
+      "restore_button": "Wiederherstellen",
+      "delete_button": "Löschen",
+      "restore_confirm": "Dadurch werden die aktiven Konfigurationsdateien mit dem Snapshot \"{{name}}\" überschrieben. Fortfahren?",
+      "restore_ok": "Wiederhergestellt: {{files}}",
+      "restore_error": "Fehler beim Wiederherstellen",
+      "delete_confirm": "Snapshot \"{{name}}\" löschen?",
+      "delete_error": "Fehler beim Löschen",
+      "save_error": "Fehler beim Speichern",
+      "name_required": "Bitte Namen eingeben",
+      "export_button": "Exportieren",
+      "import_title": "Snapshot importieren",
+      "import_description": "Eine zuvor exportierte Konfigurations-ZIP hochladen, um sie auf einer neuen Installation wiederherzustellen.",
+      "import_name_placeholder": "Name für importierten Snapshot…",
+      "import_button": "ZIP importieren",
+      "importing": "Importiert…",
+      "import_ok": "Importiert: {{count}} Dateien",
+      "import_error": "Fehler beim Import",
+      "import_bad_zip": "Ungültige ZIP-Datei",
+      "import_no_yaml": "ZIP enthielt keine Konfigurationsdateien",
+      "export_current_button": "Aktuelle Konfiguration exportieren",
+      "install_button": "Installieren",
+      "download_button": "Herunterladen",
+      "select_hint": "Einen Snapshot auswählen zum Installieren oder Herunterladen",
+      "choose_file": "Datei wählen"
     }
   },
   "dashboard": {
@@ -909,6 +950,8 @@
       "vpn_ai_only": "Nur KI — nur KI-Chat extern, nicht Smart Home",
       "vpn_full_access": "Vollzugriff — alles extern verfügbar",
       "active_label": "Aktiv",
+      "can_manage_child_timers": "Elternkontrolle",
+      "can_manage_child_timers_desc": "Kann Timer für Kinder und Teenager setzen",
       "save": "Speichern",
       "cancel": "Abbrechen",
       "error_generic": "Etwas ist schiefgelaufen."
@@ -1046,6 +1089,11 @@
     "delete": "Löschen",
     "enabled": "Aktiviert",
     "disabled": "Deaktiviert",
+    "section": {
+      "audio": "Audio",
+      "multi": "Multi",
+      "display": "Bildschirm"
+    },
     "modal": {
       "edit_title": "Knoten bearbeiten",
       "new_title": "Neuer Knoten",
@@ -1056,6 +1104,15 @@
       "entity_id": "Entity ID",
       "host": "Host (IP)",
       "api_port": "API-Port",
+      "mac": "MAC-Adresse (Wake-on-LAN)",
+      "adb_port": "ADB-Port",
+      "tvoverlay_port": "TvOverlay-Port",
+      "tvoverlay_hint": "Erfordert TvOverlay-App auf dem Gerät",
+      "capabilities": "Fähigkeiten",
+      "has_audio": "Audio (TTS / Ansagen)",
+      "has_display": "Bildschirm (Bild / Text / Video)",
+      "type_group_audio": "Audio",
+      "type_group_display": "TV und Bildschirm",
       "default_user": "Standardbenutzer (optional)",
       "cancel": "Abbrechen",
       "save": "Speichern",
@@ -1064,6 +1121,11 @@
   },
   "tools": {
     "title": "Werkzeuge",
+    "timer_admin_title": "Timer-Grenzen",
+    "timer_admin_max_label": "Max. aktive Timer pro Nutzer",
+    "timer_admin_save": "Speichern",
+    "timer_admin_saved": "Gespeichert ✓",
+    "timer_admin_no_active": "Keine aktiven Timer",
     "timers_title": "Aktive Timer",
     "timers_empty": "Keine aktiven Timer",
     "repeat": {
@@ -1079,7 +1141,34 @@
     "log_title": "Ausführungsprotokoll",
     "log_loading": "Lädt…",
     "log_empty": "Noch keine Werkzeugaufrufe",
-    "unknown_event": "unbekannt"
+    "unknown_event": "unbekannt",
+    "ssh_title": "SSH-Knoten",
+    "ssh_local_sudo": "Sudo lokal erlauben (auf diesem Gerät)",
+    "ssh_local_sudo_warning": "Lokales Sudo gibt Kåre vollen Systemzugriff — nicht empfohlen",
+    "ssh_no_nodes": "Keine SSH-Knoten konfiguriert",
+    "ssh_add": "SSH-Knoten hinzufügen",
+    "ssh_edit": "Bearbeiten",
+    "ssh_delete": "Löschen",
+    "ssh_confirm_delete": "SSH-Knoten «{{id}}» löschen?",
+    "ssh_saved": "Gespeichert ✓",
+    "ssh_node_id": "Knoten-ID (wird von Kåre verwendet)",
+    "ssh_label": "Anzeigename",
+    "ssh_host": "Hostname / IP",
+    "ssh_user": "SSH-Benutzer",
+    "ssh_port": "Port",
+    "ssh_key": "SSH-Schlüssel",
+    "ssh_node_type": "Knotentyp",
+    "ssh_node_type_linux": "Linux / Standard-SSH",
+    "ssh_node_type_ha_os": "Home Assistant OS",
+    "ssh_ha_os_hint": "Port 2222 und Benutzer root werden automatisch gesperrt. HA-CLI-Befehle sind immer erlaubt.",
+    "ssh_ha_host_hint": "HA gefunden unter {{host}} — aus Dienstkonfiguration",
+    "ssh_sudo_enabled": "Sudo erlauben",
+    "ssh_sudo_commands": "Erlaubte sudo-Befehle",
+    "ssh_sudo_add_cmd": "Befehl hinzufügen…",
+    "ssh_sudo_add": "Hinzufügen",
+    "ssh_test": "Verbindung testen",
+    "ssh_test_ok": "OK · {{ms}} ms",
+    "ssh_test_fail": "Fehler: {{error}}"
   },
   "cameras": {
     "title": "Kameraeinstellungen",
@@ -1331,12 +1420,12 @@
       "item_2": "Vollständiger Neustart — startet den Kåre-Dienst neu. Dauert 5–30 Sekunden.",
       "item_3": "Systemprüfung — verifiziert, dass alle Dienste antworten und Verbindungen funktionieren.",
       "item_4": "Gedächtniskomprimierung — überträgt Kurzzeitgedächtnis (STM) ins Langzeitgedächtnis (LTM). Läuft automatisch jede Nacht.",
-      "item_5": "⚠ Zurücksetzen — setzt ALLE Einstellungen auf Werkseinstellungen zurück. Eigene Anpassungen gehen verloren."
+      "item_5": "Konfigurations-Snapshots — Benannte Sicherungen aller Einstellungen erstellen, als Zip herunterladen oder installieren, bei Neuinstallation importieren. ⚠ Factory-Reset setzt alles auf Werkseinstellungen zurück — erfordert PIN-Bestätigung."
     },
     "verktoy": {
       "title": "Werkzeuge",
       "summary": "Einblick in Kåres Werkzeugnutzung und aktive Timer",
-      "body": "Die Werkzeug-Seite ist schreibgeschützt — Sie können sehen, was Kåre getan hat, aber hier nichts steuern.",
+      "body": "Die Werkzeug-Seite bietet Einblick in SSH-Knoten, Timer und Kåres Aktionsprotokoll. SSH-Verbindungen zu Netzwerkgeräten werden hier konfiguriert.",
       "item_1": "Die Timer-Übersicht zeigt aktive Countdowns und Erinnerungen, die Kåre verfolgt.",
       "item_2": "Das Werkzeugprotokoll zeigt die zuletzt ausgeführten Aktionen von Kåre.",
       "item_3": "Sie können sehen, wer was angefordert hat, den Zeitstempel und ob es erfolgreich war."
@@ -1352,8 +1441,8 @@
     },
     "noder": {
       "title": "Knoten",
-      "summary": "TTS-Lautsprecher und Mediengeräte, durch die Kåre sprechen kann",
-      "body": "Ein «Knoten» ist ein Audiogerät, durch das Kåre sprechen oder Musik senden kann — Smart Speaker, TV, Chromecast oder benutzerdefiniertes Board.",
+      "summary": "Audio- und Anzeigegeräte, durch die Kåre sprechen oder Inhalte zeigen kann",
+      "body": "Ein «Knoten» ist ein Gerät, durch das Kåre sprechen, Inhalte anzeigen oder Musik senden kann. Knoten haben Fähigkeiten: Audio (TTS/Ankündigungen) und/oder Anzeige (Bilder/Text/Video).",
       "types_intro": "Unterstützte Knotentypen:",
       "types": {
         "ha_media_player": "HA Media Player — Gerät gesteuert von Home Assistant (Nest Hub, Google TV, Smart Speaker via HA)",
@@ -1362,7 +1451,14 @@
         "chromecast": "Chromecast — Google Chromecast oder Google TV, Direktverbindung",
         "snapcast": "Snapcast — Synchronisiertes Multiroom-Audio über das lokale Netzwerk",
         "airplay": "AirPlay — Apple-Protokoll für drahtloses Audio (HomePod, Apple TV, AirPlay-Lautsprecher)",
-        "dlna": "DLNA — Standard für drahtloses Audio an kompatible Fernseher und Stereoanlagen"
+        "dlna": "DLNA — Standard für drahtloses Audio an kompatible Fernseher und Stereoanlagen",
+        "apple_tv": "Apple TV — AirPlay-basiert, unterstützt Anzeige und Audio",
+        "samsung_tv": "Samsung TV — Tizen OS, gesteuert über HA oder direkt",
+        "android_tv": "Android TV — generische Android-TV-Plattform",
+        "google_tv": "Google TV — Googles TV-Plattform (Chromecast Gen 4+)",
+        "fire_tv": "Fire TV — Amazons TV-Plattform (FireStick, Fire TV Cube)",
+        "lg_tv": "LG TV — webOS, gesteuert über Home Assistant",
+        "projector": "Projektor — nur Anzeige, kein Audio"
       }
     },
     "kameraer": {
@@ -1391,7 +1487,8 @@
       "item_1": "Reflexionstreffen (04:00) — Kåre und Miss Kåre überprüfen die Gespräche des Tages. Kåre aktualisiert seine Selbstbeschreibung und sein Weltmodell.",
       "item_2": "Entwicklertreffen (05:30) — Technische Überprüfung von Systemgesundheit, Fehlern und Verbesserungsvorschlägen.",
       "item_3": "PIN-Schutz — Besprechungsprotokolle sind mit der PIN des Benutzers gesperrt. Nur Sie können Ihre eigenen Protokolle lesen.",
-      "item_4": "Themenfeld — Sie können ein Thema vorschlagen, das Kåre beim nächsten Nachtgespräch behandelt."
+      "item_4": "Themenfeld — Sie können ein Thema vorschlagen, das Kåre beim nächsten Nachtgespräch behandelt.",
+      "item_5": "Miss Kåre-Porträt — Miss Kåre erstellt schrittweise ein persönliches Porträt jedes Benutzers auf Basis von Beobachtungen. Das Porträt wird in den Besprechungskontext eingebettet für persönlichere Analyse."
     },
     "innst_generelt": {
       "title": "Einstellungen → Allgemein",
@@ -1429,7 +1526,8 @@
       "item_1": "Whisper — Das Sprache-zu-Text-Modell. Wandelt Ihre Stimme in Text um, den Kåre verstehen kann.",
       "item_2": "Embedding — Erstellt durchsuchbares Gedächtnis. Wird für semantische Gedächtnissuche verwendet.",
       "item_3": "Lokal vs. Cloud — Lokale Modelle sind schneller und privat. Cloud ist ein Sicherheitsnetz bei Fehlern.",
-      "item_4": "num_ctx — Das Kontextfenster. Wie viel des Gesprächs das Modell in einem Durchlauf verarbeitet."
+      "item_4": "num_ctx — Das Kontextfenster. Wie viel des Gesprächs das Modell in einem Durchlauf verarbeitet.",
+      "item_5": "Piper (Text-zu-Sprache) — Kåres Stimme. Drei Sprachsektionen (Norwegisch/Englisch/Deutsch) mit verschiedenen Stimmpaketen. Herunterladen, gewünschte Stimme aktivieren und Dienst neu starten."
     },
     "innst_refleksjon": {
       "title": "Einstellungen → Reflexion",
@@ -1498,7 +1596,8 @@
       "item_2": "Sprach-Button — Gedrückt halten zum Sprechen. Kåre transkribiert und antwortet per Sprache.",
       "item_3": "Bilder — Bild in den Chat ziehen und ablegen oder auf das Bildsymbol klicken zur Analyse.",
       "item_4": "Miss Kåre-Panel — Wird unter Kåres Antwort mit Seitenkommentaren und alternativen Perspektiven angezeigt.",
-      "item_5": "Trace-Ansicht — Drücken Sie den Pfeil unter einer Antwort, um zu sehen, welche Werkzeuge Kåre verwendet hat."
+      "item_5": "Trace-Ansicht — Drücken Sie den Pfeil unter einer Antwort, um zu sehen, welche Werkzeuge Kåre verwendet hat.",
+      "item_6": "Timer-Benachrichtigungen — Wenn ein Timer abläuft, erscheint die Meldung direkt im Chat, ohne dass Sie fragen müssen. Kåre bestätigt die Zustellung automatisch."
     },
     "bruker_refleksjoner": {
       "title": "Meine Reflexionen",
@@ -1507,6 +1606,32 @@
       "item_2": "PIN-Schutz — Geben Sie Ihre PIN ein, um den Inhalt zu lesen. Nur Sie haben Zugang.",
       "item_3": "Besprechungsprotokolle werden lokal gespeichert und nie an Dritte weitergegeben.",
       "item_4": "PIN-Pufferung — Kåre merkt sich Ihre PIN in derselben Browser-Sitzung, sodass Sie sie nicht für jedes Treffen eingeben müssen."
+    },
+    "noder_kategorier": {
+      "title": "Kategorien — AUDIO / MULTI / ANZEIGE",
+      "item_1": "AUDIO — Nur Lautsprecher. Kåre spricht und spielt Musik über den Knoten.",
+      "item_2": "MULTI — Lautsprecher und Anzeige. Zeigt Inhalte und spricht (z.B. Nest Hub mit Bildschirm, Google TV).",
+      "item_3": "ANZEIGE — Nur Bildschirm. Zeigt Bilder, Text und Video. Kein direktes TTS-Audio vom Knoten."
+    },
+    "noder_lyd_typer": {
+      "title": "Audio-Typen"
+    },
+    "noder_skjerm_typer": {
+      "title": "Anzeige- und Multi-Typen"
+    },
+    "verktoy_ssh": {
+      "title": "SSH-Knoten",
+      "body": "SSH-Knoten sind Netzwerkgeräte, auf denen Kåre Befehle ausführen kann. Hier konfigurieren, via «ssh_kommando»-Werkzeug im Chat verwenden.",
+      "item_1": "Knotentyp: Linux/Standard SSH (Port 22, optionaler Nutzer) oder HA OS (Port 2222, root, nur ha-Befehle erlaubt).",
+      "item_2": "Sudo erlauben — Pro Knoten aktivieren und genau festlegen, welche sudo-Befehle erlaubt sind. Nur aufgelistete Befehle werden akzeptiert.",
+      "item_3": "Verbindung testen — Schaltfläche klicken, um die SSH-Verbindung direkt im GUI zu verifizieren."
+    },
+    "verktoy_timer": {
+      "title": "Timer-Limits",
+      "item_1": "Max aktive Timer pro Benutzer — Limit mit dem Zahlenfeld und «Speichern» festlegen. Standard ist 20."
+    },
+    "verktoy_log": {
+      "title": "Ausführungsprotokoll"
     }
   },
   "personality_variants": {

@@ -1,0 +1,23 @@
+# TTS pronunciation corrections — applied before Piper synthesis.
+# Piper is a Norwegian model and reads English loanwords with Norwegian phonetics.
+# Add entries here to fix mispronunciations without touching code.
+#
+# Rules are matched case-insensitively at word boundaries (whole words only).
+# The replacement should be spelled as Piper would pronounce it correctly in Norwegian.
+#
+# Format:
+#   word: replacement
+#
+substitutions:
+  interface: interfeis
+  wifi: wåifåi
+  ai: æi
+  software: såftuer
+  hardware: hårdwer
+  update: åpdeit
+  cache: kasj
+  router: råuter
+  server: server
+  browser: bråuser
+  streaming: striiming
+  podcast: podkast

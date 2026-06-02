@@ -1,10 +1,12 @@
 import asyncio
 import json
+import shutil
 import subprocess
+import uuid as _uuid
 from pathlib import Path
 import httpx
 import yaml
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 import kaare_core.app_state as app_state
 from kaare_core.users.auth import require_auth as _require_auth, require_admin as _require_admin
 from kaare_core.config import get_model, reload_capability_services
@@ -1053,6 +1055,176 @@ async def api_put_services_voice(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True}
 
 
+# ---------------------------------------------------------------------------
+# Piper TTS — model management
+# ---------------------------------------------------------------------------
+
+_PIPER_MODEL_DIR = Path("/mnt/ai_disk/models/voice/piper")
+
+_PIPER_PRESETS: dict[str, list[dict]] = {
+    "nb": [
+        {"model": "no_NO-talesyntese-medium", "tier": "medium", "tier_label": "Medium", "size_mb": 63, "gender": "female"},
+    ],
+    "en": [
+        {"model": "en_US-lessac-low",    "tier": "low",    "tier_label": "Small",  "size_mb": 63,  "gender": "female"},
+        {"model": "en_US-lessac-medium", "tier": "medium", "tier_label": "Medium", "size_mb": 63,  "gender": "female"},
+        {"model": "en_US-lessac-high",   "tier": "high",   "tier_label": "Large",  "size_mb": 114, "gender": "female"},
+        {"model": "en_US-ryan-high",     "tier": "high",   "tier_label": "Large",  "size_mb": 121, "gender": "male"},
+        {"model": "en_US-libritts-high", "tier": "high",   "tier_label": "Large+", "size_mb": 137, "gender": "mixed"},
+    ],
+    "de": [
+        {"model": "de_DE-eva_k-x_low",     "tier": "x_low",  "tier_label": "Tiny",   "size_mb": 21,  "gender": "female"},
+        {"model": "de_DE-kerstin-low",     "tier": "low",    "tier_label": "Small",  "size_mb": 63,  "gender": "female"},
+        {"model": "de_DE-thorsten-low",    "tier": "low",    "tier_label": "Small",  "size_mb": 63,  "gender": "male"},
+        {"model": "de_DE-thorsten-medium", "tier": "medium", "tier_label": "Medium", "size_mb": 63,  "gender": "male"},
+        {"model": "de_DE-thorsten-high",   "tier": "high",   "tier_label": "Large",  "size_mb": 114, "gender": "male"},
+    ],
+}
+
+_TIER_ORDER = {"x_low": 0, "low": 1, "medium": 2, "high": 3}
+
+_piper_download_jobs: dict[str, dict] = {}  # job_id → {status, lang, model, error}
+
+
+def _piper_local_path(model_name: str) -> Path:
+    """Return expected local path for a Piper model after huggingface-cli download."""
+    parts = model_name.split("-", 1)
+    lang_code = parts[0]                        # en_US, de_DE, no_NO
+    lang_prefix = lang_code.split("_")[0].lower()  # en, de, no
+    remainder = parts[1] if len(parts) > 1 else ""
+    tier_values = {"x_low", "low", "medium", "high"}
+    rem_parts = remainder.rsplit("-", 1)
+    if len(rem_parts) == 2 and rem_parts[1] in tier_values:
+        speaker, tier = rem_parts
+    else:
+        speaker, tier = remainder, "medium"
+    return _PIPER_MODEL_DIR / lang_prefix / lang_code / speaker / tier / f"{model_name}.onnx"
+
+
+def _piper_hf_paths(model_name: str) -> tuple[str, str]:
+    """Return the two HuggingFace repo paths (onnx + json) for a model."""
+    local = _piper_local_path(model_name)
+    # local is: /mnt/ai_disk/models/voice/piper/{lang_prefix}/{lang_code}/{speaker}/{tier}/{model}.onnx
+    # HF path is the same relative structure from the repo root
+    rel = local.relative_to(_PIPER_MODEL_DIR)
+    return str(rel), str(rel) + ".json"
+
+
+def _piper_active_models() -> dict[str, str]:
+    """Read tts_models from services.yaml → {lang: path_str}."""
+    try:
+        data = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
+        return data.get("voice", {}).get("tts", {}).get("tts_models", {})
+    except Exception:
+        return {}
+
+
+@router.get("/api/settings/piper/models")
+def api_get_piper_models(_u=Depends(_require_auth)):
+    """Return preset list per language with downloaded/active state.
+
+    Models may live at the nested HuggingFace path (new downloads) or at a
+    flat path (manually placed / pre-existing install). The configured path in
+    tts_models takes precedence when it matches this model's filename.
+    """
+    active = _piper_active_models()
+    result: dict[str, list[dict]] = {}
+    for lang, presets in _PIPER_PRESETS.items():
+        lang_active_path = active.get(lang, "")
+        configured = Path(lang_active_path) if lang_active_path else None
+        rows = []
+        for p in presets:
+            nested_path = _piper_local_path(p["model"])
+            # If configured path exists and filename matches this preset, use it
+            configured_matches = (
+                configured is not None
+                and configured.exists()
+                and configured.stem == p["model"]
+            )
+            actual_path = configured if configured_matches else nested_path
+            downloaded = actual_path.exists()
+            is_active = configured_matches
+            rows.append({
+                **p,
+                "local_path": str(actual_path),
+                "downloaded": downloaded,
+                "active": is_active,
+            })
+        result[lang] = rows
+    return result
+
+
+async def _run_piper_download(job_id: str, model_name: str, lang: str) -> None:
+    """Background task: download Piper model from HuggingFace using Python library."""
+    _piper_download_jobs[job_id] = {"status": "running", "lang": lang, "model": model_name, "error": None}
+    onnx_path, json_path = _piper_hf_paths(model_name)
+    _PIPER_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+    def _do_download() -> None:
+        from huggingface_hub import hf_hub_download
+        for hf_path in (onnx_path, json_path):
+            hf_hub_download(
+                repo_id="rhasspy/piper-voices",
+                filename=hf_path,
+                local_dir=str(_PIPER_MODEL_DIR),
+                local_dir_use_symlinks=False,
+            )
+
+    try:
+        loop = asyncio.get_event_loop()
+        await asyncio.wait_for(loop.run_in_executor(None, _do_download), timeout=600)
+        _piper_download_jobs[job_id]["status"] = "done"
+    except asyncio.TimeoutError:
+        _piper_download_jobs[job_id]["status"] = "error"
+        _piper_download_jobs[job_id]["error"] = "Download timed out (10 min)"
+    except Exception as exc:
+        _piper_download_jobs[job_id]["status"] = "error"
+        _piper_download_jobs[job_id]["error"] = str(exc)
+
+
+@router.post("/api/settings/piper/download")
+async def api_post_piper_download(payload: dict, background_tasks: BackgroundTasks, _u=Depends(_require_admin)):
+    lang = payload.get("lang", "").strip()
+    model_name = payload.get("model_name", "").strip()
+    if lang not in _PIPER_PRESETS:
+        raise HTTPException(400, f"Unknown lang: {lang}")
+    known_models = {p["model"] for p in _PIPER_PRESETS[lang]}
+    if model_name not in known_models:
+        raise HTTPException(400, f"Unknown model: {model_name}")
+    job_id = _uuid.uuid4().hex[:12]
+    background_tasks.add_task(_run_piper_download, job_id, model_name, lang)
+    return {"job_id": job_id}
+
+
+@router.get("/api/settings/piper/download/{job_id}")
+def api_get_piper_download_status(job_id: str, _u=Depends(_require_auth)):
+    job = _piper_download_jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    return job
+
+
+@router.put("/api/settings/piper/activate")
+async def api_put_piper_activate(payload: dict, _u=Depends(_require_admin)):
+    lang = payload.get("lang", "").strip()
+    model_path = payload.get("model_path", "").strip()
+    if lang not in _PIPER_PRESETS:
+        raise HTTPException(400, f"Unknown lang: {lang}")
+    if not Path(model_path).exists():
+        raise HTTPException(400, f"Model file not found: {model_path}")
+    data = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
+    data.setdefault("voice", {}).setdefault("tts", {}).setdefault("tts_models", {})[lang] = model_path
+    _SERVICES_PATH.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False), encoding="utf-8")
+    svc = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
+    bridge_url = svc.get("internal", {}).get("voice_bridge", "http://127.0.0.1:8011")
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            await client.post(f"{bridge_url}/reload_tts_models")
+    except Exception:
+        pass  # non-fatal — model active after next bridge restart
+    return {"ok": True, "lang": lang, "model_path": model_path}
+
+
 @router.get("/api/settings/ha-token")
 def api_get_ha_token(_u=Depends(_require_auth)):
     tok = _read_env_key(_HA_TOKEN_PATH, "HA_TOKEN")
@@ -1508,7 +1680,97 @@ async def api_put_nodes(payload: dict, _u=Depends(_require_admin)):
     data = yaml.safe_load(_NODES_PATH.read_text(encoding="utf-8")) or {}
     data["nodes"] = payload["nodes"]
     _NODES_PATH.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False), encoding="utf-8")
+    try:
+        import httpx as _httpx
+        async with _httpx.AsyncClient(timeout=3) as _c:
+            await _c.post("http://127.0.0.1:8011/reload_nodes")
+    except Exception:
+        pass
     return {"ok": True}
+
+
+@router.post("/api/settings/nodes/{node_id}/test_display")
+async def api_test_display_node(node_id: str, _u=Depends(_require_admin)):
+    from adapters.display_adapter import send_display
+    result = await send_display(node_id=node_id, text="Kåre display test", title="Kåre", duration=5)
+    if result.get("ok"):
+        return {"ok": True, "method": result.get("method")}
+    raise HTTPException(500, result.get("error", "Unknown error"))
+
+
+# ── SSH Nodes ──────────────────────────────────────────────────────────────────
+
+_SSH_NODES_PATH = Path("/kaare/configs/ssh_nodes.yaml")
+
+
+@router.get("/api/settings/ssh-nodes")
+def api_get_ssh_nodes(_u=Depends(_require_admin)):
+    from kaare_core.config import get_ssh_nodes
+    return get_ssh_nodes()
+
+
+@router.put("/api/settings/ssh-nodes")
+async def api_put_ssh_nodes(payload: dict, _u=Depends(_require_admin)):
+    data: dict = {}
+    if _SSH_NODES_PATH.exists():
+        try:
+            data = yaml.safe_load(_SSH_NODES_PATH.read_text(encoding="utf-8")) or {}
+        except Exception:
+            data = {}
+    if "local" in payload:
+        data["local"] = payload["local"]
+    if "nodes" in payload:
+        data["nodes"] = payload["nodes"]
+    _SSH_NODES_PATH.write_text(
+        yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False),
+        encoding="utf-8",
+    )
+    return {"ok": True}
+
+
+@router.post("/api/settings/ssh-nodes/test")
+async def api_test_ssh_node(payload: dict, _u=Depends(_require_admin)):
+    import asyncio
+    import subprocess
+    import time
+    from pathlib import Path as _Path
+
+    host    = payload.get("host", "").strip()
+    user    = payload.get("user", "root").strip()
+    port    = int(payload.get("port", 22))
+    ssh_key = str(payload.get("ssh_key", "~/.ssh/id_ed25519")).replace("~", str(_Path.home()))
+
+    if not host:
+        raise HTTPException(400, "host is required")
+
+    def _run_test() -> dict:
+        start = time.monotonic()
+        try:
+            result = subprocess.run(
+                [
+                    "ssh",
+                    "-i", ssh_key,
+                    "-F", "/kaare/.ssh/config",
+                    "-o", "BatchMode=yes",
+                    "-o", "ConnectTimeout=6",
+                    "-o", "StrictHostKeyChecking=accept-new",
+                    "-p", str(port),
+                    f"{user}@{host}",
+                    "echo ok",
+                ],
+                capture_output=True, text=True, timeout=10,
+            )
+            elapsed = int((time.monotonic() - start) * 1000)
+            if result.returncode == 0 and "ok" in result.stdout:
+                return {"ok": True, "latency_ms": elapsed}
+            err = (result.stderr or result.stdout).strip()[:200]
+            return {"ok": False, "latency_ms": elapsed, "error": err or "SSH returned non-zero"}
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "latency_ms": 10000, "error": "Connection timed out"}
+        except Exception as e:
+            return {"ok": False, "latency_ms": 0, "error": str(e)[:200]}
+
+    return await asyncio.to_thread(_run_test)
 
 
 @router.get("/api/settings/capabilities")
@@ -1686,3 +1948,31 @@ async def api_put_meeting_roles(payload: dict, _u=Depends(_require_admin)):
         except Exception as e:
             raise HTTPException(500, f"Could not write miss_kare custom: {e}")
     return {"ok": True}
+
+
+@router.get("/api/settings/timers")
+async def api_get_timer_settings(_u=Depends(_require_admin)):
+    try:
+        data = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:
+        data = {}
+    return {"max_per_user": data.get("timers", {}).get("max_per_user", 20)}
+
+
+@router.put("/api/settings/timers")
+async def api_put_timer_settings(payload: dict, _u=Depends(_require_admin)):
+    max_per_user = payload.get("max_per_user")
+    if not isinstance(max_per_user, int) or max_per_user < 1 or max_per_user > 1000:
+        raise HTTPException(400, "max_per_user must be an integer between 1 and 1000")
+    try:
+        data = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
+        data.setdefault("timers", {})["max_per_user"] = max_per_user
+        _SETTINGS_PATH.write_text(
+            yaml.dump(data, allow_unicode=True, default_flow_style=False),
+            encoding="utf-8",
+        )
+        from kaare_core.config import reload_config
+        reload_config()
+    except Exception as e:
+        raise HTTPException(500, f"Could not write settings.yaml: {e}")
+    return {"ok": True, "max_per_user": max_per_user}

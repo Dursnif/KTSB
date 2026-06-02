@@ -54,6 +54,10 @@ def _infer_source(rid: str) -> str:
         return "refl"
     if rid.startswith("rid-meet-"):
         return "meet"
+    if rid.startswith("rid-timer-"):
+        return "timer"
+    if rid.startswith("rid-stt-"):
+        return "stt"
     return "user"
 
 
@@ -97,6 +101,9 @@ def get_trace(rid: str) -> dict:
     llm_calls: list[dict] = []
     tool_calls: list[dict] = []
     think_entries: list[dict] = []
+    voice_events: list[dict] = []
+
+    _VOICE_STAGES = {"stt_pipeline_start", "stt_done", "stt_speaker", "stt_kaare_done"}
 
     for entry in _read_jsonl(_ROUTE_LOG):
         if entry.get("rid") == rid:
@@ -105,6 +112,14 @@ def get_trace(rid: str) -> dict:
                 "stage": entry.get("stage", ""),
                 "hit":   entry.get("hit"),
             })
+            stage = entry.get("stage", "")
+            if stage in _VOICE_STAGES:
+                ve: dict[str, Any] = {"stage": stage, "ts": entry.get("ts", "")}
+                for key in ("node", "room", "text", "stt_ms", "confirmed_by",
+                            "user", "best_guess", "confidence", "total_ms"):
+                    if key in entry:
+                        ve[key] = entry[key]
+                voice_events.append(ve)
 
     for entry in _read_jsonl(_LLM_LOG):
         if entry.get("rid") == rid:
@@ -165,6 +180,7 @@ def get_trace(rid: str) -> dict:
         "llm_calls":       llm_calls,
         "tool_calls":      tool_calls,
         "think_entries":   think_entries,
+        "voice_events":    voice_events,
         "total_latency_ms": total_latency_ms,
         "llm_call_count":  len(llm_calls),
         "tool_count":      len(tool_calls),
@@ -220,10 +236,28 @@ def format_trace_for_kare(trace: dict, lang: str = "nb") -> str:
     total  = trace.get("total_latency_ms", 0)
     lines  = [f"{rid} [{source}] ({total/1000:.1f}s):"]
 
+    voice_events = trace.get("voice_events", [])
+    if voice_events:
+        for ve in voice_events:
+            stage = ve.get("stage", "")
+            if stage == "stt_pipeline_start":
+                lines.append(f"  [Voice] node={ve.get('node','?')} room={ve.get('room','?')}")
+            elif stage == "stt_speaker":
+                conf = ve.get("confidence", 0.0)
+                lines.append(
+                    f"  [Voice] speaker={ve.get('confirmed_by','?')} "
+                    f"user={ve.get('user','?')} guess={ve.get('best_guess')} conf={conf:.2f}"
+                )
+            elif stage == "stt_done":
+                lines.append(f"  [Voice] \"{ve.get('text','?')}\" (STT {ve.get('stt_ms',0)}ms)")
+            elif stage == "stt_kaare_done":
+                lines.append(f"  [Voice] total (excl. TTS) {ve.get('total_ms',0)}ms")
+
     stages = trace.get("stages", [])
     if stages:
-        stage_names = [s["stage"] for s in stages]
-        lines.append(f"  {_tr('routing', lang)} {' → '.join(stage_names)}")
+        kare_stages = [s["stage"] for s in stages if not s["stage"].startswith("stt_")]
+        if kare_stages:
+            lines.append(f"  {_tr('routing', lang)} {' → '.join(kare_stages)}")
 
     yes = {"nb": "ja", "en": "yes", "de": "ja"}.get(lang, "yes")
     no  = {"nb": "nei", "en": "no", "de": "nein"}.get(lang, "no")
@@ -258,7 +292,7 @@ def format_patterns_for_kare(traces: list[dict], lang: str = "nb") -> str:
     if not traces:
         return _tr("no_traces", lang)
 
-    by_source: dict[str, list[dict]] = {"user": [], "refl": [], "meet": []}
+    by_source: dict[str, list[dict]] = {"user": [], "stt": [], "refl": [], "meet": []}
     for t in traces:
         src = t.get("source", "user")
         if src in by_source:

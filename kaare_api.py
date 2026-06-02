@@ -230,8 +230,11 @@ _logging.getLogger("uvicorn.access").addFilter(_SuppressPolls())
 
 @app.on_event("startup")
 async def _startup():
-    from kaare_core.tools.timer_service import restore_timers
+    from kaare_core.tools.timer_service import restore_timers, start_action_queue_worker
+    from kaare_core.agents.mechanic.job_store import start_background_tasks as _start_job_store
     restore_timers()
+    await start_action_queue_worker()
+    _start_job_store()
     _restore_stm()
     asyncio.create_task(_start_mqtt())
     from kaare_core.reflection_loop import start_reflection_loop
@@ -561,6 +564,59 @@ def _action_text(action: str, entity_id: str) -> str:
     return f"Jeg {verb} {entity_id}."
 
 
+def _mqtt_fastpath_text(topic: str) -> str:
+    lang = _fp_lang()
+    label = topic.rsplit("/", 1)[-1]
+    if lang == "de":
+        return f"Befehl gesendet ({label})."
+    if lang == "en":
+        return f"Command sent ({label})."
+    return f"Kommando sendt ({label})."
+
+
+def _os_fastpath_text(action: str) -> str:
+    import psutil
+    lang = _fp_lang()
+    try:
+        if action == "cpu_stats":
+            pct = psutil.cpu_percent(interval=0.2)
+            if lang == "de":
+                return f"CPU-Auslastung: {pct:.0f} %."
+            if lang == "en":
+                return f"CPU usage: {pct:.0f}%."
+            return f"CPU-belastning: {pct:.0f} %."
+        if action == "ram_stats":
+            mem = psutil.virtual_memory()
+            used_gb = mem.used / 1_073_741_824
+            total_gb = mem.total / 1_073_741_824
+            if lang == "de":
+                return f"RAM: {used_gb:.1f} GB / {total_gb:.1f} GB ({mem.percent:.0f} %)."
+            if lang == "en":
+                return f"RAM: {used_gb:.1f} GB / {total_gb:.1f} GB ({mem.percent:.0f}%)."
+            return f"RAM: {used_gb:.1f} GB / {total_gb:.1f} GB ({mem.percent:.0f} %)."
+        if action == "temp_stats":
+            try:
+                temps = psutil.sensors_temperatures()
+                if temps:
+                    all_temps = [t.current for readings in temps.values() for t in readings]
+                    avg = sum(all_temps) / len(all_temps)
+                    if lang == "de":
+                        return f"Durchschnittliche CPU-Temperatur: {avg:.0f} °C."
+                    if lang == "en":
+                        return f"Average CPU temperature: {avg:.0f} °C."
+                    return f"Gjennomsnittlig CPU-temperatur: {avg:.0f} °C."
+            except Exception:
+                pass
+            if lang == "de":
+                return "Temperatursensoren nicht verfügbar."
+            if lang == "en":
+                return "Temperature sensors not available."
+            return "Temperatursensorer ikke tilgjengelig."
+    except Exception as exc:
+        return f"OS stats error: {exc}"
+    return action
+
+
 @app.post("/api/ha_log")
 async def ha_log_endpoint(request: Request):
     try:
@@ -586,6 +642,8 @@ class PromptRequest(BaseModel):
     images: list[str] | None = None
     source: str | None = None
     user_id: str | None = None
+    context: dict | None = None
+    rid: str | None = None
 
 
 @app.post("/api/generate")
@@ -599,10 +657,13 @@ async def generate(request: PromptRequest, http: Request):
         "time_date_enabled": app_state.CAPABILITY_MAP.get("domains", {}).get("time_date", {}).get("enabled", False),
     }
     print(f"[KÅRE] Mottatt prompt: {prompt}")
-    rid = f"rid-{int(time.time()*1000)}"
-    _route_log("generate_in", rid=rid, prompt_preview=prompt[:120])
-
     source = (request.source or http.headers.get("X-Kaare-Source") or "gui").lower()
+    # Use pre-generated RID from voice bridge (rid-stt-*) so both logs share the same ID
+    if request.rid and source == "stt":
+        rid = request.rid
+    else:
+        rid = f"rid-{int(time.time()*1000)}"
+    _route_log("generate_in", rid=rid, prompt_preview=prompt[:120])
     from kaare_core.memory.long_term import USER_GLOBAL
     user_id = (request.user_id or "").strip() or USER_GLOBAL
 
@@ -637,18 +698,43 @@ async def generate(request: PromptRequest, http: Request):
             source_tag=fast.get("source"),
         )
 
-        if fast.get("route") == "clock_fastpath":
+        route = fast.get("route")
+
+        if route == "clock_fastpath":
             from kaare_core.config import get_local_tz as _get_local_tz
             now_str = datetime.now(tz=_get_local_tz()).strftime("%H:%M")
             _route_log("fastpath_clock_done", rid=rid, now=now_str)
             return {"text": _clock_text(now_str)}
 
+        if route == "os_fastpath":
+            text = _os_fastpath_text(fast.get("action", "cpu_stats"))
+            _route_log("fastpath_os_done", rid=rid, os_action=fast.get("action"))
+            return {"text": text}
 
-        # Block HA commands for users with ai_only VPN access
+        # Device control routes (ha + mqtt) — blocked for ai_only VPN access
         if _block_ha_write:
             return {"text": _fpt("ha_blocked")}
 
-        payload = {
+        if route == "mqtt_fastpath":
+            from adapters.mqtt_adapter import publish_mqtt as _publish_mqtt
+            _topic = fast.get("topic", "")
+            _payload = fast.get("payload", "{}")
+            try:
+                ok = await _publish_mqtt(_topic, _payload)
+            except Exception as _e:
+                ok = False
+                _route_log("fastpath_mqtt_error", rid=rid, topic=_topic, error=str(_e))
+            if not ok:
+                return {"text": _fpt("fastpath_error")}
+            _fp_text = _mqtt_fastpath_text(_topic)
+            _user_stm = app_state.get_stm(user_id)
+            _user_stm.add_dialog(role="user", text=prompt, user_id=user_id)
+            _user_stm.add_dialog(role="assistant", text=_fp_text, user_id=user_id)
+            _route_log("fastpath_mqtt_done", rid=rid, topic=_topic)
+            return {"text": _fp_text}
+
+        # Default: ha_fastpath
+        ha_payload = {
             "prompt": prompt,
             "action": fast["action"],
             "entity_id": fast["entity_id"],
@@ -662,7 +748,7 @@ async def generate(request: PromptRequest, http: Request):
             async with httpx.AsyncClient(timeout=5.0) as client:
                 r = await client.post(
                     "http://127.0.0.1:8002/api/nl_apply",
-                    json=payload
+                    json=ha_payload
                 )
             out = r.json()
             print(f"[KÅRE] FASTPATH RESULTAT: {out}")
@@ -685,6 +771,37 @@ async def generate(request: PromptRequest, http: Request):
     mk_addressed = _detect_miss_kare_addressed(prompt)
     print(f"[MISS KÅRE] prefix detektert: {mk_addressed} | prompt start: {prompt[:30]!r}")
 
+    _speaker_note = ""
+    if source == "stt" and request.context:
+        _sr = request.context.get("speaker_result", {})
+        _confirmed_by   = _sr.get("confirmed_by", "none")
+        _confirmed_user = _sr.get("confirmed_user")
+        _best_guess     = _sr.get("best_guess")
+        _confidence     = _sr.get("confidence", 0.0)
+        _threshold      = _sr.get("threshold", 0.75)
+        _lang           = get_lang(user_id)
+        if _confirmed_by == "voice":
+            _speaker_note = t("stt_voice_confirmed", _lang,
+                               user=_confirmed_user, pct=int(_confidence * 100))
+        elif _confirmed_by == "default":
+            if _best_guess and _best_guess != _confirmed_user:
+                _speaker_note = t("stt_voice_default_guess", _lang,
+                                   user=_confirmed_user, guess=_best_guess,
+                                   pct=int(_confidence * 100))
+            elif _best_guess:
+                _speaker_note = t("stt_voice_default_match", _lang,
+                                   user=_confirmed_user, pct=int(_confidence * 100))
+            else:
+                _speaker_note = t("stt_voice_default_no_enrollment", _lang,
+                                   user=_confirmed_user)
+        else:
+            if _best_guess:
+                _speaker_note = t("stt_voice_unknown_guess", _lang,
+                                   guess=_best_guess, pct=int(_confidence * 100),
+                                   threshold=int(_threshold * 100))
+            else:
+                _speaker_note = t("stt_voice_unknown_no_enrollment", _lang)
+
     result = await handle_generate(
         prompt=prompt,
         images=images,
@@ -700,7 +817,9 @@ async def generate(request: PromptRequest, http: Request):
         api_ask_cloud=ask_llm_cloud,
         block_ha_write=_block_ha_write,
         network_context=_network_ctx,
+        speaker_note=_speaker_note,
     )
+    result["rid"] = rid
 
     # fire-and-forget — never blocks the response
     async def _run_miss_kare(u_msg: str, k_reply: str, uid: str, addressed: bool):
@@ -758,6 +877,21 @@ async def api_chat_history(user_id: str = "global", limit: int = 60, _u=Depends(
 
 
 # In-place-mutated state — owned by app_state, aliased here for backward compat
+@app.get("/api/pending_notifications")
+async def api_pending_notifications(user_id: str, _u=Depends(_require_auth)):
+    """Returns unacked chat notifications for a user (delivered by timers)."""
+    from kaare_core.tools.timer_service import get_pending_notifications as _get_pn
+    return {"notifications": _get_pn(user_id)}
+
+
+@app.post("/api/pending_notifications/{notif_id}/ack")
+async def api_ack_notification(notif_id: str, user_id: str, _u=Depends(_require_auth)):
+    """Ack a pending chat notification so it is not delivered again."""
+    from kaare_core.tools.timer_service import ack_notification as _ack
+    ok = _ack(notif_id, user_id)
+    return {"ok": ok, "notif_id": notif_id}
+
+
 @app.get("/api/show")
 def show_status():
     return {"status": "ok", "source": "kaare"}
@@ -847,8 +981,8 @@ def _iter_metrics(lines_max=50000):
 
 @app.get("/api/tools/recent")
 def api_tools_recent(n: int = 100):
-    """Siste N tool-kall + aktive timere. Brukes av admin Tools-fane."""
-    from kaare_core.tools.timer_service import get_active_timers
+    """Siste N tool-kall + aktive timere + timer-counts per bruker. Brukes av admin Tools-fane."""
+    from kaare_core.tools.timer_service import get_active_timers, get_timer_counts_by_user
     tool_log = Path("/kaare/logs/tool_calls.log")
     calls = []
     try:
@@ -865,6 +999,7 @@ def api_tools_recent(n: int = 100):
     return {
         "ok": True,
         "timers": get_active_timers(),
+        "timer_counts": get_timer_counts_by_user(),
         "calls": calls,
     }
 

@@ -76,7 +76,7 @@ log = logging.getLogger("reflection")
 # ── Configuration ─────────────────────────────────────────────────────────────
 REFLECTIONS_BASE = Path("/kaare/state/memory/reflections")
 
-USER_ID         = os.getenv("REFLECTION_USER_ID", "stian")   # set by runner or env
+USER_ID         = os.getenv("REFLECTION_USER_ID", "admin")   # set by runner or env
 _active_user_id = USER_ID   # updated by main() — used by tool functions
 
 from kaare_core.config import get_service as _svc
@@ -168,6 +168,22 @@ def _load_miss_kare_meeting_pers() -> str:
 
     base = _MK_AGENT_DIR / "personlighet.md"
     return base.read_text(encoding="utf-8") if base.exists() else "Du er Miss Kåre – varm, moderlig, jordnær."
+
+
+def _load_miss_kare_portrait(user_id: str) -> str:
+    """Load Miss Kåre's accumulated observations about this user (portrait file)."""
+    path = Path(f"/kaare/state/users/{user_id}/miss_kare_portrait.md")
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8").strip()[:3000]
+
+
+def _load_user_knowledge(user_id: str) -> str:
+    """Load concluded/settled knowledge about the user from user_knowledge.md."""
+    path = Path(f"/kaare/state/users/{user_id}/user_knowledge.md")
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8").strip()
 
 
 def _load(path: str) -> str:
@@ -762,6 +778,41 @@ def _save_meeting_insights(user_id: str, kare_closing: str) -> None:
         log.error("Failed to save meeting insights: %s", e)
 
 
+async def _update_user_knowledge(
+    user_id: str,
+    exchanges: list[tuple[str, str]],
+    existing: str,
+) -> None:
+    """Distil concluded knowledge from the meeting and write user_knowledge.md."""
+    transcript = "\n".join(f"{who}: {text[:300]}" for who, text in exchanges[-20:])
+    existing_block = f"Eksisterende avklart kunnskap:\n{existing}\n\n" if existing else ""
+    prompt = (
+        f"{existing_block}"
+        "Her er utdrag fra refleksjonsmøtet om brukeren:\n"
+        f"{transcript}\n\n"
+        "Oppdater user_knowledge.md basert på møtets konklusjoner. "
+        "Behold eksisterende punkter som fortsatt er gyldige. Fjern det som er utdatert. "
+        "Skriv KUN på formen:\n"
+        "- Brukeren liker/foretrekker/reagerer/...\n\n"
+        "Maks 10 punkter. Kun punkter som representerer konkludert, stabil kunnskap."
+    )
+    messages = [
+        {"role": "system", "content": _build_leder_system()},
+        {"role": "user", "content": prompt},
+    ]
+    try:
+        result = await _ask_kare(messages)
+        if result and result.strip():
+            path = Path(f"/kaare/state/users/{user_id}/user_knowledge.md")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            content = f"# Konkludert kunnskap om brukeren\n_Sist oppdatert: {date_str}_\n\n{result.strip()}\n"
+            path.write_text(content, encoding="utf-8")
+            log.info("user_knowledge.md updated for %s", user_id)
+    except Exception as e:
+        log.error("Failed to update user_knowledge for %s: %s", user_id, e)
+
+
 # ── Write reflection file (atomic) ────────────────────────────────────────────
 def _write_reflection(user_id: str, date_str: str, exchanges: list[tuple[str, str]]) -> Path:
     out_dir = REFLECTIONS_BASE / user_id
@@ -822,13 +873,20 @@ async def main(user_id: str | None = None) -> None:
         pass
 
     profile_text, observations_text, interactions_text, stm_text = _get_user_context(user_id)
+    portrait = _load_miss_kare_portrait(user_id)
+    user_knowledge = _load_user_knowledge(user_id)
 
     _stm_section = f"\n\nDaily STM summaries (last 3 days):\n{stm_text}" if stm_text else ""
+    _knowledge_section = (
+        f"\n\nSettled knowledge (do NOT re-derive in this meeting — focus on new):\n{user_knowledge}"
+        if user_knowledge else ""
+    )
     user_context_summary = (
         f"User profile:\n{profile_text}\n\n"
         f"Recent observations (14 days):\n{observations_text}\n\n"
         f"Recent interactions (compressed episodes):\n{interactions_text}"
         f"{_stm_section}"
+        f"{_knowledge_section}"
     )
 
     _topic_line = f"\nADMIN HAR FORESLÅTT TEMA: {_admin_topic}\nDette skal prioriteres i møtet.\n" if _admin_topic else ""
@@ -865,6 +923,7 @@ async def main(user_id: str | None = None) -> None:
         f"Brukerprofil:\n{profile_text}\n\n"
         f"Siste observasjoner:\n{observations_text}"
         + (f"\n\nDaglige STM-sammendrag (siste 3 dager):\n{stm_text}" if stm_text else "")
+        + (f"\n\n## Dine egne observasjoner om brukeren\n{portrait}" if portrait else "")
     )
 
     kare_messages      = [{"role": "system", "content": kare_system}]
@@ -1043,6 +1102,7 @@ async def main(user_id: str | None = None) -> None:
 
     _write_reflection(user_id, date_str, exchanges)
     _save_meeting_insights(user_id, kare_closing)
+    await _update_user_knowledge(user_id, exchanges, user_knowledge)
     log.info("=== Reflection meeting done — %d local rounds ===", global_round)
     _rid_ctx_refl.reset(_refl_token)
 

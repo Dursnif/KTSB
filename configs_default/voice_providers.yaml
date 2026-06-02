@@ -1,0 +1,18 @@
+wyoming:
+  enabled: true
+  listen_host: 0.0.0.0
+  listen_port: 10300
+
+chromecast:
+  enabled: false
+  discovery_timeout: 5
+
+snapcast:
+  enabled: false
+
+airplay:
+  enabled: false
+
+dlna:
+  enabled: false
+  discovery_timeout: 5

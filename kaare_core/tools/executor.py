@@ -23,11 +23,12 @@ from kaare_core.tools.lister import (
     huske_husk, huske_les, huske_ferdig, huske_slett, huske_tøm,
     kare_husk, kare_les, kare_ferdig, kare_tøm,
 )
-from kaare_core.tools.timer_service import sett_timer, avbryt_timer, liste_timere
+from kaare_core.tools.timer_service import set_timer, cancel_timer, list_timers, ack_timer
 from kaare_core.tools import (
     executor_world, executor_memory, executor_personality,
     executor_ha, executor_media, executor_library,
     executor_agents, executor_system, executor_camera,
+    executor_reflexes,
 )
 
 logger = logging.getLogger(__name__)
@@ -92,19 +93,34 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             now = datetime.now()
             return t("timer_clock", lang, time=now.strftime('%H:%M'), date=now.strftime('%d.%m.%Y'))
         if action == "set":
-            return sett_timer(
+            return set_timer(
                 prompt=arguments.get("prompt", ""),
                 in_seconds=int(arguments.get("in_seconds", 0)),
                 notify=bool(arguments.get("notify", True)),
                 repeat=arguments.get("repeat") or None,
                 at_time=arguments.get("at_time") or None,
                 lang=lang,
+                user_id=arguments.get("_user_id", "global"),
+                source_node=arguments.get("_source_node") or None,
+                target_node=arguments.get("target_node") or None,
+                action=arguments.get("action_type", "tts_response"),
+                notify_via=arguments.get("notify_via") or None,
+                tts_text=arguments.get("tts_text", ""),
+                ha_payload=arguments.get("ha_payload") or None,
+                for_user_id=arguments.get("for_user_id") or None,
             )
         if action == "cancel":
-            return avbryt_timer(arguments.get("timer_id", ""), lang=lang)
+            return cancel_timer(arguments.get("timer_id", ""), lang=lang)
         if action == "list":
-            return liste_timere(lang=lang)
-        return f"Unknown action for timer: '{action}'. Valid: clock, set, cancel, list."
+            uid = arguments.get("_user_id") or None
+            return list_timers(lang=lang, user_id=uid)
+        if action == "ack":
+            return ack_timer(
+                notif_id=arguments.get("notif_id", ""),
+                user_id=arguments.get("_user_id", "global"),
+                lang=lang,
+            )
+        return f"Unknown action for timer: '{action}'. Valid: clock, set, cancel, list, ack."
 
     if name in executor_memory.MEMORY_TOOLS:
         return await executor_memory.dispatch(name, arguments)
@@ -217,21 +233,22 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
     if name == "tøm_notater":
         return tøm_notater(arguments.get("kategori"), lang=lang)
 
-    if name == "sett_timer":
-        return sett_timer(
+    if name == "set_timer":
+        return set_timer(
             prompt=arguments.get("prompt", ""),
             in_seconds=int(arguments.get("in_seconds", 0)),
             notify=bool(arguments.get("notify", True)),
             repeat=arguments.get("repeat") or None,
             at_time=arguments.get("at_time") or None,
             lang=lang,
+            user_id=arguments.get("_user_id", "global"),
         )
 
-    if name == "avbryt_timer":
-        return avbryt_timer(arguments.get("timer_id", ""), lang=lang)
+    if name == "cancel_timer":
+        return cancel_timer(arguments.get("timer_id", ""), lang=lang)
 
-    if name == "liste_timere":
-        return liste_timere(lang=lang)
+    if name == "list_timers":
+        return list_timers(lang=lang, user_id=arguments.get("_user_id") or None)
 
     if name == "kare_image":
         if not _llm_cfg("image_edit").get("enabled", True):
@@ -279,13 +296,74 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
         return t("exec_images_list", lang, uid=uid) + "\n" + "\n".join(lines)
 
     if name == "announce":
+        action = arguments.get("action", "say")
+
+        if action == "list_display":
+            from adapters.display_adapter import get_display_nodes
+            nodes = await get_display_nodes()
+            if not nodes:
+                return t("announce_no_display_nodes", lang)
+            lines = [f"- **{n['id']}** ({n.get('type', '?')}) — {n.get('room', '?')}" for n in nodes]
+            return t("announce_display_list", lang) + "\n" + "\n".join(lines)
+
+        if action == "display":
+            from adapters.display_adapter import get_display_nodes, send_display
+            from kaare_core.image_store import find_image
+            from pathlib import Path as _Path
+            text = arguments.get("text", "").strip()
+            target = arguments.get("target", "").strip()
+            image_id = arguments.get("image_id")
+            title = arguments.get("title", "Kåre")
+            duration = int(arguments.get("duration", 8))
+            position = arguments.get("position", "bottom_right")
+
+            image_path = None
+            if image_id:
+                found = find_image(image_id)
+                image_path = str(found) if found else None
+
+            all_display = await get_display_nodes()
+            display_ids = [n["id"] for n in all_display]
+
+            if target in display_ids:
+                node_ids = [target]
+            elif target in ("alle", "all", ""):
+                node_ids = display_ids
+            else:
+                tn = target.lower().replace(" ", "_")
+                node_ids = [
+                    n["id"] for n in all_display
+                    if n.get("room", "").lower().replace(" ", "_") == tn
+                ]
+
+            if not node_ids:
+                return t("announce_display_target_not_found", lang, target=target or "all")
+
+            results = []
+            for nid in node_ids:
+                res = await send_display(
+                    nid, text=text, title=title,
+                    image_path=image_path, duration=duration, position=position,
+                )
+                results.append((nid, res))
+
+            ok = sum(1 for _, r in results if r.get("ok"))
+            fail = len(results) - ok
+            if ok == len(results):
+                return t("announce_display_ok", lang, count=ok)
+            if ok > 0:
+                return t("announce_display_partial", lang, ok=ok, fail=fail)
+            errors = "; ".join(r.get("error", "?") for _, r in results)
+            return t("announce_display_failed", lang, errors=errors)
+
+        # Default: action == "say"
         text = arguments.get("text", "").strip()
         target = arguments.get("target", "local").strip() or "local"
         raw_volume = arguments.get("volume")
         volume = float(raw_volume) if raw_volume is not None else None
         if not text:
             return "No text provided for announcement."
-        payload: dict = {"text": text, "target": target}
+        payload: dict = {"text": text, "target": target, "lang": lang}
         if volume is not None:
             payload["volume"] = max(0.0, min(1.0, volume))
         try:
@@ -304,6 +382,9 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
     if name in executor_media.MEDIA_TOOLS:
         return await executor_media.dispatch(name, arguments)
 
+    if name in executor_reflexes.REFLEX_TOOLS:
+        return await executor_reflexes.dispatch(name, arguments)
+
     return t("exec_unknown_tool", lang, name=name)
 
 
@@ -320,7 +401,7 @@ async def execute_tool(name: str, arguments: Dict[str, Any]) -> str:
     duration_ms = int((_time.time() - t0) * 1000)
 
     # timer tools log themselves via timer_service
-    if name not in ("sett_timer", "avbryt_timer", "liste_timere"):
+    if name not in ("set_timer", "cancel_timer", "list_timers", "timer"):
         _log_tool(name, arguments, result, duration_ms)
 
     return result

@@ -98,6 +98,7 @@ rsync -av --delete \
   --exclude='lost+found/' \
   --exclude='.ssh/' \
   --exclude='.cache/' \
+  --exclude='configs/ssh_nodes.yaml' \
   --exclude='configs/aliases.yaml' \
   --exclude='configs/nodes.yaml' \
   --exclude='configs/services.yaml' \

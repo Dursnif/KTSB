@@ -2,9 +2,9 @@
 """
 Router for /api/generate
 
-Kåre styrer alt via tools. Han bestemmer selv hva han gjør.
-Gammel hardkodet pipeline er kommentert bort nederst i filen —
-beholdes til tool-pipelinen er stabil og testet.
+Kåre drives entirely by tools — he decides what to do.
+The old hardcoded pipeline is commented out at the bottom of the file
+and kept until the tool pipeline is stable and tested.
 """
 import asyncio
 import base64
@@ -19,6 +19,9 @@ from kaare_core.config import get_local_tz as _get_local_tz
 from typing import Dict, Any, Optional
 from kaare_core.memory.short_term import ShortTermMemory
 from kaare_core.memory.long_term import get_ltm, USER_GLOBAL
+from kaare_core.tools.timer_service import get_pending_notifications
+from kaare_core.agents.mechanic.job_store import get_pending_mechanic_results, ack_mechanic_results
+from kaare_core.tools.lister import huske_hent_påminnelser as get_login_reminders
 from kaare_core.memory.semantic_memory import search_memory, format_for_context
 from kaare_core.tools.executor import execute_tool
 from adapters.llm_adapter import ask_llm_with_tools, get_model_size_b
@@ -36,7 +39,7 @@ def _utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-# Nøkkelord som trigger cloud-modellen direkte (bypass tools)
+# Keywords that trigger the cloud model directly (bypass tools)
 _CLOUD_TRIGGERS = [
     "bruk online",
     "spør online",
@@ -46,7 +49,7 @@ _CLOUD_TRIGGERS = [
     "spør stor modell",
 ]
 
-_MAX_TOOL_ROUNDS = 6  # maks runder i tool-løkken (forhindrer uendelig loop)
+_MAX_TOOL_ROUNDS = 6  # max rounds in the tool loop (prevents infinite loop)
 
 # Promise interceptor: detect when Kåre claims to write/note something without a tool call.
 # Only fires once per request, only if no "notat" tool was already called this session.
@@ -84,14 +87,15 @@ async def handle_generate(
     rid: str = "",
     user_id: str = USER_GLOBAL,
     memory: ShortTermMemory,
-    miss_kare_addressed: bool = False,  # True når bruker starter melding med "Miss Kåre"
-    api_intent_to_ha=None,        # beholdes i signatur for bakoverkompatibilitet
-    api_exec_ha_direct=None,      # beholdes i signatur for bakoverkompatibilitet
-    api_ask_llm=None,             # beholdes i signatur for bakoverkompatibilitet
+    miss_kare_addressed: bool = False,  # True when user starts message with "Miss Kåre"
+    api_intent_to_ha=None,        # kept in signature for backwards compatibility
+    api_exec_ha_direct=None,      # kept in signature for backwards compatibility
+    api_ask_llm=None,             # kept in signature for backwards compatibility
     api_ask_vlm=None,
     api_ask_cloud=None,
     block_ha_write: bool = False,  # True for VPN users with vpn_access="ai_only"
     network_context: str = "local",  # "local" | "vpn" | "external"
+    speaker_note: str = "",
 ) -> Dict[str, Any]:
 
     start_total = time.time()
@@ -105,11 +109,11 @@ async def handle_generate(
     print(f"[ROUTER] user_id={user_id} source={source}")
 
     # =========================================================
-    # LANGTIDSMINNE: feedback-sjekk + verifikasjonssvar + start logging
+    # LONG-TERM MEMORY: feedback check + verification response + start logging
     # =========================================================
     ltm = get_ltm()
 
-    # Sjekk om brukeren svarer på en åpen verifikasjonsforespørsel
+    # Check if the user is responding to an open verification request
     _pending_ver = ltm.get_pending_verification(user_id=user_id)
     if _pending_ver:
         ver_signal = ltm.detect_verification_response(user_text)
@@ -120,7 +124,7 @@ async def handle_generate(
             except Exception as e:
                 print(f"[LTM] close_verification feilet: {e}")
 
-    # Vanlig feedback-sjekk (knyttet til siste action)
+    # Regular feedback check (tied to the last action)
     feedback_signal = ltm.detect_feedback_signal(user_text, user_id)
     if feedback_signal:
         asyncio.create_task(ltm.update_feedback(ltm._last_id.get(user_id), feedback=feedback_signal))
@@ -128,19 +132,19 @@ async def handle_generate(
 
     _ltm_id = await ltm.log_interaction(prompt=user_text, user_id=user_id, source=source)
 
-    # Sjekk om vi har nok ubekreftede til å be om verifikasjon
+    # Check if we have enough unverified interactions to request verification
     _ask_verification   = False
     _ver_from_id        = 0
     _ver_to_id          = 0
     _ver_count          = 0
-    if not _pending_ver:   # ikke spør igjen hvis vi allerede venter på svar
+    if not _pending_ver:   # don't ask again if we're already waiting for a response
         _ver_count, _ver_from_id, _ver_to_id = ltm.count_unverified_since_last(user_id=user_id)
         if _ver_count >= 15:
             _ask_verification = True
             print(f"[LTM] Verifikasjonstrigger: {_ver_count} ubekreftede")
 
     # =========================================================
-    # CLOUD-TRIGGER: "bruk online ..." → hopp over tools
+    # CLOUD-TRIGGER: "bruk online ..." → skip tools
     # =========================================================
     import re
     user_text_lower = user_text.lower()
@@ -166,9 +170,9 @@ async def handle_generate(
         return {"text": text_out}
 
     # =========================================================
-    # TOOL-LØKKE: Kåre bestemmer alt
+    # TOOL LOOP: Kåre decides everything
     # =========================================================
-    print("[ROUTER] tool-løkke start")
+    print("[ROUTER] tool loop start")
 
     stt_note = ("\n" + _t_i18n("gen_stt_note", lang) + "\n") if source == "stt" else ""
 
@@ -204,8 +208,8 @@ async def handle_generate(
         if miss_kare_addressed else ""
     )
 
-    # Bygg statisk kontekst (state, actions, daglig sammendrag) — UTEN dialog.
-    # Dialog injiseres nedenfor som ekte meldingsobjekter for å gi LLM riktig flerturs-struktur.
+    # Build static context (state, actions, daily summary) — WITHOUT dialog.
+    # Dialog is injected below as real message objects to give the LLM the correct multi-turn structure.
     context_block = memory.build_prompt_context(
         user_text=user_text, user_id=user_id, include_dialog=False
     )
@@ -227,17 +231,63 @@ async def handle_generate(
 
     rid_note = _t_i18n("rid_note", _get_lang(user_id), rid=rid) if rid else ""
 
-    # Notater som gjelder kun dette kallet (STT, verifikasjon, Miss Kåre, nettverk, rid)
+    # Pending timer notifications — injiseres til brukeren kvitterer (timer: ack)
+    pending_note = ""
+    if user_id and user_id != USER_GLOBAL:
+        try:
+            pending = get_pending_notifications(user_id)
+            if pending:
+                lines = [
+                    _t_i18n("timer_pending_context", lang,
+                            user_id=user_id,
+                            message=n["message"],
+                            notif_id=n["id"])
+                    for n in pending
+                ]
+                pending_note = "\n".join(lines)
+        except Exception as e:
+            print(f"[ROUTER] pending_notifications feil (ikke kritisk): {e}")
+
+    # Login reminders (påminn_ved_login=True) — wired into the request flow
+    login_reminder_note = ""
+    if user_id and user_id != USER_GLOBAL:
+        try:
+            reminders = get_login_reminders(user_id)
+            if reminders:
+                reminder_lines = [f"[{_t_i18n('list_remind_on_login', lang)}: {r}]" for r in reminders]
+                login_reminder_note = "\n".join(reminder_lines)
+        except Exception as e:
+            print(f"[ROUTER] login_reminders feil (ikke kritisk): {e}")
+
+    # Pending Mechanic results — injected once, then cleared
+    mechanic_note = ""
+    if user_id and user_id != USER_GLOBAL:
+        try:
+            mechanic_results = get_pending_mechanic_results(user_id)
+            if mechanic_results:
+                lines = [
+                    _t_i18n("mechanic_job_done", lang,
+                            job_id=r["job_id"][:8] + "…",
+                            summary=r["summary"])
+                    for r in mechanic_results
+                ]
+                mechanic_note = "\n".join(lines)
+                ack_mechanic_results(user_id)
+        except Exception as e:
+            print(f"[ROUTER] pending_mechanic_results error (non-critical): {e}")
+
+    # Notes that apply only to this request (STT, verification, Miss Kåre, network, rid, reminders)
     current_content = "\n\n".join(
-        p for p in [stt_note, ver_note, mk_note, network_note, rid_note, user_text] if p
+        p for p in [stt_note, speaker_note, ver_note, mk_note, network_note, rid_note,
+                    pending_note, login_reminder_note, mechanic_note, user_text] if p
     ).strip()
 
-    # Hent siste 4 (bruker, kåre)-par fra STM som ekte meldingsobjekter.
-    # Dette gir LLM korrekt flerturs-struktur: Kåres spørsmål → brukerens svar er direkte koblet.
+    # Fetch the last 4 (user, kåre) pairs from STM as real message objects.
+    # This gives the LLM the correct multi-turn structure: Kåre's question → user's reply are directly linked.
     recent_pairs = memory.get_dialog_pairs(user_id=user_id, n=4)
 
     if recent_pairs:
-        # Første melding: statisk kontekst + LTM + eldste bruker-turn
+        # First message: static context + LTM + oldest user turn
         static_ctx = "\n\n".join(
             p for p in [context_block, ltm_block, recent_pairs[0][0]] if p
         ).strip()
@@ -246,7 +296,7 @@ async def handle_generate(
         for u_text, k_text in recent_pairs[1:]:
             messages.append({"role": "user",      "content": u_text})
             messages.append({"role": "assistant", "content": k_text})
-        # Siste melding: nåværende forespørsel (images her, ikke på første)
+        # Last message: current request (images here, not on the first message)
         current_msg: Dict[str, Any] = {"role": "user", "content": current_content}
         if isinstance(images, list) and images:
             current_msg["images"] = images
@@ -267,7 +317,7 @@ async def handle_generate(
 
     memory.add_dialog(role="user", text=user_text, user_id=user_id)
 
-    # Hent brukerens valgte personlighetsvariant (dict-lookup i adapter, ingen disk-I/O)
+    # Fetch the user's selected personality variant (dict lookup in adapter, no disk I/O)
     _user_rec = _user_store.get_user(user_id) if user_id != USER_GLOBAL else None
     _personality = (_user_rec or {}).get("personality", "standard") or "standard"
     _user_role = (_user_rec or {}).get("role", "admin")
@@ -292,14 +342,14 @@ async def handle_generate(
     _original_text_out  = ""    # text saved when promise interceptor fires
 
     for round_num in range(_MAX_TOOL_ROUNDS):
-        print(f"[ROUTER] tool-runde {round_num + 1}")
+        print(f"[ROUTER] tool round {round_num + 1}")
 
         try:
             result = await ask_llm_with_tools(
                 messages=messages, tools=_tools, rid=rid, personality=_personality, user_id=user_id
             )
         except Exception as _llm_exc:
-            print(f"[ROUTER] LLM-kall feilet (runde {round_num + 1}): {_llm_exc}")
+            print(f"[ROUTER] LLM call failed (round {round_num + 1}): {_llm_exc}")
             text_out = _t_i18n("gen_no_contact", lang)
             break
 
@@ -342,7 +392,7 @@ async def handle_generate(
         tool_calls = result.get("tool_calls")
 
         if not tool_calls:
-            # Endelig svar — Kåre er ferdig
+            # Final answer — Kåre is done
             text_out = result.get("text", "").strip() or _t_i18n("gen_no_response", lang)
 
             # Promise interceptor: if Kåre claimed to note/remember something but
@@ -355,7 +405,7 @@ async def handle_generate(
             ):
                 _promise_retry_done = True
                 _original_text_out = text_out
-                print("[ROUTER] løftebryter: Kåre lovet skriving uten tool-kall — tvinger retry")
+                print("[ROUTER] promise interceptor: Kåre promised to write without a tool call — forcing retry")
                 messages.append(result["message"])
                 messages.append({
                     "role": "user",
@@ -363,10 +413,10 @@ async def handle_generate(
                 })
                 continue
 
-            print(f"[ROUTER] endelig svar etter {round_num + 1} runde(r)")
+            print(f"[ROUTER] final answer after {round_num + 1} round(s)")
             break
 
-        # Kåre vil kalle tools — legg assistentens melding inn i historikken
+        # Kåre wants to call tools — add the assistant message to the history
         messages.append(result["message"])
 
         # Execute all tool calls in this round concurrently
@@ -437,12 +487,12 @@ async def handle_generate(
             text_out = _original_text_out.rstrip()
             if _tags:
                 text_out += "\n\n" + " · ".join(_tags)
-            print("[ROUTER] løftebryter: returnerer original tekst + tag")
+            print("[ROUTER] promise interceptor: returning original text + tag")
             break
 
     else:
-        # Alle 6 runder brukt — ett siste kall uten tools, kun for å svare brukeren
-        print("[ROUTER] runde 7 (output-only): tvinger svar til bruker")
+        # All 6 rounds used — one final call without tools, just to produce a response
+        print("[ROUTER] round 7 (output-only): forcing response to user")
         messages.append({
             "role": "user",
             "content": _t_i18n("gen_tool_limit", lang)
@@ -462,24 +512,24 @@ async def handle_generate(
             text_out = text_out.rstrip() + f"\n{_img_url}"
 
     # =========================================================
-    # Oppdater korttidsminne og langtidsminne
+    # Update short-term and long-term memory
     # =========================================================
 
-    # Logg alle HA-handlinger til STM (ikke bare den siste)
+    # Log all HA actions to STM (not just the last one)
     for entity, action, ok in ha_actions:
         if entity and action:
             memory.record_action(action=action, entity_id=entity, ok=ok, user_id=user_id)
             if ok:
                 memory.set_state(key=entity, value=action, source="ha")
 
-    # LTM bruker siste vellykkede handling
+    # LTM uses the last successful action
     successful = [(e, a) for e, a, ok in ha_actions if ok]
     final_entity = successful[-1][0] if successful else None
     final_action = successful[-1][1] if successful else None
 
     memory.add_dialog(role="assistant", text=text_out, user_id=user_id)
 
-    # Lagre tool-sammendrag i STM så Kåre vet hva han selv gjorde sist
+    # Save tool summary to STM so Kåre knows what he did in the last response
     if tool_trace:
         calls_desc = []
         for tc in tool_trace:
@@ -501,7 +551,7 @@ async def handle_generate(
         model_used="9b_fallback" if _used_fallback else "",
     ))
 
-    # Åpne verifikasjonsvindu hvis vi spurte denne runden
+    # Open verification window if we asked this round
     if _ask_verification and _ver_from_id and _ver_to_id:
         try:
             ltm.open_verification(_ver_from_id, _ver_to_id, _ver_count, user_id=user_id)

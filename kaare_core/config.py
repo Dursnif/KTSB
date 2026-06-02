@@ -85,6 +85,10 @@ def _set_settings(v: dict) -> None:
     global _SETTINGS; _SETTINGS = v
 
 
+def get_settings() -> dict:
+    return _SETTINGS
+
+
 def get_model(role: str) -> str:
     """Return the Ollama model name for a logical role (kare, miss_kare, library, embed, cloud)."""
     return MODELS[role]
@@ -126,6 +130,24 @@ def get_service(section: str, key: str | None = None):
     if key is None:
         return sec
     return sec.get(key)
+
+
+def get_ssh_nodes() -> dict:
+    """Return ssh_nodes.yaml as dict with keys 'local' and 'nodes'.
+
+    'local': {sudo_enabled: bool}
+    'nodes': {id: {label, host, user, port, ssh_key, node_type, sudo_enabled, sudo_commands}}
+    Falls back to empty nodes if the file is missing or unreadable.
+    """
+    p = CONFIG_DIR / "ssh_nodes.yaml"
+    try:
+        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    except Exception:
+        data = {}
+    return {
+        "local": data.get("local", {"sudo_enabled": False}),
+        "nodes": data.get("nodes") or {},
+    }
 
 
 def get_tool_permissions() -> dict:

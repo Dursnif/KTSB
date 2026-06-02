@@ -14,7 +14,7 @@ from kaare_core.tools.i18n import t
 _NOTATER_PATH = Path("/kaare/state/notater.json")
 
 
-def _les_fil() -> list:
+def _load_notes() -> list:
     if not _NOTATER_PATH.exists():
         return []
     try:
@@ -35,7 +35,7 @@ def _skriv_fil(notater: list) -> None:
 def skriv_notat(tekst: str, kategori: str = "diverse", lang: str = "nb") -> str:
     if not tekst.strip():
         return t("nota_empty_text", lang)
-    notater = _les_fil()
+    notater = _load_notes()
     notat = {
         "id": uuid.uuid4().hex[:8],
         "dato": datetime.now().strftime("%Y-%m-%d"),
@@ -51,7 +51,7 @@ def skriv_notat(tekst: str, kategori: str = "diverse", lang: str = "nb") -> str:
 
 
 def les_notater(kategori: str | None = None, lang: str = "nb") -> str:
-    notater = _les_fil()
+    notater = _load_notes()
     if not notater:
         return t("nota_empty", lang)
     if kategori:
@@ -75,7 +75,7 @@ def les_notater(kategori: str | None = None, lang: str = "nb") -> str:
 def slett_notat(notat_id: str, lang: str = "nb") -> str:
     if not notat_id.strip():
         return t("nota_empty_id", lang)
-    notater = _les_fil()
+    notater = _load_notes()
     opprinnelig = len(notater)
     notater = [n for n in notater if n.get("id") != notat_id.strip()]
     if len(notater) == opprinnelig:
@@ -88,19 +88,19 @@ def slett_notat(notat_id: str, lang: str = "nb") -> str:
 
 
 def tøm_notater(kategori: str | None = None, lang: str = "nb") -> str:
-    notater = _les_fil()
+    notater = _load_notes()
     if not notater:
         return t("nota_already_empty", lang)
     if kategori:
         kat = kategori.strip().lower()
-        antall_før = len(notater)
+        initial_count = len(notater)
         notater = [n for n in notater if n.get("kategori") != kat]
-        antall_slettet = antall_før - len(notater)
-        if antall_slettet == 0:
+        removed_count = initial_count - len(notater)
+        if removed_count == 0:
             return t("nota_no_category", lang, category=kategori)
         try:
             _skriv_fil(notater)
-            return t("nota_category_cleared", lang, count=antall_slettet, category=kategori)
+            return t("nota_category_cleared", lang, count=removed_count, category=kategori)
         except Exception as e:
             return t("nota_category_clear_error", lang, error=e)
     else:

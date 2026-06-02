@@ -1,0 +1,36 @@
+# SSH nodes — configure remote machines Kåre can reach via SSH.
+# This file is the default/template. Your personal copy lives in configs/ssh_nodes.yaml
+# and is never pushed to GitHub.
+#
+# node_type: linux   — standard SSH node (user-configured sudo allowlist)
+# node_type: ha_os   — Home Assistant OS (port 2222, root, ha CLI commands auto-allowed)
+
+local:
+  sudo_enabled: false   # allow sudo on the machine Kåre runs on (not recommended)
+
+nodes: {}
+
+# Example Linux node:
+# nodes:
+#   mynuc:
+#     label: "My NUC"
+#     host: 192.168.1.10
+#     user: youruser
+#     port: 22
+#     ssh_key: ~/.ssh/id_ed25519
+#     node_type: linux
+#     sudo_enabled: true
+#     sudo_commands:
+#       - sudo apt update
+#       - sudo reboot now
+#
+# Example Home Assistant OS node:
+#   hapi:
+#     label: "Home Assistant"
+#     host: 192.168.1.100
+#     user: root
+#     port: 2222
+#     ssh_key: ~/.ssh/id_ed25519
+#     node_type: ha_os
+#     sudo_enabled: false
+#     sudo_commands: []

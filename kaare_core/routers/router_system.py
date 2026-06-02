@@ -1,17 +1,21 @@
 import asyncio
+import io
 import json
 import os
+import re
+import shutil
 import signal
 import subprocess
 import sys
 import time
 import base64
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
 import yaml
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
 import kaare_core.app_state as app_state
@@ -20,16 +24,16 @@ from kaare_core.users.auth import require_admin as _require_admin, require_auth 
 
 router = APIRouter()
 
-_SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
-_SERVICES_PATH = Path("/kaare/configs/services.yaml")
-_LLM_PATH = Path("/kaare/configs/llm.yaml")
+_SETTINGS_PATH  = Path("/kaare/configs/settings.yaml")
+_SERVICES_PATH  = Path("/kaare/configs/services.yaml")
+_LLM_PATH       = Path("/kaare/configs/llm.yaml")
+_CAPMAP_PATH    = Path("/kaare/capability_map.yaml")
 _FRIGATE_CAMERAS_PATH = Path("/kaare/configs/frigate_cameras.yaml")
 
 _RESTARTABLE_SERVICES = {
     "kaare":          "kaare.service",
     "gateway":        "kaare_ha_gateway.service",
     "semantic_embed": "kaare-semantic-embed.service",
-    "agents":         "kaare-agents.service",
     "embedding":      "kaare-embedding.service",
     "argus":     "kaare-argus.service",
     "voice":          "kaare-voice-bridge.service",
@@ -453,43 +457,73 @@ def api_system_status(_u=Depends(_require_auth)):
 
 
 def _build_service_catalog() -> list[dict]:
-    """System services (systemd processes). URLs read from services.yaml."""
+    """System services (systemd processes). Descriptions derived from services.yaml + capability_map.yaml."""
+    try:
+        _svc_cfg = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:
+        _svc_cfg = {}
+    try:
+        _cap_cfg = yaml.safe_load(_CAPMAP_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:
+        _cap_cfg = {}
+
+    _embed_device   = _svc_cfg.get("embedding", {}).get("device", "CPU")
+    _embed_enabled  = _cap_cfg.get("services", {}).get("embedding", {}).get("enabled", True)
+    _memory_enabled = _svc_cfg.get("memory_embed", {}).get("enabled", True)
+
+    _embed_uses = ["wiki"]
+    if _embed_enabled:
+        _embed_uses.append("events")
+    _embed_desc = f"BGE-M3 {' & '.join(_embed_uses) or 'indexing'} ({_embed_device})"
+
+    _qdrant_parts = ["wiki"]
+    if _memory_enabled:
+        _qdrant_parts.append("memory")
+    if _embed_enabled:
+        _qdrant_parts.append("events")
+    _qdrant_desc = "Vector database — " + (", ".join(_qdrant_parts) if _qdrant_parts else "—")
+
+    _semembed_desc = (
+        "384-dim semantic memory embedding" if _memory_enabled
+        else "384-dim embedding (memory disabled)"
+    )
+
     return [
-        {"key": "kaare_api",     "name": "Kåre",          "description": "Main orchestrator API",
-         "color": "#646cff",     "check_url": get_service("internal", "kaare_api") + "/"},
-        {"key": "ha_gateway",    "name": "HA Gateway",    "description": "Home Assistant command executor",
-         "color": "#f0a500",     "check_url": get_service("internal", "ha_gateway") + "/"},
-        {"key": "semantic_embed", "name": "Semantic Embed", "description": "384-dim embedding for semantic memory",
-         "color": "#60a5fa",     "check_url": get_service("internal", "semantic_embed") + "/"},
-        {"key": "agents_server", "name": "Agents Server", "description": "Library + Mechanic HTTP API",
-         "color": "#5ba8a0",     "check_url": get_service("internal", "agents") + "/"},
-        {"key": "voice_bridge",  "name": "Voice Bridge",  "description": "Piper TTS + Whisper STT",
-         "color": "#a78bfa",     "check_url": get_service("internal", "voice_bridge") + "/"},
-        {"key": "embedding",     "name": "Embedding",     "description": "BGE-M3 vector service (NPU)",
-         "color": "#fbbf24",     "check_url": get_service("ollama", "embed") + "/health"},
-        {"key": "qdrant",        "name": "Qdrant",        "description": "Vector database — semantic memory",
-         "color": "#34d399",     "check_url": get_service("storage", "qdrant") + "/readyz"},
-        {"key": "argus",    "name": "Argus",    "description": "System log monitor and alerter",
-         "color": "#fb7185",     "check_url": "file:///kaare/state/argus/report.json:600"},
-        {"key": "jing_svc",      "name": "Jing (ainuc)",  "description": "Fast inner voice service",
-         "color": "#a78bfa",     "check_url": "file:///kaare/state/jing_thoughts.txt:600"},
-        {"key": "jang_svc",      "name": "Jang (ainuc)",  "description": "Slow inner voice service",
-         "color": "#f472b6",     "check_url": "file:///kaare/state/inner_thoughts.txt:2100"},
+        {"key": "kaare_api",      "name": "Kåre",           "description": "Main orchestrator API",
+         "color": "#646cff",      "check_url": get_service("internal", "kaare_api") + "/"},
+        {"key": "ha_gateway",     "name": "HA Gateway",     "description": "Home Assistant command executor",
+         "color": "#facc15",      "check_url": get_service("internal", "ha_gateway") + "/"},
+        {"key": "semantic_embed", "name": "Semantic Embed", "description": _semembed_desc,
+         "color": "#60a5fa",      "check_url": get_service("internal", "semantic_embed") + "/"},
+        {"key": "voice_bridge",   "name": "Voice Bridge",   "description": "Piper TTS + Whisper STT",
+         "color": "#a78bfa",      "check_url": get_service("internal", "voice_bridge") + "/"},
+        {"key": "embedding",      "name": "Embedding",      "description": _embed_desc,
+         "color": "#c2f8da",      "check_url": get_service("ollama", "embed") + "/health"},
+        {"key": "qdrant",         "name": "Qdrant",         "description": _qdrant_desc,
+         "color": "#16a34a",      "check_url": get_service("storage", "qdrant") + "/readyz"},
+        {"key": "argus",          "name": "Argus",          "description": "System log monitor and alerter",
+         "color": "#fb7185",      "check_url": "file:///kaare/state/argus/report.json:600"},
+        {"key": "jing_svc",       "name": "Jing (NUC)",     "description": "Fast inner voice service",
+         "color": "#e879f9",      "check_url": "file:///kaare/state/jing_thoughts.txt:600"},
+        {"key": "jang_svc",       "name": "Jang (NUC)",     "description": "Slow inner voice service",
+         "color": "#f472b6",      "check_url": "file:///kaare/state/inner_thoughts.txt:2100"},
     ]
 
 
 def _build_model_catalog() -> list[dict]:
     """LLM/ML models being served. Model names and platforms derived from llm.yaml + models.yaml.
-    OpenVINO models on ainuc and Whisper are checked via file age / voice-bridge."""
+    OpenVINO models on the NUC and Whisper are checked via file age / voice-bridge."""
     try:
         _llm = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
     except Exception:
         _llm = {}
     try:
         _svc = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
-        _embed_model = _svc.get("embedding", {}).get("hf_model") or get_model("embed")
+        _embed_model  = _svc.get("embedding", {}).get("hf_model") or get_model("embed")
+        _embed_device = _svc.get("embedding", {}).get("device", "CPU")
     except Exception:
-        _embed_model = get_model("embed")
+        _embed_model  = get_model("embed")
+        _embed_device = "CPU"
 
     def _platform(llm_key: str) -> str:
         s = _llm.get(llm_key, {})
@@ -530,23 +564,28 @@ def _build_model_catalog() -> list[dict]:
         {"key": "llm_kare",      "name": "Kåre",               "model": _model("kare"),
          "platform": _platform("default"),    "color": "#646cff",
          "check_url": _check_url_for("default", "kare")},
-        {"key": "llm_miss_kare", "name": "Miss Kåre",           "model": _model("miss_kare"),
-         "platform": _platform("miss_kare"), "color": "#c084fc",
+        {"key": "llm_miss_kare", "name": "Miss Kåre / Mechanic", "model": _model("miss_kare"),
+         "platform": _platform("miss_kare"), "color": "#fde047",
          "check_url": _check_url_for("miss_kare")},
-        {"key": "llm_library",   "name": "Library / Mechanic", "model": _model("library"),
-         "platform": _platform("library"),   "color": "#5ba8a0",
+        {"key": "llm_library",   "name": "Library",            "model": _model("library"),
+         "platform": _platform("library"),   "color": "#4ade80",
          "check_url": _check_url_for("library")},
         {"key": "llm_jing",      "name": "Jing",                "model": "qwen2.5-0.5b-openvino",
-         "platform": "ainuc (OpenVINO)",     "color": "#a78bfa",
+         "platform": "NUC (OpenVINO)",     "color": "#e879f9",
          "check_url": "file:///kaare/state/jing_thoughts.txt:600"},
         {"key": "llm_jang",      "name": "Jang",                "model": "qwen2.5-3b-openvino",
-         "platform": "ainuc (OpenVINO)",     "color": "#f472b6",
+         "platform": "NUC (OpenVINO)",     "color": "#f472b6",
          "check_url": "file:///kaare/state/inner_thoughts.txt:2100"},
         {"key": "whisper",       "name": "Whisper STT",         "model": "nb-whisper-large",
-         "platform": "Voice Bridge",         "color": "#60a5fa",
+         "platform": "Voice Bridge",         "color": "#a78bfa",
+         "check_url": get_service("internal", "voice_bridge") + "/"},
+        {"key": "piper",         "name": "Piper TTS",
+         "model": Path(_svc.get("voice", {}).get("tts", {}).get("tts_models", {}).get("nb")
+                       or _svc.get("voice", {}).get("tts", {}).get("voice", "")).stem or "no_NO-talesyntese-medium",
+         "platform": "Voice Bridge",         "color": "#a78bfa",
          "check_url": get_service("internal", "voice_bridge") + "/"},
         {"key": "bge_m3",        "name": _embed_model.split("/")[-1], "model": _embed_model,
-         "platform": "Embedding service",    "color": "#fbbf24",
+         "platform": f"Embedding ({_embed_device})",  "color": "#4ade80",
          "check_url": get_service("ollama", "embed") + "/health"},
     ]
 
@@ -711,24 +750,199 @@ async def api_restart_service(service_key: str, background_tasks: BackgroundTask
 
 @router.post("/api/admin/settings/rollback")
 async def api_settings_rollback(_u=Depends(_require_admin)):
-    """Restore configs/settings.yaml, llm.yaml, models.yaml, services.yaml from configs_default/."""
+    """Restore all *.yaml files in configs/ from configs_default/."""
     defaults_dir = Path("/kaare/configs_default")
-    configs_dir = Path("/kaare/configs")
-    files = ["settings.yaml", "llm.yaml", "models.yaml", "services.yaml", "trusted_sources.yaml"]
-    restored = []
-    errors = []
-    for fname in files:
-        src = defaults_dir / fname
-        dst = configs_dir / fname
-        if not src.exists():
-            errors.append(f"{fname}: no default found")
-            continue
+    configs_dir  = Path("/kaare/configs")
+    restored, errors = [], []
+    for src in sorted(defaults_dir.glob("*.yaml")):
+        dst = configs_dir / src.name
         try:
             dst.write_bytes(src.read_bytes())
-            restored.append(fname)
+            restored.append(src.name)
         except Exception as e:
-            errors.append(f"{fname}: {e}")
+            errors.append(f"{src.name}: {e}")
     return {"ok": len(errors) == 0, "restored": restored, "errors": errors}
+
+
+# ── Config snapshots ──────────────────────────────────────────────────────────
+
+_CONFIGS_DIR    = Path("/kaare/configs")
+_SNAPSHOTS_DIR  = Path("/kaare/backups/configs")
+_MAX_SNAPSHOTS  = 10
+_SNAPSHOT_ID_RE = re.compile(r"^\d{8}_\d{6}$")
+
+
+class SnapshotSaveRequest(BaseModel):
+    name: str
+
+
+def _list_snapshots() -> list[dict]:
+    if not _SNAPSHOTS_DIR.exists():
+        return []
+    result = []
+    for d in sorted(_SNAPSHOTS_DIR.iterdir(), reverse=True):
+        meta_path = d / "meta.json"
+        if d.is_dir() and meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                result.append({"id": d.name, **meta})
+            except Exception:
+                pass
+    return result
+
+
+@router.post("/api/admin/config-snapshot")
+async def api_save_config_snapshot(payload: SnapshotSaveRequest, _u=Depends(_require_admin)):
+    existing = _list_snapshots()
+    if len(existing) >= _MAX_SNAPSHOTS:
+        return {"ok": False, "error": "max_reached", "count": len(existing)}
+
+    snapshot_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    snapshot_dir = _SNAPSHOTS_DIR / snapshot_id
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+    files_saved = []
+    for src in sorted(_CONFIGS_DIR.glob("*.yaml")):
+        dst = snapshot_dir / src.name
+        dst.write_bytes(src.read_bytes())
+        files_saved.append(src.name)
+
+    meta = {
+        "name": payload.name.strip()[:80],
+        "created": datetime.now(timezone.utc).isoformat(),
+        "files": files_saved,
+    }
+    (snapshot_dir / "meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return {"ok": True, "id": snapshot_id, "file_count": len(files_saved)}
+
+
+@router.get("/api/admin/config-snapshots")
+async def api_list_config_snapshots(_u=Depends(_require_admin)):
+    return {"snapshots": _list_snapshots()}
+
+
+@router.post("/api/admin/config-snapshot/{snapshot_id}/restore")
+async def api_restore_config_snapshot(snapshot_id: str, _u=Depends(_require_admin)):
+    if not _SNAPSHOT_ID_RE.match(snapshot_id):
+        raise HTTPException(status_code=400, detail="Invalid snapshot ID")
+    snapshot_dir = _SNAPSHOTS_DIR / snapshot_id
+    if not snapshot_dir.exists():
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+
+    restored, errors = [], []
+    for src in sorted(snapshot_dir.glob("*.yaml")):
+        dst = _CONFIGS_DIR / src.name
+        try:
+            dst.write_bytes(src.read_bytes())
+            restored.append(src.name)
+        except Exception as e:
+            errors.append(f"{src.name}: {e}")
+    return {"ok": len(errors) == 0, "restored": restored, "errors": errors}
+
+
+@router.delete("/api/admin/config-snapshot/{snapshot_id}")
+async def api_delete_config_snapshot(snapshot_id: str, _u=Depends(_require_admin)):
+    if not _SNAPSHOT_ID_RE.match(snapshot_id):
+        raise HTTPException(status_code=400, detail="Invalid snapshot ID")
+    snapshot_dir = _SNAPSHOTS_DIR / snapshot_id
+    if not snapshot_dir.exists():
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    shutil.rmtree(snapshot_dir)
+    return {"ok": True}
+
+
+@router.get("/api/admin/config-snapshot/{snapshot_id}/export")
+async def api_export_config_snapshot(snapshot_id: str, _u=Depends(_require_admin)):
+    if not _SNAPSHOT_ID_RE.match(snapshot_id):
+        raise HTTPException(status_code=400, detail="Invalid snapshot ID")
+    snapshot_dir = _SNAPSHOTS_DIR / snapshot_id
+    if not snapshot_dir.exists():
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+
+    meta_path = snapshot_dir / "meta.json"
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        name_slug = re.sub(r"[^a-zA-Z0-9_-]", "_", meta.get("name", snapshot_id))[:40]
+    except Exception:
+        name_slug = snapshot_id
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for f in sorted(snapshot_dir.glob("*.yaml")):
+            zf.write(f, arcname=f.name)
+
+    filename = f"ktsb-config-{name_slug}-{snapshot_id}.zip"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/api/admin/config/export")
+async def api_export_current_config(_u=Depends(_require_admin)):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for f in sorted(_CONFIGS_DIR.glob("*.yaml")):
+            zf.write(f, arcname=f.name)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    filename = f"ktsb-config-current-{ts}.zip"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/api/admin/config-snapshot/import")
+async def api_import_config_snapshot(
+    name: str = Form(...),
+    file: UploadFile = File(...),
+    _u=Depends(_require_admin),
+):
+    if not (file.filename or "").endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Only .zip files accepted")
+
+    existing = _list_snapshots()
+    if len(existing) >= _MAX_SNAPSHOTS:
+        return {"ok": False, "error": "max_reached", "count": len(existing)}
+
+    content = await file.read()
+
+    snapshot_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    snapshot_dir = _SNAPSHOTS_DIR / snapshot_id
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+    files_saved = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            for member in zf.namelist():
+                fname = Path(member).name
+                # Only plain *.yaml files — no subdirectories, no path traversal
+                if not fname.endswith(".yaml") or "/" in member or "\\" in member or fname != member:
+                    continue
+                (snapshot_dir / fname).write_bytes(zf.read(member))
+                files_saved.append(fname)
+    except zipfile.BadZipFile:
+        shutil.rmtree(snapshot_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail="Invalid zip file")
+
+    if not files_saved:
+        shutil.rmtree(snapshot_dir, ignore_errors=True)
+        return {"ok": False, "error": "no_yaml_files"}
+
+    meta = {
+        "name": name.strip()[:80],
+        "created": datetime.now(timezone.utc).isoformat(),
+        "files": files_saved,
+        "imported": True,
+    }
+    (snapshot_dir / "meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return {"ok": True, "id": snapshot_id, "file_count": len(files_saved)}
 
 
 @router.get("/api/admin/services")

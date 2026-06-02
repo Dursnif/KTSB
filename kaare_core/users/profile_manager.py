@@ -168,6 +168,19 @@ def save_profile(user_id: str, profile: dict) -> None:
     tmp.replace(path)
 
 
+def get_profile_flag(user_id: str, flag_name: str) -> bool:
+    """Read a boolean flag from profile['flags'] section. Returns False if not set."""
+    profile = load_profile(user_id)
+    return bool(profile.get("flags", {}).get(flag_name, False))
+
+
+def set_profile_flag(user_id: str, flag_name: str, value: bool) -> None:
+    """Set a boolean flag in profile['flags'] section."""
+    profile = load_profile(user_id)
+    profile.setdefault("flags", {})[flag_name] = value
+    save_profile(user_id, profile)
+
+
 def update_profile_field(user_id: str, field: str, value: Any, reason: str) -> None:
     """Oppdater ett felt i profilen og logg endringen."""
     profile = load_profile(user_id)

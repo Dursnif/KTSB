@@ -4,6 +4,7 @@ configs/settings.yaml
 configs/aliases.yaml
 configs/nodes.yaml
 configs/services.yaml
+configs_default/settings.yaml
 configs/*.save
 configs/*.save.*
 configs/kare_ha_bridgealiases.yaml.txt

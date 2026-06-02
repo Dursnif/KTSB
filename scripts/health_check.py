@@ -191,7 +191,6 @@ def _build_services() -> list[tuple[str, str]]:
     kaare_api    = _u(internal.get("kaare_api"),    "http://127.0.0.1:8000")
     ha_gateway   = _u(internal.get("ha_gateway"),   "http://127.0.0.1:8002")
     sem_embed    = _u(internal.get("semantic_embed"),"http://127.0.0.1:11500")
-    agents       = _u(internal.get("agents"),        "http://127.0.0.1:11450")
     embed        = _u(ollama.get("embed"),            "http://127.0.0.1:11446")
     qdrant       = _u(storage.get("qdrant"),          "http://127.0.0.1:6333")
     ollama_kare  = _u(ollama.get("kare"),             "http://127.0.0.1:11434")
@@ -204,7 +203,6 @@ def _build_services() -> list[tuple[str, str]]:
     services = [
         ("Main API",       kaare_api  + "/"),
         ("HA gateway",     ha_gateway + "/"),
-        ("Agents server",  agents     + "/"),
         ("Qdrant",         qdrant     + "/"),
     ]
     if mem_embed_enabled:

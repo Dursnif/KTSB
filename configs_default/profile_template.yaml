@@ -1,0 +1,291 @@
+# profile_template.yaml
+#
+# User profile template — Kåre fills this progressively through conversation and observation.
+# null  = not yet known (single value)
+# []    = not yet known (list)
+#
+# PRIVACY MODEL:
+#   - household_visible: ALWAYS accessible to Kåre (no PIN). Shared with the whole house.
+#     Only these 6 hardcoded fields can ever be household-visible.
+#   - Everything else: private. Encrypted with the user's PIN key (Fase 1).
+#
+# HOW IT WORKS:
+#   - prompt_top is always loaded into the system prompt (keep it compact)
+#   - Everything below prompt_top is searchable via RAG (loaded on demand)
+#   - Kåre fills this in by inference from conversation — not by asking directly
+#   - The reflection meeting and Jing/Jang also contribute over time
+#
+
+# _Dette er hva jeg vet om deg. Alt nytt jeg oppdager er verdifullt._
+
+# ═══════════════════════════════════════════════════════════════════
+# HOUSEHOLD VISIBLE — global, no PIN needed, visible to all users
+# Use brukerprofil(action=oppdater_hus) to update these fields.
+# ═══════════════════════════════════════════════════════════════════
+household_visible:
+  preferred_name: null    # what to call them in the household block
+  role: null              # family | admin | guest
+  age: null               # integer
+  key_facts: []           # ["nøttallergi", "vegetarianer", "diabetiker"]
+  current_context: null   # 1 sentence: what's going on in their life right now
+  recent_updates: []      # ["Skiftet dekk 2026-05-17", "Farget håret rosa"]
+
+
+# DO NOT store sensitive secrets here (passwords, tokens, etc.)
+
+meta:
+  user_id: null
+  display_name: null
+  role: null              # admin | family | guest
+  created: null
+  last_updated: null
+  kare_summary: null      # 2-3 sentences Kåre writes to summarize this person
+
+# ═══════════════════════════════════════════════════════════════════
+# PROMPT TOP — always loaded into system prompt, keep compact
+# ═══════════════════════════════════════════════════════════════════
+prompt_top:
+  preferred_name: null
+  language: null
+  personality_summary: null       # Kåre writes: who is this person in 2-3 sentences
+  communication_style: null       # short/direct | elaborate | casual | formal
+  response_length_preference: null  # short | medium | long
+  formality_with_kare: null       # informal | neutral | formal
+  proactivity_preference: null    # low | medium | high
+  key_values: []                  # top 3-5 values this person holds
+  topics_to_avoid: []
+  topics_to_flag: []              # always mention / always check in on
+  current_context: null           # 1-2 sentences: what is going on in their life right now
+  curiosity: null                 # Kåre writes: what am I currently wondering about this person?
+
+# ═══════════════════════════════════════════════════════════════════
+# FULL PROFILE — searchable via RAG
+# ═══════════════════════════════════════════════════════════════════
+
+# 1. Grunnleggende identitet
+identity:
+  full_name: null
+  preferred_name: null            # kallenavn / tiltalenavn
+  date_of_birth: null
+  star_sign: null
+  gender_identity: null
+  civil_status: null
+  sexual_orientation: null
+  native_language: null
+  other_languages: []             # [{language: null, level: null}]
+  current_location: null          # by / bydel
+  hometown: null                  # oppvekststed
+
+# 2. Utseende og fysiske trekk
+appearance:
+  eye_color: null
+  hair_color: null
+  hairstyle: null
+  height: null
+  clothing_style: null            # minimalistisk, rocka, formell, etc.
+  tattoos: []
+  piercings: []
+  wears_glasses: null             # ja | nei | linser
+  distinctive_features: []        # arr, føflekker, etc.
+  shoe_size: null
+  physical_fitness: null          # trener mye | middels | lite | aldri
+  skin_type: null                 # f.eks. "blir fort solbrent"
+
+# 3. Arbeid og utdanning
+work_and_education:
+  current_job_title: null
+  employer: null
+  job_description: null           # hva gjør brukeren faktisk?
+  previous_jobs: []               # kronologisk
+  dream_job: null
+  highest_education: null
+  schools_attended: []
+  favorite_school_subject: null
+  hated_school_subject: null
+  certifications: []
+
+# 4. Økonomi og forbruk
+finances_and_consumption:
+  money_mindset: null             # sparer | sløser | balansert
+  owns_or_rents: null
+  car_or_transport: null
+  active_subscriptions: []
+  brand_loyalty: null             # f.eks. Apple vs Android
+  most_expensive_purchase: null
+  income_bracket: null            # lav | middels | høy | svært høy
+  investments: []                 # aksjer, krypto, eiendom
+  shopping_preference: null       # fysisk | nett | begge
+  view_on_debt: null
+  impulse_buyer: null             # ja | nei | sjelden
+  sustainability_conscious: null  # ja | nei | middels
+
+# 5. Relasjoner og familie
+relationships_and_family:
+  parents: []                     # [{name: null, status: null, relationship_quality: null}]
+  relationship_with_parents: null
+  siblings: []                    # [{name: null, age: null}]
+  children: []                    # [{name: null, age: null}]
+  pets: []                        # [{name: null, species: null, status: null}]
+  best_friend: null
+  why_best_friend: null
+  significant_past_relationships: []
+  conflicts_or_feuds: []
+  mentor_figures: []
+  social_role: null               # lederen | klovnen | observatøren | fredsstifteren | etc.
+
+# 6. Mat, drikke og helse
+food_drink_health:
+  diet: null                      # vegan, keto, omnivore, etc.
+  food_allergies: []
+  favorite_meal: null
+  most_hated_food: null
+  favorite_non_alcoholic_drink: null
+  alcohol_habits: null            # hva, hvor mye, eller aldri
+  coffee_or_tea: null
+  cooking_skill: null             # ingen | middels | god | ekspert
+  sleep_pattern: null             # A-menneske | B-menneske
+  chronic_conditions: []
+  regular_medications: []
+  uses_tobacco_or_nicotine: null  # røyk | snus | vape | nei
+  mental_health_history: null
+  phobias: []
+
+# 7. Reise og geografi
+travel:
+  countries_visited: []
+  best_travel_memory: null
+  worst_travel_memory: null
+  dream_destination: null
+  preferred_travel_style: null    # storby | strand | fjell | backpacking
+  packing_style: null             # kaotisk | organisert
+  places_never_returning: []
+
+# 8. Interesser og hobbyer
+interests_and_hobbies:
+  primary_hobby: null
+  sports_active: []
+  sports_watching: []             # lag / utøver
+  music_genres: []
+  favorite_artists: []
+  instruments_played: []
+  film_series_preferences: null
+  gaming_habits: null             # PC | konsoll | brettspill | ingen
+  books_recently_read: []
+  collectibles: []
+  creative_skills: []             # tegne, skrive, kode, etc.
+  tech_competence: null           # nybegynner | middels | avansert | ekspert
+
+# 9. Verdier, tro og politikk
+values_beliefs_politics:
+  religious_belief: null
+  political_stance: null
+  primary_cause: null             # viktigste kampsak (miljø, likestilling, etc.)
+  view_of_future: null            # optimist | pessimist | realist
+  personal_morality: null         # hva er utilgivelig?
+  view_on_afterlife: null
+  organization_memberships: []
+
+# 10. Psykologi og personlighet
+psychology_and_personality:
+  mbti: null
+  biggest_fear: null
+  biggest_ambition: null
+  love_language: null             # anerkjennelse | tid | berøring | gaver | tjenester
+  stress_response: null           # trekker seg inn | søker selskap | trener | etc.
+  introvert_extrovert: null       # introvert | ambivert | ekstrovert
+  humor_style: null               # tørr | mørk | sarkastisk | absurd | slapstick
+  bad_habits: []
+  proudest_moment: null
+  biggest_weakness: null
+  intuition_vs_logic: null        # 1-10 (1=ren logikk, 10=ren intuisjon)
+  reaction_to_criticism: null
+  need_for_control: null          # 1-10
+  attachment_style: null          # trygg | unnvikende | engstelig | desorganisert
+
+# 11. Daglige rutiner
+daily_routines:
+  wake_up_time: null
+  morning_ritual: null
+  typical_lunch: null
+  screen_time_daily: null
+  preferred_communication: null   # SMS | ring | epost | chat
+  evening_ritual: null
+
+# 12. Digitalt liv og teknologi
+digital_life:
+  social_media_platforms: []
+  content_creator_or_consumer: null  # skaper | konsument | begge
+  privacy_stance: null            # paranoid | balansert | likegyldig
+  browser_and_search: null
+  password_hygiene: null          # passordmanager | notisblokk | husker alt
+  early_adopter: null             # ja | nei | avhenger av domene
+  ai_trust_level: null            # 1-10
+  notification_tolerance: null    # lav | middels | høy
+  email_habits: null              # inbox_zero | kaotisk | sjekker sjelden
+
+# 13. Kognitiv stil
+cognitive_style:
+  learning_style: null            # visuell | auditiv | kinestetisk
+  decision_style: null            # rask-impulsiv | sakte-grundig | situasjonsavhengig
+  risk_tolerance: null            # 1-10
+  multitasker: null               # ja | nei | situasjonsavhengig
+  face_name_memory: null          # god | middels | dårlig
+  planning_style: null            # planlegger | improviserer
+  focus_technique: null           # pomodoro | deep_work | kaos | etc.
+  peak_cognitive_hours: null      # morgen | formiddag | ettermiddag | kveld | natt
+  deadline_behavior: null         # tidlig ute | akkurat i tide | alltid for sent
+
+# 14. Estetikk og sansepreferanser
+aesthetics_and_senses:
+  interior_style: null            # minimalistisk | industriell | bohemsk | klassisk | etc.
+  color_preference: null          # varme | kalde | nøytrale farger
+  noise_preference: null          # stillhet | musikk | bakgrunnsstøy | hvit støy
+  temperature_preference: null    # liker det kaldt | liker det varmt
+  light_preference: null          # mørkt | lyst | naturlig lys
+  smell_sensitivity: null         # høy | lav | normal
+  texture_sensitivity: null       # høy | lav | normal
+
+# 15. Personlig utvikling
+personal_development:
+  current_goals: []
+  self_development_resources: []  # bøker, podcaster, kurs
+  has_therapist_or_coach: null
+  personal_motto: null
+  role_models: []
+  definition_of_success: null
+  definition_of_happiness: null
+  biggest_regret: null
+  life_chapters: []               # hvordan brukeren definerer epokene i livet sitt
+
+# 16. Hjemmeliv
+home_life:
+  tidiness_level: null            # 1-10 (1=kaotisk, 10=perfekt orden)
+  household_members: []           # [{name: null, role: null, relationship: null}]
+  favorite_room: null
+  workspace_setup: null           # hjemmekontor | sofaen | kjøkkenbordet | etc.
+  smarthome_engagement: null      # aktiv | passiv | vet ikke hva det er
+
+# 17. Humor og underholdning
+humor_and_entertainment:
+  comedy_style: null              # stand-up | satire | absurd | impro | slapstick
+  favorite_comedians: []
+  what_makes_them_laugh: null
+  entertainment_medium: null      # strømming | kino | teater | ingenting
+
+# 18. Kåre-spesifikk interaksjon
+kare_interaction:
+  kare_nickname: null             # hva kaller brukeren Kåre?
+  trust_level: null               # 1-10
+  first_interaction: null
+  interaction_count: null
+  notable_moments: []             # interaksjoner Kåre bør huske
+
+# 19. Øyeblikksbilder (Kåre oppdaterer løpende)
+current_snapshot:
+  mood_profile: null              # generelt humørmønster siste tid
+  current_projects: []
+  current_stressors: []
+  recent_major_change: null
+  current_obsession: null         # hva snakker de om nå om dagen?
+  upcoming_events: []
+  last_kare_update: null

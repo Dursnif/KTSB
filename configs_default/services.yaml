@@ -19,7 +19,6 @@ home_assistant:
   timeout: 5
   url: ""
 internal:
-  agents: http://kaare-agents:11450
   ha_gateway: http://kaare-ha-gateway:8002
   semantic_embed: http://kaare-memory-embed:11500
   kaare_api: http://kaare-api:8000

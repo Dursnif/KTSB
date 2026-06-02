@@ -159,6 +159,44 @@ async def _process_frigate_event(payload_bytes: bytes) -> None:
         asyncio.create_task(_END_EVENT_CALLBACK(event_dict))
 
 
+async def publish_mqtt(topic: str, payload: str) -> bool:
+    """
+    Publish a single message to an MQTT topic.
+    Returns True on success, False on failure or misconfiguration.
+    """
+    try:
+        import aiomqtt
+    except ImportError:
+        log.error("aiomqtt not installed — cannot publish to MQTT")
+        return False
+
+    cfg = _load_mqtt_config()
+    if not cfg["host"]:
+        log.warning("MQTT: no host configured — cannot publish")
+        return False
+
+    tls_ctx = ssl.create_default_context() if cfg["tls_enabled"] else None
+    client_kwargs: dict = {
+        "hostname": cfg["host"],
+        "port": cfg["port"],
+        "username": cfg["username"] or None,
+        "password": cfg["password"] or None,
+    }
+    if tls_ctx is not None:
+        client_kwargs["tls_context"] = tls_ctx
+    if cfg["client_id"]:
+        client_kwargs["identifier"] = cfg["client_id"] + "-pub"
+
+    try:
+        async with aiomqtt.Client(**client_kwargs) as client:
+            await client.publish(topic, payload=payload.encode("utf-8"))
+        log.info("MQTT published to %s: %s", topic, payload[:80])
+        return True
+    except Exception as e:
+        log.warning("MQTT publish failed for topic %s: %s", topic, e)
+        return False
+
+
 async def run_mqtt_listener() -> None:
     """
     Runs indefinitely — subscribes to Frigate MQTT topics and processes events.

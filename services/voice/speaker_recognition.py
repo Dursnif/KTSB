@@ -83,16 +83,18 @@ def identify(
     audio_16k: np.ndarray,
     enrollment_dir: Path,
     threshold: float = 0.75,
-) -> tuple[str | None, float]:
+) -> tuple[str | None, str | None, float]:
     """
     Identify speaker from 16 kHz mono audio.
-    Returns (username, confidence) if above threshold, else (None, best_score).
+    Returns (confirmed_user, best_user, best_score).
+    confirmed_user is set only when best_score >= threshold.
+    best_user is always the closest match (or None if no enrollments).
     """
     try:
         embedding = extract_embedding(audio_16k)
         voiceprints = load_all_voiceprints(enrollment_dir)
         if not voiceprints:
-            return None, 0.0
+            return None, None, 0.0
 
         model = _get_model()
         best_user: str | None = None
@@ -106,17 +108,17 @@ def identify(
 
         if best_score >= threshold:
             log.info("Speaker identified: %s (score=%.3f)", best_user, best_score)
-            return best_user, best_score
+            return best_user, best_user, best_score
 
         log.info(
             "Speaker not identified (best=%s score=%.3f threshold=%.2f)",
             best_user, best_score, threshold,
         )
-        return None, best_score
+        return None, best_user, best_score
 
     except Exception as exc:
         log.error("Speaker identification error: %s", exc)
-        return None, 0.0
+        return None, None, 0.0
 
 
 def has_voiceprint(username: str, enrollment_dir: Path) -> bool:

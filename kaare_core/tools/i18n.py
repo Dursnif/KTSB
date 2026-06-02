@@ -287,6 +287,48 @@ _T: dict = {
         "en": "VLM analysis failed: {error}",
         "de": "VLM-Analyse fehlgeschlagen: {error}",
     },
+    "cam_prompt_all": {
+        "nb": (
+            "Du ser bilder fra flere overvåkningskameraer. "
+            "Beskriv hvert bilde kort: hva skjer, er det personer, kjøretøy eller hendelser? "
+            "Angi kameranavnet i svaret."
+        ),
+        "en": (
+            "You are looking at images from multiple surveillance cameras. "
+            "Briefly describe each image: what is happening, are there people, vehicles or events? "
+            "Include the camera name in your answer."
+        ),
+        "de": (
+            "Du siehst Bilder von mehreren Überwachungskameras. "
+            "Beschreibe jedes Bild kurz: Was passiert, gibt es Personen, Fahrzeuge oder Ereignisse? "
+            "Nenne den Kameranamen in deiner Antwort."
+        ),
+    },
+    "cam_prefix_all": {
+        "nb": "Kameraer: {cam_list}.\n",
+        "en": "Cameras: {cam_list}.\n",
+        "de": "Kameras: {cam_list}.\n",
+    },
+    "cam_prompt_single": {
+        "nb": "Beskriv hva du ser på bildet. Nevn personer, kjøretøy, dyr og eventuelle hendelser.",
+        "en": "Describe what you see in the image. Mention any people, vehicles, animals and events.",
+        "de": "Beschreibe, was du auf dem Bild siehst. Nenne Personen, Fahrzeuge, Tiere und Ereignisse.",
+    },
+    "cam_prompt_show_event": {
+        "nb": "Du ser et lagret Frigate-kameraopptak (event_id: {event_id}).",
+        "en": "You are looking at a stored Frigate camera recording (event_id: {event_id}).",
+        "de": "Du siehst eine gespeicherte Frigate-Kameraaufnahme (event_id: {event_id}).",
+    },
+    "cam_prompt_show_event_prior_analysis": {
+        "nb": "\n\nDen automatiske analysen sa:\n{analysis}",
+        "en": "\n\nThe automatic analysis said:\n{analysis}",
+        "de": "\n\nDie automatische Analyse ergab:\n{analysis}",
+    },
+    "cam_prompt_show_event_question": {
+        "nb": "\n\nBeskriv hva du ser på bildet og om den lagrede analysen stemmer. Svar på norsk.",
+        "en": "\n\nDescribe what you see in the image and whether the stored analysis is accurate.",
+        "de": "\n\nBeschreibe, was du auf dem Bild siehst, und ob die gespeicherte Analyse korrekt ist.",
+    },
 
     # ── Memory ───────────────────────────────────────────────────────────────
     "mem_no_stm_history": {
@@ -850,6 +892,16 @@ _T: dict = {
         "nb": "[Tom logg]",
         "en": "[Empty log]",
         "de": "[Leeres Protokoll]",
+    },
+    "sys_file_header": {
+        "nb": "[{path} — linjer {from_line}–{to_line} av {total}]\n",
+        "en": "[{path} — lines {from_line}–{to_line} of {total}]\n",
+        "de": "[{path} — Zeilen {from_line}–{to_line} von {total}]\n",
+    },
+    "sys_more_lines": {
+        "nb": "\n... ({count} linjer gjenstår — bruk from_line={next_line})",
+        "en": "\n... ({count} more lines — use from_line={next_line})",
+        "de": "\n... ({count} weitere Zeilen — verwende from_line={next_line})",
     },
     "sys_unknown_service": {
         "nb": "[Feil: '{service}' er ikke en kjent Kåre-tjeneste. Tillatte: {allowed}]",
@@ -1491,6 +1543,11 @@ _T: dict = {
         "en": "Add it under Settings → Web search → Trusted sources.",
         "de": "Füge es unter Einstellungen → Websuche → Vertrauenswürdige Quellen hinzu.",
     },
+    "mechanic_job_done": {
+        "nb": "📬 Mechanic er ferdig med oppgave {job_id}: {summary}",
+        "en": "📬 Mechanic finished task {job_id}: {summary}",
+        "de": "📬 Mechanic hat Aufgabe {job_id} abgeschlossen: {summary}",
+    },
 
     # ── Voice bridge + API ────────────────────────────────────────────────────
     "voice_kare_unreachable": {
@@ -1932,34 +1989,43 @@ _T: dict = {
     # timer
     "tool_timer_desc": {
         "nb": (
-            "Klokkeslett og timere. Fire operasjoner: "
+            "Klokkeslett og timere. Fem operasjoner: "
             "action='clock': returnerer nåværende klokkeslett og dato. "
-            "action='set': sett en timer — skriv prompten du vil vekkes med. "
+            "action='set': sett en timer. Bestem action_type, tts_text og notify_via NÅ — ikke ved avfyring. "
+            "For enkle påminnelser: action_type='tts_response', tts_text='tekst som leses opp', notify_via=['tts']. "
+            "For stille påminnelse i chat: action_type='none', notify_via=['chat']. "
             "Bruk 'at_time' for klokkeslett/dato eller 'in_seconds' for enkel forsinkelse. "
             "action='cancel': avbryt en timer (krever 'timer_id' fra action='list'). "
-            "action='list': se alle aktive timere med ID og gjenværende tid."
+            "action='list': se alle aktive timere med ID og gjenværende tid. "
+            "action='ack': kvitter en levert chat-påminnelse (krever 'notif_id')."
         ),
         "en": (
-            "Clock and timers. Four operations: "
+            "Clock and timers. Five operations: "
             "action='clock': returns current time and date. "
-            "action='set': set a timer — write the prompt you want to be woken with. "
+            "action='set': set a timer. Decide action_type, tts_text and notify_via NOW — not at fire time. "
+            "For simple reminders: action_type='tts_response', tts_text='text to speak', notify_via=['tts']. "
+            "For silent chat reminder: action_type='none', notify_via=['chat']. "
             "Use 'at_time' for a specific time/date or 'in_seconds' for a simple delay. "
             "action='cancel': cancel a timer (requires 'timer_id' from action='list'). "
-            "action='list': see all active timers with ID and remaining time."
+            "action='list': see all active timers with ID and remaining time. "
+            "action='ack': acknowledge a delivered chat reminder (requires 'notif_id')."
         ),
         "de": (
-            "Uhr und Timer. Vier Operationen: "
+            "Uhr und Timer. Fünf Operationen: "
             "action='clock': gibt aktuelle Uhrzeit und Datum zurück. "
-            "action='set': Timer setzen — schreibe den Prompt, mit dem du geweckt werden möchtest. "
+            "action='set': Timer setzen. action_type, tts_text und notify_via JETZT festlegen — nicht beim Auslösen. "
+            "Für einfache Erinnerungen: action_type='tts_response', tts_text='vorzulesender Text', notify_via=['tts']. "
+            "Für stille Chat-Erinnerung: action_type='none', notify_via=['chat']. "
             "Verwende 'at_time' für eine bestimmte Zeit/Datum oder 'in_seconds' für einfache Verzögerung. "
             "action='cancel': Timer abbrechen (erfordert 'timer_id' aus action='list'). "
-            "action='list': alle aktiven Timer mit ID und verbleibender Zeit anzeigen."
+            "action='list': alle aktiven Timer mit ID und verbleibender Zeit anzeigen. "
+            "action='ack': Chat-Erinnerung bestätigen (erfordert 'notif_id')."
         ),
     },
     "tool_timer_action_desc": {
-        "nb": "'clock' = tid og dato. 'set' = ny timer (krever 'prompt', én av 'at_time'/'in_seconds'). 'cancel' = avbryt (krever 'timer_id'). 'list' = vis alle timere.",
-        "en": "'clock' = time and date. 'set' = new timer (requires 'prompt', one of 'at_time'/'in_seconds'). 'cancel' = cancel (requires 'timer_id'). 'list' = show all timers.",
-        "de": "'clock' = Zeit und Datum. 'set' = neuer Timer (erfordert 'prompt', eines von 'at_time'/'in_seconds'). 'cancel' = abbrechen (erfordert 'timer_id'). 'list' = alle Timer anzeigen.",
+        "nb": "'clock' = tid og dato. 'set' = ny timer (krever action_type + tts_text eller ha_payload + én av 'at_time'/'in_seconds'). 'cancel' = avbryt (krever 'timer_id'). 'list' = vis aktive timere. 'ack' = kvitter chat-påminnelse (krever 'notif_id').",
+        "en": "'clock' = time and date. 'set' = new timer (requires action_type + tts_text or ha_payload + one of 'at_time'/'in_seconds'). 'cancel' = cancel (requires 'timer_id'). 'list' = show active timers. 'ack' = acknowledge chat reminder (requires 'notif_id').",
+        "de": "'clock' = Zeit und Datum. 'set' = neuer Timer (erfordert action_type + tts_text oder ha_payload + eines von 'at_time'/'in_seconds'). 'cancel' = abbrechen (erfordert 'timer_id'). 'list' = aktive Timer anzeigen. 'ack' = Chat-Erinnerung bestätigen (erfordert 'notif_id').",
     },
     "tool_timer_prompt_desc": {
         "nb": "Meldingen du vil vekkes med. Kun ved action='set'.",
@@ -1990,6 +2056,86 @@ _T: dict = {
         "nb": "Timer-ID fra action='list'. Kun ved action='cancel'.",
         "en": "Timer ID from action='list'. Only for action='cancel'.",
         "de": "Timer-ID aus action='list'. Nur bei action='cancel'.",
+    },
+    "tool_timer_action_type_desc": {
+        "nb": "Hva timeren gjør ved avfyring. 'tts_response': spill tts_text på høyttaler. 'ha_action': kall HA direkte (krever ha_payload). 'llm_task': Kåre kjøres med prompt (sjelden). 'none': ingen handling, kun varsling. Standard: 'tts_response'.",
+        "en": "What the timer does when it fires. 'tts_response': play tts_text on speaker. 'ha_action': call HA directly (requires ha_payload). 'llm_task': run Kåre with prompt (rare). 'none': no action, notification only. Default: 'tts_response'.",
+        "de": "Was der Timer beim Auslösen tut. 'tts_response': tts_text auf Lautsprecher abspielen. 'ha_action': HA direkt aufrufen (erfordert ha_payload). 'llm_task': Kåre mit Prompt ausführen (selten). 'none': keine Aktion, nur Benachrichtigung. Standard: 'tts_response'.",
+    },
+    "tool_timer_notify_via_desc": {
+        "nb": "Leveringskanaler som liste. 'tts': spill på høyttaler. 'chat': legg i brukerens chat-kø til neste interaksjon. Kombiner: ['tts','chat'] for begge. Standard: ['tts'] hvis tts_text er satt, ellers ['chat'].",
+        "en": "Delivery channels as a list. 'tts': play on speaker. 'chat': queue in user's chat until next interaction. Combine: ['tts','chat'] for both. Default: ['tts'] if tts_text is set, otherwise ['chat'].",
+        "de": "Zustellkanäle als Liste. 'tts': auf Lautsprecher abspielen. 'chat': in den Chat-Puffer des Nutzers legen bis zur nächsten Interaktion. Kombinieren: ['tts','chat'] für beide. Standard: ['tts'] wenn tts_text gesetzt, sonst ['chat'].",
+    },
+    "tool_timer_tts_text_desc": {
+        "nb": "Teksten som leses opp når timeren går av. Bestem innholdet nå — ikke ved avfyring. Eksempel: 'Poteter på!'. Kun ved action='set'.",
+        "en": "The text to speak when the timer fires. Decide the content now — not at fire time. Example: 'Time to put on potatoes!'. Only for action='set'.",
+        "de": "Der Text, der gesprochen wird, wenn der Timer auslöst. Inhalt jetzt festlegen — nicht beim Auslösen. Beispiel: 'Kartoffeln aufsetzen!'. Nur bei action='set'.",
+    },
+    "tool_timer_target_node_desc": {
+        "nb": "Hvilken høyttaler/node TTS skal spilles på. Utelat for å bruke noden der forespørselen kom fra. Eksempel: 'stue_høyttaler'. Kun ved action='set'.",
+        "en": "Which speaker/node to play TTS on. Omit to use the node where the request came from. Example: 'living_room_speaker'. Only for action='set'.",
+        "de": "Welcher Lautsprecher/Node für TTS verwendet wird. Weglassen, um den Node der Anfrage zu verwenden. Beispiel: 'wohnzimmer_lautsprecher'. Nur bei action='set'.",
+    },
+    "tool_timer_ha_payload_desc": {
+        "nb": "HA-handlingen ved avfyring. Objekt med 'action' og 'entity_id'. Gyldige actions: turn_on, turn_off, toggle, set_level. Eksempel: {\"action\": \"turn_off\", \"entity_id\": \"light.verksted\"}. Kun ved action_type='ha_action'.",
+        "en": "The HA action to perform when the timer fires. Object with 'action' and 'entity_id'. Valid actions: turn_on, turn_off, toggle, set_level. Example: {\"action\": \"turn_off\", \"entity_id\": \"light.workshop\"}. Only for action_type='ha_action'.",
+        "de": "Die HA-Aktion beim Auslösen. Objekt mit 'action' und 'entity_id'. Gültige Aktionen: turn_on, turn_off, toggle, set_level. Beispiel: {\"action\": \"turn_off\", \"entity_id\": \"light.werkstatt\"}. Nur bei action_type='ha_action'.",
+    },
+    "tool_timer_for_user_id_desc": {
+        "nb": "Sett timer for et barn (kun for foreldre med can_manage_child_timers). Oppgi bruker-ID til barnet. Kun ved action='set'.",
+        "en": "Set timer for a child user (parents with can_manage_child_timers only). Provide the child's user ID. Only for action='set'.",
+        "de": "Timer für ein Kind setzen (nur für Eltern mit can_manage_child_timers). Kind-Benutzer-ID angeben. Nur bei action='set'.",
+    },
+    "tool_timer_notif_id_desc": {
+        "nb": "ID til notification som skal kvitteres. Hentet fra pending-listen i kontekst. Kun ved action='ack'.",
+        "en": "ID of the notification to acknowledge. Taken from the pending list in context. Only for action='ack'.",
+        "de": "ID der zu bestätigenden Benachrichtigung. Aus der ausstehenden Liste im Kontext entnehmen. Nur bei action='ack'.",
+    },
+    "timer_invalid_action": {
+        "nb": "Ugyldig action '{action}'. Gyldige: {valid}.",
+        "en": "Invalid action '{action}'. Valid: {valid}.",
+        "de": "Ungültige Aktion '{action}'. Gültig: {valid}.",
+    },
+    "timer_invalid_channel": {
+        "nb": "Ugyldig leveringskanal: {channels}. Gyldige: tts, chat.",
+        "en": "Invalid delivery channel: {channels}. Valid: tts, chat.",
+        "de": "Ungültiger Zustellkanal: {channels}. Gültig: tts, chat.",
+    },
+    "timer_acked": {
+        "nb": "Påminnelse {notif_id} kvittert.",
+        "en": "Reminder {notif_id} acknowledged.",
+        "de": "Erinnerung {notif_id} bestätigt.",
+    },
+    "timer_notif_not_found": {
+        "nb": "Fant ikke påminnelse {notif_id} for bruker {user_id}.",
+        "en": "Reminder {notif_id} not found for user {user_id}.",
+        "de": "Erinnerung {notif_id} für Nutzer {user_id} nicht gefunden.",
+    },
+    "timer_pending_context": {
+        "nb": "⏰ Ukvittert påminnelse til {user_id}: «{message}» [notif_id={notif_id}] — lever denne og kall deretter timer:ack notif_id={notif_id}.",
+        "en": "⏰ Unacknowledged reminder for {user_id}: \"{message}\" [notif_id={notif_id}] — deliver this and then call timer:ack notif_id={notif_id}.",
+        "de": "⏰ Unbestätigte Erinnerung für {user_id}: '{message}' [notif_id={notif_id}] — diese zustellen und dann timer:ack notif_id={notif_id} aufrufen.",
+    },
+    "timer_llm_task_failed": {
+        "nb": "⚠️ LLM timer-oppgave feilet etter {max_retries} forsøk [{timer_id}]: {prompt_preview}",
+        "en": "⚠️ LLM timer task failed after {max_retries} attempts [{timer_id}]: {prompt_preview}",
+        "de": "⚠️ LLM-Timer-Aufgabe nach {max_retries} Versuchen fehlgeschlagen [{timer_id}]: {prompt_preview}",
+    },
+    "timer_max_reached": {
+        "nb": "For mange timere: du har nådd grensen på {max} aktive timere.",
+        "en": "Too many timers: you have reached the limit of {max} active timers.",
+        "de": "Zu viele Timer: du hast das Limit von {max} aktiven Timern erreicht.",
+    },
+    "timer_target_not_child": {
+        "nb": "{user_id} er ikke barn eller tenåring. Du kan kun sette timere for brukere med rolle child eller teen.",
+        "en": "{user_id} is not a child or teen. You can only set timers for users with role child or teen.",
+        "de": "{user_id} ist kein Kind oder Teenager. Du kannst nur Timer für Nutzer mit Rolle child oder teen setzen.",
+    },
+    "timer_child_permission_denied": {
+        "nb": "Du har ikke tillatelse til å sette timere for barn. Be en administrator aktivere foreldretillatelse for kontoen din.",
+        "en": "You do not have permission to set timers for children. Ask an administrator to enable parental permission for your account.",
+        "de": "Du hast keine Berechtigung, Timer für Kinder zu setzen. Bitte einen Administrator, die Elternberechtigung für dein Konto zu aktivieren.",
     },
 
     # les_møte
@@ -2704,9 +2850,9 @@ _T: dict = {
 
     # ssh_kommando
     "tool_ssh_kommando_desc": {
-        "nb": "Kjør read-only shell-kommando på en nettverksnode via SSH. Noder: 'ainuc' (NUC), 'dnspi' (Pi-hole), 'proxypi' (kamera-proxy), 'hapi' (Home Assistant OS). hapi: ha core/addon info/restart. sudo (non-hapi): apt update, reboot.",
-        "en": "Run a read-only shell command on a network node via SSH. Nodes: 'ainuc' (NUC), 'dnspi' (Pi-hole), 'proxypi' (camera proxy), 'hapi' (Home Assistant OS). hapi: ha core/addon info/restart. sudo (non-hapi): apt update, reboot.",
-        "de": "Read-only Shell-Befehl auf einem Netzwerkknoten über SSH ausführen. Knoten: 'ainuc' (NUC), 'dnspi' (Pi-hole), 'proxypi' (Kamera-Proxy), 'hapi' (Home Assistant OS). hapi: ha core/addon info/restart. sudo (non-hapi): apt update, reboot.",
+        "nb": "Kjør read-only shell-kommando på en konfigurert nettverksnode via SSH. Tilgjengelige noder defineres i ssh_nodes.yaml (Settings → Tools). HA OS-noder: ha core/addon info/restart. sudo: per node_cfg sudo_commands-liste.",
+        "en": "Run a read-only shell command on a configured network node via SSH. Available nodes are defined in ssh_nodes.yaml (Settings → Tools). HA OS nodes: ha core/addon info/restart. sudo: per node_cfg sudo_commands list.",
+        "de": "Read-only Shell-Befehl auf einem konfigurierten Netzwerkknoten über SSH ausführen. Verfügbare Knoten werden in ssh_nodes.yaml definiert (Settings → Tools). HA OS-Knoten: ha core/addon info/restart. sudo: laut sudo_commands-Liste.",
     },
     "tool_ssh_kommando_node_desc": {
         "nb": "Node å kjøre kommandoen på.",
@@ -2844,24 +2990,64 @@ _T: dict = {
 
     # announce
     "tool_announce_desc": {
-        "nb": "Si noe høyt via høyttaler. For kunngjøringer, varsler og påminnelser som skal høres. target: 'local'=AI-PC (standard), romnavn, eller 'all'=overalt. Gi kort bekreftelse i svaret.",
-        "en": "Say something aloud via speaker. For announcements, alerts and reminders that should be heard. target: 'local'=AI-PC (default), room name, or 'all'=everywhere. Give a brief confirmation in the response.",
-        "de": "Etwas laut über Lautsprecher sagen. Für Ankündigungen, Warnungen und Erinnerungen die gehört werden sollen. target: 'local'=AI-PC (Standard), Raumname, oder 'all'=überall. Kurze Bestätigung in der Antwort geben.",
+        "nb": "Si noe høyt via høyttaler, eller vis innhold på en skjerm. action='say': TTS til lydnode. action='display': tekst/bilde til TV/skjerm. action='list_display': liste tilgjengelige skjermnoder. target: romnavn, node-ID, eller 'all'.",
+        "en": "Say something aloud via speaker, or show content on a display. action='say': TTS to audio node. action='display': text/image to TV/screen. action='list_display': list available display nodes. target: room name, node ID, or 'all'.",
+        "de": "Etwas laut sagen oder Inhalt auf einem Bildschirm anzeigen. action='say': TTS an Audioknoten. action='display': Text/Bild an TV/Bildschirm. action='list_display': verfügbare Bildschirmknoten auflisten.",
+    },
+    "tool_announce_action_desc": {
+        "nb": "'say'=TTS til høyttaler (standard), 'display'=tekst/bilde til skjerm, 'list_display'=vis tilgjengelige skjermer.",
+        "en": "'say'=TTS to speaker (default), 'display'=text/image to screen, 'list_display'=list available displays.",
+        "de": "'say'=TTS an Lautsprecher (Standard), 'display'=Text/Bild an Bildschirm, 'list_display'=verfügbare Bildschirme auflisten.",
     },
     "tool_announce_text_desc": {
-        "nb": "Teksten som skal sies. Naturlig tale, uten markdown.",
-        "en": "The text to say. Natural speech, no markdown.",
-        "de": "Der zu sprechende Text. Natürliche Sprache, kein Markdown.",
+        "nb": "Teksten som skal sies eller vises. Naturlig tekst, uten markdown.",
+        "en": "The text to say or display. Natural text, no markdown.",
+        "de": "Der zu sprechende oder anzuzeigende Text. Natürlicher Text, kein Markdown.",
     },
     "tool_announce_target_desc": {
-        "nb": "'local'=Tanberg-høytalere (standard), romnavn=kun den noden, 'all'=alle aktive noder.",
-        "en": "'local'=Tanberg speakers (default), room name=that node only, 'all'=all active nodes.",
-        "de": "'local'=Tanberg-Lautsprecher (Standard), Raumname=nur dieser Knoten, 'all'=alle aktiven Knoten.",
+        "nb": "For 'say': 'local'=AI-PC, romnavn, eller 'all'. For 'display': node-ID, romnavn, eller 'all'.",
+        "en": "For 'say': 'local'=AI-PC, room name, or 'all'. For 'display': node ID, room name, or 'all'.",
+        "de": "Für 'say': 'local'=AI-PC, Raumname, oder 'all'. Für 'display': Knoten-ID, Raumname, oder 'all'.",
     },
     "tool_announce_volume_desc": {
         "nb": "Volumnivå 0.0–1.0. Sett kun hvis brukeren ber om bestemt volum. Utelat ellers.",
         "en": "Volume level 0.0–1.0. Set only if user explicitly requests a specific volume. Omit otherwise.",
         "de": "Lautstärke 0.0–1.0. Nur setzen wenn Nutzer explizit eine bestimmte Lautstärke wünscht. Sonst weglassen.",
+    },
+    "tool_announce_image_id_desc": {
+        "nb": "Bilde-ID fra kare_image-tool. Bildet vises på skjermen (kun for action='display').",
+        "en": "Image ID from the kare_image tool. The image will be shown on screen (only for action='display').",
+        "de": "Bild-ID vom kare_image-Tool. Das Bild wird auf dem Bildschirm angezeigt (nur für action='display').",
+    },
+    "announce_no_display_nodes": {
+        "nb": "Ingen skjermnoder er konfigurert. Legg til TV eller projektor under Innstillinger → Noder.",
+        "en": "No display nodes are configured. Add a TV or projector under Settings → Nodes.",
+        "de": "Keine Bildschirmknoten konfiguriert. TV oder Projektor unter Einstellungen → Knoten hinzufügen.",
+    },
+    "announce_display_list": {
+        "nb": "Tilgjengelige skjermer:",
+        "en": "Available displays:",
+        "de": "Verfügbare Bildschirme:",
+    },
+    "announce_display_target_not_found": {
+        "nb": "Fant ingen skjermnode for '{target}'.",
+        "en": "No display node found for '{target}'.",
+        "de": "Kein Bildschirmknoten für '{target}' gefunden.",
+    },
+    "announce_display_ok": {
+        "nb": "Innhold sendt til {count} skjerm(er).",
+        "en": "Content sent to {count} display(s).",
+        "de": "Inhalt an {count} Bildschirm(e) gesendet.",
+    },
+    "announce_display_partial": {
+        "nb": "Sendt til {ok} skjerm(er), {fail} feilet.",
+        "en": "Sent to {ok} display(s), {fail} failed.",
+        "de": "An {ok} Bildschirm(e) gesendet, {fail} fehlgeschlagen.",
+    },
+    "announce_display_failed": {
+        "nb": "Kunne ikke sende til noen skjerm: {errors}",
+        "en": "Could not send to any display: {errors}",
+        "de": "Konnte an keinen Bildschirm senden: {errors}",
     },
 
     # HA domain labels (used in room/device listings)
@@ -2949,6 +3135,36 @@ _T: dict = {
         "en": "\nNOTE: This is transcribed speech (STT). Account for possible speech errors, dialect, and misspellings.\n",
         "de": "\nHINWEIS: Dies ist transkribierte Sprache (STT). Berücksichtige mögliche Sprachfehler, Dialekte und Rechtschreibfehler.\n",
     },
+    "stt_voice_confirmed": {
+        "nb": "\n[Stemme bekreftet: {user} ({pct}% sikker)]\n",
+        "en": "\n[Voice confirmed: {user} ({pct}% confidence)]\n",
+        "de": "\n[Stimme bestätigt: {user} ({pct}% Sicherheit)]\n",
+    },
+    "stt_voice_default_match": {
+        "nb": "\n[Stemme: {user} (node-standard, gjetning {pct}%)]\n",
+        "en": "\n[Voice: {user} (node default, guess {pct}%)]\n",
+        "de": "\n[Stimme: {user} (Node-Standard, Schätzung {pct}%)]\n",
+    },
+    "stt_voice_default_guess": {
+        "nb": "\n[Stemme: {user} (node-standard) — ligner på {guess} ({pct}%)]\n",
+        "en": "\n[Voice: {user} (node default) — sounds like {guess} ({pct}%)]\n",
+        "de": "\n[Stimme: {user} (Node-Standard) — klingt wie {guess} ({pct}%)]\n",
+    },
+    "stt_voice_default_no_enrollment": {
+        "nb": "\n[Stemme: {user} (node-standard) — ingen voiceprint registrert]\n",
+        "en": "\n[Voice: {user} (node default) — no voiceprint enrolled]\n",
+        "de": "\n[Stimme: {user} (Node-Standard) — kein Stimmabdruck registriert]\n",
+    },
+    "stt_voice_unknown_guess": {
+        "nb": "\n[Stemme: ukjent — beste gjetning: {guess} ({pct}%, terskel {threshold}%)]\n",
+        "en": "\n[Voice: unknown — best guess: {guess} ({pct}%, threshold {threshold}%)]\n",
+        "de": "\n[Stimme: unbekannt — beste Schätzung: {guess} ({pct}%, Schwellwert {threshold}%)]\n",
+    },
+    "stt_voice_unknown_no_enrollment": {
+        "nb": "\n[Stemme: ukjent — ingen voiceprint registrert på denne noden]\n",
+        "en": "\n[Voice: unknown — no voiceprint enrolled for this node]\n",
+        "de": "\n[Stimme: unbekannt — kein Stimmabdruck für diesen Node registriert]\n",
+    },
     "gen_tool_limit": {
         "nb": "[SYSTEM: Du har nå brukt alle 6 tool-runder. Svar brukeren direkte med det du har funnet — ingen flere tool-kall er mulig.]",
         "en": "[SYSTEM: You have now used all 6 tool rounds. Answer the user directly with what you have found — no more tool calls are possible.]",
@@ -2978,5 +3194,77 @@ _T: dict = {
         "nb": "Du bruker nå din fulle interne kunnskap fritt. Ingen smarthus-begrensninger gjelder her. Tenk åpent og presist basert på det du vet fra treningen. Dette er et internt verktøykall — svaret integreres i din vanlige respons til brukeren.",
         "en": "You are now using your full internal knowledge freely. No smart home constraints apply here. Think openly and precisely based on what you know from training. This is an internal tool call — the answer is integrated into your regular response to the user.",
         "de": "Du verwendest jetzt dein gesamtes internes Wissen frei. Keine Smart-Home-Einschränkungen gelten hier. Denke offen und präzise basierend auf deinem Trainingswissen. Dies ist ein interner Werkzeugaufruf — die Antwort wird in deine reguläre Antwort an den Nutzer integriert.",
+    },
+
+    # ── skriv_reflex ──────────────────────────────────────────────────────────
+    "tool_skriv_reflex_desc": {
+        "nb": "Analyser mønster i hukommelsen og foreslå, bekreft eller avvis nye fastpath-reflekser. Kåre lærer egne muskelreflekser fra gjentatte kommandoer.",
+        "en": "Analyze memory patterns and suggest, confirm, or reject new fastpath reflexes. Kåre learns its own muscle reflexes from repeated commands.",
+        "de": "Analysiere Gedächtnismuster und schlage neue Fastpath-Reflexe vor, bestätige oder weise sie ab. Kåre lernt eigene Muskelreflexe aus wiederholten Befehlen.",
+    },
+    "tool_skriv_reflex_action_desc": {
+        "nb": "suggest: foreslå nye reflekser fra LTM. confirm: godkjenn forslag (kun admin). reject: avvis forslag (kun admin). list: vis ventende forslag.",
+        "en": "suggest: propose new reflexes from LTM. confirm: approve a proposal (admin only). reject: reject a proposal (admin only). list: show pending proposals.",
+        "de": "suggest: neue Reflexe aus LTM vorschlagen. confirm: Vorschlag bestätigen (nur Admin). reject: Vorschlag ablehnen (nur Admin). list: ausstehende Vorschläge anzeigen.",
+    },
+    "tool_skriv_reflex_proposal_id_desc": {
+        "nb": "ID på forslaget som skal bekreftes eller avvises (fra 'list' eller 'suggest').",
+        "en": "ID of the proposal to confirm or reject (from 'list' or 'suggest').",
+        "de": "ID des zu bestätigenden oder abzulehnenden Vorschlags (aus 'list' oder 'suggest').",
+    },
+    "reflex_suggest_none": {
+        "nb": "Fant ingen kommandoer som er gjentatt {threshold} ganger eller mer med positivt utfall. Prøv igjen etter at systemet har akkumulert mer historikk.",
+        "en": "No commands found that were repeated {threshold} times or more with positive outcomes. Try again after the system has accumulated more history.",
+        "de": "Keine Befehle gefunden, die {threshold} Mal oder öfter mit positivem Ergebnis wiederholt wurden. Versuche es erneut, nachdem das System mehr Historie gesammelt hat.",
+    },
+    "reflex_suggest_no_new": {
+        "nb": "Alle kvalifiserte kommandoer er allerede lagt til som reflekser eller venter på godkjenning.",
+        "en": "All qualifying commands are already added as reflexes or pending approval.",
+        "de": "Alle qualifizierten Befehle sind bereits als Reflexe hinzugefügt oder warten auf Genehmigung.",
+    },
+    "reflex_suggest_header": {
+        "nb": "Fant {count} refleks-kandidater (terskel: {threshold} repeterte ok-kommandoer):",
+        "en": "Found {count} reflex candidates (threshold: {threshold} repeated ok-commands):",
+        "de": "Gefunden: {count} Reflexkandidaten (Schwelle: {threshold} wiederholte OK-Befehle):",
+    },
+    "reflex_suggest_confirm_hint": {
+        "nb": "Bruk skriv_reflex(action='confirm', proposal_id='...') for å godkjenne, eller 'reject' for å avvise.",
+        "en": "Use skriv_reflex(action='confirm', proposal_id='...') to approve, or 'reject' to dismiss.",
+        "de": "Verwende skriv_reflex(action='confirm', proposal_id='...') zum Bestätigen oder 'reject' zum Ablehnen.",
+    },
+    "reflex_ltm_error": {
+        "nb": "Kunne ikke lese hukommelse: {error}",
+        "en": "Could not read memory: {error}",
+        "de": "Konnte Speicher nicht lesen: {error}",
+    },
+    "reflex_proposal_not_found": {
+        "nb": "Fant ikke forslag med ID '{pid}'.",
+        "en": "Proposal with ID '{pid}' not found.",
+        "de": "Vorschlag mit ID '{pid}' nicht gefunden.",
+    },
+    "reflex_proposal_not_pending": {
+        "nb": "Forslag '{pid}' har allerede status '{status}'.",
+        "en": "Proposal '{pid}' already has status '{status}'.",
+        "de": "Vorschlag '{pid}' hat bereits den Status '{status}'.",
+    },
+    "reflex_confirmed": {
+        "nb": "Refleks {reflex_id} lagt til: \"{phrase}\". Aktivt fra nå av.",
+        "en": "Reflex {reflex_id} added: \"{phrase}\". Active immediately.",
+        "de": "Reflex {reflex_id} hinzugefügt: \"{phrase}\". Ab sofort aktiv.",
+    },
+    "reflex_rejected": {
+        "nb": "Forslag avvist: \"{phrase}\".",
+        "en": "Proposal rejected: \"{phrase}\".",
+        "de": "Vorschlag abgelehnt: \"{phrase}\".",
+    },
+    "reflex_list_empty": {
+        "nb": "Ingen forslag venter på godkjenning.",
+        "en": "No proposals are pending approval.",
+        "de": "Keine Vorschläge warten auf Genehmigung.",
+    },
+    "reflex_list_header": {
+        "nb": "{count} forslag venter på godkjenning:",
+        "en": "{count} proposals pending approval:",
+        "de": "{count} Vorschläge warten auf Genehmigung:",
     },
 }

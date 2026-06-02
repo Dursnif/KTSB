@@ -10,12 +10,12 @@ from typing import Dict
 
 from kaare_core.tools.i18n import t, get_lang
 from kaare_core.tools.shared_tools import (
-    les_fil as _shared_les_fil,
-    liste_filer as _shared_liste_filer,
-    søk_kode as _shared_søk_kode,
-    les_logg as _shared_les_logg,
-    sjekk_tjenester as _shared_sjekk_tjenester,
-    sjekk_ressurser as _shared_sjekk_ressurser,
+    read_file as _shared_read_file,
+    list_files as _shared_list_files,
+    search_code as _shared_search_code,
+    read_log as _shared_read_log,
+    check_services as _shared_check_services,
+    check_resources as _shared_check_resources,
     git_diff as _shared_git_diff,
     git_log as _shared_git_log,
 )
@@ -23,12 +23,12 @@ from kaare_core.tools.shared_tools import (
 SYSTEM_TOOLS = {
     "utforsk_kode",
     "inspiser_system",
-    "les_fil",
-    "liste_filer",
-    "søk_kode",
-    "les_logg",
-    "sjekk_tjenester",
-    "sjekk_ressurser",
+    "read_file",
+    "list_files",
+    "search_code",
+    "read_log",
+    "check_services",
+    "check_resources",
     "git_inspect",
     "ssh_kommando",
     "local_kommando",
@@ -41,21 +41,21 @@ async def dispatch(name: str, arguments: Dict) -> str:
     if name == "utforsk_kode":
         action = arguments.get("action", "")
         if action == "read":
-            return _shared_les_fil(arguments, lang=lang)
+            return _shared_read_file(arguments, lang=lang)
         if action == "list":
-            return _shared_liste_filer(arguments, lang=lang)
+            return _shared_list_files(arguments, lang=lang)
         if action == "search":
-            return _shared_søk_kode(arguments, lang=lang)
+            return _shared_search_code(arguments, lang=lang)
         return f"Unknown action for utforsk_kode: '{action}'. Valid: read, list, search."
 
     if name == "inspiser_system":
         action = arguments.get("action", "")
         if action == "log":
-            return _shared_les_logg(arguments, lang=lang)
+            return _shared_read_log(arguments, lang=lang)
         if action == "services":
-            return _shared_sjekk_tjenester(arguments, lang=lang)
+            return _shared_check_services(arguments, lang=lang)
         if action == "resources":
-            return _shared_sjekk_ressurser(arguments, lang=lang)
+            return _shared_check_resources(arguments, lang=lang)
         if action == "git_diff":
             return _shared_git_diff(arguments, lang=lang)
         if action == "git_log":
@@ -81,88 +81,85 @@ async def dispatch(name: str, arguments: Dict) -> str:
             return format_patterns_for_kare(traces, lang=lang)
         return f"Unknown action for inspiser_system: '{action}'. Valid: log, services, resources, git_diff, git_log, fetch_trace, trace_patterns."
 
-    if name == "les_fil":
-        return _shared_les_fil(arguments, lang=lang)
+    if name == "read_file":
+        return _shared_read_file(arguments, lang=lang)
 
-    if name == "liste_filer":
-        return _shared_liste_filer(arguments, lang=lang)
+    if name == "list_files":
+        return _shared_list_files(arguments, lang=lang)
 
-    if name == "søk_kode":
-        return _shared_søk_kode(arguments, lang=lang)
+    if name == "search_code":
+        return _shared_search_code(arguments, lang=lang)
 
-    if name == "les_logg":
-        return _shared_les_logg(arguments, lang=lang)
+    if name == "read_log":
+        return _shared_read_log(arguments, lang=lang)
 
-    if name == "sjekk_tjenester":
-        return _shared_sjekk_tjenester(arguments, lang=lang)
+    if name == "check_services":
+        return _shared_check_services(arguments, lang=lang)
 
-    if name == "sjekk_ressurser":
-        return _shared_sjekk_ressurser(arguments, lang=lang)
+    if name == "check_resources":
+        return _shared_check_resources(arguments, lang=lang)
 
     if name == "ssh_kommando":
+        from kaare_core.config import get_ssh_nodes
         node = arguments.get("node", "").strip()
         kommando = arguments.get("kommando", "").strip()
-        _VALID_NODES = ("ainuc", "dnspi", "proxypi", "hapi")
-        if node not in _VALID_NODES:
-            return f"[Ukjent node '{node}'. Tillatte: {', '.join(_VALID_NODES)}]"
+
+        ssh_cfg = get_ssh_nodes()
+        nodes = ssh_cfg.get("nodes", {})
+
+        if not nodes:
+            return "[No SSH nodes configured. Add nodes in Settings → Tools → SSH Nodes.]"
+        if node not in nodes:
+            return f"[Unknown node '{node}'. Configured nodes: {', '.join(nodes.keys())}]"
         if not kommando:
             return t("sys_empty_command", lang)
-        _SUDO_ALL = (
-            "sudo apt update",
-            "sudo apt upgrade",
-            "sudo reboot now",
-        )
-        _SUDO_DNSPI = (
-            "sudo pihole -up",
-            "sudo pihole -g",
-        )
+
+        node_cfg   = nodes[node]
+        node_type  = node_cfg.get("node_type", "linux")
+        is_ha_os   = node_type == "ha_os"
+        sudo_ok    = node_cfg.get("sudo_enabled", False) and not is_ha_os
+        sudo_cmds  = [c.strip() for c in node_cfg.get("sudo_commands", []) if c.strip()]
+
+        host    = node_cfg.get("host", node)
+        user    = node_cfg.get("user", "root" if is_ha_os else "user")
+        port    = int(node_cfg.get("port", 2222 if is_ha_os else 22))
+        ssh_key = str(node_cfg.get("ssh_key", "~/.ssh/id_ed25519")).replace("~", str(Path.home()))
+
         _HA_PRIVILEGED = (
-            "ha core restart",
-            "ha core update",
-            "ha supervisor restart",
-            "ha supervisor update",
+            "ha core restart", "ha core update",
+            "ha supervisor restart", "ha supervisor update",
             "ha os update",
-            "ha addon restart",
-            "ha addon start",
-            "ha addon stop",
+            "ha addon restart", "ha addon start", "ha addon stop",
         )
+
         if kommando.startswith("sudo "):
-            if node == "hapi":
-                return "[Rejected: hapi runs as root — use 'ha ...' commands directly, no sudo needed.]"
-            allowed_sudo = _SUDO_ALL + (_SUDO_DNSPI if node == "dnspi" else ())
-            if not any(kommando.startswith(s) for s in allowed_sudo):
-                node_extra = " + sudo pihole -up/-g" if node == "dnspi" else ""
+            if is_ha_os:
+                return "[Rejected: HA OS node runs as root — use 'ha ...' commands directly, no sudo needed.]"
+            if not sudo_ok:
+                return f"[Rejected: sudo is not enabled for node '{node}'.]"
+            if not any(kommando.startswith(s) for s in sudo_cmds):
+                allowed_str = ", ".join(sudo_cmds) if sudo_cmds else "none"
                 return (
-                    f"[Rejected: sudo command '{kommando[:60]}' not allowed on {node}. "
-                    f"Allowed sudo: apt update, apt upgrade, reboot now{node_extra}]"
+                    f"[Rejected: sudo command '{kommando[:60]}' not in allowlist for {node}. "
+                    f"Allowed: {allowed_str}]"
                 )
-        elif node == "hapi" and any(kommando.startswith(h) for h in _HA_PRIVILEGED):
-            pass  # HA CLI privileged commands allowed on hapi
+        elif is_ha_os and any(kommando.startswith(h) for h in _HA_PRIVILEGED):
+            pass  # HA CLI privileged commands allowed on ha_os nodes
         else:
             _ALLOWED = (
-                # File reading — any path
                 "cat ", "head ", "tail ", "grep ", "find ", "stat ", "file ", "wc ", "diff ",
                 "ls", "pwd", "du ", "which ",
-                # System info
                 "uptime", "hostname", "uname", "date", "whoami", "id", "who", "w ", "last",
                 "env", "printenv", "echo ",
-                # Processes & resources
                 "ps", "top -bn", "free", "df", "lsof", "lsblk", "lscpu", "lsusb", "lspci",
-                # Network
                 "ip ", "ss", "netstat", "ping ", "ifconfig",
-                # Systemd
                 "systemctl status", "systemctl list-units", "systemctl list-timers",
                 "systemctl is-active", "systemctl is-enabled",
                 "journalctl", "dmesg",
-                # Packages (read-only)
                 "dpkg -l", "dpkg -s", "dpkg -L", "apt list", "apt-cache ",
-                # Docker
                 "docker ps", "docker logs", "docker stats", "docker inspect",
-                # Hardware / GPU
                 "nvidia-smi",
-                # Pi-hole (read)
                 "pihole status", "pihole -v", "pihole -c",
-                # Home Assistant CLI (read-only)
                 "ha core info", "ha core logs", "ha core check",
                 "ha supervisor info", "ha supervisor logs",
                 "ha os info", "ha network info",
@@ -184,19 +181,19 @@ async def dispatch(name: str, arguments: Dict) -> str:
                     f"systemctl status/list, dpkg, pihole status/version, docker ps/logs, ip, ss, "
                     f"ha core/supervisor/os/addon info/logs, ...]"
                 )
-        result = _sp.run(
-            [
-                "ssh",
-                "-i", "/kaare/.ssh/id_ed25519",
-                "-F", "/kaare/.ssh/config",
-                "-o", "BatchMode=yes",
-                "-o", "ConnectTimeout=10",
-                "-o", "StrictHostKeyChecking=accept-new",
-                node,
-                kommando,
-            ],
-            capture_output=True, text=True, timeout=30,
-        )
+
+        ssh_cmd = [
+            "ssh",
+            "-i", ssh_key,
+            "-F", "/kaare/.ssh/config",
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=10",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-p", str(port),
+            f"{user}@{host}",
+            kommando,
+        ]
+        result = _sp.run(ssh_cmd, capture_output=True, text=True, timeout=30)
         out = (result.stdout + result.stderr).strip()
         return out[:4000] if out else t("sys_no_output", lang)
 

@@ -35,14 +35,6 @@ services:
       - ./configs:/kaare/configs
       - ./state:/kaare/state
 
-  kaare-agents:
-    build: .
-    image: kaare-dev
-    volumes:
-      - .:/kaare
-      - ./configs:/kaare/configs
-      - ./state:/kaare/state
-
   kaare-argus:
     build: .
     image: kaare-dev

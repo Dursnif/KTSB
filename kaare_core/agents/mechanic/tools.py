@@ -1,27 +1,19 @@
 """
-Mechanics verktøymotor – delt mellom agents-server og utviklingsmøtet.
+Mechanic tool engine — shared between kaare_dev_meeting and executor_agents.
 
-Verktøy:
-  les_fil          – les filer under /kaare (read-only), støtter linjebulk
-  liste_filer      – list mappe under /kaare, støtter rekursiv listing
-  søk_kode         – grep i kodebasen (.py .yaml .md .json .sh .toml)
-  søk_logg         – grep i loggfiler under /kaare/logs/
-  sjekk_tjenester  – systemd-status for alle Kåre-tjenester, detaljvisning per tjeneste
-  sjekk_ressurser  – CPU, RAM, disk og GPU VRAM
-  les_logg         – tail/bulk loggfiler fra /kaare/logs/
-  nettsøk          – nettsøk via web_search_adapter
-  git_diff         – vis git diff for fil eller hele repoet
-  git_log          – vis commit-historikk
-  søk_argus   – semantisk søk i systemlogg (Qdrant BGE-M3)
-  ssh_kommando     – les-bare kommandoer på ainuc/dnspi/proxypi
-  local_kommando   – les-bare kommandoer lokalt på AI-pc
-  hukommelse       – Mechanics personlige minne (les/skriv/slett_gammel)
+Tools (LLM-facing names — do not rename, these are sent by the Mechanic LLM):
+  utforsk          – read/list/search files under /kaare
+  inspiser         – log reading, service status, resources, git diff/log
+  nettsøk          – web search via web_search_adapter
+  søk_argus        – semantic search in system log (Qdrant BGE-M3)
+  shell            – read-only commands on configured SSH nodes or local
+  hukommelse       – Mechanic's personal memory (les/skriv/slett_gammel)
 
-Rolle-baserte verktøysett:
-  MECHANIC_TOOLS  – alle verktøy (standard / teknisk assistent)
-  UNDERSØKER_TOOLS   – undersøkelsesfokus: logger, tjenester, kode, SSH
-  KRITIKER_TOOLS     – bare hukommelse (ingen undersøkelsesverktøy — bare kritiske spørsmål)
-  ANALYTIKER_TOOLS   – fillesing + hukommelse (møterapport-syntese)
+Role-based tool sets:
+  MECHANIC_TOOLS     – all tools (default / technical assistant)
+  UNDERSØKER_TOOLS   – investigation focus: logs, services, code, SSH
+  KRITIKER_TOOLS     – memory only (no investigation tools)
+  ANALYTIKER_TOOLS   – file reading + memory (report synthesis)
 """
 
 import json
@@ -38,14 +30,14 @@ import httpx
 
 from kaare_core.model_lock import lock_11445, LockTimeout
 from kaare_core.tools.i18n import t, get_lang
-from kaare_core.config import get_model as _cfg_model, get_llm_config as _llm, get_service as _svc, is_agent_tool_enabled
+from kaare_core.config import get_model as _cfg_model, get_llm_config as _llm, get_service as _svc, is_agent_tool_enabled, get_ssh_nodes as _get_ssh_nodes
 from kaare_core.tools.shared_tools import (
-    les_fil as _shared_les_fil,
-    liste_filer as _shared_liste_filer,
-    søk_kode as _shared_søk_kode,
-    les_logg as _shared_les_logg,
-    sjekk_tjenester as _shared_sjekk_tjenester,
-    sjekk_ressurser as _shared_sjekk_ressurser,
+    read_file as _shared_read_file,
+    list_files as _shared_list_files,
+    search_code as _shared_search_code,
+    read_log as _shared_read_log,
+    check_services as _shared_check_services,
+    check_resources as _shared_check_resources,
     git_diff as _shared_git_diff,
     git_log as _shared_git_log,
 )
@@ -80,6 +72,54 @@ def _fmt_ts_local(ts_raw: str) -> str:
         return ts_raw[:16].replace("T", " ")
 
 # ── Tool-definisjoner ─────────────────────────────────────────────────────────
+
+def _build_shell_tool() -> dict:
+    ssh_data  = _get_ssh_nodes()
+    ssh_nodes = ssh_data.get("nodes", {})
+    node_ids  = list(ssh_nodes.keys())
+    node_enum = ["local"] + node_ids
+
+    node_lines = " ".join(
+        f"node='{n}': {ssh_nodes[n].get('label', n)} (SSH)."
+        for n in node_ids
+    )
+    sudo_note = (
+        "Tillatt sudo per node: konfigurert i ssh_nodes.yaml (sudo_commands-listen). "
+        if node_ids else ""
+    )
+    desc = (
+        "Kjør en les-bare kommando lokalt på AI-pc eller på en nettverksnode via SSH. "
+        "node='local': AI-pc (ingen sudo). "
+        + (node_lines + " " if node_lines else "Ingen SSH-noder konfigurert ennå. ")
+        + "Les-bare: cat, head, tail, grep, find, ls, ps, df, free, uptime, journalctl, "
+        "systemctl status/list, dpkg, apt list, docker ps/logs, ip, ss, nvidia-smi, pihole status. "
+        + sudo_note
+        + "Ingen sudo på local."
+    )
+    node_desc = (
+        "'local' = denne maskinen (ingen sudo)."
+        + (" " + ", ".join(f"'{n}'" for n in node_ids) + " = SSH-noder." if node_ids else "")
+    )
+    return {
+        "type": "function",
+        "function": {
+            "name": "shell",
+            "description": desc,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "node": {
+                        "type": "string",
+                        "enum": node_enum,
+                        "description": node_desc,
+                    },
+                    "kommando": {"type": "string", "description": "Shell-kommando å kjøre."},
+                },
+                "required": ["node", "kommando"],
+            },
+        },
+    }
+
 
 MECHANIC_TOOLS = [
     {
@@ -193,36 +233,7 @@ MECHANIC_TOOLS = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "shell",
-            "description": (
-                "Kjør en les-bare kommando lokalt på AI-pc eller på en nettverksnode via SSH. "
-                "node='local': AI-pc (ingen sudo). "
-                "node='ainuc': Intel NUC (Jing/Jang). "
-                "node='dnspi': Raspberry Pi 4 (Pi-hole DNS). "
-                "node='proxypi': Raspberry Pi 5 (kamera-proxy). "
-                "Les-bare: cat, head, tail, grep, find, ls, ps, df, free, uptime, journalctl, "
-                "systemctl status/list, dpkg, apt list, docker ps/logs, ip, ss, nvidia-smi, pihole status. "
-                "Tillatt sudo (ainuc/dnspi/proxypi): apt update, apt upgrade -y, reboot now. "
-                "Tillatt sudo (dnspi only): pihole -up, pihole -g. "
-                "Ingen sudo på local."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "node": {
-                        "type": "string",
-                        "enum": ["local", "ainuc", "dnspi", "proxypi"],
-                        "description": "'local' = AI-pc (ingen sudo). 'ainuc'/'dnspi'/'proxypi' = SSH.",
-                    },
-                    "kommando": {"type": "string", "description": "Shell-kommando å kjøre."},
-                },
-                "required": ["node", "kommando"],
-            },
-        },
-    },
+    _build_shell_tool(),
     {
         "type": "function",
         "function": {
@@ -272,21 +283,21 @@ async def execute_tool(name: str, arguments: dict) -> str:
         if name == "utforsk":
             action = arguments.get("action", "")
             if action == "les":
-                return _shared_les_fil(arguments, default_chunk=200, max_chunk=300)
+                return _shared_read_file(arguments, default_chunk=200, max_chunk=300)
             elif action == "liste":
-                return _shared_liste_filer(arguments)
+                return _shared_list_files(arguments)
             elif action == "søk":
-                return _shared_søk_kode(arguments)
+                return _shared_search_code(arguments)
             return f"[Ukjent action for utforsk: {action}]"
 
         elif name == "inspiser":
             action = arguments.get("action", "")
             if action == "logg":
-                return _shared_les_logg(arguments)
+                return _shared_read_log(arguments)
             elif action == "tjenester":
-                return _shared_sjekk_tjenester(arguments)
+                return _shared_check_services(arguments)
             elif action == "ressurser":
-                return _shared_sjekk_ressurser(arguments)
+                return _shared_check_resources(arguments)
             elif action == "git_diff":
                 return _shared_git_diff(arguments)
             elif action == "git_log":
@@ -386,35 +397,42 @@ async def execute_tool(name: str, arguments: dict) -> str:
                 out = (result.stdout + result.stderr).strip()
                 return out[:4000] if out else "[No output]"
 
-            _VALID_SSH = ("ainuc", "dnspi", "proxypi")
+            _ssh_cfg  = _get_ssh_nodes()
+            _ssh_nodes = _ssh_cfg.get("nodes", {})
+            _VALID_SSH = tuple(_ssh_nodes.keys())
             if node not in _VALID_SSH:
-                return f"[Unknown node '{node}'. Allowed: local, {', '.join(_VALID_SSH)}]"
-            _SUDO_ALL   = ("sudo apt update", "sudo apt upgrade", "sudo reboot now")
-            _SUDO_DNSPI = ("sudo pihole -up", "sudo pihole -g")
+                return f"[Unknown node '{node}'. Configured nodes: {', '.join(_VALID_SSH) or 'none (add nodes in Settings → Tools)'}]"
+            node_cfg = _ssh_nodes[node]
             if kommando.startswith("sudo "):
-                allowed_sudo = _SUDO_ALL + (_SUDO_DNSPI if node == "dnspi" else ())
+                allowed_sudo = tuple(c.strip() for c in node_cfg.get("sudo_commands", []) if c.strip())
+                if not allowed_sudo:
+                    return f"[Rejected: sudo not allowed on '{node}' — no sudo_commands configured in ssh_nodes.yaml.]"
                 if not any(kommando.startswith(s) for s in allowed_sudo):
                     return (
-                        f"[Rejected: sudo command '{kommando[:60]}' not allowed on {node}. "
-                        f"Allowed sudo: apt update, apt upgrade, reboot now"
-                        + (", pihole -up/-g" if node == "dnspi" else "") + "]"
+                        f"[Rejected: sudo command '{kommando[:60]}' not in sudo_commands for '{node}'. "
+                        f"Allowed: {', '.join(allowed_sudo[:5])}]"
                     )
             else:
                 if any(b in kommando for b in _BLOCKED):
                     return f"[Rejected: '{kommando[:60]}' contains a write/destructive operation.]"
                 if not any(kommando.startswith(a) for a in _ALLOWED_READ):
                     return f"[Rejected: '{kommando[:50]}' is not a recognised read-only command.]"
-            _SLOW = ("sudo apt upgrade", "sudo pihole -up", "sudo pihole -g", "sudo apt dist-upgrade")
+            _SLOW = ("sudo apt upgrade", "sudo apt dist-upgrade")
             ssh_timeout = 300 if any(kommando.startswith(s) for s in _SLOW) else 30
+            is_ha_os  = node_cfg.get("node_type") == "ha_os"
+            host      = node_cfg.get("host", node)
+            user      = node_cfg.get("user", "root" if is_ha_os else "user")
+            port      = int(node_cfg.get("port", 2222 if is_ha_os else 22))
+            ssh_key   = str(node_cfg.get("ssh_key", "~/.ssh/id_ed25519")).replace("~", str(Path.home()))
             result = subprocess.run(
                 [
                     "ssh",
-                    "-i", "/kaare/.ssh/id_ed25519",
-                    "-F", "/kaare/.ssh/config",
+                    "-i", ssh_key,
                     "-o", "BatchMode=yes",
                     "-o", "ConnectTimeout=10",
                     "-o", "StrictHostKeyChecking=accept-new",
-                    node,
+                    "-p", str(port),
+                    f"{user}@{host}",
                     kommando,
                 ],
                 capture_output=True, text=True, timeout=ssh_timeout,

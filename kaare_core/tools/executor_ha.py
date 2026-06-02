@@ -51,13 +51,15 @@ def resolve_node_entity(client_hint: str) -> str | None:
     if not _NODES_PATH.exists():
         return None
     nodes = yaml.safe_load(_NODES_PATH.read_text()).get("nodes", {})
-    needle = client_hint.lower()
+    needle = client_hint.lower().replace(" ", "_")
     for node_id, cfg in nodes.items():
-        if needle == node_id.lower():
+        nid = node_id.lower().replace(" ", "_")
+        room = cfg.get("room", "").lower().replace(" ", "_")
+        if needle == nid:
             return cfg.get("entity_id")
-        if needle in node_id.lower():
+        if needle in nid:
             return cfg.get("entity_id")
-        if needle in cfg.get("room", "").lower():
+        if needle in room:
             return cfg.get("entity_id")
         if needle in cfg.get("description", "").lower():
             return cfg.get("entity_id")

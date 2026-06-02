@@ -778,13 +778,20 @@
     },
     "rollback": {
       "title": "Tilbakestill til standard",
-      "description": "Gjenoppretter de fire hoved-konfigfilene fra fryst snapshot i configs_default/. Bruk dette om du har rotet til konfigurasjonen og vil starte på nytt.",
-      "confirm": "Dette tilbakestiller settings.yaml, llm.yaml, models.yaml og services.yaml til fryst standardversjon. Fortsette?",
+      "description": "Gjenoppretter alle konfig-filer fra fryst fabrikkstandard i configs_default/. Bruk dette om du vil starte på nytt med en ren installasjon.",
+      "confirm": "Dette tilbakestiller ALLE konfig-filer til fabrikkstandard. Alle tilpassede innstillinger, modeller og tjeneste-URLer går tapt. Fortsette?",
       "button": "Tilbakestill til standard",
       "loading": "Tilbakestiller…",
       "ok": "Gjenopprettet: {{files}}",
       "error_suffix": "Feil: ",
-      "error": "Feil — kunne ikke tilbakestille"
+      "error": "Feil — kunne ikke tilbakestille",
+      "pin_title": "Bekreft med PIN",
+      "pin_warning": "⚠️ Dette tilbakestiller alle innstillinger til fabrikkstandard — som ved en ny installasjon. Alle tilpassede verdier går tapt. Gjenopprettingspunkter beholdes.",
+      "pin_placeholder": "Din PIN…",
+      "pin_confirm_button": "Tilbakestill til standard",
+      "pin_cancel": "Avbryt",
+      "pin_error": "Feil PIN — prøv igjen",
+      "verifying": "Verifiserer…"
     },
     "github": {
       "title": "GitHub-publisering",
@@ -810,6 +817,40 @@
       "ram_gb": "{{gb}} GB",
       "note_gpu": "GPU oppdaget — aktiver ved å legge til COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml i .env og kjøre setup.sh",
       "error": "Kunne ikke hente maskinvareinfo"
+    },
+    "snapshots": {
+      "title": "Gjenopprettingspunkter",
+      "description": "Lagre navngitte snapshots av alle konfig-filer og gjenopprett dem ved behov.",
+      "name_placeholder": "Navn på snapshot…",
+      "save_button": "Lagre snapshot",
+      "saving": "Lagrer…",
+      "counter": "{{count}}/10 snapshots",
+      "max_reached": "Maks 10 nådd — slett ett punkt for å lagre nytt",
+      "empty": "Ingen snapshots lagret ennå.",
+      "restore_button": "Gjenopprett",
+      "delete_button": "Slett",
+      "restore_confirm": "Dette overskriver aktive konfig-filer med snapshot «{{name}}». Fortsette?",
+      "restore_ok": "Gjenopprettet: {{files}}",
+      "restore_error": "Feil ved gjenoppretting",
+      "delete_confirm": "Slett snapshot «{{name}}»?",
+      "delete_error": "Feil ved sletting",
+      "save_error": "Feil ved lagring",
+      "name_required": "Skriv inn et navn",
+      "export_button": "Eksporter",
+      "import_title": "Importer snapshot",
+      "import_description": "Last opp en tidligere eksportert konfig-zip for å gjenopprette den på en ny installasjon.",
+      "import_name_placeholder": "Navn på importert snapshot…",
+      "import_button": "Importer zip",
+      "importing": "Importerer…",
+      "import_ok": "Importert: {{count}} filer",
+      "import_error": "Feil ved import",
+      "import_bad_zip": "Ugyldig zip-fil",
+      "import_no_yaml": "Zip-filen inneholdt ingen konfig-filer",
+      "export_current_button": "Eksporter nåværende konfig",
+      "install_button": "Installer",
+      "download_button": "Last ned",
+      "select_hint": "Velg et snapshot for å installere eller laste ned",
+      "choose_file": "Velg fil"
     }
   },
   "dashboard": {
@@ -909,6 +950,8 @@
       "vpn_ai_only": "Bare AI — kun AI-samtale eksternt, ikke smarthus",
       "vpn_full_access": "Full tilgang — alt tilgjengelig eksternt",
       "active_label": "Aktiv",
+      "can_manage_child_timers": "Foreldrekontroll",
+      "can_manage_child_timers_desc": "Kan sette timere for barn og tenåringer",
       "save": "Lagre",
       "cancel": "Avbryt",
       "error_generic": "Noe gikk galt."
@@ -1046,6 +1089,11 @@
     "delete": "Slett",
     "enabled": "Aktivert",
     "disabled": "Deaktivert",
+    "section": {
+      "audio": "Lyd",
+      "multi": "Multi",
+      "display": "Skjerm"
+    },
     "modal": {
       "edit_title": "Rediger node",
       "new_title": "Ny node",
@@ -1056,6 +1104,15 @@
       "entity_id": "Entity ID",
       "host": "Host (IP)",
       "api_port": "API-port",
+      "mac": "MAC-adresse (Wake-on-LAN)",
+      "adb_port": "ADB-port",
+      "tvoverlay_port": "TvOverlay-port",
+      "tvoverlay_hint": "Krever TvOverlay-app på enheten",
+      "capabilities": "Kapabiliteter",
+      "has_audio": "Lyd (TTS / kunngjøringer)",
+      "has_display": "Skjerm (bilde / tekst / video)",
+      "type_group_audio": "Lyd",
+      "type_group_display": "TV og skjerm",
       "default_user": "Standard bruker (valgfritt)",
       "cancel": "Avbryt",
       "save": "Lagre",
@@ -1064,6 +1121,11 @@
   },
   "tools": {
     "title": "Verktøy",
+    "timer_admin_title": "Timer-grenser",
+    "timer_admin_max_label": "Maks aktive timere per bruker",
+    "timer_admin_save": "Lagre",
+    "timer_admin_saved": "Lagret ✓",
+    "timer_admin_no_active": "Ingen aktive timere",
     "timers_title": "Aktive timere",
     "timers_empty": "Ingen aktive timere",
     "repeat": {
@@ -1079,7 +1141,34 @@
     "log_title": "Kjøringslogg",
     "log_loading": "Laster…",
     "log_empty": "Ingen tool-kall ennå",
-    "unknown_event": "ukjent"
+    "unknown_event": "ukjent",
+    "ssh_title": "SSH-noder",
+    "ssh_local_sudo": "Tillat sudo lokalt (på denne maskinen)",
+    "ssh_local_sudo_warning": "Sudo lokalt gir Kåre full systemtilgang — ikke anbefalt",
+    "ssh_no_nodes": "Ingen SSH-noder konfigurert",
+    "ssh_add": "Legg til SSH-node",
+    "ssh_edit": "Rediger",
+    "ssh_delete": "Slett",
+    "ssh_confirm_delete": "Slett SSH-node «{{id}}»?",
+    "ssh_saved": "Lagret ✓",
+    "ssh_node_id": "Node-ID (brukes av Kåre)",
+    "ssh_label": "Visningsnavn",
+    "ssh_host": "Hostname / IP",
+    "ssh_user": "SSH-bruker",
+    "ssh_port": "Port",
+    "ssh_key": "SSH-nøkkel",
+    "ssh_node_type": "Nodetype",
+    "ssh_node_type_linux": "Linux / standard SSH",
+    "ssh_node_type_ha_os": "Home Assistant OS",
+    "ssh_ha_os_hint": "Port 2222 og bruker root låses automatisk. HA CLI-kommandoer er alltid tillatt.",
+    "ssh_ha_host_hint": "Fant HA på {{host}} — hentet fra tjenestekonfig",
+    "ssh_sudo_enabled": "Tillat sudo",
+    "ssh_sudo_commands": "Tillatte sudo-kommandoer",
+    "ssh_sudo_add_cmd": "Legg til kommando…",
+    "ssh_sudo_add": "Legg til",
+    "ssh_test": "Test tilkobling",
+    "ssh_test_ok": "OK · {{ms}} ms",
+    "ssh_test_fail": "Feil: {{error}}"
   },
   "cameras": {
     "title": "Kamera-innstillinger",
@@ -1331,12 +1420,12 @@
       "item_2": "Fullstendig omstart — starter Kåre-tjenesten på nytt. Tar 5–30 sekunder.",
       "item_3": "Systemsjekk — verifiserer at alle tjenester svarer og tilkoblinger fungerer.",
       "item_4": "Hukommelseskompresjon — overfører kortidshukommelse (STM) til langtidshukommelse (LTM). Kjøres automatisk nattlig.",
-      "item_5": "⚠ Rollback — tilbakestiller ALLE innstillinger til fabrikkstandard. Egne tilpasninger forsvinner."
+      "item_5": "Konfigurasjonssnapshots — Opprett navngitte sikkerhetskopier av alle innstillinger, installer eller last ned som zip, importer ved ny installasjon. ⚠ Factory reset tilbakestiller alt til standard — krever PIN-bekreftelse."
     },
     "verktoy": {
       "title": "Verktøy",
       "summary": "Innsyn i Kåres verktøybruk og aktive timere",
-      "body": "Verktøy-siden er kun for innsyn — du kan se hva Kåre har gjort, men ikke styre noe herfra.",
+      "body": "Verktøy-siden gir innsyn i SSH-noder, timere og Kåres handlingslogg. SSH-noder til nettverksmaskiner konfigureres her.",
       "item_1": "Timer-oversikten viser aktive nedtellinger og påminnelser Kåre holder styr på.",
       "item_2": "Verktøy-loggen viser de siste handlingene Kåre har utført.",
       "item_3": "Du kan se hvem som ba om hva, tidspunkt og om handlingen lyktes."
@@ -1352,8 +1441,8 @@
     },
     "noder": {
       "title": "Noder",
-      "summary": "TTS-høyttalere og medieenheter Kåre kan snakke gjennom",
-      "body": "En «node» er en lydenhet Kåre kan snakke gjennom eller sende musikk til — smarthøyttaler, TV, Chromecast eller tilpasset brett.",
+      "summary": "Lyd- og skjermenheter Kåre kan snakke gjennom eller vise innhold på",
+      "body": "En «node» er en enhet Kåre kan snakke gjennom, vise innhold på, eller sende musikk til. Noder har kapabiliteter: Lyd (TTS/kunngjøringer) og/eller Skjerm (bilder/tekst/video).",
       "types_intro": "Støttede nodetyper:",
       "types": {
         "ha_media_player": "HA Media Player — Enhet styrt av Home Assistant (Nest Hub, Google TV, smarthøyttaler via HA)",
@@ -1362,7 +1451,14 @@
         "chromecast": "Chromecast — Google Chromecast eller Google TV, direktetilkobling",
         "snapcast": "Snapcast — Synkronisert multiroom-lyd over lokalt nettverk",
         "airplay": "AirPlay — Apple-protokoll for trådløs lyd (HomePod, Apple TV, AirPlay-høyttalere)",
-        "dlna": "DLNA — Standard for trådløs lyd til kompatible TV-er og stereoanlegg"
+        "dlna": "DLNA — Standard for trådløs lyd til kompatible TV-er og stereoanlegg",
+        "apple_tv": "Apple TV — AirPlay-basert, støtter visning og lyd",
+        "samsung_tv": "Samsung TV — Tizen OS, styrt via HA eller direkte",
+        "android_tv": "Android TV — generisk Android-TV-plattform",
+        "google_tv": "Google TV — Googles TV-plattform (Chromecast Gen 4+)",
+        "fire_tv": "Fire TV — Amazons TV-plattform (FireStick, Fire TV Cube)",
+        "lg_tv": "LG TV — webOS, styrt via Home Assistant",
+        "projector": "Projektor — kun skjerm, ingen lyd"
       }
     },
     "kameraer": {
@@ -1391,7 +1487,8 @@
       "item_1": "Refleksjonsmøte (kl. 04:00) — Kåre og Miss Kåre gjennomgår dagens samtaler. Kåre oppdaterer selvbeskrivelse og verdensmodell.",
       "item_2": "Utviklermøte (kl. 05:30) — Teknisk gjennomgang av systemhelse, feil og forbedringsforslag.",
       "item_3": "PIN-beskyttelse — Møtereferater er låst med brukerens PIN. Kun du kan lese dine egne referater.",
-      "item_4": "Tema-felt — Du kan foreslå et tema Kåre tar opp i neste nattmøte."
+      "item_4": "Tema-felt — Du kan foreslå et tema Kåre tar opp i neste nattmøte.",
+      "item_5": "Miss Kåre-portrett — Miss Kåre bygger gradvis et psykologisk portrett av hver bruker basert på observasjoner over tid. Portretten injiseres i møtekonteksten for mer personlig analyse."
     },
     "innst_generelt": {
       "title": "Innstillinger → Generelt",
@@ -1429,7 +1526,8 @@
       "item_1": "Whisper — Tale-til-tekst-modellen. Gjør stemmen din om til tekst Kåre kan forstå.",
       "item_2": "Embedding — Lager søkbart minne. Brukes til semantisk hukommelsessøk.",
       "item_3": "Lokal vs. sky — Lokale modeller er raskere og private. Sky er et sikkerhetsnet ved feil.",
-      "item_4": "num_ctx — Kontekstvinduet. Hvor mye av samtalen modellen husker i én kjøring."
+      "item_4": "num_ctx — Kontekstvinduet. Hvor mye av samtalen modellen husker i én kjøring.",
+      "item_5": "Piper (tekst-til-tale) — Kåres stemme. Tre språkseksjoner (norsk/engelsk/tysk) med ulike stemmepakker. Last ned, aktiver ønsket stemme og restart tjeneste for å ta den i bruk."
     },
     "innst_refleksjon": {
       "title": "Innstillinger → Refleksjon",
@@ -1498,7 +1596,8 @@
       "item_2": "Stemmeknapp — Hold inne for å snakke. Kåre transkriberer og svarer på tale.",
       "item_3": "Bilder — Dra og slipp et bilde inn i chatten, eller klikk bildeikonet for analyse.",
       "item_4": "Miss Kåre-panel — Vises under Kåres svar med sidekommentarer og alternative perspektiver.",
-      "item_5": "Trace-view — Trykk pilen under et svar for å se hvilke verktøy Kåre brukte."
+      "item_5": "Trace-view — Trykk pilen under et svar for å se hvilke verktøy Kåre brukte.",
+      "item_6": "Timer-varsler — Når en timer utløper, vises meldingen direkte i chat uten at du trenger å spørre. Kåre bekrefter leveringen automatisk."
     },
     "bruker_refleksjoner": {
       "title": "Mine refleksjoner",
@@ -1507,6 +1606,32 @@
       "item_2": "PIN-beskyttelse — Tast inn din PIN for å lese innholdet. Kun du har tilgang.",
       "item_3": "Møtereferatene lagres lokalt og sendes aldri til tredjeparter.",
       "item_4": "PIN-buffering — Kåre husker PIN-en din i samme nettlesersesjon slik at du slipper å taste den inn for hvert møte."
+    },
+    "noder_kategorier": {
+      "title": "Kategorier — LYD / MULTI / SKJERM",
+      "item_1": "LYD — Kun høyttaler. Kåre snakker og spiller musikk gjennom noden.",
+      "item_2": "MULTI — Høyttaler og skjerm. Viser innhold og snakker (f.eks. Nest Hub med skjerm, Google TV).",
+      "item_3": "SKJERM — Kun skjerm. Viser bilder, tekst og video. Ingen TTS-lyd direkte fra noden."
+    },
+    "noder_lyd_typer": {
+      "title": "Lyd-typer"
+    },
+    "noder_skjerm_typer": {
+      "title": "Skjerm- og multi-typer"
+    },
+    "verktoy_ssh": {
+      "title": "SSH-noder",
+      "body": "SSH-noder er maskiner i nettverket Kåre kan kjøre kommandoer på. Konfigurer her, bruk via «ssh_kommando»-verktøyet i chatten.",
+      "item_1": "Nodetype: Linux/standard SSH (port 22, valgfri bruker) eller HA OS (port 2222, root, kun ha-kommandoer tillatt).",
+      "item_2": "Tillat sudo — Aktiver per node og legg til eksakt hvilke sudo-kommandoer som er tillatt. Kun listede kommandoer godtas.",
+      "item_3": "Test tilkobling — Trykk knappen for å verifisere SSH-oppkoblingen direkte i GUI-et."
+    },
+    "verktoy_timer": {
+      "title": "Timer-grenser",
+      "item_1": "Maks aktive timere per bruker — Sett grensen med tallfelt og «Lagre»-knappen. Standard er 20."
+    },
+    "verktoy_log": {
+      "title": "Kjøringslogg"
     }
   },
   "personality_variants": {

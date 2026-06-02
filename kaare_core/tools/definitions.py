@@ -212,7 +212,7 @@ def _timer_tool(lang: str) -> dict:
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["clock", "set", "cancel", "list"],
+                        "enum": ["clock", "set", "cancel", "list", "ack"],
                         "description": _t("tool_timer_action_desc", lang),
                     },
                     "prompt": {
@@ -232,13 +232,39 @@ def _timer_tool(lang: str) -> dict:
                         "enum": ["hourly", "daily", "weekdays", "weekend", "weekly"],
                         "description": _t("tool_timer_repeat_desc", lang),
                     },
-                    "notify": {
-                        "type": "boolean",
-                        "description": _t("tool_timer_notify_desc", lang),
-                    },
                     "timer_id": {
                         "type": "string",
                         "description": _t("tool_timer_timer_id_desc", lang),
+                    },
+                    "action_type": {
+                        "type": "string",
+                        "enum": ["tts_response", "ha_action", "llm_task", "none"],
+                        "description": _t("tool_timer_action_type_desc", lang),
+                    },
+                    "notify_via": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["tts", "chat"]},
+                        "description": _t("tool_timer_notify_via_desc", lang),
+                    },
+                    "tts_text": {
+                        "type": "string",
+                        "description": _t("tool_timer_tts_text_desc", lang),
+                    },
+                    "target_node": {
+                        "type": "string",
+                        "description": _t("tool_timer_target_node_desc", lang),
+                    },
+                    "ha_payload": {
+                        "type": "object",
+                        "description": _t("tool_timer_ha_payload_desc", lang),
+                    },
+                    "for_user_id": {
+                        "type": "string",
+                        "description": _t("tool_timer_for_user_id_desc", lang),
+                    },
+                    "notif_id": {
+                        "type": "string",
+                        "description": _t("tool_timer_notif_id_desc", lang),
                     },
                 },
                 "required": ["action"],
@@ -319,7 +345,7 @@ def _minne_tool(lang: str) -> dict:
     }
 
 
-def _søk_i_argus_tool(lang: str) -> dict:
+def _search_argus_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
@@ -866,6 +892,12 @@ def _kamera_tool(lang: str) -> dict:
 
 
 def _ssh_kommando_tool(lang: str) -> dict:
+    from kaare_core.config import get_ssh_nodes
+    node_ids = list(get_ssh_nodes().get("nodes", {}).keys())
+    if node_ids:
+        node_schema: dict = {"type": "string", "enum": node_ids}
+    else:
+        node_schema = {"type": "string", "description": "No SSH nodes configured."}
     return {
         "type": "function",
         "function": {
@@ -875,8 +907,7 @@ def _ssh_kommando_tool(lang: str) -> dict:
                 "type": "object",
                 "properties": {
                     "node": {
-                        "type": "string",
-                        "enum": ["ainuc", "dnspi", "proxypi", "hapi"],
+                        **node_schema,
                         "description": _t("tool_ssh_kommando_node_desc", lang),
                     },
                     "command": {
@@ -1047,6 +1078,11 @@ def _announce_tool(lang: str) -> dict:
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["say", "display", "list_display"],
+                        "description": _t("tool_announce_action_desc", lang),
+                    },
                     "text": {
                         "type": "string",
                         "description": _t("tool_announce_text_desc", lang),
@@ -1059,8 +1095,50 @@ def _announce_tool(lang: str) -> dict:
                         "type": "number",
                         "description": _t("tool_announce_volume_desc", lang),
                     },
+                    "image_id": {
+                        "type": "string",
+                        "description": _t("tool_announce_image_id_desc", lang),
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Display overlay title (default: 'Kåre').",
+                    },
+                    "duration": {
+                        "type": "integer",
+                        "description": "Seconds the overlay is shown (default: 8).",
+                    },
+                    "position": {
+                        "type": "string",
+                        "enum": ["bottom_right", "bottom_left", "top_right", "top_left", "center"],
+                        "description": "Overlay position on screen (default: bottom_right).",
+                    },
                 },
-                "required": ["text"],
+                "required": [],
+            },
+        },
+    }
+
+
+def _skriv_reflex_tool(lang: str) -> dict:
+    return {
+        "type": "function",
+        "function": {
+            "name": "skriv_reflex",
+            "description": _t("tool_skriv_reflex_desc", lang),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["suggest", "confirm", "reject", "list"],
+                        "description": _t("tool_skriv_reflex_action_desc", lang),
+                    },
+                    "proposal_id": {
+                        "type": "string",
+                        "description": _t("tool_skriv_reflex_proposal_id_desc", lang),
+                    },
+                },
+                "required": ["action"],
             },
         },
     }
@@ -1082,7 +1160,7 @@ def get_tools(lang: str = "nb") -> list:
         _les_møte_tool(lang),
         # Memory
         _minne_tool(lang),
-        _søk_i_argus_tool(lang),
+        _search_argus_tool(lang),
         # Mechanic and system
         _mechanic_tool(lang),
         _restart_docker_tool(lang),
@@ -1112,6 +1190,8 @@ def get_tools(lang: str = "nb") -> list:
         _media_tool(lang),
         # Announce
         _announce_tool(lang),
+        # Reflex learning
+        _skriv_reflex_tool(lang),
     ]
 
 
@@ -1155,4 +1235,5 @@ TOOL_MODEL_TIERS: dict[str, float] = {
     "restart_docker_container": 9.0,
     "søk_i_argus":           9.0,
     "reason_freely":         9.0,
+    "skriv_reflex":          9.0,
 }

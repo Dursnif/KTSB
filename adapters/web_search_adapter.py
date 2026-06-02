@@ -31,10 +31,7 @@ _TRUSTED_PATH = Path("/kaare/configs/trusted_sources.yaml")
 _SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
 _SERVICES_PATH = Path("/kaare/configs/services.yaml")
 
-_LIBRARY_URL  = get_service("internal", "agents") + "/ask/miss_library/web"
 _BRAVE_KEY    = os.getenv("BRAVE_API_KEY", "")
-
-_LIBRARY_TIMEOUT = 90
 
 
 def _load_websearch_config() -> dict:
@@ -243,17 +240,11 @@ async def _fetch_content(url: str) -> str:
 # ── Miss Library synthesis ────────────────────────────────────────────────
 
 async def _ask_library(query: str, sources: list[dict], lang: str = "nb") -> str:
+    from kaare_core.tools.executor_library import synthesize_web_results
     try:
-        async with httpx.AsyncClient(timeout=_LIBRARY_TIMEOUT) as client:
-            r = await client.post(
-                _LIBRARY_URL,
-                json={"question": query, "sources": sources},
-            )
-            r.raise_for_status()
-            return r.json().get("answer", "").strip()
+        return await synthesize_web_results(query, sources, lang)
     except Exception as exc:
-        log.warning("[web_search] Library call failed: %s", exc)
-        # Fallback: return raw fetched content without synthesis
+        log.warning("[web_search] Library synthesis failed: %s", exc)
         parts = [
             f"{s['title']} — {s['url']}\n{s['content']}"
             for s in sources if s.get("content", "").strip()

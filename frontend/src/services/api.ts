@@ -29,6 +29,24 @@ export async function apiPing() {
   await api.get("/api/ping");
 }
 
+export type PendingNotification = {
+  id: string;
+  timer_id: string;
+  rid: string;
+  message: string;
+  created_at: string;
+  acked: boolean;
+};
+
+export async function apiGetPendingNotifications(user_id: string) {
+  const { data } = await api.get(`/api/pending_notifications?user_id=${encodeURIComponent(user_id)}`);
+  return data as { notifications: PendingNotification[] };
+}
+
+export async function apiAckNotification(notif_id: string, user_id: string) {
+  await api.post(`/api/pending_notifications/${encodeURIComponent(notif_id)}/ack?user_id=${encodeURIComponent(user_id)}`);
+}
+
 export async function apiMissKareComment(user_id: string) {
   const { data } = await api.get(`/api/miss_kare/comment?user_id=${encodeURIComponent(user_id)}`);
   return data as { comment: string; user_id: string };
@@ -155,6 +173,7 @@ export type KaareUser = {
   personality: string;
   vpn_access: VpnAccess;
   created_at: string;
+  can_manage_child_timers?: boolean;
 };
 
 export type Role = "child" | "teen" | "young_adult" | "adult" | "admin";
@@ -174,7 +193,18 @@ export type UpdateUserPayload = {
   is_active?: boolean;
   personality?: string;
   vpn_access?: VpnAccess;
+  can_manage_child_timers?: boolean;
 };
+
+export async function apiGetTimerSettings() {
+  const { data } = await api.get("/api/settings/timers");
+  return data as { max_per_user: number };
+}
+
+export async function apiPutTimerSettings(max_per_user: number) {
+  const { data } = await api.put("/api/settings/timers", { max_per_user });
+  return data as { ok: boolean; max_per_user: number };
+}
 
 // ── Voice enrollment ──────────────────────────────────────────────────────────
 
@@ -609,6 +639,71 @@ export async function apiSettingsRollback(): Promise<{ ok: boolean; restored: st
   return data;
 }
 
+// ── Config snapshots ──────────────────────────────────────────────────────────
+
+export type ConfigSnapshot = {
+  id: string;
+  name: string;
+  created: string;
+  files: string[];
+};
+
+export async function apiSaveConfigSnapshot(name: string): Promise<{ ok: boolean; id?: string; error?: string; count?: number }> {
+  const { data } = await api.post("/api/admin/config-snapshot", { name });
+  return data;
+}
+
+export async function apiListConfigSnapshots(): Promise<{ snapshots: ConfigSnapshot[] }> {
+  const { data } = await api.get("/api/admin/config-snapshots");
+  return data;
+}
+
+export async function apiRestoreConfigSnapshot(id: string): Promise<{ ok: boolean; restored: string[]; errors: string[] }> {
+  const { data } = await api.post(`/api/admin/config-snapshot/${id}/restore`);
+  return data;
+}
+
+export async function apiDeleteConfigSnapshot(id: string): Promise<{ ok: boolean }> {
+  const { data } = await api.delete(`/api/admin/config-snapshot/${id}`);
+  return data;
+}
+
+export async function apiExportConfigSnapshot(id: string, downloadName: string): Promise<void> {
+  const token = sessionStorage.getItem("kaare_token");
+  const resp = await fetch(
+    `http://${window.location.hostname}:8000/api/admin/config-snapshot/${id}/export`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!resp.ok) throw new Error("Export failed");
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = downloadName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function apiImportConfigSnapshot(
+  name: string,
+  file: File
+): Promise<{ ok: boolean; id?: string; error?: string; count?: number }> {
+  const form = new FormData();
+  form.append("name", name);
+  form.append("file", file);
+  const { data } = await api.post("/api/admin/config-snapshot/import", form);
+  return data;
+}
+
+export async function apiVerifyPin(username: string, pin: string): Promise<boolean> {
+  try {
+    await api.post("/api/auth/login", { username, pin });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ── Settings: Weather ─────────────────────────────────────────────────────────
 
 export type WeatherProvider = "met.no" | "open-meteo" | "openweathermap" | "weatherapi" | "pirateweather";
@@ -843,11 +938,31 @@ export async function apiPutAliases(payload: Partial<AliasesConfig>) {
 export type NodeConfig = {
   room: string;
   description?: string;
-  type: "ha_media_player" | "esp32" | "wyoming" | "chromecast" | "snapcast" | "airplay" | "dlna" | string;
+  type:
+    | "ha_media_player"
+    | "esp32"
+    | "wyoming"
+    | "chromecast"
+    | "snapcast"
+    | "airplay"
+    | "dlna"
+    | "apple_tv"
+    | "samsung_tv"
+    | "android_tv"
+    | "google_tv"
+    | "fire_tv"
+    | "lg_tv"
+    | "projector"
+    | string;
   entity_id?: string;
   host?: string;
   api_port?: number;
+  mac?: string;
+  adb_port?: number;
+  tvoverlay_port?: number;
   mic_enabled?: boolean;
+  has_audio?: boolean;
+  has_display?: boolean;
   token?: string;
   default_user?: string;
   enabled: boolean;
@@ -861,6 +976,46 @@ export async function apiGetNodes(): Promise<{ nodes: Record<string, NodeConfig>
 export async function apiPutNodes(nodes: Record<string, NodeConfig>) {
   const { data } = await api.put("/api/settings/nodes", { nodes });
   return data as { ok: boolean };
+}
+
+export async function apiTestDisplayNode(nodeId: string) {
+  const { data } = await api.post(`/api/settings/nodes/${encodeURIComponent(nodeId)}/test_display`);
+  return data as { ok: boolean; method?: string };
+}
+
+// ── Settings: SSH Nodes ───────────────────────────────────────────────────────
+
+export interface SshNodeConfig {
+  label?: string;
+  host: string;
+  user: string;
+  port: number;
+  ssh_key: string;
+  node_type: "linux" | "ha_os";
+  sudo_enabled: boolean;
+  sudo_commands: string[];
+}
+
+export interface SshNodesData {
+  local: { sudo_enabled: boolean };
+  nodes: Record<string, SshNodeConfig>;
+}
+
+export async function apiGetSshNodes(): Promise<SshNodesData> {
+  const { data } = await api.get("/api/settings/ssh-nodes");
+  return data;
+}
+
+export async function apiPutSshNodes(payload: Partial<SshNodesData>) {
+  const { data } = await api.put("/api/settings/ssh-nodes", payload);
+  return data as { ok: boolean };
+}
+
+export async function apiTestSshNode(params: {
+  host: string; user: string; port: number; ssh_key: string;
+}) {
+  const { data } = await api.post("/api/settings/ssh-nodes/test", params);
+  return data as { ok: boolean; latency_ms: number; error?: string };
 }
 
 // ── Settings: Capabilities ────────────────────────────────────────────────────
@@ -943,6 +1098,39 @@ export async function apiGetMeetingRoles(): Promise<MeetingRolesConfig> {
 export async function apiPutMeetingRoles(payload: Partial<MeetingRolesConfig>) {
   const { data } = await api.put("/api/settings/meeting-roles", payload);
   return data as { ok: boolean };
+}
+
+// ── Settings: Piper TTS ───────────────────────────────────────────────────────
+
+export type PiperPreset = {
+  model: string;
+  tier: string;
+  tier_label: string;
+  size_mb: number;
+  gender: string;
+  local_path: string;
+  downloaded: boolean;
+  active: boolean;
+};
+
+export async function apiGetPiperModels(): Promise<Record<string, PiperPreset[]>> {
+  const { data } = await api.get("/api/settings/piper/models");
+  return data;
+}
+
+export async function apiPostPiperDownload(lang: string, model_name: string): Promise<{ job_id: string }> {
+  const { data } = await api.post("/api/settings/piper/download", { lang, model_name });
+  return data;
+}
+
+export async function apiGetPiperDownloadStatus(job_id: string): Promise<{ status: string; error?: string }> {
+  const { data } = await api.get(`/api/settings/piper/download/${job_id}`);
+  return data;
+}
+
+export async function apiPutPiperActivate(lang: string, model_path: string): Promise<{ ok: boolean }> {
+  const { data } = await api.put("/api/settings/piper/activate", { lang, model_path });
+  return data;
 }
 
 // ── Voice: browser STT/TTS ────────────────────────────────────────────────────

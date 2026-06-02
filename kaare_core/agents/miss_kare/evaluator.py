@@ -1,23 +1,24 @@
 """
 Miss Kåre – evaluator.
-Tar imot (user_msg, kare_response, user_id), spør Miss Kåres LLM,
-og returnerer [STILLE] eller en kort kommentar.
+Receives (user_msg, kare_response, user_id), queries Miss Kåre's LLM,
+and returns [STILLE] or a short comment.
 """
 
+import asyncio
 import logging
 from pathlib import Path
 
 import httpx
 
 from kaare_core.model_lock import lock_11445, LockTimeout
-from kaare_core.config import get_model as _cfg_model, get_llm_config as _llm, get_service as _svc, is_agent_tool_enabled
+from kaare_core.config import get_model as _cfg_model, get_llm_config as _llm, is_agent_tool_enabled
 from kaare_core.llm_fallback import is_fallback_active
 from kaare_core.users.profile_manager import get_display_name
 
 MISS_KARE_URL    = _llm("miss_kare")["base_url"] + "/api/chat"
 MISS_KARE_MODEL  = _cfg_model("miss_kare")
 TIMEOUT          = _llm("miss_kare")["timeout"]
-MAX_TOKENS       = 200  # evaluator bruker bevisst kortere svar enn generell miss_kare
+MAX_TOKENS       = 200  # evaluator deliberately uses shorter responses than general miss_kare
 
 log = logging.getLogger("miss_kare")
 
@@ -29,36 +30,37 @@ def _load_personality() -> str:
     return "Du er Miss Kåre – varm, moderlig, jordnær."
 
 
-async def _ask_library(spørsmål: str, user_id: str = "global") -> str:
-    """Kaller Miss Library direkte (port 11450). Returnerer svar eller tom streng."""
+def _load_portrait(user_id: str) -> str:
+    if not user_id or user_id == "global":
+        return ""
+    path = Path(f"/kaare/state/users/{user_id}/miss_kare_portrait.md")
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8").strip()[:3000]
+
+
+async def _ask_library(query: str, user_id: str = "global") -> str:
+    """Ask Miss Library directly (in-process). Returns answer or empty string."""
     if not _llm("library").get("enabled", True):
         return ""
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            r = await client.post(
-                f"{_svc('internal', 'agents')}/ask/miss_library",
-                json={"question": spørsmål},
-            )
-            r.raise_for_status()
-            svar = r.json().get("answer", "").strip()
-
+        from kaare_core.tools.executor_library import _ask_library_wiki
+        from kaare_core.memory.long_term import get_ltm
+        svar = await _ask_library_wiki(query)
         try:
-            import asyncio
-            from kaare_core.memory.long_term import get_ltm
             asyncio.create_task(get_ltm().log_agent_message(
                 from_agent="miss_kare",
                 to_agent="miss_library",
-                query=spørsmål,
+                query=query,
                 response=svar,
                 rid="",
                 user_id=user_id,
             ))
         except Exception:
             pass
-
         return svar
     except Exception as e:
-        log.warning("[Miss Kåre] Miss Library-kall feilet: %s", e)
+        log.warning("[Miss Kare] Library call failed: %s", e)
         return ""
 
 
@@ -115,7 +117,13 @@ async def evaluate(
     user_name = get_display_name(user_id) if user_id and user_id != "global" else None
     user_block = f"# Nåværende bruker\nDu snakker nå med **{user_name}**. Bruk alltid dette navnet — aldri et annet.\n\n---\n\n" if user_name else ""
 
-    system = _load_personality() + (
+    portrait = _load_portrait(user_id)
+    portrait_block = (
+        f"\n\n---\n\n# Dine tidligere observasjoner om {user_name}\n{portrait}\n"
+        if portrait and user_name else ""
+    )
+
+    system = _load_personality() + portrait_block + (
         "\n\n---\n\n"
         + user_block
         + situation
@@ -135,32 +143,32 @@ async def evaluate(
     ]
 
     try:
-        # Runde 1: første LLM-kall
+        # Round 1: first LLM call
         async with lock_11445("miss_kare", max_wait=60):
             reply = await _llm_call(messages)
-        log.info("[Miss Kåre] første svar: %s", reply[:100])
+        log.info("[Miss Kare] first reply: %s", reply[:100])
 
-        # Sjekk om Miss Kåre vil slå opp noe hos Miss Library (port 11450 – ingen lås)
+        # Check if Miss Kare wants to look something up in Miss Library (direct call — no lock)
         if reply.startswith("[SJEKK:") and "]" in reply and is_agent_tool_enabled("miss_kare", "spør_miss_library", default=True):
-            spørsmål = reply[7:reply.index("]")].strip()
-            log.info("[Miss Kåre] ber Miss Library om: %s", spørsmål)
-            bibliotek_svar = await _ask_library(spørsmål, user_id)
+            query = reply[7:reply.index("]")].strip()
+            log.info("[Miss Kare] asking Miss Library: %s", query)
+            bibliotek_svar = await _ask_library(query, user_id)
             if bibliotek_svar:
                 messages.append({"role": "assistant", "content": reply})
                 messages.append({"role": "user", "content": (
                     f"Miss Library svarte:\n{bibliotek_svar}\n\n"
                     "Bruk dette til å si noe varmt og konkret til brukeren. Maks 3 setninger."
                 )})
-                # Runde 2: andre LLM-kall med biblioteksvar
+                # Round 2: second LLM call with library response
                 async with lock_11445("miss_kare", max_wait=60):
                     reply = await _llm_call(messages)
-                log.info("[Miss Kåre] svar etter bibliotek: %s", reply[:100])
+                log.info("[Miss Kare] reply after library lookup: %s", reply[:100])
 
         return reply if reply and reply != "[STILLE]" else "[STILLE]"
 
     except LockTimeout:
-        log.warning("[Miss Kåre] lock timeout — Mechanic holder modellen, hopper over evaluering")
+        log.warning("[Miss Kare] lock timeout — Mechanic holds the model, skipping evaluation")
         return "[STILLE]"
     except Exception as e:
-        log.warning("[Miss Kåre] evaluator feilet: %s", e)
+        log.warning("[Miss Kare] evaluator failed: %s", e)
         return "[STILLE]"

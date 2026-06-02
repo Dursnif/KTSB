@@ -778,13 +778,20 @@
     },
     "rollback": {
       "title": "Reset to defaults",
-      "description": "Restores the four main config files from frozen snapshot in configs_default/. Use this if you have broken the configuration and want to start over.",
-      "confirm": "This resets settings.yaml, llm.yaml, models.yaml and services.yaml to the frozen default version. Continue?",
+      "description": "Restores all config files from the frozen factory defaults in configs_default/. Use this to start fresh with a clean installation.",
+      "confirm": "This resets ALL config files to factory defaults. All custom settings, models and service URLs will be lost. Continue?",
       "button": "Reset to defaults",
       "loading": "Resetting…",
       "ok": "Restored: {{files}}",
       "error_suffix": "Error: ",
-      "error": "Error — could not reset"
+      "error": "Error — could not reset",
+      "pin_title": "Confirm with PIN",
+      "pin_warning": "⚠️ This resets all settings to factory defaults — as if freshly installed. All custom values will be lost. Recovery points are kept.",
+      "pin_placeholder": "Your PIN…",
+      "pin_confirm_button": "Reset to factory defaults",
+      "pin_cancel": "Cancel",
+      "pin_error": "Wrong PIN — try again",
+      "verifying": "Verifying…"
     },
     "github": {
       "title": "GitHub publishing",
@@ -810,6 +817,40 @@
       "ram_gb": "{{gb}} GB",
       "note_gpu": "GPU detected — enable by adding COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml to .env and running setup.sh",
       "error": "Could not fetch hardware info"
+    },
+    "snapshots": {
+      "title": "Recovery Points",
+      "description": "Save named snapshots of all config files and restore them when needed.",
+      "name_placeholder": "Snapshot name…",
+      "save_button": "Save snapshot",
+      "saving": "Saving…",
+      "counter": "{{count}}/10 snapshots",
+      "max_reached": "Maximum 10 reached — delete one to save a new snapshot",
+      "empty": "No snapshots saved yet.",
+      "restore_button": "Restore",
+      "delete_button": "Delete",
+      "restore_confirm": "This will overwrite active config files with snapshot \"{{name}}\". Continue?",
+      "restore_ok": "Restored: {{files}}",
+      "restore_error": "Error restoring snapshot",
+      "delete_confirm": "Delete snapshot \"{{name}}\"?",
+      "delete_error": "Error deleting snapshot",
+      "save_error": "Error saving snapshot",
+      "name_required": "Enter a name",
+      "export_button": "Export",
+      "import_title": "Import snapshot",
+      "import_description": "Upload a previously exported config zip to restore it on a new installation.",
+      "import_name_placeholder": "Name for imported snapshot…",
+      "import_button": "Import zip",
+      "importing": "Importing…",
+      "import_ok": "Imported: {{count}} files",
+      "import_error": "Import failed",
+      "import_bad_zip": "Invalid zip file",
+      "import_no_yaml": "Zip contained no config files",
+      "export_current_button": "Export current config",
+      "install_button": "Install",
+      "download_button": "Download",
+      "select_hint": "Select a snapshot to install or download",
+      "choose_file": "Choose file"
     }
   },
   "dashboard": {
@@ -909,6 +950,8 @@
       "vpn_ai_only": "AI only — AI chat externally, not smart home",
       "vpn_full_access": "Full access — everything available externally",
       "active_label": "Active",
+      "can_manage_child_timers": "Parental control",
+      "can_manage_child_timers_desc": "Can set timers for children and teens",
       "save": "Save",
       "cancel": "Cancel",
       "error_generic": "Something went wrong."
@@ -1046,6 +1089,11 @@
     "delete": "Delete",
     "enabled": "Enabled",
     "disabled": "Disabled",
+    "section": {
+      "audio": "Audio",
+      "multi": "Multi",
+      "display": "Display"
+    },
     "modal": {
       "edit_title": "Edit node",
       "new_title": "New node",
@@ -1056,6 +1104,15 @@
       "entity_id": "Entity ID",
       "host": "Host (IP)",
       "api_port": "API port",
+      "mac": "MAC address (Wake-on-LAN)",
+      "adb_port": "ADB port",
+      "tvoverlay_port": "TvOverlay port",
+      "tvoverlay_hint": "Requires TvOverlay app on device",
+      "capabilities": "Capabilities",
+      "has_audio": "Audio (TTS / announcements)",
+      "has_display": "Display (image / text / video)",
+      "type_group_audio": "Audio",
+      "type_group_display": "TV and display",
       "default_user": "Default user (optional)",
       "cancel": "Cancel",
       "save": "Save",
@@ -1064,6 +1121,11 @@
   },
   "tools": {
     "title": "Tools",
+    "timer_admin_title": "Timer limits",
+    "timer_admin_max_label": "Max active timers per user",
+    "timer_admin_save": "Save",
+    "timer_admin_saved": "Saved ✓",
+    "timer_admin_no_active": "No active timers",
     "timers_title": "Active timers",
     "timers_empty": "No active timers",
     "repeat": {
@@ -1079,7 +1141,34 @@
     "log_title": "Run log",
     "log_loading": "Loading…",
     "log_empty": "No tool calls yet",
-    "unknown_event": "unknown"
+    "unknown_event": "unknown",
+    "ssh_title": "SSH Nodes",
+    "ssh_local_sudo": "Allow sudo on this machine (local)",
+    "ssh_local_sudo_warning": "Local sudo gives Kåre full system access — not recommended",
+    "ssh_no_nodes": "No SSH nodes configured",
+    "ssh_add": "Add SSH node",
+    "ssh_edit": "Edit",
+    "ssh_delete": "Delete",
+    "ssh_confirm_delete": "Delete SSH node «{{id}}»?",
+    "ssh_saved": "Saved ✓",
+    "ssh_node_id": "Node ID (used by Kåre)",
+    "ssh_label": "Display name",
+    "ssh_host": "Hostname / IP",
+    "ssh_user": "SSH user",
+    "ssh_port": "Port",
+    "ssh_key": "SSH key",
+    "ssh_node_type": "Node type",
+    "ssh_node_type_linux": "Linux / standard SSH",
+    "ssh_node_type_ha_os": "Home Assistant OS",
+    "ssh_ha_os_hint": "Port 2222 and user root are locked automatically. HA CLI commands are always allowed.",
+    "ssh_ha_host_hint": "Found HA at {{host}} — read from service config",
+    "ssh_sudo_enabled": "Allow sudo",
+    "ssh_sudo_commands": "Allowed sudo commands",
+    "ssh_sudo_add_cmd": "Add command…",
+    "ssh_sudo_add": "Add",
+    "ssh_test": "Test connection",
+    "ssh_test_ok": "OK · {{ms}} ms",
+    "ssh_test_fail": "Error: {{error}}"
   },
   "cameras": {
     "title": "Camera settings",
@@ -1331,12 +1420,12 @@
       "item_2": "Full restart — restarts the Kåre service. Takes 5–30 seconds.",
       "item_3": "System check — verifies that all services respond and connections work.",
       "item_4": "Memory compression — transfers short-term memory (STM) to long-term memory (LTM). Runs automatically each night.",
-      "item_5": "⚠ Rollback — resets ALL settings to factory defaults. Custom settings are lost."
+      "item_5": "Config snapshots — Create named backups of all settings, install or download as a zip file, import on a new install. ⚠ Factory reset restores everything to defaults — requires PIN confirmation."
     },
     "verktoy": {
       "title": "Tools",
       "summary": "Insight into Kåre's tool usage and active timers",
-      "body": "The tools page is read-only — you can see what Kåre has done, but cannot control anything here.",
+      "body": "The tools page provides insight into SSH nodes, timers and Kåre's action log. SSH connections to network machines are configured here.",
       "item_1": "The timer overview shows active countdowns and reminders Kåre is tracking.",
       "item_2": "The tool log shows the most recent actions Kåre has performed.",
       "item_3": "You can see who asked for what, the timestamp, and whether it succeeded."
@@ -1352,8 +1441,8 @@
     },
     "noder": {
       "title": "Nodes",
-      "summary": "TTS speakers and media devices Kåre can speak through",
-      "body": "A «node» is an audio device Kåre can speak through or send music to — smart speaker, TV, Chromecast or custom board.",
+      "summary": "Audio and display devices Kåre can speak through or show content on",
+      "body": "A «node» is a device Kåre can speak through, display content on, or stream music to. Nodes have capabilities: Audio (TTS/announcements) and/or Display (images/text/video).",
       "types_intro": "Supported node types:",
       "types": {
         "ha_media_player": "HA Media Player — Device controlled by Home Assistant (Nest Hub, Google TV, smart speaker via HA)",
@@ -1362,7 +1451,14 @@
         "chromecast": "Chromecast — Google Chromecast or Google TV, direct connection",
         "snapcast": "Snapcast — Synchronised multiroom audio over the local network",
         "airplay": "AirPlay — Apple protocol for wireless audio (HomePod, Apple TV, AirPlay speakers)",
-        "dlna": "DLNA — Standard for wireless audio to compatible TVs and stereos"
+        "dlna": "DLNA — Standard for wireless audio to compatible TVs and stereos",
+        "apple_tv": "Apple TV — AirPlay-based, supports display and audio",
+        "samsung_tv": "Samsung TV — Tizen OS, controlled via HA or directly",
+        "android_tv": "Android TV — generic Android TV platform",
+        "google_tv": "Google TV — Google's TV platform (Chromecast Gen 4+)",
+        "fire_tv": "Fire TV — Amazon's TV platform (FireStick, Fire TV Cube)",
+        "lg_tv": "LG TV — webOS, controlled via Home Assistant",
+        "projector": "Projector — display only, no audio"
       }
     },
     "kameraer": {
@@ -1391,7 +1487,8 @@
       "item_1": "Reflection meeting (04:00) — Kåre and Miss Kåre review the day's conversations. Kåre updates his self-description and world model.",
       "item_2": "Developer meeting (05:30) — Technical review of system health, errors and improvement suggestions.",
       "item_3": "PIN protection — Meeting minutes are locked with the user's PIN. Only you can read your own minutes.",
-      "item_4": "Topic field — You can suggest a topic for Kåre to address in the next nightly meeting."
+      "item_4": "Topic field — You can suggest a topic for Kåre to address in the next nightly meeting.",
+      "item_5": "Miss Kåre portrait — Miss Kåre gradually builds a personal portrait of each user based on observations over time. The portrait is injected into meeting context for more personal analysis."
     },
     "innst_generelt": {
       "title": "Settings → General",
@@ -1429,7 +1526,8 @@
       "item_1": "Whisper — The speech-to-text model. Converts your voice to text Kåre can understand.",
       "item_2": "Embedding — Creates searchable memory. Used for semantic memory search.",
       "item_3": "Local vs. cloud — Local models are faster and private. Cloud is a safety net if something fails.",
-      "item_4": "num_ctx — The context window. How much of the conversation the model remembers in one run."
+      "item_4": "num_ctx — The context window. How much of the conversation the model remembers in one run.",
+      "item_5": "Piper (text-to-speech) — Kåre's voice. Three language sections (Norwegian/English/German) with different voice packs. Download, activate the desired voice and restart the service to apply it."
     },
     "innst_refleksjon": {
       "title": "Settings → Reflection",
@@ -1498,7 +1596,8 @@
       "item_2": "Voice button — Hold to speak. Kåre transcribes and responds by voice.",
       "item_3": "Images — Drag and drop an image into the chat, or click the image icon to analyse it.",
       "item_4": "Miss Kåre panel — Shown below Kåre's response with side comments and alternative perspectives.",
-      "item_5": "Trace view — Press the arrow below a response to see which tools Kåre used."
+      "item_5": "Trace view — Press the arrow below a response to see which tools Kåre used.",
+      "item_6": "Timer alerts — When a timer fires, the notification appears directly in chat without you needing to ask. Kåre confirms delivery automatically."
     },
     "bruker_refleksjoner": {
       "title": "My reflections",
@@ -1507,6 +1606,32 @@
       "item_2": "PIN protection — Enter your PIN to read the content. Only you have access.",
       "item_3": "Meeting minutes are stored locally and never sent to third parties.",
       "item_4": "PIN buffering — Kåre remembers your PIN within the same browser session so you do not need to enter it for each meeting."
+    },
+    "noder_kategorier": {
+      "title": "Categories — AUDIO / MULTI / DISPLAY",
+      "item_1": "AUDIO — Speaker only. Kåre speaks and plays music through the node.",
+      "item_2": "MULTI — Speaker and display. Shows content and speaks (e.g. Nest Hub with screen, Google TV).",
+      "item_3": "DISPLAY — Display only. Shows images, text and video. No direct TTS audio from the node."
+    },
+    "noder_lyd_typer": {
+      "title": "Audio types"
+    },
+    "noder_skjerm_typer": {
+      "title": "Display and multi types"
+    },
+    "verktoy_ssh": {
+      "title": "SSH nodes",
+      "body": "SSH nodes are machines on the network that Kåre can run commands on. Configure here, use via the «ssh_kommando» tool in chat.",
+      "item_1": "Node type: Linux/standard SSH (port 22, optional user) or HA OS (port 2222, root, only ha-commands allowed).",
+      "item_2": "Allow sudo — Enable per node and list exactly which sudo commands are permitted. Only listed commands are accepted.",
+      "item_3": "Test connection — Click the button to verify the SSH connection directly in the GUI."
+    },
+    "verktoy_timer": {
+      "title": "Timer limits",
+      "item_1": "Max active timers per user — Set the limit using the number field and the «Save» button. Default is 20."
+    },
+    "verktoy_log": {
+      "title": "Execution log"
     }
   },
   "personality_variants": {

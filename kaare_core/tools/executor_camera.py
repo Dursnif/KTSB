@@ -73,11 +73,7 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
         scope = arguments.get("scope", "ett")
         ts = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
         if scope == "alle":
-            spørsmål = arguments.get("spørsmål", "").strip() or (
-                "Du ser bilder fra flere overvåkningskameraer. "
-                "Beskriv hvert bilde kort: hva skjer, er det personer, kjøretøy eller hendelser? "
-                "Angi kameranavnet i svaret."
-            )
+            prompt_text = arguments.get("spørsmål", "").strip() or t("cam_prompt_all", lang)
             cams = await get_cameras()
             if not cams:
                 return t("cam_no_cameras", lang)
@@ -95,7 +91,7 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
             failed = [n for n, b64 in fetched if b64 is None]
             if not images:
                 return t("cam_fetch_failed", lang, ts=ts)
-            prompt = f"Kameraer: {', '.join(cam_names)}.\n{spørsmål}"
+            prompt = t("cam_prefix_all", lang, cam_list=', '.join(cam_names)) + prompt_text
             try:
                 vlm_result = await ask_llm(prompt=prompt, images=images)
                 if not vlm_result.get("ok"):
@@ -109,7 +105,7 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
             return result
 
         kamera_navn = (arguments.get("camera") or arguments.get("kamera") or "").strip()
-        spørsmål = (arguments.get("query") or arguments.get("spørsmål") or "").strip() or "Beskriv hva du ser på bildet. Nevn personer, kjøretøy, dyr og eventuelle hendelser."
+        prompt_text = (arguments.get("query") or arguments.get("spørsmål") or "").strip() or t("cam_prompt_single", lang)
         if not kamera_navn:
             cams = await get_cameras()
             cam_list = ", ".join(f"{c['friendly_name']} ({c['api_name']})" for c in cams)
@@ -123,7 +119,7 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
         except Exception as e:
             return t("cam_snapshot_error", lang, camera=kamera_navn, error=e)
         try:
-            vlm_result = await ask_llm(prompt=spørsmål, images=[img_b64])
+            vlm_result = await ask_llm(prompt=prompt_text, images=[img_b64])
             if not vlm_result.get("ok"):
                 return t("cam_snapshot_analysis_failed", lang, ts=ts, error="VLM returned empty response")
             description = vlm_result.get("text", "").strip() or t("cam_empty_vlm", lang)
@@ -271,13 +267,13 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
                     break
         except Exception:
             pass
-        context = f"Du ser et lagret Frigate-kameraopptak (event_id: {event_id})."
+        context = t("cam_prompt_show_event", lang, event_id=event_id)
         if stored_analysis:
-            context += f"\n\nDen automatiske analysen sa:\n{stored_analysis}"
-        context += "\n\nBeskriv hva du ser på bildet og om den lagrede analysen stemmer. Svar på norsk."
-        spørsmål = (arguments.get("query") or arguments.get("spørsmål") or "").strip() or context
+            context += t("cam_prompt_show_event_prior_analysis", lang, analysis=stored_analysis)
+        context += t("cam_prompt_show_event_question", lang)
+        prompt_text = (arguments.get("query") or arguments.get("spørsmål") or "").strip() or context
         try:
-            result = await ask_llm(spørsmål, images=[img_b64])
+            result = await ask_llm(prompt_text, images=[img_b64])
             analysis = result.get("text", "").strip() or t("cam_empty_vlm_response", lang)
         except Exception as e:
             return t("cam_vlm_error", lang, error=e)
@@ -292,11 +288,7 @@ async def _compat_hent_snapshot(arguments: Dict, lang: str = "nb") -> str:
     scope = arguments.get("scope", "ett")
     ts = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
     if scope == "alle":
-        spørsmål = arguments.get("spørsmål", "").strip() or (
-            "Du ser bilder fra flere overvåkningskameraer. "
-            "Beskriv hvert bilde kort: hva skjer, er det personer, kjøretøy eller hendelser? "
-            "Angi kameranavnet i svaret."
-        )
+        prompt_text = arguments.get("spørsmål", "").strip() or t("cam_prompt_all", lang)
         cams = await get_cameras()
         if not cams:
             return t("cam_no_cameras", lang)
@@ -314,7 +306,7 @@ async def _compat_hent_snapshot(arguments: Dict, lang: str = "nb") -> str:
         failed = [n for n, b64 in fetched if b64 is None]
         if not images:
             return t("cam_fetch_failed", lang, ts=ts)
-        prompt = f"Kameraer: {', '.join(cam_names)}.\n{spørsmål}"
+        prompt = t("cam_prefix_all", lang, cam_list=', '.join(cam_names)) + prompt_text
         try:
             vlm_result = await ask_llm(prompt=prompt, images=images)
             description = vlm_result.get("text", "").strip() or t("cam_empty_vlm", lang)
@@ -326,7 +318,7 @@ async def _compat_hent_snapshot(arguments: Dict, lang: str = "nb") -> str:
         return result
 
     kamera = arguments.get("kamera", "").strip()
-    spørsmål = arguments.get("spørsmål", "").strip() or "Beskriv hva du ser på bildet. Nevn personer, kjøretøy, dyr og eventuelle hendelser."
+    prompt_text = arguments.get("spørsmål", "").strip() or t("cam_prompt_single", lang)
     if not kamera:
         cams = await get_cameras()
         cam_list = ", ".join(f"{c['friendly_name']} ({c['api_name']})" for c in cams)
@@ -340,7 +332,7 @@ async def _compat_hent_snapshot(arguments: Dict, lang: str = "nb") -> str:
     except Exception as e:
         return t("cam_snapshot_error", lang, camera=kamera, error=e)
     try:
-        vlm_result = await ask_llm(prompt=spørsmål, images=[img_b64])
+        vlm_result = await ask_llm(prompt=prompt_text, images=[img_b64])
         description = vlm_result.get("text", "").strip() or t("cam_empty_vlm", lang)
     except Exception as e:
         return t("cam_snapshot_analysis_failed", lang, ts=ts, error=e)

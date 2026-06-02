@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation, Trans } from "react-i18next";
-import { apiGenerate, apiMissKareComment, apiChatHistory, apiTranscribe, apiTtsFile, apiGetServices } from "../../services/api";
+import { apiGenerate, apiMissKareComment, apiChatHistory, apiTranscribe, apiTtsFile, apiGetServices, apiGetPendingNotifications, apiAckNotification } from "../../services/api";
 import type { TraceStep } from "../../services/api";
 import { useTheme } from "../../theme";
 import { useUserPrefs } from "../../hooks/useUserPrefs";
@@ -363,6 +363,23 @@ export default function Home() {
       }));
       setMessages([...restored]);
     }).catch(() => { /* non-critical */ });
+  }, []);
+
+  // Poll for pending timer notifications every 30s
+  useEffect(() => {
+    const uid = getUserId();
+    const check = async () => {
+      try {
+        const { notifications } = await apiGetPendingNotifications(uid);
+        for (const n of notifications) {
+          setMessages(m => [...m, { role: "kare", text: n.message }]);
+          apiAckNotification(n.id, uid).catch(() => {});
+        }
+      } catch { /* non-critical */ }
+    };
+    check();
+    const id = setInterval(check, 30_000);
+    return () => clearInterval(id);
   }, []);
 
   useEffect(() => {

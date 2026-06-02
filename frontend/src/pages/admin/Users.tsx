@@ -483,6 +483,7 @@ function EditModal({ user, onDone, onError, error }: { user: KaareUser; onDone: 
     is_active: user.is_active,
     personality: user.personality || "standard",
     vpn_access: (user.vpn_access || "local_only") as VpnAccess,
+    can_manage_child_timers: user.can_manage_child_timers ?? false,
   });
   const [personalities, setPersonalities] = useState<{ key: string; label: string }[]>([]);
 
@@ -531,6 +532,40 @@ function EditModal({ user, onDone, onError, error }: { user: KaareUser; onDone: 
           <input type="checkbox" checked={f.is_active} onChange={e => setF({ ...f, is_active: e.target.checked })} />
           {" "}{t("users.edit.active_label")}
         </label>
+
+        {/* Parental control toggle — only for adult+ roles */}
+        {(f.role === "adult" || f.role === "young_adult" || f.role === "admin") && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ color: "#aaa", fontSize: 13, marginBottom: 6 }}>
+              {t("users.edit.can_manage_child_timers")}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div
+                role="switch"
+                aria-checked={f.can_manage_child_timers}
+                onClick={() => setF({ ...f, can_manage_child_timers: !f.can_manage_child_timers })}
+                style={{
+                  display: "inline-block", width: 44, height: 24,
+                  background: f.can_manage_child_timers ? "#4caf50" : "#333",
+                  borderRadius: 12, cursor: "pointer",
+                  position: "relative", transition: "background 0.2s", flexShrink: 0,
+                }}
+              >
+                <div style={{
+                  position: "absolute", top: 3,
+                  left: f.can_manage_child_timers ? 23 : 3,
+                  width: 18, height: 18,
+                  background: "#fff", borderRadius: "50%",
+                  transition: "left 0.2s",
+                }} />
+              </div>
+              <span style={{ color: "#888", fontSize: 12 }}>
+                {t("users.edit.can_manage_child_timers_desc")}
+              </span>
+            </div>
+          </div>
+        )}
+
         {error && <div style={S.err}>{error}</div>}
         <div style={S.row}>
           <button type="submit" style={S.btn()}>{t("users.edit.save")}</button>

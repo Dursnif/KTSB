@@ -6,6 +6,7 @@ og kjører lokal voice pipeline (TTS ack → opptak → STT → Kåre API → TT
 
 import asyncio
 import io
+import json
 import logging
 import os
 import subprocess
@@ -13,6 +14,7 @@ import tempfile
 import time
 import uuid
 import wave
+from datetime import datetime, timezone
 from pathlib import Path
 
 import math
@@ -74,8 +76,17 @@ MAX_RECORD_SEC = 8
 SILENCE_SEC    = cfg["stt"]["silence_threshold_seconds"]
 SILENCE_AMP    = cfg["stt"]["silence_amplitude_threshold"]
 
-TTS_VOICE      = Path(_voice_svc["tts"]["voice"])
 TTS_RATE       = _voice_svc["tts"]["sample_rate"]
+
+# Multi-language TTS model map: lang code → Path. Falls back to nb.
+_tts_models_cfg: dict = _voice_svc.get("tts", {}).get("tts_models", {})
+_TTS_FALLBACK   = Path(_voice_svc["tts"]["voice"])
+_TTS_MODELS: dict[str, Path] = {}
+for _lang, _path in _tts_models_cfg.items():
+    if _path and Path(_path).exists():
+        _TTS_MODELS[_lang] = Path(_path)
+    elif _lang == "nb":
+        _TTS_MODELS["nb"] = _TTS_FALLBACK
 
 MIC_DEVICE     = cfg["audio"]["mic_device"]
 MIC_RATE       = cfg["audio"]["mic_sample_rate"]
@@ -93,6 +104,11 @@ TMP_AUDIO_DIR  = Path("/tmp/kaare_tts")
 TMP_AUDIO_DIR.mkdir(exist_ok=True)
 
 # ---------------------------------------------------------------------------
+# TTS pronunciation lexicon
+# ---------------------------------------------------------------------------
+import re as _re
+
+# ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
 logging.basicConfig(
@@ -100,6 +116,59 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 log = logging.getLogger("voice_bridge")
+
+_ROUTE_LOG = Path("/kaare/logs/route_decisions.log")
+
+def _route_log_voice(rid: str, stage: str, **fields) -> None:
+    """Write a voice pipeline event to route_decisions.log (same format as kaare_api)."""
+    rec = {
+        "ts":        datetime.now(timezone.utc).isoformat(),
+        "rid":       rid,
+        "source":    "voice_bridge",
+        "subsystem": "routing",
+        "stage":     stage,
+        **fields,
+    }
+    try:
+        with open(_ROUTE_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        log.warning("_route_log_voice failed: %s", exc)
+
+_LEXICON_PATHS: dict[str, Path] = {
+    "nb": Path("/kaare/configs/tts_lexicon.yaml"),
+    "en": Path("/kaare/configs/tts_lexicon_en.yaml"),
+    "de": Path("/kaare/configs/tts_lexicon_de.yaml"),
+}
+_tts_substitutions: dict[str, list[tuple[_re.Pattern, str]]] = {}
+
+
+def _load_lexicon(lang: str, path: Path) -> None:
+    try:
+        with open(path) as f:
+            lex = yaml.safe_load(f) or {}
+        subs = lex.get("substitutions", {})
+        _tts_substitutions[lang] = [
+            (_re.compile(rf"\b{_re.escape(word)}\b", _re.IGNORECASE), replacement)
+            for word, replacement in subs.items()
+        ]
+        log.info("TTS lexicon loaded for lang=%s: %d substitutions", lang, len(_tts_substitutions[lang]))
+    except FileNotFoundError:
+        _tts_substitutions[lang] = []
+    except Exception as exc:
+        log.warning("TTS lexicon load failed for lang=%s: %s", lang, exc)
+        _tts_substitutions[lang] = []
+
+
+for _lang, _lex_path in _LEXICON_PATHS.items():
+    _load_lexicon(_lang, _lex_path)
+
+
+def _preprocess_tts(text: str, lang: str = "nb") -> str:
+    """Apply pronunciation substitutions for the given language before passing text to Piper."""
+    for pattern, replacement in _tts_substitutions.get(lang, []):
+        text = pattern.sub(replacement, text)
+    return text
 
 # ---------------------------------------------------------------------------
 # STT backend — openvino (Intel Arc GPU) or faster_whisper (universal CPU)
@@ -200,12 +269,44 @@ def play_wav(path: Path) -> None:
         log.error("aplay failed: %s", result.stderr.decode())
 
 
-def speak(text: str) -> None:
+def _reload_tts_models() -> None:
+    """Re-read tts_models from services.yaml and update _TTS_MODELS in place."""
+    global _TTS_MODELS
+    try:
+        with open(SERVICES_PATH) as f:
+            svc = yaml.safe_load(f) or {}
+        models_cfg = svc.get("voice", {}).get("tts", {}).get("tts_models", {})
+        new_map: dict[str, Path] = {}
+        for lang, path in models_cfg.items():
+            if path and Path(path).exists():
+                new_map[lang] = Path(path)
+            elif lang == "nb":
+                new_map["nb"] = _TTS_FALLBACK
+        if "nb" not in new_map:
+            new_map["nb"] = _TTS_FALLBACK
+        _TTS_MODELS = new_map
+        log.info("TTS models reloaded: %s", {k: str(v) for k, v in _TTS_MODELS.items()})
+    except Exception as exc:
+        log.error("Failed to reload TTS models: %s", exc)
+
+
+def _resolve_tts_model(lang: str) -> Path:
+    """Return the Piper model path for the given language, falling back to nb."""
+    model = _TTS_MODELS.get(lang) or _TTS_MODELS.get("nb") or _TTS_FALLBACK
+    if not model.exists():
+        log.warning("TTS model for lang=%r not found at %s, using fallback", lang, model)
+        return _TTS_FALLBACK
+    return model
+
+
+def speak(text: str, lang: str = "nb") -> None:
     """Generate speech with Piper and play locally (used for wake-ack fallback)."""
+    text = _preprocess_tts(text, lang)
+    model = _resolve_tts_model(lang)
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         tmp_path = Path(tmp.name)
     try:
-        cmd = [str(VENV_PYTHON), "-m", "piper.__main__", "--model", str(TTS_VOICE), "--output_file", str(tmp_path)]
+        cmd = [str(VENV_PYTHON), "-m", "piper.__main__", "--model", str(model), "--output_file", str(tmp_path)]
         result = subprocess.run(cmd, input=text.encode(), capture_output=True, timeout=15)
         if result.returncode != 0:
             log.error("Piper failed: %s", result.stderr.decode())
@@ -215,22 +316,24 @@ def speak(text: str) -> None:
         tmp_path.unlink(missing_ok=True)
 
 
-def generate_speech_wav(text: str) -> Path:
+def generate_speech_wav(text: str, lang: str = "nb") -> Path:
     """
     Generer tale med Piper og lagre som WAV-fil i TMP_AUDIO_DIR.
     Returnerer Path til filen (ryddes opp av kalleren).
     """
-    cmd = [str(VENV_PYTHON), "-m", "piper.__main__", "--model", str(TTS_VOICE), "--output_raw"]
+    text = _preprocess_tts(text, lang)
+    model = _resolve_tts_model(lang)
+    cmd = [str(VENV_PYTHON), "-m", "piper.__main__", "--model", str(model), "--output_raw"]
     result = subprocess.run(cmd, input=text.encode(), capture_output=True, timeout=15)
     if result.returncode != 0:
-        log.error("Piper feilet: %s", result.stderr.decode())
+        log.error("Piper feilet (lang=%s): %s", lang, result.stderr.decode())
         raise RuntimeError(f"Piper TTS feilet: {result.stderr.decode()}")
 
     raw = np.frombuffer(result.stdout, dtype=np.int16)
     filename = f"tts_{uuid.uuid4().hex}.wav"
     wav_path = TMP_AUDIO_DIR / filename
     sf.write(str(wav_path), raw, TTS_RATE, subtype="PCM_16")
-    log.info("TTS WAV lagret: %s", wav_path)
+    log.info("TTS WAV lagret: %s (lang=%s, model=%s)", wav_path, lang, model.name)
     return wav_path
 
 
@@ -449,26 +552,38 @@ def transcribe(audio: np.ndarray) -> str:
 async def ask_kaare(
     text: str,
     room: str = "",
-    speaker_id: str | None = None,
+    resolved_user: str | None = None,
+    best_guess: str | None = None,
     speaker_confidence: float = 0.0,
+    confirmed_by: str = "none",
+    rid: str = "",
 ) -> str:
     """Send tekst til Kåre API og returner svaret."""
     payload: dict = {"prompt": text, "source": "stt"}
+    if rid:
+        payload["rid"] = rid
     context: dict = {}
     if room:
         context["room"] = room
-    if speaker_id:
-        payload["user_id"] = speaker_id
-        context["speaker_confidence"] = round(speaker_confidence, 3)
-    if context:
-        payload["context"] = context
+    if resolved_user:
+        payload["user_id"] = resolved_user
+    context["speaker_result"] = {
+        "confirmed_by":   confirmed_by,
+        "confirmed_user": resolved_user,
+        "best_guess":     best_guess,
+        "confidence":     round(speaker_confidence, 3),
+        "threshold":      SPEAKER_THRESHOLD,
+    }
+    payload["context"] = context
 
     async with httpx.AsyncClient(timeout=KAARE_TIMEOUT) as client:
         try:
             resp = await client.post(KAARE_API_URL, json=payload)
             resp.raise_for_status()
             data = resp.json()
-            # Støtt begge svarformater
+            rid_received = data.get("rid", "")
+            if rid_received:
+                log.info("Kåre RID: %s", rid_received)
             answer = (
                 data.get("response")
                 or data.get("message")
@@ -489,6 +604,9 @@ async def ask_kaare(
 async def run_pipeline(node_id: str, room: str = "", default_user: str = "") -> None:
     """Komplett voice pipeline: ack → opptak → STT → Kåre → TTS → avspilling på ESP32."""
     loop = asyncio.get_running_loop()
+    rid = f"rid-stt-{int(time.time() * 1000)}"
+    t0 = time.time()
+    _route_log_voice(rid, "stt_pipeline_start", node=node_id, room=room)
 
     # 1. Spill av "Ja?" lokalt (rask ack mens vi venter på bruker)
     if WAKE_ACK_WAV.exists():
@@ -508,28 +626,57 @@ async def run_pipeline(node_id: str, room: str = "", default_user: str = "") -> 
 
     # 2c. Speaker identification (non-blocking, feiler stille)
     speaker_id: str | None = None
+    best_guess: str | None = None
     speaker_confidence = 0.0
     try:
         import speaker_recognition as sr
-        speaker_id, speaker_confidence = await loop.run_in_executor(
+        speaker_id, best_guess, speaker_confidence = await loop.run_in_executor(
             None, sr.identify, audio, ENROLLMENT_DIR, SPEAKER_THRESHOLD
         )
     except Exception as exc:
         log.warning("Speaker identification skipped: %s", exc)
 
-    # Resolved user: voice ID wins; fall back to node default if voice unrecognized
-    resolved_user = speaker_id or (default_user if default_user else None)
-    if resolved_user and not speaker_id:
-        log.info("Speaker not recognized — using node default_user: %s", resolved_user)
+    # Speaker resolution: voice ID wins; single default_user as fallback; else unknown
+    single_default = _single_default_user(node_id)
+    if speaker_id:
+        resolved_user = speaker_id
+        confirmed_by = "voice"
+    elif single_default:
+        resolved_user = single_default
+        confirmed_by = "default"
+    else:
+        resolved_user = None
+        confirmed_by = "none"
+    log.info(
+        "Speaker resolution: confirmed_by=%s user=%s best_guess=%s confidence=%.3f",
+        confirmed_by, resolved_user, best_guess, speaker_confidence,
+    )
+    _route_log_voice(rid, "stt_speaker",
+                     confirmed_by=confirmed_by,
+                     user=resolved_user,
+                     best_guess=best_guess,
+                     confidence=round(speaker_confidence, 3))
 
     # 3. STT
+    t_stt = time.time()
     text = await loop.run_in_executor(None, transcribe, audio)
+    stt_ms = int((time.time() - t_stt) * 1000)
     if not text:
         log.warning("Tom transkripsjon fra %s, avbryter.", node_id)
         return
+    _route_log_voice(rid, "stt_done", text=text, stt_ms=stt_ms)
 
     # 4. Kåre API
-    answer = await ask_kaare(text, room=room, speaker_id=resolved_user, speaker_confidence=speaker_confidence)
+    answer = await ask_kaare(
+        text,
+        room=room,
+        resolved_user=resolved_user,
+        best_guess=best_guess,
+        speaker_confidence=speaker_confidence,
+        confirmed_by=confirmed_by,
+        rid=rid,
+    )
+    _route_log_voice(rid, "stt_kaare_done", total_ms=int((time.time() - t0) * 1000))
 
     # 5. TTS → WAV → avspilling
     wav_path = await loop.run_in_executor(None, generate_speech_wav, answer)
@@ -615,6 +762,15 @@ def _default_user_for_node(node_id: str) -> str:
     return _nodes.get(node_id, {}).get("default_user", "") or ""
 
 
+def _single_default_user(node_id: str) -> str | None:
+    """Return default_user only if it's a single username (not comma-separated, not empty)."""
+    raw = _nodes.get(node_id, {}).get("default_user", "") or ""
+    val = raw.strip()
+    if not val or "," in val:
+        return None
+    return val
+
+
 @app.post("/wakeword/{node_id}", status_code=202)
 async def wakeword_trigger(node_id: str, background_tasks: BackgroundTasks):
     """Trigger fra wakeword-deteksjon på en node."""
@@ -657,6 +813,22 @@ class SpeakRequest(BaseModel):
     text: str
     target: str = "local"  # "local", node_id, room name, or "all"
     volume: float | None = None  # 0.0–1.0, None = don't change
+    lang: str = "nb"  # language for TTS model selection (nb/en/de)
+
+
+def _has_audio(node_cfg: dict) -> bool:
+    return node_cfg.get("has_audio", True)
+
+
+def _has_display(node_cfg: dict) -> bool:
+    if "has_display" in node_cfg:
+        return bool(node_cfg["has_display"])
+    return bool(node_cfg.get("is_tv", False))  # backward-compat during migration
+
+
+def _norm(s: str) -> str:
+    """Normalize a room/node string: lowercase, spaces and underscores treated as equivalent."""
+    return s.strip().lower().replace(" ", "_")
 
 
 def _resolve_targets(target: str) -> list[str]:
@@ -664,8 +836,8 @@ def _resolve_targets(target: str) -> list[str]:
 
     Returns a list of node IDs from nodes.yaml, plus the special
     sentinel 'local' which means play via aplay on the AI-PC.
-    For 'all'/'alle': skips nodes marked is_tv=true if a non-TV node
-    exists in the same room.
+    For 'all'/'alle': prefers audio-only nodes over display nodes in each room.
+    Spaces and underscores are treated as equivalent in node keys and room names.
     """
     t = target.strip().lower()
     if t in ("local", "lokal", ""):
@@ -686,35 +858,64 @@ def _resolve_targets(target: str) -> list[str]:
         selected: list[str] = []
         for room_nodes in by_room.values():
             if len(room_nodes) == 1:
-                selected.append(room_nodes[0])
+                if _has_audio(_nodes[room_nodes[0]]):
+                    selected.append(room_nodes[0])
             else:
-                non_tv = [n for n in room_nodes if not _nodes[n].get("is_tv", False)]
-                selected.extend(non_tv if non_tv else room_nodes)
+                audio_nodes = [n for n in room_nodes if _has_audio(_nodes[n])]
+                audio_only = [n for n in audio_nodes if not _has_display(_nodes[n])]
+                selected.extend(audio_only if audio_only else audio_nodes)
 
-        selected.extend(roomless)
+        selected.extend(n for n in roomless if _has_audio(_nodes[n]))
         return ["local"] + selected
 
-    if t in _nodes:
-        if not _nodes[t].get("enabled", True):
-            log.warning("Node '%s' is disabled, falling back to local", t)
-            return ["local"]
-        return [t]
+    # Normalize target (spaces = underscores)
+    tn = _norm(t)
 
-    # Try matching by room name — prefer non-TV nodes
+    # Direct node key lookup (normalized)
+    for nid, ncfg in _nodes.items():
+        if _norm(nid) == tn:
+            if not ncfg.get("enabled", True):
+                log.warning("Node '%s' is disabled, falling back to local", nid)
+                return ["local"]
+            if ncfg.get("tts_target") == "local":
+                return ["local"]
+            return [nid]
+
+    # Exact room name lookup
     room_nodes = [
         nid for nid, ncfg in _nodes.items()
-        if ncfg.get("room", "").strip().lower() == t and ncfg.get("enabled", True)
+        if _norm(ncfg.get("room", "")) == tn and ncfg.get("enabled", True)
     ]
     if room_nodes:
-        non_tv = [n for n in room_nodes if not _nodes[n].get("is_tv", False)]
-        chosen = non_tv if non_tv else room_nodes
-        return [chosen[0]]
+        audio_nodes = [n for n in room_nodes if _has_audio(_nodes[n])]
+        audio_only = [n for n in audio_nodes if not _has_display(_nodes[n])]
+        chosen = audio_only if audio_only else (audio_nodes if audio_nodes else room_nodes)
+        nid = chosen[0]
+        if _nodes[nid].get("tts_target") == "local":
+            return ["local"]
+        return [nid]
+
+    # Substring fallback — "patrick" matches "soverom_patrick"
+    substring_nodes = [
+        nid for nid, ncfg in _nodes.items()
+        if ncfg.get("enabled", True)
+        and (tn in _norm(nid) or tn in _norm(ncfg.get("room", "")))
+    ]
+    if substring_nodes:
+        audio_nodes = [n for n in substring_nodes if _has_audio(_nodes[n])]
+        audio_only = [n for n in audio_nodes if not _has_display(_nodes[n])]
+        chosen = audio_only if audio_only else (audio_nodes if audio_nodes else substring_nodes)
+        nid = chosen[0]
+        log.info("Substring match: target '%s' -> node '%s'", target, nid)
+        if _nodes[nid].get("tts_target") == "local":
+            return ["local"]
+        return [nid]
 
     log.warning("Unknown or disabled speak target '%s', falling back to local", target)
     return ["local"]
 
 
-async def _speak_background(text: str, target: str, volume: float | None = None) -> None:
+async def _speak_background(text: str, target: str, volume: float | None = None, lang: str = "nb") -> None:
     """Generate TTS audio and play it on the requested target(s)."""
     loop = asyncio.get_event_loop()
     targets = _resolve_targets(target)
@@ -731,7 +932,7 @@ async def _speak_background(text: str, target: str, volume: float | None = None)
             await asyncio.sleep(0.2)
 
     try:
-        wav_path = await loop.run_in_executor(None, generate_speech_wav, text)
+        wav_path = await loop.run_in_executor(None, generate_speech_wav, text, lang)
     except Exception as exc:
         log.error("TTS generation failed: %s", exc)
         if mpd_was_playing:
@@ -788,9 +989,40 @@ async def speak_endpoint(request: SpeakRequest, background_tasks: BackgroundTask
     """Trigger speech output. Returns immediately; playback runs in background."""
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="text must not be empty")
-    log.info("Speak request: target=%r text=%r...", request.target, request.text[:60])
-    background_tasks.add_task(_speak_background, request.text, request.target, request.volume)
+    log.info("Speak request: target=%r lang=%s text=%r...", request.target, request.lang, request.text[:60])
+    background_tasks.add_task(_speak_background, request.text, request.target, request.volume, request.lang)
     return {"status": "ok", "target": request.target}
+
+
+@app.post("/reload_tts_models", status_code=200)
+async def reload_tts_models_endpoint():
+    """Hot-reload TTS model map from services.yaml without restarting the bridge."""
+    _reload_tts_models()
+    return {"ok": True, "models": {k: str(v) for k, v in _TTS_MODELS.items()}}
+
+
+@app.get("/display_nodes")
+async def get_display_nodes_endpoint():
+    """Return all enabled nodes that have has_display=true."""
+    return [
+        {"id": nid, **ncfg}
+        for nid, ncfg in _nodes.items()
+        if ncfg.get("enabled", True) and _has_display(ncfg)
+    ]
+
+
+@app.post("/reload_nodes", status_code=200)
+async def reload_nodes_endpoint():
+    """Hot-reload nodes.yaml without restarting the bridge."""
+    global _nodes
+    nodes_path = Path("/kaare/configs/nodes.yaml")
+    try:
+        _nodes = yaml.safe_load(nodes_path.read_text()).get("nodes", {})
+        log.info("Nodes reloaded: %d nodes", len(_nodes))
+        return {"ok": True, "count": len(_nodes)}
+    except Exception as e:
+        log.error("Failed to reload nodes: %s", e)
+        return {"ok": False, "error": str(e)}
 
 
 # ---------------------------------------------------------------------------

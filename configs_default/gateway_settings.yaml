@@ -1,0 +1,9 @@
+# Kåre HA Gateway — default config
+
+nl_parser_url: "http://127.0.0.1:8001/parse"
+
+default_source: "kare"
+default_request_id_prefix: "ha-"
+
+timeout: 5
+max_retries: 2

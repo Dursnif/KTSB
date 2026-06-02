@@ -1,0 +1,12 @@
+# TTS pronunciation lexicon — German
+# Applied when Kåre speaks in German (lang=de) via Piper.
+# Format: word: replacement (word-boundary match, case-insensitive)
+# Use this for Norwegian/English loanwords, brand names, and
+# abbreviations that a German Piper model mispronounces.
+
+substitutions:
+  # Norwegian place names in German context
+  # e.g. Ås: "Oos", Øvre: "Üwre"
+
+  # Tech / brand terms
+  # e.g. WiFi: "Wai-Fai"
