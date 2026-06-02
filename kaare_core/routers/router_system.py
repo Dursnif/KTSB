@@ -72,7 +72,7 @@ async def api_run_tests(_u=Depends(_require_admin)):
         result = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: subprocess.run(
-                ["/kaare/venv/bin/python", "/kaare/scripts/run_tests.py"],
+                [sys.executable, "/kaare/scripts/run_tests.py"],
                 capture_output=True,
                 text=True,
                 timeout=60,
