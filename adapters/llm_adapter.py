@@ -37,7 +37,8 @@ def _get_kare_lock() -> asyncio.Lock:
         _kare_lock = asyncio.Lock()
     return _kare_lock
 
-_current_rid: contextvars.ContextVar[str] = contextvars.ContextVar("current_rid", default="")
+_current_rid:    contextvars.ContextVar[str] = contextvars.ContextVar("current_rid",    default="")
+_current_source: contextvars.ContextVar[str] = contextvars.ContextVar("current_source", default="")
 
 
 def _kare_is_busy() -> bool:
@@ -1443,7 +1444,7 @@ async def call_llm_chat(
     timeout: float | None = None,
     disable_thinking: bool = False,
     rid: str = "",
-    source: str = "user",
+    source: str = "",
 ) -> Dict[str, Any]:
     """
     Provider-agnostic multi-turn chat call for background jobs and agents.
@@ -1457,7 +1458,8 @@ async def call_llm_chat(
     if not cfg:
         return {"ok": False, "error": f"unknown_role:{role}", "text": "", "tool_calls": None}
 
-    effective_rid = rid or _current_rid.get()
+    effective_rid    = rid    or _current_rid.get()
+    effective_source = source or _current_source.get() or "user"
     _t0 = time.perf_counter()
 
     base_url = cfg["base_url"]
@@ -1480,7 +1482,7 @@ async def call_llm_chat(
             )
             elapsed_ms = int((time.perf_counter() - _t0) * 1000)
             _log_llm_call_bg(
-                rid=effective_rid, source=source, role=role, model=model,
+                rid=effective_rid, source=effective_source, role=role, model=model,
                 latency_ms=elapsed_ms,
                 has_tools=bool(result.get("tool_calls")),
                 has_think=bool(result.get("meta", {}).get("think_content")),

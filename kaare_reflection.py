@@ -802,7 +802,7 @@ async def _update_user_knowledge(
     ]
     try:
         result = await _ask_kare(messages)
-        if result and result.strip():
+        if result and result.strip() and result.strip() != "[No response]":
             path = Path(f"/kaare/state/users/{user_id}/user_knowledge.md")
             path.parent.mkdir(parents=True, exist_ok=True)
             date_str = datetime.now().strftime("%Y-%m-%d")
@@ -846,9 +846,10 @@ def _write_reflection(user_id: str, date_str: str, exchanges: list[tuple[str, st
 # ── Main flow ──────────────────────────────────────────────────────────────────
 async def main(user_id: str | None = None) -> None:
     global _active_user_id
-    from adapters.llm_adapter import _current_rid as _rid_ctx_refl
-    _refl_rid   = f"rid-refl-{int(time.time()*1000)}"
-    _refl_token = _rid_ctx_refl.set(_refl_rid)
+    from adapters.llm_adapter import _current_rid as _rid_ctx_refl, _current_source as _src_ctx_refl
+    _refl_rid    = f"rid-refl-{int(time.time()*1000)}"
+    _refl_token  = _rid_ctx_refl.set(_refl_rid)
+    _src_token   = _src_ctx_refl.set("refl")
     user_id         = user_id or USER_ID
     _active_user_id = user_id
     date_str        = datetime.now().strftime("%Y-%m-%d")
@@ -1105,6 +1106,7 @@ async def main(user_id: str | None = None) -> None:
     await _update_user_knowledge(user_id, exchanges, user_knowledge)
     log.info("=== Reflection meeting done — %d local rounds ===", global_round)
     _rid_ctx_refl.reset(_refl_token)
+    _src_ctx_refl.reset(_src_token)
 
 
 if __name__ == "__main__":

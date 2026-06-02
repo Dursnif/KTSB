@@ -322,6 +322,8 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
 Edit a Python file → `docker compose restart kaare-api` (~5 seconds) → done.
 
+For a full breakdown of every feature, agent, tool, and service profile: [docs/capabilities.md](docs/capabilities.md)
+
 ---
 
 ## Project layout

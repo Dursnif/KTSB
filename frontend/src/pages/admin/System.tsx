@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, RotateCcw, ShieldCheck, Cpu, BookmarkPlus, Trash2, Download, Upload } from "lucide-react";
+import { Loader2, RefreshCw, RotateCcw, ShieldCheck, Cpu, BookmarkPlus, Trash2, Download, Upload, FlaskConical } from "lucide-react";
 import axios from "axios";
 import i18n from "@/i18n";
 import { useAuth } from "@/auth/AuthContext";
@@ -301,6 +301,70 @@ function HealthRow({ label, passed, failed, extra, errors, t }: {
               <span style={{ color: "#888" }}>{e.name}</span> — {e.detail}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TestRunCard() {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<"idle" | "loading" | "done">("idle");
+  const [result, setResult] = useState<{ ok: boolean; passed: number; failed: number; total: number; failures: { name: string; detail: string }[]; error?: string } | null>(null);
+
+  const run = async () => {
+    setStatus("loading");
+    setResult(null);
+    try {
+      const r = await axios.get(`${BASE}/api/run_tests`, {
+        headers: { Authorization: `Bearer ${token()}` },
+        timeout: 60000,
+      });
+      setResult(r.data);
+    } catch {
+      setResult({ ok: false, passed: 0, failed: 0, total: 0, failures: [], error: t("system.hot_reload.error_api") });
+    }
+    setStatus("done");
+  };
+
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <FlaskConical size={15} style={{ color: "#888", flexShrink: 0 }} />
+        <span style={{ color: "#ddd", fontSize: 15, fontWeight: 600 }}>{t("system.test_run.title")}</span>
+      </div>
+      <p style={{ color: "#666", fontSize: 13, marginBottom: 16 }}>{t("system.test_run.description")}</p>
+      <Button onClick={run} disabled={status === "loading"} variant="outline" className="gap-2" style={{ borderColor: "#a78bfa", color: "#a78bfa" }}>
+        {status === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}
+        {status === "loading" ? t("system.test_run.loading") : t("system.test_run.button")}
+      </Button>
+
+      {status === "done" && result && (
+        <div style={{ marginTop: 14 }}>
+          {result.error ? (
+            <p style={{ color: "#f87171", fontSize: 13 }}>{result.error}</p>
+          ) : (
+            <>
+              <p style={{ color: result.ok ? "#4caf50" : "#f87171", fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+                {result.ok
+                  ? `✓ ${t("system.test_run.ok")}`
+                  : `✗ ${t("system.test_run.failed", { count: result.failed })}`}
+              </p>
+              <p style={{ color: "#666", fontSize: 12, marginBottom: result.failures.length > 0 ? 8 : 0 }}>
+                {result.passed} {t("system.test_run.of")} {result.total} {t("system.test_run.passed_short")}
+              </p>
+              {result.failures.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {result.failures.map((f, i) => (
+                    <div key={i}>
+                      <div style={{ color: "#f87171", fontSize: 12, fontWeight: 500 }}>{f.name}</div>
+                      {f.detail && <div style={{ color: "#888", fontSize: 11, marginLeft: 8, lineHeight: 1.4 }}>{f.detail}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -763,12 +827,12 @@ export default function System() {
       <h1>{t("system.title")}</h1>
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
-        {/* Hot-reload + Systemsjekk + Maskinvare — tre kolonner */}
+        {/* Hot-reload + Systemsjekk + Testkjøring + Maskinvare — fire kolonner */}
         <div className="admin-card" style={{ borderRadius: 12, padding: "20px 24px" }}>
-          <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
 
             {/* Kolonne 1: Hot-reload */}
-            <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ flex: 1, minWidth: 160 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                 <RefreshCw size={15} style={{ color: "#888", flexShrink: 0 }} />
                 <span style={{ color: "#ddd", fontSize: 15, fontWeight: 600 }}>{t("system.hot_reload.title")}</span>
@@ -799,7 +863,12 @@ export default function System() {
 
             <div style={{ width: 1, background: "#1e1e1e", flexShrink: 0, minHeight: 80 }} />
 
-            {/* Kolonne 3: Maskinvare */}
+            {/* Kolonne 3: Testkjøring */}
+            <TestRunCard />
+
+            <div style={{ width: 1, background: "#1e1e1e", flexShrink: 0, minHeight: 80 }} />
+
+            {/* Kolonne 4: Maskinvare */}
             <HardwareCard />
 
           </div>

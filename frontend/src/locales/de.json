@@ -68,7 +68,7 @@
       "refleksjon": "Reflexion",
       "nettsok": "Websuche & Wetter",
       "bilder": "Bilder/Kamera",
-      "kare": "Kåre-Einstellungen",
+      "kare": "Assistent-Einstellungen",
       "integrasjoner": "Integrationen",
       "distribusjon": "Distribution",
       "agenter": "Agenten-Einstellungen",
@@ -717,6 +717,16 @@
       "skipped": "übersprungen",
       "failed": "fehlgeschlagen",
       "ok_short": "ok"
+    },
+    "test_run": {
+      "title": "Testlauf",
+      "description": "Führt automatisierte Tests gegen Systemlogs und Code aus.",
+      "button": "Tests ausführen",
+      "loading": "Teste…",
+      "ok": "Alle Tests bestanden",
+      "failed": "{{count}} Tests fehlgeschlagen",
+      "of": "von",
+      "passed_short": "ok"
     },
     "services": {
       "title": "Dienstneustart",
@@ -1555,7 +1565,7 @@
       "item_4": "Alte Bilder werden automatisch gelöscht, wenn das Limit erreicht ist (älteste zuerst)."
     },
     "innst_kare": {
-      "title": "Einstellungen → Kåre-Einstellungen",
+      "title": "Einstellungen → Assistent-Einstellungen",
       "summary": "Persönlichkeit, Name und Mitwirkende",
       "item_1": "Assistentenname — Wie Kåre in Ihrem Zuhause heißt. Standard ist «Kåre», aber Sie können frei wählen.",
       "item_2": "Aktivierungswort — Das Wort, auf das Kåre hört, um die Spracherkennung zu starten.",

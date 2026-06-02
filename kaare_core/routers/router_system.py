@@ -65,6 +65,30 @@ async def api_health_check(_u=Depends(_require_admin)):
         return {"ok": False, "total_errors": 1, "error": str(e)}
 
 
+@router.get("/api/run_tests")
+async def api_run_tests(_u=Depends(_require_admin)):
+    """Run pytest tests/ via system python3 and return structured pass/fail results."""
+    try:
+        result = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: subprocess.run(
+                ["/kaare/venv/bin/python", "/kaare/scripts/run_tests.py"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                env={**os.environ, "PYTHONPATH": "/kaare"},
+            ),
+        )
+        if not result.stdout.strip():
+            return {"ok": False, "passed": 0, "failed": 0, "total": 0, "failures": [],
+                    "error": f"rc={result.returncode} stderr={result.stderr[:300]!r}"}
+        return json.loads(result.stdout)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "passed": 0, "failed": 0, "total": 0, "failures": [], "error": "Timed out (>60s)"}
+    except Exception as e:
+        return {"ok": False, "passed": 0, "failed": 0, "total": 0, "failures": [], "error": str(e)}
+
+
 @router.get("/api/settings/cameras")
 async def api_get_cameras(_u=Depends(_require_admin)):
     """

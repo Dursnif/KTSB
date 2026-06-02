@@ -114,6 +114,8 @@ LEDER_TIMEOUT     = 120
 KARE_WINDOW       = 8
 MECHANIC_WINDOW = 6
 
+_CURRENT_MEET_RID: str = ""
+
 _SETTINGS_PATH      = Path("/kaare/configs/settings.yaml")
 _LEDER_PRESET_DIR   = Path("/kaare/configs/meeting_leder")
 _LEDER_CUSTOM_PATH  = Path("/kaare/configs/meeting_leder/dev_egendefinert.md")
@@ -143,6 +145,7 @@ def _kare_payload(
     max_tokens: int,
     tools: list | None = None,
     thinking: bool = True,
+    rid: str = "",
 ) -> dict:
     """Build LLM payload for Kåre/Møteleder, adapted to provider from llm.yaml.
 
@@ -170,6 +173,9 @@ def _kare_payload(
         p["tools"] = tools
         if _KARE_PROVIDER == "vllm":
             p["tool_choice"] = "auto"
+    effective_rid = rid or _CURRENT_MEET_RID
+    if effective_rid:
+        p["rid"] = effective_rid
     return p
 
 
@@ -925,9 +931,12 @@ def _write_report(
 
 # ── Hovedflyt ─────────────────────────────────────────────────────────────────
 async def main() -> None:
-    from adapters.llm_adapter import _current_rid as _rid_ctx_meet
-    _meet_rid   = f"rid-meet-{int(time.time()*1000)}"
-    _meet_token = _rid_ctx_meet.set(_meet_rid)
+    global _CURRENT_MEET_RID
+    from adapters.llm_adapter import _current_rid as _rid_ctx_meet, _current_source as _src_ctx_meet
+    _meet_rid    = f"rid-meet-{int(time.time()*1000)}"
+    _meet_token  = _rid_ctx_meet.set(_meet_rid)
+    _src_token   = _src_ctx_meet.set("meet")
+    _CURRENT_MEET_RID = _meet_rid
     now       = datetime.now()
     date_str  = now.strftime("%Y-%m-%d")
     now_str   = now.strftime("%Y-%m-%d %H:%M")
@@ -1154,6 +1163,8 @@ async def main() -> None:
     _write_report(date_str, kare_funn, mechanic_funn, exchanges)
     log.info("=== Utviklingsmøte ferdig – %d runder ===", global_round)
     _rid_ctx_meet.reset(_meet_token)
+    _src_ctx_meet.reset(_src_token)
+    _CURRENT_MEET_RID = ""
 
 
 if __name__ == "__main__":

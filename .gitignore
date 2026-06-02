@@ -10,6 +10,7 @@ configs/*.save.*
 configs/kare_ha_bridgealiases.yaml.txt
 configs/prism/
 docs/*.md
+!docs/capabilities.md
 .env
 
 # Runtime state — instance-specific, recreated on first run

@@ -658,8 +658,8 @@ async def generate(request: PromptRequest, http: Request):
     }
     print(f"[KÅRE] Mottatt prompt: {prompt}")
     source = (request.source or http.headers.get("X-Kaare-Source") or "gui").lower()
-    # Use pre-generated RID from voice bridge (rid-stt-*) so both logs share the same ID
-    if request.rid and source == "stt":
+    # Use caller-supplied RID when present (voice bridge, dev_meeting, etc.)
+    if request.rid:
         rid = request.rid
     else:
         rid = f"rid-{int(time.time()*1000)}"

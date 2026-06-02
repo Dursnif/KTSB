@@ -68,7 +68,7 @@
       "refleksjon": "Refleksjon",
       "nettsok": "Nettsøk og vær",
       "bilder": "Bilder/Kamera",
-      "kare": "Kåre-innstillinger",
+      "kare": "Assistent-innstillinger",
       "integrasjoner": "Integrasjoner",
       "distribusjon": "Distribusjon",
       "agenter": "Agent-instillinger",
@@ -717,6 +717,16 @@
       "skipped": "hoppet over",
       "failed": "feil",
       "ok_short": "ok"
+    },
+    "test_run": {
+      "title": "Testkjøring",
+      "description": "Kjører automatiserte tester mot systemloggene og koden.",
+      "button": "Kjør tester",
+      "loading": "Tester…",
+      "ok": "Alle tester OK",
+      "failed": "{{count}} tester feilet",
+      "of": "av",
+      "passed_short": "ok"
     },
     "services": {
       "title": "Tjenesterestart",
@@ -1555,7 +1565,7 @@
       "item_4": "Gamle bilder slettes automatisk når grensen er nådd (eldst slettes først)."
     },
     "innst_kare": {
-      "title": "Innstillinger → Kåre-innstillinger",
+      "title": "Innstillinger → Assistent-innstillinger",
       "summary": "Personlighet, navn og bidragsytere",
       "item_1": "Assistentnavn — Hva Kåre heter i ditt hus. Standard er «Kåre», men du kan velge fritt.",
       "item_2": "Hotword — Aktiviseringsordet Kåre lytter etter for å starte stemmegjenkjenning.",

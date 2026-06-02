@@ -68,7 +68,7 @@
       "refleksjon": "Reflection",
       "nettsok": "Web Search & Weather",
       "bilder": "Images/Camera",
-      "kare": "Kåre Settings",
+      "kare": "Assistant Settings",
       "integrasjoner": "Integrations",
       "distribusjon": "Distribution",
       "agenter": "Agent Settings",
@@ -717,6 +717,16 @@
       "skipped": "skipped",
       "failed": "failed",
       "ok_short": "ok"
+    },
+    "test_run": {
+      "title": "Test run",
+      "description": "Runs automated tests against system logs and code.",
+      "button": "Run tests",
+      "loading": "Testing…",
+      "ok": "All tests passed",
+      "failed": "{{count}} tests failed",
+      "of": "of",
+      "passed_short": "ok"
     },
     "services": {
       "title": "Service restart",
@@ -1555,7 +1565,7 @@
       "item_4": "Old images are deleted automatically when the limit is reached (oldest first)."
     },
     "innst_kare": {
-      "title": "Settings → Kåre Settings",
+      "title": "Settings → Assistant Settings",
       "summary": "Personality, name and contributors",
       "item_1": "Assistant name — What Kåre is called in your home. Default is «Kåre», but you can choose freely.",
       "item_2": "Hotword — The activation word Kåre listens for to start voice recognition.",
