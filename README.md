@@ -157,7 +157,7 @@ Log in with the default admin credentials:
 The onboarding wizard walks you through the rest — no config files to edit manually:
 
 1. **Profile** — your assistant's name, language, timezone, and location (used for weather)
-2. **User** — create your admin account with a PIN
+2. **User** — create your personal user account with a PIN (min. 6 digits)
 3. **Distribution** — choose how much of the system to enable (start with *Medium*)
 4. **Integrations** — connect Home Assistant, Frigate, and others (you can skip this and do it later)
 5. **Done** — install your first AI model and start chatting

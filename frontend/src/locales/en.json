@@ -665,7 +665,7 @@
       "display_name_ph": "First name",
       "username": "Username",
       "username_ph": "username (no spaces)",
-      "pin": "PIN (min. 4 digits)",
+      "pin": "PIN (min. 6 digits)",
       "role": "Role",
       "roles": {
         "adult": "Adult",
@@ -925,12 +925,12 @@
     "choose_pin": "Choose new PIN",
     "choose_pin_sub": "Hi, {{name}}! You need to set a personal PIN before you continue.",
     "set_pin": "Set PIN and log in",
-    "new_pin": "New PIN (min. 4 digits)",
+    "new_pin": "New PIN (min. 6 digits)",
     "repeat_pin": "Repeat PIN",
     "saving": "Saving…",
     "error_login": "Wrong username or PIN.",
     "error_generic": "Something went wrong.",
-    "error_pin_short": "PIN must be at least 4 digits.",
+    "error_pin_short": "PIN must be at least 6 digits.",
     "error_pin_mismatch": "PINs do not match."
   },
   "users": {
@@ -967,7 +967,7 @@
       "username": "Username",
       "role": "Role",
       "avatar": "Avatar",
-      "pin": "PIN (min. 4 digits)",
+      "pin": "PIN (min. 6 digits)",
       "submit": "Create",
       "cancel": "Cancel",
       "error_generic": "Something went wrong."
@@ -991,7 +991,7 @@
     },
     "pin_modal": {
       "title": "Change PIN — {{name}}",
-      "new_pin": "New PIN (min. 4 digits)",
+      "new_pin": "New PIN (min. 6 digits)",
       "submit": "Change PIN",
       "cancel": "Cancel",
       "error_generic": "Something went wrong."
@@ -1089,7 +1089,7 @@
     "close": "Close",
     "cancel": "Cancel",
     "error": "Something went wrong.",
-    "error_pin_short": "PIN must be at least 4 digits.",
+    "error_pin_short": "PIN must be at least 6 digits.",
     "error_pin_mismatch": "PINs do not match."
   },
   "aliases": {
@@ -1292,7 +1292,7 @@
     "comment_ph": "Add a comment to this meeting…",
     "comment_save": "Save",
     "pin_subtitle": "Enter {{username}}'s PIN to view the meeting",
-    "pin_error_short": "PIN must be at least 4 characters",
+    "pin_error_short": "PIN must be at least 6 digits",
     "pin_cancel": "Cancel",
     "pin_open": "Open",
     "pin_wrong": "Wrong PIN – try again",
@@ -1439,7 +1439,7 @@
         "local_kommando": "Run commands directly on the AI PC",
         "restart_docker_container": "Restart Docker containers"
       },
-      "pin": "PIN is a numeric code that protects the account. Used for login and to unlock private meeting minutes.",
+      "pin": "PIN is a numeric code that protects the account (minimum 6 digits). Used for login and to unlock private meeting minutes.",
       "voice_reg": "Voice registration lets Kåre recognise who is speaking. The user reads a few sentences and Kåre learns the voice profile.",
       "vpn_qr": "The VPN QR code contains all settings for connecting to the home network from outside. Scan it in the WireGuard app.",
       "warning_delete": "⚠ Deleting a user is irreversible — all history and profile disappear permanently.",

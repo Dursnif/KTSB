@@ -13,6 +13,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 import bcrypt
+from kaare_core.config import get_settings as _get_settings
 
 DB_PATH = Path("/kaare/state/users/users.db")
 
@@ -116,12 +117,36 @@ def _row_to_dict(row) -> dict:
     return d
 
 
+def validate_pin_strength(pin: str) -> tuple[bool, str]:
+    """Return (True, "") if PIN meets strength requirements, else (False, error_message).
+
+    Minimum length from settings.yaml rate_limit section (default 6).
+    Blocks trivial patterns: all-same digits, ascending/descending sequences.
+    Existing users with shorter PINs are not affected until they change their PIN.
+    """
+    min_len = int(_get_settings().get("min_pin_length", 6))
+    if len(pin) < min_len:
+        return False, f"PIN must be at least {min_len} digits."
+    if not pin.isdigit():
+        return False, "PIN must contain only digits."
+    # All same digits: 0000, 1111, ...
+    if len(set(pin)) == 1:
+        return False, "PIN must not be all the same digit."
+    # Ascending sequential (e.g. 1234, 01234)
+    if all(int(pin[i + 1]) - int(pin[i]) == 1 for i in range(len(pin) - 1)):
+        return False, "PIN must not be a simple ascending sequence."
+    # Descending sequential (e.g. 9876, 43210)
+    if all(int(pin[i]) - int(pin[i + 1]) == 1 for i in range(len(pin) - 1)):
+        return False, "PIN must not be a simple descending sequence."
+    return True, ""
+
+
 def _create_user_conn(conn, *, username, display_name, role, pin, avatar="",
                       must_change_pin=False) -> dict:
     if role not in VALID_ROLES:
         raise ValueError(f"Ugyldig rolle: {role}")
     if len(pin) < 4:
-        raise ValueError("PIN må være minst 4 tegn.")
+        raise ValueError("PIN must be at least 4 digits.")
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
     pin_hash = hash_pin(pin)
     expires = None
@@ -140,6 +165,9 @@ def _create_user_conn(conn, *, username, display_name, role, pin, avatar="",
 
 def create_user(*, username: str, display_name: str, role: str,
                 pin: str, avatar: str = "", must_change_pin: bool = True) -> dict:
+    ok, msg = validate_pin_strength(pin)
+    if not ok:
+        raise ValueError(msg)
     conn = _get_conn()
     try:
         return _create_user_conn(conn, username=username, display_name=display_name,
@@ -214,8 +242,9 @@ def update_user(username: str, *, display_name: Optional[str] = None,
 
 
 def update_pin(username: str, new_pin: str) -> bool:
-    if len(new_pin) < 4:
-        raise ValueError("PIN må være minst 4 tegn.")
+    ok, msg = validate_pin_strength(new_pin)
+    if not ok:
+        raise ValueError(msg)
     conn = _get_conn()
     try:
         conn.execute(

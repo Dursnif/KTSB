@@ -19,6 +19,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from pydantic import BaseModel
 
 import kaare_core.app_state as app_state
+from kaare_core.audit import read_recent as _audit_read
 from kaare_core.config import get_model, get_service
 from kaare_core.users.auth import require_admin as _require_admin, require_auth as _require_auth
 
@@ -1033,6 +1034,12 @@ async def _check_url(url: str | None) -> bool:
             return r.status_code < 500
     except Exception:
         return False
+
+
+@router.get("/api/audit/recent")
+def api_audit_recent(limit: int = 200, payload: dict = Depends(_require_admin)):
+    """Return the last N audit log entries (newest-first). Requires admin role."""
+    return {"entries": _audit_read(limit=min(limit, 500))}
 
 
 @router.get("/api/system/overview")

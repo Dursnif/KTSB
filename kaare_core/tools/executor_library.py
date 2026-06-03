@@ -12,7 +12,7 @@ from qdrant_client.models import (
 )
 
 from adapters.web_search_adapter import søk_nett as _søk_nett, _fetch_content as _direct_fetch, _is_trusted as _url_trusted
-from kaare_core.config import get_service as _svc, get_model as _cfg_model, get_llm_config as _llm_cfg
+from kaare_core.config import get_service as _svc, get_model as _cfg_model, get_llm_config as _llm_cfg, get_qdrant_api_key as _qdrant_key
 from kaare_core.memory.long_term import get_ltm
 from kaare_core.tools.executor_personality import PERSONALITY_CORE_TEXT
 from kaare_core.tools.i18n import t, get_lang
@@ -43,7 +43,7 @@ _WIKI_TOP_K      = 8
 _EMBED_HYBRID_URL = _svc("ollama", "embed") + "/api/embed/hybrid"
 _EMBED_MODEL     = _cfg_model("embed")
 
-_qdrant = QdrantClient(url=_QDRANT_URL)
+_qdrant = QdrantClient(url=_QDRANT_URL, api_key=_qdrant_key(write=False))
 
 # ── Miss Library personality ──────────────────────────────────────────────────
 

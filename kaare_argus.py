@@ -34,7 +34,7 @@ from qdrant_client.models import Distance, PointStruct, VectorParams
 
 sys.path.insert(0, "/kaare")
 import yaml
-from kaare_core.config import get_service as _svc
+from kaare_core.config import get_service as _svc, get_qdrant_api_key as _qdrant_key
 from kaare_core.tools.i18n import t, get_lang
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -495,7 +495,7 @@ _qdrant: QdrantClient | None = None
 def _qdrant_client() -> QdrantClient:
     global _qdrant
     if _qdrant is None:
-        _qdrant = QdrantClient(url=QDRANT_URL)
+        _qdrant = QdrantClient(url=QDRANT_URL, api_key=_qdrant_key(write=True))
     return _qdrant
 
 

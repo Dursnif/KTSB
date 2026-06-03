@@ -23,7 +23,8 @@ underneath. Start at the top for the user experience; scroll down for implementa
 13. [Tool System](#13-tool-system)
 14. [LLM Backends and Integrations](#14-llm-backends-and-integrations)
 15. [Service Profiles](#15-service-profiles)
-16. [Capability Matrix](#16-capability-matrix)
+16. [Security](#16-security)
+17. [Capability Matrix](#17-capability-matrix)
 
 ---
 
@@ -240,6 +241,13 @@ consult Miss Library directly during evaluation via a structured query format.
 
 One sequential job starts at 03:00 via `kaare-night-sequence.timer`. Each step has a
 timeout; a failure or timeout in one step does not stop the subsequent steps.
+
+### Step 0 — Data retention cleanup
+
+`kaare_night_sequence.py` runs configurable retention rules before anything else:
+- Deletes old rows from `interactions`, `episodes`, `stm_daily_summary`, `think_cache`
+- Purges Argus events from Qdrant beyond the configured window
+- All limits read from `data_retention:` in `settings.yaml`; 0 = keep forever (default)
 
 ### Step 1 — Memory compression (up to 60 min)
 
@@ -482,10 +490,12 @@ history — Kåre's introspective tools are never filtered.
 
 ### Authentication
 
-- PIN-based login (bcrypt hashed, minimum 4 characters)
+- PIN-based login (bcrypt hashed, minimum 6 digits; existing shorter PINs remain valid until changed)
 - JWT session tokens (HS256, expiry configurable — default 4 hours)
-- Rate limiting: 5 failed attempts per 15 minutes per IP
+- Rate limiting: 5 failed login attempts per 15 minutes per IP; 20 requests/min per user on `/api/generate` (429 + `Retry-After`)
 - Forced PIN change on first login
+- Append-only audit log (`logs/audit.log`) covering camera access, admin user actions, shell commands, and rate-limit events; readable via `GET /api/audit/recent` (admin only)
+- Configurable data retention (`data_retention:` in `settings.yaml`): nightly cleanup of old interactions, episodes, think-cache, and Argus events; all categories default to retain-forever (0 = unlimited)
 
 ### VPN and remote access
 
@@ -506,6 +516,7 @@ The admin can customise which tools each role can access — the defaults above 
 starting point. Changes take effect immediately without restart.
 
 **Key files:** `kaare_core/users/auth.py`, `kaare_core/users/store.py`,
+`kaare_core/rate_limiter.py`, `kaare_core/audit.py`,
 `kaare_core/vpn.py`, `configs/tool_permissions.yaml`
 
 ---
@@ -687,7 +698,59 @@ Set `COMPOSE_PROFILES` in your `.env` to control which services start. Profiles 
 
 ---
 
-## 16. Capability Matrix
+## 16. Security
+
+### Authentication and sessions
+
+- PIN-based login (bcrypt hashed); minimum 6 digits for new and changed PINs; trivial patterns blocked (all-same digits, ascending/descending sequences such as `1234` or `9876`)
+- Existing PINs shorter than 6 digits remain valid until the user changes their PIN
+- JWT session tokens (HS256); expiry configurable — default 4 hours
+- Forced PIN change on first login (`must_change_pin` flag set when account is created)
+- Login rate limiting: 5 failed attempts per 15 minutes per IP → account locked temporarily
+- Request rate limiting: 20 requests/min per user on `POST /api/generate` → HTTP 429 + `Retry-After` header; internal sources (STT, reflection, dev-meeting) are exempt
+
+### Input validation
+
+- **Path traversal**: all file-reading tools (`les_fil`, `liste_filer`, `les_logg`) resolve symlinks before checking that the path is within the allowed directory (`Path.resolve().is_relative_to()`)
+- **Shell injection**: `sjekk_tjenester` uses a hardcoded whitelist of allowed service names; anything outside the list is rejected before reaching `systemctl` or `journalctl`
+- **Developer tools toggle**: `local_kommando` and `ssh_kommando` are disabled by default (`developer_tools: false` in `settings.yaml`); the admin must explicitly enable them with an on-screen warning. When disabled, both tools return an explanatory error and are hidden from the LLM's tool list
+
+### Network security
+
+- CORS allow-list: no wildcard-plus-credentials; origins are configured explicitly in `settings.yaml` (default: localhost only)
+- All sensitive API endpoints require authentication (`require_auth` or `require_admin` dependency)
+- Image and camera snapshot endpoints accept JWT either as a bearer header or a `?token=` query parameter (browser `<img>` tags cannot send headers)
+- Qdrant vector database is bound to `127.0.0.1` only and requires an API key for both read and write operations; key lives in `configs/qdrant.env`
+
+### Encryption infrastructure (Phase 1)
+
+Each personal user account has a per-user X25519 keypair (PyNaCl / libsodium):
+
+- At account creation: a random X25519 keypair and an Argon2id salt are generated; the private key is encrypted with a key derived from the user's PIN (Argon2id, OWASP-recommended parameters) and stored in `users.db`
+- At login: PIN → Argon2id derivation → decrypt private key → store in RAM for the duration of the JWT session; cleared on logout or token expiry
+- `admin` system accounts never get a keypair — the admin role is for system management only, not personal data
+
+**Vault file system:** agents that need to write to a user's profile while the user is offline (e.g. the nightly reflection meeting) use SealedBox encryption with the user's public key. The result is written as a `vault_*.bin` file. On next login, the vault files are decrypted with the private key, applied, and deleted. This means personal observations from nightly meetings are unreadable without the user's PIN — even to the admin.
+
+**Household-visible fields:** a small, hardcoded subset of profile fields (`name`, pronouns, basic preferences) is stored unencrypted in a separate `household_visible` section. This is what Kåre injects into the system prompt — it never includes conversation history or observations.
+
+> **Phase 2 (planned — P02):** at-rest encryption for `profile.yaml`, `observations.md`, STM dialog entries, LTM SQLite rows, and Qdrant semantic memory payloads. Recovery seed phrase UI. Privacy tab in user settings.
+
+### Audit and monitoring
+
+- Append-only JSONL audit log at `logs/audit.log`
+- Events logged: camera snapshots and event fetches, admin user-management actions (create, delete, PIN reset), developer tool (shell command) executions, and rate-limit 429 events
+- Accessible via `GET /api/audit/recent` (admin only, newest-first, max 500 entries)
+
+### Data retention
+
+Configurable in `settings.yaml` under `data_retention:`. The nightly Step 0 deletes rows older than the configured limit for each category: interactions, LTM episodes, STM daily summaries, think-cache entries, and Argus Qdrant events. Default for all categories is `0` (retain forever).
+
+**Key files:** `kaare_core/users/auth.py`, `kaare_core/users/store.py`, `kaare_core/users/profile_manager.py`, `kaare_core/crypto.py`, `kaare_core/session_keys.py`, `kaare_core/rate_limiter.py`, `kaare_core/audit.py`, `kaare_core/vpn.py`
+
+---
+
+## 17. Capability Matrix
 
 | Capability | Status | Min. profile | Key files |
 |-----------|--------|-------------|-----------|

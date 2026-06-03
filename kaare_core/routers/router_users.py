@@ -42,6 +42,7 @@ def _record_login_fail(ip: str) -> None:
 def _clear_login_fail(ip: str) -> None:
     _login_failures.pop(ip, None)
 
+from kaare_core.audit import audit_log as _audit
 from kaare_core.users import store
 from kaare_core.users.profile_manager import init_profile, get_profile_flag, set_profile_flag
 from kaare_core.users.auth import (
@@ -168,6 +169,7 @@ def api_create_user(req: CreateUserRequest, payload: dict = Depends(require_admi
             avatar=req.avatar,
         )
         init_profile(req.username, req.display_name)
+        _audit("admin_user_action", payload["sub"], f"create_user username={req.username!r} role={req.role!r}")
         # Generate keypair for personal accounts (not system accounts like "admin")
         seed_phrase = setup_keypair(req.username, req.pin)
         if seed_phrase:
@@ -218,6 +220,8 @@ def api_update_pin(username: str, req: UpdatePinRequest,
         raise HTTPException(status_code=400, detail=str(e))
     if not ok:
         raise HTTPException(status_code=404, detail="User not found.")
+    action = "admin_pin_reset" if caller != username else "pin_change"
+    _audit("admin_user_action", caller, f"{action} target={username!r}")
     return {"ok": True}
 
 
@@ -229,6 +233,7 @@ def api_delete_user(username: str, payload: dict = Depends(require_admin)):
         raise HTTPException(status_code=400, detail=str(e))
     if not ok:
         raise HTTPException(status_code=404, detail="User not found.")
+    _audit("admin_user_action", payload["sub"], f"delete_user username={username!r}")
     return {"ok": True}
 
 

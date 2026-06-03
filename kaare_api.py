@@ -23,7 +23,9 @@ from adapters.llm_adapter import ask_llm, ask_llm_cloud, ask_llm_with_tools, ask
 from kaare_core.tools.i18n import t, get_lang
 from kaare_core.agents.miss_kare.evaluator import evaluate as _miss_kare_evaluate
 from kaare_core.agents.miss_kare.stm import MissKareSTM
-from kaare_core.config import get_model, get_service, reload_capability_services
+from kaare_core.audit import audit_log as _audit
+from kaare_core.config import get_model, get_service, reload_capability_services, get_settings as _get_settings
+from kaare_core.rate_limiter import check_rate_limit as _rate_check
 from kaare_core.ha.clarification import ha_clarification_rescue
 from kaare_core.memory.short_term import ShortTermMemory, STMRegistry
 from kaare_core.routers.router_generate import handle_generate
@@ -666,6 +668,20 @@ async def generate(request: PromptRequest, http: Request):
     _route_log("generate_in", rid=rid, prompt_preview=prompt[:120])
     from kaare_core.memory.long_term import USER_GLOBAL
     user_id = (request.user_id or "").strip() or USER_GLOBAL
+
+    # Rate limiting — skip internal sources (reflection, dev_meeting, voice bridge, STT)
+    if source not in ("reflection", "dev_meeting", "voice_bridge", "stt", "fastpath"):
+        _rl_cfg = _get_settings().get("rate_limit", {})
+        if _rl_cfg.get("enabled", True):
+            _rl_limit = int(_rl_cfg.get("generate_per_minute", 20))
+            _rl_key = f"generate:{user_id}"
+            if not _rate_check(_rl_key, _rl_limit):
+                _audit("rate_limited", user_id, f"source={source} limit={_rl_limit}/min", request_ip=http.client.host if http.client else "")
+                return JSONResponse(
+                    status_code=429,
+                    content={"ok": False, "error": "rate_limited", "text": "Too many requests. Please wait a moment before sending another message."},
+                    headers={"Retry-After": "60"},
+                )
 
     # Track real user activity for Jang injection cooldown
     app_state._last_user_prompt_time = time.time()

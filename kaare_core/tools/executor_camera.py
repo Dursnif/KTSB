@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 from adapters.frigate_adapter import fetch_snapshot_b64, get_cameras, fetch_events, fetch_face_events
 from adapters.llm_adapter import ask_llm
+from kaare_core.audit import audit_log as _audit
 from kaare_core.tools.i18n import t, get_lang
 
 logger = logging.getLogger(__name__)
@@ -68,8 +69,10 @@ async def dispatch(name: str, arguments: Dict) -> str:
 
 async def _kamera(arguments: Dict, lang: str = "nb") -> str:
     action = arguments.get("action", "")
+    _uid = arguments.get("_user_id", "global")
 
     if action == "snapshot":
+        _audit("camera_access", _uid, f"action=snapshot scope={arguments.get('scope','ett')}")
         scope = arguments.get("scope", "ett")
         ts = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
         if scope == "alle":
@@ -128,6 +131,7 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
         return f"[{kamera_navn} — {ts}]\n{description}"
 
     if action == "events":
+        _audit("camera_access", _uid, "action=events")
         navn_filter = (arguments.get("name") or arguments.get("navn") or "").strip().lower()
         timer_tilbake = min(int(arguments.get("hours_back", arguments.get("timer_tilbake", 24))), 48)
         face_path = Path("/kaare/state/argus/face_events.txt")

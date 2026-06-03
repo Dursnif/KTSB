@@ -8,6 +8,7 @@ import yaml
 from pathlib import Path
 from typing import Dict
 
+from kaare_core.audit import audit_log as _audit
 from kaare_core.tools.i18n import t, get_lang
 from kaare_core.tools.shared_tools import (
     read_file as _shared_read_file,
@@ -246,6 +247,7 @@ async def dispatch(name: str, arguments: Dict) -> str:
                 f"journalctl, dmesg, systemctl status/list, dpkg, docker ps/logs, "
                 f"ip, ss, netstat, lsblk, lscpu, nvidia-smi, ...]"
             )
+        _audit("developer_tools", arguments.get("_user_id", "global"), f"cmd={kommando[:120]!r}")
         result = _sp.run(
             kommando, shell=True, capture_output=True, text=True, timeout=30,
         )

@@ -30,7 +30,7 @@ import sys
 sys.path.insert(0, "/kaare")
 from qdrant_client import QdrantClient
 from qdrant_client.models import FieldCondition, Filter, PointIdsList
-from kaare_core.config import get_service as _svc
+from kaare_core.config import get_service as _svc, get_qdrant_api_key as _qdrant_key
 from kaare_core.memory.semantic_memory import ensure_collection, index_episode
 from adapters.llm_adapter import call_llm_chat as _llm_chat
 
@@ -523,7 +523,7 @@ async def run_nightjob() -> None:
     # ts er lagret som ISO-streng — bruk scroll+Python-sammenligning (Range krever float)
     try:
         cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(timespec="seconds")
-        qc = QdrantClient(url=_svc("storage", "qdrant"))
+        qc = QdrantClient(url=_svc("storage", "qdrant"), api_key=_qdrant_key(write=True))
         ids_to_delete: list = []
         offset = None
         while True:

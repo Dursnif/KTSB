@@ -116,6 +116,29 @@ def get_local_tz() -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
+def get_qdrant_api_key(write: bool = True) -> str | None:
+    """Return Qdrant API key from configs/qdrant.env.
+
+    Uses read-only key for search operations (write=False) and the full key
+    for upsert/delete/collection management (write=True).
+    Returns None if qdrant.env is absent — client operates without auth.
+    """
+    env_path = CONFIG_DIR / "qdrant.env"
+    try:
+        keys: dict[str, str] = {}
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            keys[k.strip()] = v.strip()
+        if write:
+            return keys.get("QDRANT__SERVICE__API_KEY") or None
+        return keys.get("QDRANT__SERVICE__READ_ONLY_API_KEY") or keys.get("QDRANT__SERVICE__API_KEY") or None
+    except OSError:
+        return None
+
+
 def get_service(section: str, key: str | None = None):
     """
     Return a services.yaml section or a specific key within it.

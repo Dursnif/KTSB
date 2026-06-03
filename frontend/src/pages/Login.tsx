@@ -81,7 +81,7 @@ export default function Login() {
   const handleChangePin = async (e: React.FormEvent) => {
     e.preventDefault();
     setPinError("");
-    if (newPin.length < 4) { setPinError(t("login.error_pin_short")); return; }
+    if (newPin.length < 6) { setPinError(t("login.error_pin_short")); return; }
     if (newPin !== newPin2) { setPinError(t("login.error_pin_mismatch")); return; }
     setPinLoading(true);
     try {

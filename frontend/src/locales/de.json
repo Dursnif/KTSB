@@ -665,7 +665,7 @@
       "display_name_ph": "Vorname",
       "username": "Benutzername",
       "username_ph": "benutzername (keine Leerzeichen)",
-      "pin": "PIN (min. 4 Ziffern)",
+      "pin": "PIN (min. 6 Ziffern)",
       "role": "Rolle",
       "roles": {
         "adult": "Erwachsener",
@@ -925,12 +925,12 @@
     "choose_pin": "Neue PIN wählen",
     "choose_pin_sub": "Hallo, {{name}}! Sie müssen eine persönliche PIN festlegen, bevor Sie fortfahren.",
     "set_pin": "PIN setzen und anmelden",
-    "new_pin": "Neue PIN (min. 4 Ziffern)",
+    "new_pin": "Neue PIN (min. 6 Ziffern)",
     "repeat_pin": "PIN wiederholen",
     "saving": "Speichert…",
     "error_login": "Falscher Benutzername oder PIN.",
     "error_generic": "Etwas ist schiefgelaufen.",
-    "error_pin_short": "PIN muss mindestens 4 Ziffern haben.",
+    "error_pin_short": "PIN muss mindestens 6 Ziffern haben.",
     "error_pin_mismatch": "PINs stimmen nicht überein."
   },
   "users": {
@@ -967,7 +967,7 @@
       "username": "Benutzername",
       "role": "Rolle",
       "avatar": "Avatar",
-      "pin": "PIN (min. 4 Ziffern)",
+      "pin": "PIN (min. 6 Ziffern)",
       "submit": "Erstellen",
       "cancel": "Abbrechen",
       "error_generic": "Etwas ist schiefgelaufen."
@@ -991,7 +991,7 @@
     },
     "pin_modal": {
       "title": "PIN ändern — {{name}}",
-      "new_pin": "Neue PIN (min. 4 Ziffern)",
+      "new_pin": "Neue PIN (min. 6 Ziffern)",
       "submit": "PIN ändern",
       "cancel": "Abbrechen",
       "error_generic": "Etwas ist schiefgelaufen."
@@ -1089,7 +1089,7 @@
     "close": "Schließen",
     "cancel": "Abbrechen",
     "error": "Etwas ist schiefgelaufen.",
-    "error_pin_short": "PIN muss mindestens 4 Ziffern haben.",
+    "error_pin_short": "PIN muss mindestens 6 Ziffern haben.",
     "error_pin_mismatch": "PINs stimmen nicht überein."
   },
   "aliases": {
@@ -1292,7 +1292,7 @@
     "comment_ph": "Kommentar zu dieser Sitzung hinzufügen…",
     "comment_save": "Speichern",
     "pin_subtitle": "PIN von {{username}} eingeben, um die Sitzung anzuzeigen",
-    "pin_error_short": "PIN muss mindestens 4 Zeichen lang sein",
+    "pin_error_short": "PIN muss mindestens 6 Ziffern lang sein",
     "pin_cancel": "Abbrechen",
     "pin_open": "Öffnen",
     "pin_wrong": "Falsche PIN – erneut versuchen",
@@ -1439,7 +1439,7 @@
         "local_kommando": "Befehle direkt auf dem KI-PC ausführen",
         "restart_docker_container": "Docker-Container neu starten"
       },
-      "pin": "Die PIN ist ein numerischer Code, der das Konto schützt. Wird bei der Anmeldung und zum Entsperren privater Protokolle verwendet.",
+      "pin": "Die PIN ist ein numerischer Code, der das Konto schützt (mindestens 6 Ziffern). Wird bei der Anmeldung und zum Entsperren privater Protokolle verwendet.",
       "voice_reg": "Die Sprachregistrierung ermöglicht es Kåre, zu erkennen, wer spricht. Der Benutzer liest einige Sätze vor und Kåre lernt das Stimmprofil.",
       "vpn_qr": "Der VPN-QR-Code enthält alle Einstellungen für die Verbindung zum Heimnetzwerk von außen. Scannen Sie ihn in der WireGuard-App.",
       "warning_delete": "⚠ Das Löschen eines Benutzers ist unwiderruflich — alle Verläufe und Profile verschwinden dauerhaft.",

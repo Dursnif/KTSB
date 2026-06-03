@@ -19,7 +19,7 @@ from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, Fi
 
 logger = logging.getLogger(__name__)
 
-from kaare_core.config import get_service as _svc, is_embedding_enabled as _emb_enabled
+from kaare_core.config import get_service as _svc, is_embedding_enabled as _emb_enabled, get_qdrant_api_key as _qdrant_key
 import kaare_core.memory.semantic_memory_file as _smf
 
 QDRANT_URL = _svc("storage", "qdrant")
@@ -31,7 +31,7 @@ MIN_SCORE     = 0.35
 
 
 def _get_client() -> QdrantClient:
-    return QdrantClient(url=QDRANT_URL)
+    return QdrantClient(url=QDRANT_URL, api_key=_qdrant_key(write=False))
 
 
 def ensure_collection() -> None:

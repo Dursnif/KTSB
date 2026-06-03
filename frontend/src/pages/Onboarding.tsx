@@ -124,7 +124,7 @@ function StepBruker({ onDone, onSkip }: { onDone: () => void; onSkip: () => void
         </div>
         <div>
           <Label className="text-xs text-muted-foreground mb-1 block">{t("onboarding.bruker.pin")}</Label>
-          <Input type="password" value={pin} onChange={e => setPin(e.target.value)} placeholder="••••" maxLength={8} />
+          <Input type="password" value={pin} onChange={e => setPin(e.target.value)} placeholder="••••••" maxLength={8} />
         </div>
         <div>
           <Label className="text-xs text-muted-foreground mb-1 block">{t("onboarding.bruker.role")}</Label>
@@ -138,7 +138,7 @@ function StepBruker({ onDone, onSkip }: { onDone: () => void; onSkip: () => void
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
       <div className="flex gap-2">
-        <Button onClick={create} disabled={saving || !displayName || !username || pin.length < 4} className="flex-1">
+        <Button onClick={create} disabled={saving || !displayName || !username || pin.length < 6} className="flex-1">
           {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
           {t("onboarding.bruker.create")} <ChevronRight className="ml-2 h-4 w-4" />
         </Button>

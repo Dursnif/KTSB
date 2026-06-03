@@ -665,7 +665,7 @@
       "display_name_ph": "Fornavn",
       "username": "Brukernavn",
       "username_ph": "brukernavn (ingen mellomrom)",
-      "pin": "PIN (min. 4 siffer)",
+      "pin": "PIN (min. 6 siffer)",
       "role": "Rolle",
       "roles": {
         "adult": "Voksen",
@@ -925,12 +925,12 @@
     "choose_pin": "Velg ny PIN",
     "choose_pin_sub": "Hei, {{name}}! Du må sette en personlig PIN før du fortsetter.",
     "set_pin": "Sett PIN og logg inn",
-    "new_pin": "Ny PIN (min. 4 siffer)",
+    "new_pin": "Ny PIN (min. 6 siffer)",
     "repeat_pin": "Gjenta PIN",
     "saving": "Lagrer…",
     "error_login": "Feil brukernavn eller PIN.",
     "error_generic": "Noe gikk galt.",
-    "error_pin_short": "PIN må være minst 4 siffer.",
+    "error_pin_short": "PIN må være minst 6 siffer.",
     "error_pin_mismatch": "PIN-kodene er ikke like."
   },
   "users": {
@@ -967,7 +967,7 @@
       "username": "Brukernavn",
       "role": "Rolle",
       "avatar": "Avatar",
-      "pin": "PIN (min. 4 siffer)",
+      "pin": "PIN (min. 6 siffer)",
       "submit": "Opprett",
       "cancel": "Avbryt",
       "error_generic": "Noe gikk galt."
@@ -991,7 +991,7 @@
     },
     "pin_modal": {
       "title": "Bytt PIN — {{name}}",
-      "new_pin": "Ny PIN (min. 4 siffer)",
+      "new_pin": "Ny PIN (min. 6 siffer)",
       "submit": "Bytt PIN",
       "cancel": "Avbryt",
       "error_generic": "Noe gikk galt."
@@ -1089,7 +1089,7 @@
     "close": "Lukk",
     "cancel": "Avbryt",
     "error": "Noe gikk galt.",
-    "error_pin_short": "PIN må være minst 4 siffer.",
+    "error_pin_short": "PIN må være minst 6 siffer.",
     "error_pin_mismatch": "PIN-kodene er ikke like."
   },
   "aliases": {
@@ -1292,7 +1292,7 @@
     "comment_ph": "Legg til en kommentar til dette møtet…",
     "comment_save": "Lagre",
     "pin_subtitle": "Skriv inn {{username}} sin PIN for å se møtet",
-    "pin_error_short": "PIN må være minst 4 tegn",
+    "pin_error_short": "PIN må være minst 6 siffer",
     "pin_cancel": "Avbryt",
     "pin_open": "Åpne",
     "pin_wrong": "Feil PIN – prøv igjen",
@@ -1439,7 +1439,7 @@
         "local_kommando": "Kjør kommandoer direkte på AI-PC-en",
         "restart_docker_container": "Start Docker-containere på nytt"
       },
-      "pin": "PIN er en tallkode som beskytter kontoen. Brukes ved innlogging og for å låse opp private møtereferater.",
+      "pin": "PIN er en tallkode som beskytter kontoen (minimum 6 siffer). Brukes ved innlogging og for å låse opp private møtereferater.",
       "voice_reg": "Stemmeregistrering lar Kåre gjenkjenne hvem som snakker. Brukeren leser inn noen setninger og Kåre lærer stemmeprofilen.",
       "vpn_qr": "VPN-QR-koden inneholder alle innstillinger for å koble til hjemmenettverket fra utsiden. Skann koden i WireGuard-appen.",
       "warning_delete": "⚠ Sletting av bruker er irreversibel — all historikk og profil forsvinner permanent.",
