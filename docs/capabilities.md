@@ -687,14 +687,17 @@ Set `COMPOSE_PROFILES` in your `.env` to control which services start. Profiles 
 | `full` | Voice bridge — Whisper STT + Piper TTS (port 8011) | Enables voice input/output |
 | `vpn` | WireGuard via wg-easy | Enables remote access |
 
-**Memory requirements (approximate):**
+**Memory requirements (measured on Docker install, no GPU):**
 
-| Profiles active | RAM without GPU | RAM with GPU |
-|-----------------|----------------|--------------|
-| Core only | 4 GB | 4 GB |
-| + ollama (7B model) | 16 GB | 4 GB + VRAM |
-| + medium | +1 GB | +1 GB |
-| + full | +2 GB | +2 GB |
+| Profiles active | RAM |
+|-----------------|-----|
+| Core only | ~460 MB |
+| + medium (BGE-M3 embedding) | ~620 MB |
+| + ollama (daemon only, no model loaded) | ~650 MB |
+| + ollama with 7B Q4 model loaded | ~5 GB |
+| + full (Whisper STT + Piper TTS) | +1.5–2 GB (estimated) |
+
+_With a GPU, the LLM stays in VRAM — system RAM stays at the ~650 MB baseline regardless of model size. Ollama model RAM scales with quantisation level: 7B Q4\_K\_M ≈ 4 GB, 14B ≈ 8 GB._
 
 ---
 
