@@ -7,6 +7,8 @@ Fil: /kaare/state/users/users.db
 Roller: child | teen | young_adult | adult | admin
 """
 
+import base64
+import logging
 import sqlite3
 import secrets
 from datetime import datetime, timezone, timedelta
@@ -14,6 +16,8 @@ from pathlib import Path
 from typing import Optional
 import bcrypt
 from kaare_core.config import get_settings as _get_settings
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = Path("/kaare/state/users/users.db")
 
@@ -290,6 +294,24 @@ def store_keypair(username: str, public_key_b64: str,
         return conn.execute("SELECT changes()").fetchone()[0] > 0
     finally:
         conn.close()
+
+
+def reencrypt_private_key(username: str, new_pin: str, current_private_key: bytes) -> bool:
+    """Re-encrypt the stored private key blob with a new PIN-derived key.
+    Called immediately after update_pin() when a user changes their own PIN.
+    The public key and in-RAM session key are unchanged — only the encrypted-at-rest blob rotates."""
+    kp = get_keypair_data(username)
+    if not kp:
+        return False
+    try:
+        from kaare_core.crypto import generate_salt, derive_key_from_pin, encrypt_private_key
+        new_salt = generate_salt()
+        new_derived = derive_key_from_pin(new_pin, new_salt)
+        new_encrypted = encrypt_private_key(current_private_key, new_derived)
+        return store_keypair(username, kp["public_key"], new_encrypted, base64.b64encode(new_salt).decode())
+    except Exception as e:
+        logger.error(f"[STORE] reencrypt_private_key failed for {username}: {e}")
+        return False
 
 
 def get_keypair_data(username: str) -> Optional[dict]:

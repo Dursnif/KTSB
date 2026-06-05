@@ -14,6 +14,7 @@ import ipaddress
 import logging
 import os
 import secrets
+import threading
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -109,6 +110,37 @@ def setup_keypair(username: str, pin: str) -> Optional[str]:
     return seed_phrase
 
 
+def _restore_stm_from_history(username: str, stm) -> None:
+    """Load the most recent plaintext daily archive into stm if live snapshot is empty.
+
+    Called after login when the encrypted live snapshot was written during a blank restart.
+    Archives are plain JSON (pre-encryption or pre-Phase2) so no session key is needed.
+    """
+    import json as _j
+    hist_dir = Path("/kaare/state/stm_history")
+    if not hist_dir.exists():
+        return
+    candidates = []
+    for entry in hist_dir.iterdir():
+        if entry.is_dir() and len(entry.name) == 10:
+            p = entry / f"{username}.json"
+            if p.exists():
+                candidates.append((entry.name, p))
+        elif entry.suffix == ".json" and len(entry.stem) == 10:
+            candidates.append((entry.stem, entry))
+    if not candidates:
+        return
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    date_key, snap_path = candidates[0]
+    try:
+        data = _j.loads(snap_path.read_text(encoding="utf-8"))
+        stm.load_from_dict(data)
+        turns = stm.snapshot_counts().get("dialog_turns", 0)
+        logger.info(f"[AUTH] STM restored from history archive {date_key} for {username} ({turns} turns)")
+    except Exception as e:
+        logger.warning(f"[AUTH] STM history restore failed for {username}: {e}")
+
+
 async def unlock_session(username: str, pin: str, expires_at: float) -> bool:
     """Decrypt private key with PIN and store in RAM for this session.
     Returns True on success, False if no keypair or wrong PIN.
@@ -117,12 +149,31 @@ async def unlock_session(username: str, pin: str, expires_at: float) -> bool:
         return False
     kp = get_keypair_data(username)
     if not kp:
-        return False
+        # First login after crypto deploy — generate keypair for pre-existing user
+        setup_keypair(username, pin)
+        kp = get_keypair_data(username)
+        if not kp:
+            return False
     try:
         salt = base64.b64decode(kp["argon2_salt"])
         derived_key = derive_key_from_pin(pin, salt)
         private_key = decrypt_private_key(kp["encrypted_private_key"], derived_key)
         await _session_keys.store_session_key(username, private_key, expires_at)
+        # Reload encrypted STM snapshot now that session key is in RAM
+        try:
+            from kaare_core.app_state import STM_REGISTRY
+            if STM_REGISTRY is not None:
+                stm = STM_REGISTRY.get(username)
+                if stm.snapshot_counts()["dialog_turns"] == 0:
+                    loaded = stm.load_snapshot(f"/kaare/state/stm_users/{username}.json")
+                    if loaded:
+                        logger.info(f"[AUTH] STM reloaded from encrypted snapshot for {username}")
+                # If still empty (snapshot was written after a blank restart), fall back to
+                # the most recent daily archive so the user sees their conversation history.
+                if stm.snapshot_counts()["dialog_turns"] == 0:
+                    _restore_stm_from_history(username, stm)
+        except Exception as se:
+            logger.warning(f"[AUTH] STM reload error for {username}: {se}")
         # Apply any vault entries written while user was offline (non-blocking best-effort)
         try:
             from kaare_core.users.profile_manager import process_vault_files
@@ -131,6 +182,19 @@ async def unlock_session(username: str, pin: str, expires_at: float) -> bool:
                 logger.info(f"[AUTH] processed {count} vault entries for {username} on login")
         except Exception as ve:
             logger.warning(f"[AUTH] vault processing error for {username}: {ve}")
+        # Migrate profile/observations to encrypted format on first login after deploy
+        try:
+            from scripts.migrate_encrypt_user_data import migrate_user_if_needed, finalize_encryption
+            migrate_user_if_needed(username, private_key)
+            finalize_encryption(username, private_key)
+        except Exception as me:
+            logger.warning(f"[AUTH] profile migration error for {username}: {me}")
+        # Migrate existing plaintext LTM rows to encrypted format (background, fire-and-forget)
+        try:
+            from kaare_core.memory.long_term import migrate_user_ltm
+            threading.Thread(target=migrate_user_ltm, args=(username,), daemon=True).start()
+        except Exception as le:
+            logger.warning(f"[AUTH] LTM migration trigger error for {username}: {le}")
         return True
     except Exception as e:
         logger.warning(f"[AUTH] failed to unlock session key for {username}: {e}")

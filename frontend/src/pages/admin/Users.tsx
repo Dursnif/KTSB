@@ -73,28 +73,28 @@ type Modal =
 // ── Tool permissions matrix ───────────────────────────────────────────────────
 
 const TOOL_ROWS: { key: string; indent?: boolean }[] = [
-  { key: "styr_enhet" },
-  { key: "les_ha" },
+  { key: "ha_control" },
+  { key: "ha_read" },
   { key: "timer" },
   { key: "get_weather" },
   { key: "library" },
   { key: "library_online" },
-  { key: "søk_nett" },
+  { key: "web_search" },
   { key: "kare_image" },
-  { key: "se_bilder" },
+  { key: "view_images" },
   { key: "media" },
-  { key: "notat" },
+  { key: "note" },
   { key: "announce" },
   { key: "reason_freely" },
-  { key: "minne" },
-  { key: "kamera" },
-  { key: "søk_i_argus" },
-  { key: "les_møte" },
+  { key: "memory" },
+  { key: "camera" },
+  { key: "search_argus" },
+  { key: "read_meeting" },
   { key: "mechanic" },
-  { key: "utforsk_kode" },
-  { key: "inspiser_system" },
-  { key: "ssh_kommando" },
-  { key: "local_kommando" },
+  { key: "explore_code" },
+  { key: "inspect_system" },
+  { key: "ssh_command" },
+  { key: "local_command" },
   { key: "restart_docker_container" },
 ];
 
@@ -424,20 +424,60 @@ export default function Users() {
 
 // ── Create ────────────────────────────────────────────────────────────────────
 
+function SeedModal({ seed, onClose }: { seed: string; onClose: () => void }) {
+  const { t } = useTranslation();
+  const [confirmed, setConfirmed] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copy = () => {
+    navigator.clipboard.writeText(seed).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200 }}>
+      <div style={{ background: "#111", border: "1px solid #333", borderRadius: 12, padding: 28, maxWidth: 460, width: "calc(100vw - 32px)" }}>
+        <div style={{ color: "#fff", fontSize: 16, fontWeight: 700, marginBottom: 10 }}>{t("seed.modal_title")}</div>
+        <div style={{ color: "#888", fontSize: 13, marginBottom: 16, lineHeight: 1.5 }}>{t("seed.modal_info")}</div>
+        <div style={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 8, padding: "14px 16px", fontFamily: "monospace", fontSize: 15, color: "#e0e0e0", letterSpacing: 0.5, lineHeight: 1.8, marginBottom: 12 }}>
+          {seed}
+        </div>
+        <button onClick={copy} style={{ padding: "7px 16px", borderRadius: 8, border: "1px solid #444", background: "#1e1e1e", color: copied ? "#4caf50" : "#aaa", fontSize: 13, cursor: "pointer", marginBottom: 18 }}>
+          {copied ? t("seed.copied") : t("seed.copy")}
+        </button>
+        <label style={{ display: "flex", alignItems: "flex-start", gap: 10, color: "#888", fontSize: 13, cursor: "pointer", marginBottom: 18 }}>
+          <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} style={{ marginTop: 2, flexShrink: 0 }} />
+          {t("seed.confirm_label")}
+        </label>
+        <button onClick={onClose} disabled={!confirmed}
+          style={{ width: "100%", padding: "10px", borderRadius: 8, border: "none", background: confirmed ? "#646cff" : "#333", color: confirmed ? "#fff" : "#666", fontSize: 14, fontWeight: 600, cursor: confirmed ? "pointer" : "not-allowed" }}>
+          {t("seed.close")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CreateModal({ onDone, onError, error }: { onDone: () => void; onError: (e: string) => void; error: string }) {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const [f, setF] = useState({ username: "", display_name: "", role: "adult" as Role, pin: "", avatar: "👤" });
+  const [seedPhrase, setSeedPhrase] = useState<string | null>(null);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await apiCreateUser(f);
-      onDone();
+      const user = await apiCreateUser(f) as any;
+      if (user?.seed_phrase) {
+        setSeedPhrase(user.seed_phrase);
+      } else {
+        onDone();
+      }
     } catch (err: any) {
       onError(err?.response?.data?.detail ?? t("users.create.error_generic"));
     }
   };
+
+  if (seedPhrase) return <SeedModal seed={seedPhrase} onClose={onDone} />;
 
   return (
     <div style={{ ...S.modal, width: isMobile ? "calc(100vw - 32px)" : 420, maxHeight: "90vh", overflowY: "auto" }}>

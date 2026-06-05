@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { apiGetLanguage } from "./services/api";
 
 import Login from "./pages/Login";
+import Recovery from "./pages/Recovery";
 import AdminLayout from "./layouts/AdminLayout";
 import UserLayout from "./layouts/UserLayout";
 import Dashboard from "./pages/admin/Dashboard";
@@ -49,6 +50,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/recover" element={<Recovery />} />
 
       {/* ADMIN */}
       <Route path="/admin" element={<RequireAdmin><AdminLayout /></RequireAdmin>}>

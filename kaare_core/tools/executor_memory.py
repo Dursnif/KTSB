@@ -1,13 +1,20 @@
+import json as _json
 import yaml
 from pathlib import Path
 
+from kaare_core.crypto import unseal
 from kaare_core.memory.long_term import get_ltm, USER_GLOBAL
+from kaare_core.session_keys import get_session_key_sync
 from kaare_core.tools.i18n import t, get_lang
 from kaare_core.tools.think_cache import read_think_history, format_for_kare
 
 _SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
 
 MEMORY_TOOLS = {
+    "memory",
+    "read_meeting",
+    "inner_thoughts",
+    "thought_history",
     "minne",
     "søk_i_minne",
     "bekreft_interaksjoner",
@@ -19,7 +26,22 @@ MEMORY_TOOLS = {
 }
 
 
-def _get_stm_history(date: str | None = None, lang: str = "nb") -> str:
+def _load_stm_snapshot_data(path: Path, user_id: str) -> dict | str:
+    """Load STM snapshot data from path (.json or .enc). Returns dict or error string."""
+    enc_path = path.with_suffix(".enc")
+    try:
+        if enc_path.exists():
+            session_key = get_session_key_sync(user_id)
+            if not session_key:
+                return f"[snapshot encrypted — not readable without active session for '{user_id}']"
+            encrypted_blob = enc_path.read_text(encoding="utf-8")
+            return _json.loads(unseal(encrypted_blob, session_key))
+        return _json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        return f"[read error: {e}]"
+
+
+def _get_stm_history(date: str | None = None, lang: str = "nb", user_id: str = "global") -> str:
     """Return a formatted STM snapshot for the given date, or list available dates."""
     try:
         hist_dir = Path(
@@ -30,26 +52,45 @@ def _get_stm_history(date: str | None = None, lang: str = "nb") -> str:
     except Exception:
         hist_dir = Path("/kaare/state/stm_history")
 
+    if not hist_dir.exists():
+        return t("mem_no_stm_history", lang)
+
     if not date:
-        if not hist_dir.exists():
-            return t("mem_no_stm_history", lang)
-        files = sorted(hist_dir.glob("*.json"), reverse=True)
-        if not files:
+        # Collect both flat *.json (old format) and YYYY-MM-DD directories (new format)
+        flat = [f.stem for f in hist_dir.glob("*.json")]
+        dirs = [d.name for d in hist_dir.iterdir() if d.is_dir() and len(d.name) == 10]
+        all_dates = sorted(set(flat + dirs), reverse=True)
+        if not all_dates:
             return t("mem_no_stm_snapshots", lang)
-        dates = [f.stem for f in files[:14]]
-        return t("mem_stm_dates", lang) + "\n" + "\n".join(f"  - {d}" for d in dates)
+        return t("mem_stm_dates", lang) + "\n" + "\n".join(f"  - {d}" for d in all_dates[:14])
 
-    snap_path = hist_dir / f"{date}.json"
-    if not snap_path.exists():
-        available = sorted(hist_dir.glob("*.json"), reverse=True) if hist_dir.exists() else []
-        tip = ", ".join(f.stem for f in available[:5]) if available else "ingen"
-        return t("mem_no_stm_for_date", lang, date=date, tip=tip)
+    data: dict | str | None = None
 
-    try:
-        import json as _j
-        data = _j.loads(snap_path.read_text(encoding="utf-8"))
-    except Exception as e:
-        return t("mem_stm_read_error", lang, date=date, error=e)
+    # 1. Old flat format: {date}.json
+    flat_path = hist_dir / f"{date}.json"
+    if flat_path.exists():
+        data = _load_stm_snapshot_data(flat_path, user_id)
+    else:
+        # 2. New directory format: {date}/{user_id}.json or .enc
+        date_dir = hist_dir / date
+        if not date_dir.is_dir():
+            flat = [f.stem for f in hist_dir.glob("*.json")]
+            dirs = [d.name for d in hist_dir.iterdir() if d.is_dir() and len(d.name) == 10]
+            tip = ", ".join(sorted(set(flat + dirs), reverse=True)[:5]) or "ingen"
+            return t("mem_no_stm_for_date", lang, date=date, tip=tip)
+
+        uid_candidates = [user_id] if user_id not in ("", "global") else []
+        uid_candidates.append("global")
+        for uid in uid_candidates:
+            p = date_dir / f"{uid}.json"
+            if p.exists() or (date_dir / f"{uid}.enc").exists():
+                data = _load_stm_snapshot_data(p, uid)
+                break
+
+    if data is None:
+        return t("mem_no_stm_for_date", lang, date=date, tip="ingen snapshot funnet")
+    if isinstance(data, str):
+        return data
 
     parts = []
     saved_at = data.get("saved_at", t("mem_stm_not_found", lang))[:16].replace("T", " ")
@@ -202,7 +243,7 @@ def _get_unverified(user_id: str, limit: int = 10, offset: int = 0, lang: str = 
 async def dispatch(name: str, arguments: dict) -> str:
     lang = get_lang(arguments.get("_user_id", "global"))
 
-    if name == "minne":
+    if name in ("memory", "minne"):
         action = arguments.get("action", "")
         if action == "search":
             return _search_memory(arguments.get("query", ""), lang=lang)
@@ -220,20 +261,18 @@ async def dispatch(name: str, arguments: dict) -> str:
                 user_id=arguments.get("_user_id", ""),
                 lang=lang,
             )
-        if action == "fetch_stm":
-            return _get_stm_history(arguments.get("date"), lang=lang)
-        if action == "hent_gammel_stm":
-            return _get_stm_history(arguments.get("date"), lang=lang)
-        return f"Unknown action for minne: '{action}'. Valid: search, fetch_unverified, confirm, fetch_stm."
+        if action in ("fetch_stm", "hent_gammel_stm"):
+            return _get_stm_history(arguments.get("date"), lang=lang, user_id=arguments.get("_user_id", "global"))
+        return f"Unknown action for memory: '{action}'. Valid: search, fetch_unverified, confirm, fetch_stm."
 
-    if name == "les_møte":
+    if name in ("read_meeting", "les_møte"):
         meeting_type = arguments.get("type", "reflection")
         date = arguments.get("date")
         if meeting_type == "development":
             return _read_dev_meeting(date, lang=lang)
         return _read_reflection(date, lang=lang)
 
-    if name == "les_indre_tanker":
+    if name in ("inner_thoughts", "les_indre_tanker"):
         return _read_inner_thoughts(lang=lang)
 
     if name == "søk_i_minne":
@@ -256,9 +295,9 @@ async def dispatch(name: str, arguments: dict) -> str:
         )
 
     if name == "hent_gammel_stm":
-        return _get_stm_history(arguments.get("date"), lang=lang)
+        return _get_stm_history(arguments.get("date"), lang=lang, user_id=arguments.get("_user_id", "global"))
 
-    if name == "les_tankehistorikk":
+    if name in ("thought_history", "les_tankehistorikk"):
         entries = read_think_history(
             n=min(int(arguments.get("count", 10)), 50),
             search=arguments.get("filter") or None,

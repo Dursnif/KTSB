@@ -23,6 +23,9 @@ import yaml
 
 from kaare_core.tools.i18n import t, get_lang
 
+# Keys kept in plaintext after migration (needed for household context without a session)
+_PLAINTEXT_KEYS = frozenset({"household_visible", "updated", "meta", "change_log", "flags"})
+
 logger = logging.getLogger(__name__)
 
 USERS_DIR    = Path("/kaare/state/users")
@@ -47,6 +50,56 @@ def _user_dir(user_id: str) -> Path:
     d = USERS_DIR / user_id
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def _get_session_key(user_id: str) -> "bytes | None":
+    """Return the user's in-RAM private key, or None if no active session."""
+    try:
+        from kaare_core import session_keys
+        return session_keys.get_session_key_sync(user_id)
+    except Exception:
+        return None
+
+
+def _read_obs_text(user_id: str) -> str:
+    """Read observations content — from .enc (decrypted) or .md (plaintext)."""
+    user_dir = _user_dir(user_id)
+    enc_path = user_dir / "observations.enc"
+    plain_path = user_dir / "observations.md"
+    if enc_path.exists():
+        private_key = _get_session_key(user_id)
+        if not private_key:
+            return ""
+        try:
+            from kaare_core.crypto import decrypt_text
+            return decrypt_text(enc_path.read_text(encoding="utf-8"), private_key)
+        except Exception as e:
+            logger.warning(f"[OBS] decrypt failed for {user_id}: {e}")
+            return ""
+    if plain_path.exists():
+        try:
+            return plain_path.read_text(encoding="utf-8")
+        except Exception:
+            return ""
+    return ""
+
+
+def _write_obs_text(user_id: str, content: str) -> None:
+    """Write observations — encrypted (.enc) if session key available, else plaintext (.md)."""
+    user_dir = _user_dir(user_id)
+    enc_path = user_dir / "observations.enc"
+    plain_path = user_dir / "observations.md"
+    private_key = _get_session_key(user_id)
+    if private_key and user_id not in SYSTEM_ACCOUNTS:
+        try:
+            from kaare_core.crypto import encrypt_text
+            enc_path.write_text(encrypt_text(content, private_key), encoding="utf-8")
+            if plain_path.exists():
+                plain_path.unlink()
+            return
+        except Exception as e:
+            logger.warning(f"[OBS] write encryption failed for {user_id}: {e}")
+    plain_path.write_text(content, encoding="utf-8")
 
 
 _TEMPLATE_PATH = Path("/kaare/configs/profile_template.yaml")
@@ -92,8 +145,12 @@ def _is_new_user(user_id: str, prompt_top: dict) -> bool:
     ]
     if filled:
         return False
-    obs_path = _user_dir(user_id) / "observations.md"
-    return not obs_path.exists() or obs_path.stat().st_size < 100
+    user_dir = _user_dir(user_id)
+    enc_path = user_dir / "observations.enc"
+    plain_path = user_dir / "observations.md"
+    if enc_path.exists():
+        return enc_path.stat().st_size < 100
+    return not plain_path.exists() or plain_path.stat().st_size < 100
 
 
 def get_profile_prompt_top(user_id: str) -> str:
@@ -152,7 +209,22 @@ def load_profile(user_id: str) -> dict:
         return _empty_profile(user_id)
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else _empty_profile(user_id)
+        if not isinstance(data, dict):
+            return _empty_profile(user_id)
+        if "private_encrypted" in data:
+            private_key = _get_session_key(user_id)
+            if private_key:
+                try:
+                    from kaare_core.crypto import decrypt_dict
+                    private_data = decrypt_dict(data["private_encrypted"], private_key)
+                    merged = {k: v for k, v in data.items() if k != "private_encrypted"}
+                    merged.update(private_data)
+                    return merged
+                except Exception as e:
+                    logger.warning(f"[PROFILE] decrypt failed for {user_id}: {e}")
+            # No session or decrypt failed — return without private data
+            return {k: v for k, v in data.items() if k != "private_encrypted"}
+        return data
     except Exception:
         return _empty_profile(user_id)
 
@@ -160,9 +232,30 @@ def load_profile(user_id: str) -> dict:
 def save_profile(user_id: str, profile: dict) -> None:
     profile["updated"] = datetime.now().strftime("%Y-%m-%d")
     path = _user_dir(user_id) / "profile.yaml"
+    private_key = None
+    if user_id not in SYSTEM_ACCOUNTS:
+        private_key = _get_session_key(user_id)
+    if private_key:
+        plaintext: dict = {}
+        private_data: dict = {}
+        for k, v in profile.items():
+            if k in _PLAINTEXT_KEYS:
+                plaintext[k] = v
+            else:
+                private_data[k] = v
+        if private_data:
+            try:
+                from kaare_core.crypto import encrypt_dict
+                plaintext["private_encrypted"] = encrypt_dict(private_data, private_key)
+            except Exception as e:
+                logger.warning(f"[PROFILE] save encryption failed for {user_id}: {e}")
+                plaintext.update(private_data)
+        to_write = plaintext
+    else:
+        to_write = profile
     tmp = path.with_suffix(".tmp")
     tmp.write_text(
-        yaml.dump(profile, allow_unicode=True, default_flow_style=False, sort_keys=False),
+        yaml.dump(to_write, allow_unicode=True, default_flow_style=False, sort_keys=False),
         encoding="utf-8",
     )
     tmp.replace(path)
@@ -195,12 +288,11 @@ def update_profile_field(user_id: str, field: str, value: Any, reason: str) -> N
 
 
 def add_observation(user_id: str, text: str) -> None:
-    """Legg til en dagsbasert observasjon i observations.md, trim etterpå."""
-    path = _user_dir(user_id) / "observations.md"
+    """Legg til en dagsbasert observasjon, trim etterpå. Kryptert hvis sesjonsnøkkel tilgjengelig."""
     date_str = datetime.now().strftime("%Y-%m-%d")
     entry = f"\n## {date_str}\n{text.strip()}\n"
-    with path.open("a", encoding="utf-8") as f:
-        f.write(entry)
+    content = _read_obs_text(user_id) + entry
+    _write_obs_text(user_id, content)
     _trim_observations(user_id)
 
 
@@ -246,12 +338,12 @@ def read_profile_yaml_as_text(user_id: str) -> str:
 
 
 def get_recent_observations(user_id: str, days: int = 14) -> str:
-    """Returner observasjoner fra siste N dager."""
-    path = _user_dir(user_id) / "observations.md"
-    if not path.exists():
-        return "Ingen observasjoner ennå."
+    """Returner observasjoner fra siste N dager (kryptert eller klartekst)."""
+    content = _read_obs_text(user_id)
+    if not content:
+        return t("prof_no_observations", get_lang(user_id))
     cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = content.splitlines()
     result, include = [], False
     for line in lines:
         if line.startswith("## "):
@@ -262,19 +354,56 @@ def get_recent_observations(user_id: str, days: int = 14) -> str:
 
 
 def _trim_observations(user_id: str) -> None:
-    """Fjern observasjoner eldre enn OBS_MAX_DAYS. Kalles automatisk etter add_observation."""
-    path = _user_dir(user_id) / "observations.md"
-    if not path.exists():
+    """Fjern observasjoner eldre enn OBS_MAX_DAYS."""
+    content = _read_obs_text(user_id)
+    if not content:
         return
     cutoff = (datetime.now() - timedelta(days=OBS_MAX_DAYS)).strftime("%Y-%m-%d")
-    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = content.splitlines()
     result, include = [], False
     for line in lines:
         if line.startswith("## "):
             include = line[3:].strip()[:10] >= cutoff
         if include:
             result.append(line)
-    path.write_text("\n".join(result) + "\n", encoding="utf-8")
+    _write_obs_text(user_id, "\n".join(result) + "\n")
+
+
+def delete_observation_fragment(user_id: str, fragment: str) -> tuple[bool, int]:
+    """Delete lines from observations that contain the fragment.
+    Returns (found_and_deleted, count_deleted)."""
+    content = _read_obs_text(user_id)
+    if not content:
+        return False, 0
+    lines = content.splitlines(keepends=True)
+    remaining = [l for l in lines if fragment.lower() not in l.lower()]
+    count = len(lines) - len(remaining)
+    if count == 0:
+        return False, 0
+    _write_obs_text(user_id, "".join(remaining))
+    return True, count
+
+
+def edit_observation_fragment(user_id: str, fragment: str, new_text: str) -> tuple[bool, int]:
+    """Replace lines containing fragment with new_text.
+    Returns (found_and_changed, count_changed)."""
+    content = _read_obs_text(user_id)
+    if not content:
+        return False, 0
+    lines = content.splitlines(keepends=True)
+    result = []
+    changed = 0
+    date = datetime.now().strftime("%Y-%m-%d")
+    for line in lines:
+        if fragment.lower() in line.lower():
+            result.append(f"[{date}] {new_text.strip()}\n")
+            changed += 1
+        else:
+            result.append(line)
+    if changed == 0:
+        return False, 0
+    _write_obs_text(user_id, "".join(result))
+    return True, changed
 
 
 # ── Vault system (agent-writes when user is offline) ─────────────────────────────

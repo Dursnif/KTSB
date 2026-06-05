@@ -10,12 +10,37 @@ PUT  /api/users/{username}/pin → bytt PIN (admin eller seg selv)
 DELETE /api/users/{username} → slett bruker (admin)
 """
 
+import base64
 import collections
 import time
 import httpx
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException, Depends, Request, status, UploadFile, File
 from pydantic import BaseModel
 from typing import Optional
+
+from kaare_core.audit import audit_log as _audit
+from kaare_core.config import get_service
+from kaare_core.crypto import (
+    seed_phrase_to_private_key,
+    generate_salt,
+    derive_key_from_pin,
+    encrypt_private_key,
+)
+from kaare_core.users import store
+from kaare_core.users.auth import (
+    login,
+    require_auth,
+    require_admin,
+    is_user_online,
+    get_all_last_seen,
+    setup_keypair,
+    unlock_session,
+    end_session,
+    create_token,
+)
+from kaare_core.users.profile_manager import init_profile, get_profile_flag, set_profile_flag, get_household_visible
+from adapters.llm_adapter import list_personalities
 
 # Simple in-memory rate limiter for login: max 5 failures per 15 min per IP.
 _LOGIN_FAIL_WINDOW = 900  # seconds
@@ -41,22 +66,6 @@ def _record_login_fail(ip: str) -> None:
 
 def _clear_login_fail(ip: str) -> None:
     _login_failures.pop(ip, None)
-
-from kaare_core.audit import audit_log as _audit
-from kaare_core.users import store
-from kaare_core.users.profile_manager import init_profile, get_profile_flag, set_profile_flag
-from kaare_core.users.auth import (
-    login,
-    require_auth,
-    require_admin,
-    is_user_online,
-    get_all_last_seen,
-    setup_keypair,
-    unlock_session,
-    end_session,
-)
-from kaare_core.config import get_service
-from adapters.llm_adapter import list_personalities
 
 _VOICE_BRIDGE = get_service("internal", "voice_bridge")
 
@@ -86,6 +95,12 @@ class UpdateUserRequest(BaseModel):
     can_manage_child_timers: Optional[bool] = None
 
 class UpdatePinRequest(BaseModel):
+    new_pin: str
+
+
+class RecoverRequest(BaseModel):
+    username: str
+    seed_phrase: str
     new_pin: str
 
 
@@ -222,6 +237,16 @@ def api_update_pin(username: str, req: UpdatePinRequest,
         raise HTTPException(status_code=404, detail="User not found.")
     action = "admin_pin_reset" if caller != username else "pin_change"
     _audit("admin_user_action", caller, f"{action} target={username!r}")
+    # Re-encrypt stored private key with new PIN (only when user changes their own PIN)
+    if caller == username:
+        try:
+            from kaare_core import session_keys as _session_keys
+            from kaare_core.users.store import reencrypt_private_key
+            pk = _session_keys.get_session_key_sync(username)
+            if pk:
+                reencrypt_private_key(username, req.new_pin, pk)
+        except Exception:
+            pass  # non-fatal — user will re-derive key correctly on next full login
     return {"ok": True}
 
 
@@ -287,3 +312,64 @@ async def api_voice_delete(username: str, _=Depends(require_admin)):
         raise HTTPException(status_code=503, detail="Voice bridge not available.")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── Recovery & household-visible ──────────────────────────────────────────────
+
+@router.get("/users/{username}/household-visible")
+def api_household_visible(username: str, payload: dict = Depends(require_auth)):
+    """Return household_visible profile section for a user. Admin or self only."""
+    caller = payload["sub"]
+    caller_role = payload.get("role", "")
+    if caller != username and caller_role != "admin":
+        raise HTTPException(status_code=403, detail="Access denied.")
+    user = store.get_user(username)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return {"username": username, "household_visible": get_household_visible(username)}
+
+
+@router.post("/users/recover")
+async def api_recover(req: RecoverRequest):
+    """Recover account using seed phrase. No auth required.
+    Validates seed phrase against stored public key, re-encrypts private key
+    with new PIN, updates PIN hash, and returns a JWT so the user is logged in."""
+    user = store.get_user(req.username)
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid username or seed phrase.")
+    kp = store.get_keypair_data(req.username)
+    if not kp:
+        raise HTTPException(status_code=400, detail="Account has no encryption keypair.")
+    try:
+        pub_bytes = base64.b64decode(kp["public_key"])
+        salt_bytes = base64.b64decode(kp["argon2_salt"])
+    except Exception:
+        raise HTTPException(status_code=500, detail="Keypair data corrupted.")
+
+    private_key = seed_phrase_to_private_key(req.seed_phrase.strip().lower(), salt_bytes, pub_bytes)
+    if not private_key:
+        raise HTTPException(status_code=400, detail="Invalid username or seed phrase.")
+
+    ok, msg = store.validate_pin_strength(req.new_pin)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+
+    # Re-encrypt private key with new PIN + fresh salt
+    new_salt = generate_salt()
+    new_derived = derive_key_from_pin(req.new_pin, new_salt)
+    new_encrypted_pk = encrypt_private_key(private_key, new_derived)
+    store.store_keypair(
+        req.username,
+        kp["public_key"],
+        new_encrypted_pk,
+        base64.b64encode(new_salt).decode(),
+    )
+    store.update_pin(req.username, req.new_pin)
+
+    expires_at = (datetime.now(timezone.utc) + timedelta(hours=12)).timestamp()
+    await unlock_session(req.username, req.new_pin, expires_at)
+
+    token = create_token(req.username, user["role"])
+    return {"token": token, "user": {"username": req.username, "role": user["role"],
+                                     "display_name": user.get("display_name", req.username),
+                                     "avatar": user.get("avatar", "👤")}}

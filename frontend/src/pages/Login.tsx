@@ -126,6 +126,12 @@ export default function Login() {
           </button>
         </form>
         {error && <div style={S.error}>{error}</div>}
+        <div style={{ textAlign: "center", marginTop: 14 }}>
+          <button onClick={() => navigate("/recover")}
+            style={{ background: "none", border: "none", color: "#555", fontSize: 13, cursor: "pointer", textDecoration: "underline" }}>
+            {t("privacy.forgot_pin")}
+          </button>
+        </div>
       </div>
 
       {mustChange && (

@@ -17,6 +17,7 @@ Bevisste avgrensninger:
 
 from __future__ import annotations
 
+import base64
 import json as _json
 import threading
 import time
@@ -26,6 +27,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
 from typing import Any, Deque, Dict, List, Optional, Tuple
+
+from kaare_core.crypto import seal, unseal
+from kaare_core.session_keys import get_session_key_sync
+from kaare_core.users.store import get_public_key_b64
 
 
 def _utc_ts() -> str:
@@ -91,7 +96,9 @@ class ShortTermMemory:
         context_last_dialog_turns: int = 8,
         context_last_actions: int = 4,
         context_last_state_keys: int = 24,
+        user_id: str = "global",
     ) -> None:
+        self._user_id = user_id
         self.dialog_max_turns = int(dialog_max_turns)
         self.dialog_max_text = int(dialog_max_text)
 
@@ -438,24 +445,67 @@ class ShortTermMemory:
                 self._daily_summary = data["daily_summary"]
 
     def save_snapshot(self, path: str) -> bool:
-        """Lagre STM til disk. Returnerer True ved suksess."""
+        """Lagre STM til disk. Returnerer True ved suksess.
+
+        If the user has a keypair, encrypts the JSON blob with SealedBox (public key only)
+        and writes to a .enc file. Removes the old .json file if present.
+        Global/system users (no keypair) are saved as plain .json.
+
+        Guard: if the current STM has fewer dialog turns than what's on disk (e.g. after a
+        blank restart), the existing file is kept. This prevents overwriting a rich snapshot
+        with an empty one before the user has had a chance to log in and reload it.
+        """
         try:
             p = Path(path)
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(_json.dumps(self.to_dict(), ensure_ascii=False), encoding="utf-8")
+            current_turns = self.snapshot_counts().get("dialog_turns", 0)
+
+            # Don't let a blank-restart STM destroy a richer existing snapshot
+            enc_path = p.with_suffix(".enc")
+            existing = enc_path if enc_path.exists() else (p if p.exists() else None)
+            if existing and current_turns == 0:
+                return True
+
+            json_text = _json.dumps(self.to_dict(), ensure_ascii=False)
+
+            pub_b64 = get_public_key_b64(self._user_id) if self._user_id != "global" else None
+            if pub_b64:
+                pub_bytes = base64.b64decode(pub_b64)
+                encrypted = seal(json_text, pub_bytes)
+                enc_path.write_text(encrypted, encoding="utf-8")
+                if p.exists() and p.suffix == ".json":
+                    p.unlink()
+            else:
+                p.write_text(json_text, encoding="utf-8")
             return True
         except Exception:
             return False
 
     def load_snapshot(self, path: str) -> bool:
-        """Last STM frå disk. Returnerer True ved suksess, False viss fila ikkje finst."""
+        """Last STM frå disk. Returnerer True ved suksess, False viss fila ikkje finst.
+
+        Checks for an encrypted .enc variant first. If found but no session key is
+        available (server restart, user not yet logged in), returns False — empty STM.
+        Falls back to plain .json for global/system users or pre-encryption files.
+        """
         try:
             p = Path(path)
-            if not p.exists():
-                return False
-            data = _json.loads(p.read_text(encoding="utf-8"))
-            self.load_from_dict(data)
-            return True
+            enc_path = p.with_suffix(".enc")
+
+            if enc_path.exists():
+                private_key = get_session_key_sync(self._user_id)
+                if private_key is None:
+                    return False
+                encrypted_blob = enc_path.read_text(encoding="utf-8")
+                json_text = unseal(encrypted_blob, private_key)
+                data = _json.loads(json_text)
+                self.load_from_dict(data)
+                return True
+            elif p.exists():
+                data = _json.loads(p.read_text(encoding="utf-8"))
+                self.load_from_dict(data)
+                return True
+            return False
         except Exception:
             return False
 
@@ -471,7 +521,7 @@ class STMRegistry:
     def get(self, user_id: str) -> ShortTermMemory:
         with self._lock:
             if user_id not in self._users:
-                self._users[user_id] = ShortTermMemory(**self._kwargs)
+                self._users[user_id] = ShortTermMemory(user_id=user_id, **self._kwargs)
             return self._users[user_id]
 
     def set_entity_state(self, entity_id: str, state_value: Any,
@@ -498,12 +548,17 @@ class STMRegistry:
         p = Path(directory)
         if not p.exists():
             return
+        # Collect unique stems from both .json and .enc files
+        stems: set[str] = set()
         for f in p.glob("*.json"):
-            uid = f.stem
+            stems.add(f.stem)
+        for f in p.glob("*.enc"):
+            stems.add(f.stem)
+        for uid in stems:
             with self._lock:
                 if uid not in self._users:
-                    self._users[uid] = ShortTermMemory(**self._kwargs)
-            self._users[uid].load_snapshot(str(f))
+                    self._users[uid] = ShortTermMemory(user_id=uid, **self._kwargs)
+            self._users[uid].load_snapshot(str(p / f"{uid}.json"))
 
     def migrate_legacy_snapshot(self, old_path: str, new_dir: str) -> bool:
         """Read old stm_snapshot.json and split into per-user files."""

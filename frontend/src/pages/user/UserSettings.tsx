@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { useUserPrefs } from "../../hooks/useUserPrefs";
 import { useTheme } from "../../theme";
 
@@ -146,6 +147,7 @@ export default function UserSettings() {
   const { t } = useTranslation();
   const { prefs, updatePrefs, resetPrefs } = useUserPrefs();
   const theme = useTheme();
+  const navigate = useNavigate();
 
   return (
     <div style={{
@@ -277,6 +279,24 @@ export default function UserSettings() {
             }}>
               {t("user_settings.preview_kare")}
             </div>
+          </div>
+        </div>
+
+        {/* ── Personvern ── */}
+        <div style={{ marginBottom: 32 }}>
+          <SectionTitle>{t("privacy.section_title")}</SectionTitle>
+          <div style={{ color: "#666", fontSize: 13, lineHeight: 1.6, marginBottom: 16 }}>
+            {t("privacy.encrypted_info")}
+          </div>
+          <div style={{ background: "#111", border: "1px solid #1e1e1e", borderRadius: 8, padding: "14px 16px" }}>
+            <div style={{ color: "#aaa", fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{t("privacy.recovery_title")}</div>
+            <div style={{ color: "#555", fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>{t("privacy.recovery_hint")}</div>
+            <button
+              onClick={() => navigate("/recover")}
+              style={{ padding: "7px 16px", borderRadius: 8, border: "1px solid #333", background: "transparent", color: "#888", fontSize: 13, cursor: "pointer" }}
+            >
+              {t("privacy.forgot_pin")}
+            </button>
           </div>
         </div>
 

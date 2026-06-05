@@ -20,11 +20,52 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from kaare_core.crypto import encrypt_text, decrypt_text
+from kaare_core.session_keys import get_session_key_sync
+
 logger = logging.getLogger(__name__)
 
 DB_PATH = Path("/kaare/state/memory/interactions.db")
 
 USER_GLOBAL = "global"
+
+_ENC_PREFIX = "ENC:"
+
+
+def _enc(user_id: str, text: str) -> str:
+    """Encrypt text for LTM storage using session key. Returns ENC:<blob> if key available, else plaintext."""
+    if not text or user_id == USER_GLOBAL:
+        return text
+    try:
+        key = get_session_key_sync(user_id)
+        if key is None:
+            return text
+        return _ENC_PREFIX + encrypt_text(text, key)
+    except Exception:
+        return text
+
+
+def _dec(user_id: str, text: str) -> str:
+    """Decrypt ENC:-prefixed LTM text using session key. Returns [kryptert] if no session, plaintext if not encrypted."""
+    if not text or not text.startswith(_ENC_PREFIX):
+        return text
+    try:
+        key = get_session_key_sync(user_id)
+        if key is None:
+            return "[kryptert]"
+        return decrypt_text(text[len(_ENC_PREFIX):], key)
+    except Exception:
+        logger.warning("LTM: decrypt failed for user %s", user_id)
+        return "[kryptert]"
+
+
+def _dec_row(row: dict, fields: list) -> dict:
+    """Decrypt named fields in a result row using its own user_id."""
+    uid = row.get("user_id", USER_GLOBAL)
+    for f in fields:
+        if f in row and row[f]:
+            row[f] = _dec(uid, row[f])
+    return row
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS interactions (
@@ -280,13 +321,14 @@ class LongTermMemory:
         action: str,
         model_used: str,
     ) -> int:
+        uid = user_id or USER_GLOBAL
         conn = _get_conn()
         try:
             cur = conn.execute(
                 """INSERT INTO interactions
                    (ts, user_id, prompt, source, intent, entity_id, action, model_used, outcome, feedback)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unknown')""",
-                (_utc_ts(), user_id or USER_GLOBAL, prompt or "", source or "",
+                (_utc_ts(), uid, _enc(uid, prompt or ""), source or "",
                  intent or "", entity_id or "", action or "", model_used or ""),
             )
             conn.commit()
@@ -358,6 +400,8 @@ class LongTermMemory:
     ) -> None:
         conn = _get_conn()
         try:
+            row = conn.execute("SELECT user_id FROM interactions WHERE id=?", (interaction_id,)).fetchone()
+            uid = row[0] if row else USER_GLOBAL
             conn.execute(
                 """UPDATE interactions SET
                    response=?, outcome=?, intent=COALESCE(NULLIF(?, ''), intent),
@@ -365,7 +409,7 @@ class LongTermMemory:
                    action=COALESCE(NULLIF(?, ''), action),
                    repaired=?, model_used=COALESCE(NULLIF(?, ''), model_used)
                    WHERE id=?""",
-                (response or "", outcome or "unknown", intent or "", entity_id or "", action or "",
+                (_enc(uid, response or ""), outcome or "unknown", intent or "", entity_id or "", action or "",
                  1 if repaired else 0, model_used or "", interaction_id),
             )
             conn.commit()
@@ -534,7 +578,8 @@ class LongTermMemory:
                 params,
             )
             cols = [c[0] for c in cur.description]
-            return [dict(zip(cols, row)) for row in cur.fetchall()]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+            return [_dec_row(r, ["prompt", "response"]) for r in rows]
         finally:
             conn.close()
 
@@ -558,7 +603,8 @@ class LongTermMemory:
                     (limit,),
                 )
             cols = [c[0] for c in cur.description]
-            return [dict(zip(cols, row)) for row in cur.fetchall()]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+            return [_dec_row(r, ["prompt", "response"]) for r in rows]
         finally:
             conn.close()
 
@@ -590,14 +636,15 @@ class LongTermMemory:
         rid: str,
         user_id: str,
     ) -> None:
+        uid = user_id or USER_GLOBAL
         conn = _get_conn()
         try:
             conn.execute(
                 """INSERT INTO agent_messages
                    (ts, rid, user_id, from_agent, to_agent, query, response)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (_utc_ts(), rid or "", user_id or USER_GLOBAL,
-                 from_agent or "", to_agent or "", query or "", response or ""),
+                (_utc_ts(), rid or "", uid,
+                 from_agent or "", to_agent or "", _enc(uid, query or ""), _enc(uid, response or "")),
             )
             conn.commit()
         finally:
@@ -612,7 +659,8 @@ class LongTermMemory:
                 (limit,),
             )
             cols = [c[0] for c in cur.description]
-            return [dict(zip(cols, row)) for row in cur.fetchall()]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+            return [_dec_row(r, ["query", "response"]) for r in rows]
         finally:
             conn.close()
 
@@ -694,11 +742,13 @@ class LongTermMemory:
         """
         conn = _get_conn()
         try:
+            uid_row = conn.execute("SELECT user_id FROM verifications WHERE id=?", (verification_id,)).fetchone()
+            uid = uid_row[0] if uid_row else USER_GLOBAL
             conn.execute(
                 """UPDATE verifications
                    SET verdict=?, ts_answered=?, user_text=?
                    WHERE id=?""",
-                (verdict, _utc_ts(), user_text, verification_id),
+                (verdict, _utc_ts(), _enc(uid, user_text), verification_id),
             )
             # Juster confidence på interaksjonene i vinduet
             new_confidence = 0.9 if verdict == "confirmed" else 0.1
@@ -764,8 +814,8 @@ class LongTermMemory:
                 {
                     "id": r[0],
                     "ts": r[1],
-                    "prompt": r[2][:200],
-                    "response": r[3][:300],
+                    "prompt": _dec(user_id, r[2])[:200],
+                    "response": _dec(user_id, r[3])[:300],
                 }
                 for r in rows
             ]
@@ -814,7 +864,7 @@ def save_daily_summary(date: str, summary: str, interaction_count: int, user_id:
         conn.execute(
             """INSERT OR REPLACE INTO stm_daily_summary (date, user_id, summary, interaction_count, ts_created)
                VALUES (?, ?, ?, ?, ?)""",
-            (date, user_id, summary, interaction_count,
+            (date, user_id, _enc(user_id, summary), interaction_count,
              datetime.now(timezone.utc).isoformat(timespec="seconds")),
         )
         conn.commit()
@@ -832,7 +882,7 @@ def load_latest_daily_summary(user_id: str = USER_GLOBAL) -> str:
             "SELECT summary FROM stm_daily_summary WHERE user_id = ? ORDER BY date DESC LIMIT 1",
             (user_id,),
         ).fetchone()
-        return row[0] if row else ""
+        return _dec(user_id, row[0]) if row else ""
     except Exception as e:
         logger.warning("load_latest_daily_summary failed: %s", e)
         return ""
@@ -845,14 +895,93 @@ def load_recent_daily_summaries(days: int = 3) -> list[dict]:
     conn = _get_conn()
     try:
         rows = conn.execute(
-            """SELECT date, summary, interaction_count
+            """SELECT date, user_id, summary, interaction_count
                FROM stm_daily_summary
                ORDER BY date DESC LIMIT ?""",
             (days,),
         ).fetchall()
-        return [{"date": r[0], "summary": r[1], "count": r[2]} for r in rows]
+        return [{"date": r[0], "summary": _dec(r[1], r[2]), "count": r[3]} for r in rows]
     except Exception as e:
         logger.warning("load_recent_daily_summaries failed: %s", e)
         return []
+    finally:
+        conn.close()
+
+
+def migrate_user_ltm(user_id: str) -> int:
+    """Encrypt all plaintext LTM rows for a user using their current session key.
+
+    Must be called while the user has an active session (session key in RAM).
+    Idempotent — rows already prefixed with ENC: are skipped.
+    Returns number of rows encrypted. Fires quickly for system accounts.
+    """
+    if user_id == USER_GLOBAL:
+        return 0
+    key = get_session_key_sync(user_id)
+    if key is None:
+        logger.info("LTM migrate: no session key for %s — skipping", user_id)
+        return 0
+
+    count = 0
+    conn = _get_conn()
+    try:
+        # interactions: prompt + response
+        for row_id, prompt, response in conn.execute(
+            "SELECT id, prompt, response FROM interactions WHERE user_id=?", (user_id,)
+        ).fetchall():
+            new_prompt = _enc(user_id, prompt) if prompt and not prompt.startswith(_ENC_PREFIX) else prompt
+            new_resp = _enc(user_id, response) if response and not response.startswith(_ENC_PREFIX) else response
+            if new_prompt != prompt or new_resp != response:
+                conn.execute("UPDATE interactions SET prompt=?, response=? WHERE id=?",
+                             (new_prompt, new_resp, row_id))
+                count += 1
+
+        # agent_messages: query + response
+        for row_id, query, response in conn.execute(
+            "SELECT id, query, response FROM agent_messages WHERE user_id=?", (user_id,)
+        ).fetchall():
+            new_q = _enc(user_id, query) if query and not query.startswith(_ENC_PREFIX) else query
+            new_r = _enc(user_id, response) if response and not response.startswith(_ENC_PREFIX) else response
+            if new_q != query or new_r != response:
+                conn.execute("UPDATE agent_messages SET query=?, response=? WHERE id=?",
+                             (new_q, new_r, row_id))
+                count += 1
+
+        # stm_daily_summary: summary
+        for row_id, summary in conn.execute(
+            "SELECT id, summary FROM stm_daily_summary WHERE user_id=?", (user_id,)
+        ).fetchall():
+            if summary and not summary.startswith(_ENC_PREFIX):
+                conn.execute("UPDATE stm_daily_summary SET summary=? WHERE id=?",
+                             (_enc(user_id, summary), row_id))
+                count += 1
+
+        # verifications: user_text
+        for row_id, user_text in conn.execute(
+            "SELECT id, user_text FROM verifications WHERE user_id=?", (user_id,)
+        ).fetchall():
+            if user_text and not user_text.startswith(_ENC_PREFIX):
+                conn.execute("UPDATE verifications SET user_text=? WHERE id=?",
+                             (_enc(user_id, user_text), row_id))
+                count += 1
+
+        # episodes: narrative + topics (written by nightjob but encrypted here for completeness)
+        for row_id, narrative, topics in conn.execute(
+            "SELECT id, narrative, topics FROM episodes WHERE user_id=?", (user_id,)
+        ).fetchall():
+            new_n = _enc(user_id, narrative) if narrative and not narrative.startswith(_ENC_PREFIX) else narrative
+            new_t = _enc(user_id, topics) if topics and not topics.startswith(_ENC_PREFIX) else topics
+            if new_n != narrative or new_t != topics:
+                conn.execute("UPDATE episodes SET narrative=?, topics=? WHERE id=?",
+                             (new_n, new_t, row_id))
+                count += 1
+
+        conn.commit()
+        if count:
+            logger.info("LTM migrate: encrypted %d rows for %s", count, user_id)
+        return count
+    except Exception as e:
+        logger.warning("LTM migrate: failed for %s: %s", user_id, e)
+        return 0
     finally:
         conn.close()

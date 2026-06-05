@@ -31,6 +31,7 @@ sys.path.insert(0, "/kaare")
 from qdrant_client import QdrantClient
 from qdrant_client.models import FieldCondition, Filter, PointIdsList
 from kaare_core.config import get_service as _svc, get_qdrant_api_key as _qdrant_key
+from kaare_core.memory.long_term import _ENC_PREFIX
 from kaare_core.memory.semantic_memory import ensure_collection, index_episode
 from adapters.llm_adapter import call_llm_chat as _llm_chat
 
@@ -136,8 +137,10 @@ def _build_compression_prompt(interactions: list[dict]) -> str:
     ]
     for ix in interactions:
         ts     = ix["ts"][:16].replace("T", " ")
-        prompt = ix["prompt"][:120].replace("\n", " ")
-        resp   = ix["response"][:120].replace("\n", " ")
+        raw_p  = ix["prompt"] or ""
+        raw_r  = ix["response"] or ""
+        prompt = ("[kryptert]" if raw_p.startswith(_ENC_PREFIX) else raw_p[:120]).replace("\n", " ")
+        resp   = ("[kryptert]" if raw_r.startswith(_ENC_PREFIX) else raw_r[:120]).replace("\n", " ")
         entity = f" [{ix['entity_id']}]" if ix.get("entity_id") else ""
         lines.append(
             f"[{ts}]{entity} Bruker: {prompt} | Svar: {resp} | Utfall: {ix['outcome']}"

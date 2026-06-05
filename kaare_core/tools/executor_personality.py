@@ -11,6 +11,8 @@ _SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
 _PERSONALITY_SELF_PATH = Path("/kaare/state/personality_self.md")
 
 PERSONALITY_TOOLS = {
+    "self_image",
+    "user_profile",
     "selvbilde",
     "les_selvbilde",
     "slett_fra_selvbilde",
@@ -19,6 +21,7 @@ PERSONALITY_TOOLS = {
     "brukerprofil",
     "oppdater_brukerprofil",
     "les_brukerprofil",
+    "read_user_profile",
     "sett_profilfelt",
     "slett_fra_brukerprofil",
     "rediger_brukerprofil",
@@ -145,17 +148,15 @@ def _read_user_profile(user_id: str, lang: str = "nb") -> str:
     if not user_id or user_id == "global":
         return t("pers_no_user", lang)
     try:
-        from kaare_core.users.profile_manager import read_profile_yaml_as_text
+        from kaare_core.users.profile_manager import read_profile_yaml_as_text, get_recent_observations
         yaml_content = read_profile_yaml_as_text(user_id)
     except Exception:
         yaml_content = ""
-    obs_path = Path(f"/kaare/state/users/{user_id}/observations.md")
     obs_content = ""
-    if obs_path.exists():
-        try:
-            obs_content = obs_path.read_text(encoding="utf-8").strip()
-        except Exception:
-            pass
+    try:
+        obs_content = get_recent_observations(user_id, days=365).strip()
+    except Exception:
+        pass
     parts = []
     if yaml_content and yaml_content != "Ingen profildata registrert ennå.":
         parts.append(f"=== PROFIL (profile.yaml) ===\n{yaml_content}")
@@ -171,16 +172,11 @@ def _delete_from_user_profile(fragment: str, user_id: str, lang: str = "nb") -> 
         return t("pers_empty_observation", lang)
     if not user_id or user_id == "global":
         return t("pers_no_user", lang)
-    path = Path(f"/kaare/state/users/{user_id}/observations.md")
-    if not path.exists():
-        return t("pers_no_observations_to_delete", lang)
     try:
-        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-        remaining = [l for l in lines if fragment.lower() not in l.lower()]
-        count = len(lines) - len(remaining)
-        if count == 0:
+        from kaare_core.users.profile_manager import delete_observation_fragment
+        found, count = delete_observation_fragment(user_id, fragment)
+        if not found:
             return t("pers_fragment_not_found", lang, fragment=fragment)
-        path.write_text("".join(remaining), encoding="utf-8")
         return t("pers_lines_deleted", lang, count=count)
     except Exception as e:
         return t("pers_profile_delete_error", lang, error=e)
@@ -191,24 +187,12 @@ def _edit_user_profile(fragment: str, new_text: str, user_id: str, lang: str = "
         return t("pers_fragment_new_required", lang)
     if not user_id or user_id == "global":
         return t("pers_no_user", lang)
-    path = Path(f"/kaare/state/users/{user_id}/observations.md")
-    if not path.exists():
-        return t("pers_no_observations_to_edit", lang)
     try:
-        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-        result = []
-        changed = 0
-        date = datetime.now().strftime("%Y-%m-%d")
-        for line in lines:
-            if fragment.lower() in line.lower():
-                result.append(f"[{date}] {new_text.strip()}\n")
-                changed += 1
-            else:
-                result.append(line)
-        if changed == 0:
+        from kaare_core.users.profile_manager import edit_observation_fragment
+        found, count = edit_observation_fragment(user_id, fragment, new_text)
+        if not found:
             return t("pers_fragment_not_found", lang, fragment=fragment)
-        path.write_text("".join(result), encoding="utf-8")
-        return t("pers_lines_updated", lang, count=changed)
+        return t("pers_lines_updated", lang, count=count)
     except Exception as e:
         return t("pers_profile_edit_error", lang, error=e)
 
@@ -217,7 +201,7 @@ async def dispatch(name: str, arguments: dict) -> str:
     user_id = arguments.get("_user_id", "global")
     lang = get_lang(user_id)
 
-    if name == "selvbilde":
+    if name in ("self_image", "selvbilde"):
         action = arguments.get("action", "")
         if action == "read":
             try:
@@ -241,9 +225,9 @@ async def dispatch(name: str, arguments: dict) -> str:
             if _is_allowed_self_contributor(user_id):
                 return _delete_from_self_image((arguments.get("fragment") or ""), lang)
             return t("pers_noted", lang)
-        return f"Unknown action for selvbilde: '{action}'. Valid: read, update, edit, delete."
+        return f"Unknown action for self_image: '{action}'. Valid: read, update, edit, delete."
 
-    if name == "brukerprofil":
+    if name in ("user_profile", "brukerprofil"):
         action = arguments.get("action", "")
         if action == "read":
             return _read_user_profile(user_id=user_id, lang=lang)
@@ -309,7 +293,7 @@ async def dispatch(name: str, arguments: dict) -> str:
                 return result
             except Exception as e:
                 return t("pers_house_update_error", lang, error=e)
-        return f"Unknown action for brukerprofil: '{action}'. Valid: read, update, update_house, set_field, edit, delete, curiosity."
+        return f"Unknown action for user_profile: '{action}'. Valid: read, update, update_house, set_field, edit, delete, curiosity."
 
     if name == "les_selvbilde":
         try:
