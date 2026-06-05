@@ -3019,6 +3019,21 @@ _T: dict = {
         "en": "Image ID from the kare_image tool. The image will be shown on screen (only for action='display').",
         "de": "Bild-ID vom kare_image-Tool. Das Bild wird auf dem Bildschirm angezeigt (nur für action='display').",
     },
+    "tool_announce_title_desc": {
+        "nb": "Overskrift i overlay (standard: navn på assistenten).",
+        "en": "Display overlay title (default: assistant name).",
+        "de": "Titel des Overlays (Standard: Name des Assistenten).",
+    },
+    "tool_announce_duration_desc": {
+        "nb": "Sekunder overlayет vises (standard: 8).",
+        "en": "Seconds the overlay is shown (default: 8).",
+        "de": "Sekunden, die das Overlay angezeigt wird (Standard: 8).",
+    },
+    "tool_announce_position_desc": {
+        "nb": "Posisjon på skjermen (standard: bottom_right).",
+        "en": "Overlay position on screen (default: bottom_right).",
+        "de": "Position auf dem Bildschirm (Standard: bottom_right).",
+    },
     "announce_no_display_nodes": {
         "nb": "Ingen skjermnoder er konfigurert. Legg til TV eller projektor under Innstillinger → Noder.",
         "en": "No display nodes are configured. Add a TV or projector under Settings → Nodes.",
@@ -3177,8 +3192,23 @@ _T: dict = {
     },
     "gen_promise_correction": {
         "nb": "[SYSTEM: Du sa at du ville notere eller huske noe, men du kalte ikke notat-verktøyet. Gjør det nå: kall notat(action='write', list_name='kare') med det du lovet å huske. Kun tool-kall — ingen forklarende tekst.]",
-        "en": "[SYSTEM: You said you would note or remember something, but you did not call the notat tool. Do it now: call notat(action='write', list_name='kare') with what you promised to remember. Tool call only — no explanatory text.]",
-        "de": "[SYSTEM: Du hast gesagt, du würdest etwas notieren oder merken, aber du hast das notat-Werkzeug nicht aufgerufen. Tue es jetzt: rufe notat(action='write', list_name='kare') mit dem auf, was du versprochen hast zu merken. Nur Werkzeugaufruf — kein erklärender Text.]",
+        "en": "[SYSTEM: You said you would note or remember something, but you did not call the note tool. Do it now: call note(action='write', list_name='kare') with what you promised to remember. Tool call only — no explanatory text.]",
+        "de": "[SYSTEM: Du hast gesagt, du würdest etwas notieren oder merken, aber du hast das note-Werkzeug nicht aufgerufen. Tue es jetzt: rufe note(action='write', list_name='kare') mit dem auf, was du versprochen hast zu merken. Nur Werkzeugaufruf — kein erklärender Text.]",
+    },
+    "gen_promise_correction_note": {
+        "nb": "[SYSTEM: Du sa at du ville notere eller huske noe, men du kalte ikke note-verktøyet. Gjør det nå: kall note(action='write', list_name='kare') med det du lovet å huske. Kun tool-kall — ingen forklarende tekst.]",
+        "en": "[SYSTEM: You said you would note or remember something, but you did not call the note tool. Do it now: call note(action='write', list_name='kare') with what you promised to remember. Tool call only — no explanatory text.]",
+        "de": "[SYSTEM: Du hast gesagt, du würdest etwas notieren, aber du hast das note-Werkzeug nicht aufgerufen. Tue es jetzt: rufe note(action='write', list_name='kare') auf. Nur Werkzeugaufruf — kein erklärender Text.]",
+    },
+    "gen_promise_correction_timer": {
+        "nb": "[SYSTEM: Du sa at du ville sette en timer eller påminnelse, men du kalte ikke timer-verktøyet. Gjør det nå: kall timer med riktig action, tid og tekst. Kun tool-kall — ingen forklarende tekst.]",
+        "en": "[SYSTEM: You said you would set a timer or reminder, but you did not call the timer tool. Do it now: call timer with the correct action, time, and text. Tool call only — no explanatory text.]",
+        "de": "[SYSTEM: Du hast gesagt, du würdest einen Timer oder eine Erinnerung setzen, aber du hast das timer-Werkzeug nicht aufgerufen. Tue es jetzt: rufe timer mit der richtigen Aktion, Zeit und Text auf. Nur Werkzeugaufruf — kein erklärender Text.]",
+    },
+    "gen_promise_correction_generic": {
+        "nb": "[SYSTEM: Du lovet å utføre en handling med et verktøy, men kalte det ikke. Gjør det nå — kun tool-kall, ingen forklarende tekst.]",
+        "en": "[SYSTEM: You promised to perform an action using a tool, but did not call it. Do it now — tool call only, no explanatory text.]",
+        "de": "[SYSTEM: Du hast versprochen, eine Aktion mit einem Werkzeug durchzuführen, aber es nicht aufgerufen. Tue es jetzt — nur Werkzeugaufruf, kein erklärender Text.]",
     },
     "lib_context_city_country": {
         "nb": "[Kontekst: {city}, {country}] ",

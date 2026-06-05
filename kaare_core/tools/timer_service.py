@@ -658,7 +658,7 @@ def list_timers(lang: str = "nb", user_id: Optional[str] = None) -> str:
     """List timere. user_id=None → alle. user_id=str → kun denne brukeren."""
     visible = {
         k: v for k, v in _timers.items()
-        if user_id is None or v.get("user_id") == user_id
+        if user_id is None or v.get("user_id") == user_id or v.get("user_id") is None
     }
     if not visible:
         return t("timer_none_active", lang)

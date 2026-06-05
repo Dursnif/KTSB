@@ -537,7 +537,7 @@ manual YAML editing required after the initial install.
 | Nodes | Configure voice and display output nodes (14 types: 6 audio-only, 7 multi audio+display, 1 display-only) |
 | Tools | SSH node management (add/edit/delete/test, linux and HA OS presets, sudo config); active timers with per-user counts and configurable max; tool execution log (last 80 entries, live, colour-coded by source) |
 | Reflections | Meeting notes by date, topic submission, PIN-protected user views |
-| System | Hot-reload config, health check, hardware info, service restart, manual memory compression, config rollback, automated test suite (36 tests — run from GUI, results shown inline) |
+| System | Hot-reload config, health check, hardware info, service restart, manual memory compression, server-side backup points (save / restore with PIN / download ZIP, max 5), config rollback, automated test suite (36 tests — run from GUI, results shown inline) |
 | Agent Messages | Read-only view of inter-agent exchanges |
 
 ### Settings areas
@@ -737,7 +737,15 @@ Each personal user account has a per-user X25519 keypair (PyNaCl / libsodium):
 
 **Household-visible fields:** a small, hardcoded subset of profile fields (`name`, pronouns, basic preferences) is stored unencrypted in a separate `household_visible` section. This is what Kåre injects into the system prompt — it never includes conversation history or observations.
 
-> **Phase 2 (planned — P02):** at-rest encryption for `profile.yaml`, `observations.md`, STM dialog entries, LTM SQLite rows, and Qdrant semantic memory payloads. Recovery seed phrase UI. Privacy tab in user settings.
+**At-rest encryption:** all personal data beyond household-visible fields is encrypted at rest using the per-user keypair:
+
+- `profile.yaml` private section and `observations.md` — SealedBox-encrypted as `.enc` files; decrypted at session start
+- STM autosave snapshots — sealed as `.enc` files on disk; decrypted at login with the in-RAM private key
+- LTM SQLite rows — `ENC:` prefix scheme; prompt, response, and episode narrative fields encrypted on write, decrypted on read
+- Qdrant `kaare_memory` narrative payloads — SealedBox on upsert; decrypted with session key on retrieval
+- Existing plaintext data migrated automatically on first login after upgrade
+
+**Account recovery:** a BIP39-derived seed phrase is generated at account creation. The seed phrase resets the PIN and re-derives all encryption keys without admin involvement. A standalone `/recover` page (no session required) handles the full flow. Data written before key re-derivation cannot be decrypted after recovery.
 
 ### Audit and monitoring
 
@@ -806,6 +814,8 @@ Configurable in `settings.yaml` under `data_retention:`. The nightly Step 0 dele
 | PWA (install as app) | ✅ | Core | `frontend/public/manifest.json` |
 | Voice enrollment per user | ✅ | full | `kaare_core/voice/` |
 | Learned reflexes (skriv_reflex) | ✅ | Core | `kaare_fastpath.py` |
+| Per-user end-to-end encryption | ✅ | Core | `kaare_core/crypto.py`, `kaare_core/session_keys.py`, `kaare_core/memory/`, `kaare_core/users/` |
+| Account recovery (seed phrase) | ✅ | Core | `kaare_core/routers/router_users.py`, `frontend/src/pages/Recovery.tsx` |
+| Server-side backup points | ✅ | Core | `kaare_core/routers/router_backup.py` |
 | Mood system (VAD) | 📋 | Core | — |
 | LTM source trust weighting | 📋 | Core | — |
-| Per-user LTM encryption | 📋 | Core | — |

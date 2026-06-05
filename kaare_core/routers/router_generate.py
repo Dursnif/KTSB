@@ -51,16 +51,92 @@ _CLOUD_TRIGGERS = [
 
 _MAX_TOOL_ROUNDS = 6  # max rounds in the tool loop (prevents infinite loop)
 
-# Promise interceptor: detect when Kåre claims to write/note something without a tool call.
-# Only fires once per request, only if no "notat" tool was already called this session.
-_PROMISE_RE = re.compile(
-    r'\bjeg\s+(noterte|noterer|har\s+notert|skriver?\s+det\s+ned|'
-    r'har\s+skrevet|husker\s+det|vil\s+huske|la\s+det\s+til|'
-    r'har\s+lagt\s+(det\s+)?til|følger\s+opp|merker\s+meg|noterer\s+meg)\b'
-    r'|'
-    r'\b(huskelisten\s+min|min\s+huskeliste|på\s+lista\s+mi|lagt\s+til\s+på\s+(min|kåres?)\s+(liste|huskeliste))\b',
-    re.IGNORECASE,
-)
+# Promise interceptor: detect when Kåre claims to use a tool but never calls it.
+# Fires at most once per request. Patterns cover nb / en / de.
+# Each entry: (expected_tool_names, i18n_correction_key, compiled_pattern)
+_TOOL_PROMISES: list[tuple[set[str], str, re.Pattern]] = [
+    (
+        {"note"},
+        "gen_promise_correction_note",
+        re.compile(
+            # nb
+            r'\bjeg\s+(noterte|noterer|har\s+notert|skriver?\s+det\s+ned|har\s+skrevet'
+            r'|husker\s+det|vil\s+huske|la\s+det\s+til|har\s+lagt\s+(det\s+)?til'
+            r'|følger\s+opp|merker\s+meg|noterer\s+meg)\b'
+            r'|\b(huskelisten\s+min|min\s+huskeliste|på\s+lista\s+mi'
+            r'|lagt\s+til\s+på\s+(min|kåres?)\s+(liste|huskeliste))\b'
+            # en
+            r"|I'?ve?\s+(noted\s+that|jotted\s+that\s+down|written\s+(that\s+)?down"
+            r'|added\s+(it\s+)?to\s+(my\s+)?(list|notes?))\b'
+            r"|\bI('ll|'m going to)\s+(note|jot|write\s+(that\s+)?down)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        {"timer"},
+        "gen_promise_correction_timer",
+        re.compile(
+            # nb
+            r'\bjeg\s+(setter?\s+(en\s+)?(timer|påminnelse|alarm)'
+            r'|minner\s+deg\s+om|vil\s+minne\s+deg|kommer\s+til\s+å\s+minne'
+            r'|har\s+satt\s+(en\s+)?(timer|påminnelse))\b'
+            r'|\b(timer\s+er\s+satt|påminnelse\s+er\s+(satt|opprettet))\b'
+            # en
+            r"|I('ll|'ve|'m going to)\s+(set\s+(a\s+)?(timer|reminder|alarm)"
+            r'|remind\s+you)\b'
+            r"|\bI('ve|have)\s+set\s+(a\s+)?(timer|reminder)\b"
+            # de
+            r'|\bich\s+(stelle\s+(einen?\s+)?(timer|wecker|erinnerung)'
+            r'|erinnere\s+dich|werde\s+(dich\s+)?erinnern'
+            r'|habe\s+(einen?\s+)?(timer|erinnerung)\s+gestellt)\b',
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        {"user_profile"},
+        "gen_promise_correction_generic",
+        re.compile(
+            # nb
+            r'\bjeg\s+(oppdaterer\s+(profilen\s+din|brukerinfo(en)?)'
+            r'|lagrer\s+det\s+i\s+profilen|har\s+(oppdatert|lagret)\s+(profilen|det\s+i\s+profilen))\b'
+            # en
+            r"|I('ve|'ll)\s+(updated?|saved?|stored?)\s+(your\s+)?(profile|user\s+info|preferences)\b"
+            # de
+            r'|\bich\s+(habe\s+(dein\s+)?profil\s+aktualisiert'
+            r'|aktualisiere\s+(dein\s+)?profil|speichere\s+(es\s+)?in\s+(deinem\s+)?profil)\b',
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        {"world"},
+        "gen_promise_correction_generic",
+        re.compile(
+            # nb
+            r'\bjeg\s+(oppdaterer\s+verdensbildet|lagrer\s+det\s+i\s+verdensbildet'
+            r'|har\s+oppdatert\s+verdensbildet)\b'
+            # en
+            r"|I('ve|'ll)\s+(updated?|saved?)\s+(the\s+)?(world\s+(model|view|knowledge))\b"
+            # de
+            r'|\bich\s+(habe\s+(das\s+)?weltbild\s+aktualisiert|aktualisiere\s+(das\s+)?weltbild)\b',
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        {"memory"},
+        "gen_promise_correction_generic",
+        re.compile(
+            # nb
+            r'\bjeg\s+(lagrer?\s+det\s+i\s+minnet|har\s+lagret\s+det\s+i\s+minnet'
+            r'|søker\s+i\s+minnet\s+etter)\b'
+            # en
+            r"|I('ve|'ll)\s+(saved?\s+(that\s+)?to\s+(my\s+)?memory|stored?\s+that\s+in\s+memory)\b"
+            # de
+            r'|\bich\s+(speichere\s+(es\s+)?im\s+(gedächtnis|speicher)'
+            r'|habe\s+(es\s+)?im\s+gedächtnis\s+gespeichert)\b',
+            re.IGNORECASE,
+        ),
+    ),
+]
 
 
 async def _store_input_images(images: list[str], user_id: str) -> None:
@@ -154,7 +230,7 @@ async def handle_generate(
         if not clean_prompt:
             clean_prompt = user_text
 
-        print(f"[ROUTER] cloud trigger → '{clean_prompt}'")
+        print(f"[ROUTER] cloud trigger rid={rid} chars={len(clean_prompt)}")
         memory.add_dialog(role="user", text=user_text, user_id=user_id)
         try:
             cloud_res = await api_ask_cloud(clean_prompt)
@@ -395,23 +471,20 @@ async def handle_generate(
             # Final answer — Kåre is done
             text_out = result.get("text", "").strip() or _t_i18n("gen_no_response", lang)
 
-            # Promise interceptor: if Kåre claimed to note/remember something but
-            # never called the "notat" tool, force one correction round.
-            if (
-                not _promise_retry_done
-                and round_num < _MAX_TOOL_ROUNDS - 1
-                and "notat" not in used_tools
-                and _PROMISE_RE.search(text_out)
-            ):
-                _promise_retry_done = True
-                _original_text_out = text_out
-                print("[ROUTER] promise interceptor: Kåre promised to write without a tool call — forcing retry")
-                messages.append(result["message"])
-                messages.append({
-                    "role": "user",
-                    "content": _t_i18n("gen_promise_correction", lang),
-                })
-                continue
+            # Promise interceptor: if Kåre claimed to use a tool but never called it,
+            # force one correction round. Covers note/timer/user_profile/world/memory.
+            if not _promise_retry_done and round_num < _MAX_TOOL_ROUNDS - 1:
+                _used_set = set(used_tools)
+                for _expected, _corr_key, _pattern in _TOOL_PROMISES:
+                    if _expected & _used_set:
+                        continue  # tool was already called this request
+                    if _pattern.search(text_out):
+                        _promise_retry_done = True
+                        _original_text_out = text_out
+                        print(f"[ROUTER] promise interceptor: promised {_expected} without calling — forcing retry")
+                        messages.append(result["message"])
+                        messages.append({"role": "user", "content": _t_i18n(_corr_key, lang)})
+                        break
 
             print(f"[ROUTER] final answer after {round_num + 1} round(s)")
             break
@@ -443,11 +516,11 @@ async def handle_generate(
         for fn_name, fn_args, tool_result in call_results:
             used_tools.append(fn_name)
 
-            if fn_name == "styr_enhet":
+            if fn_name in ("ha_control", "styr_enhet"):
                 ok = "OK:" in tool_result
                 ha_actions.append((fn_args.get("entity_id"), fn_args.get("action"), ok))
 
-            if fn_name in ("kare_image", "se_bilder", "kamera"):
+            if fn_name in ("kare_image", "view_images", "camera", "se_bilder", "kamera"):
                 for _m in re.finditer(r"/api/image/[a-zA-Z0-9_-]+", tool_result):
                     _url = _m.group(0)
                     if _url not in _generated_image_urls:
@@ -479,7 +552,7 @@ async def handle_generate(
         if _promise_retry_done:
             _tags = []
             for _fn, _fa, _tr in call_results:
-                if _fn == "notat":
+                if _fn in ("note", "notat"):
                     _tags.append("_(notert ✓)_")
                 else:
                     # Tool with real output — include truncated result

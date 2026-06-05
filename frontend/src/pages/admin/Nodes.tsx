@@ -113,7 +113,13 @@ function NodeModal({
 
   const handleSave = () => {
     if (!key.trim()) return;
-    onSave(key.trim(), form);
+    const meta = TYPE_META[form.type] ?? DEFAULT_TYPE_META;
+    const resolved = {
+      ...form,
+      has_audio: form.has_audio ?? meta.defaultAudio,
+      has_display: form.has_display ?? meta.defaultDisplay,
+    };
+    onSave(key.trim(), resolved);
     onClose();
   };
 
