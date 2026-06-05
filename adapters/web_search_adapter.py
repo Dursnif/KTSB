@@ -256,7 +256,7 @@ async def _ask_library(query: str, sources: list[dict], lang: str = "nb") -> str
 
 # ── Main function ──────────────────────────────────────────────────────────
 
-async def søk_nett(query: str, user_id: str = "global") -> str:
+async def web_search(query: str, user_id: str = "global") -> str:
     """
     Search the web, fetch page content, and let Miss Library synthesize the answer.
     Tries primary provider first; falls back if it returns no results.

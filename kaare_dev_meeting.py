@@ -705,8 +705,8 @@ async def _execute_leder_tool(name: str, arguments: dict) -> str:
         query = arguments.get("query", "").strip()
         if not query:
             return t("meet_empty_search", get_lang("global"))
-        from adapters.web_search_adapter import søk_nett
-        return await søk_nett(query)
+        from adapters.web_search_adapter import web_search
+        return await web_search(query)
     if name == "systemsjekk":
         return await _run_health_check()
     return t("meet_unknown_tool", get_lang("global"), name=name)

@@ -235,10 +235,10 @@ export default function TabForklaringer() {
     Array.from({ length: count }, (_, i) => t(`forklaringer.${key}.item_${i + 1}`));
 
   const TOOL_KEYS = [
-    "styr_enhet", "les_ha", "timer", "get_weather", "library", "søk_nett",
-    "kare_image", "se_bilder", "media", "notat", "announce", "reason_freely",
-    "minne", "kamera", "søk_i_argus", "les_møte", "mechanic",
-    "utforsk_kode", "inspiser_system", "ssh_kommando", "local_kommando", "restart_docker_container",
+    "ha_control", "ha_read", "timer", "get_weather", "library", "web_search",
+    "kare_image", "view_images", "media", "note", "announce", "reason_freely",
+    "memory", "camera", "search_argus", "read_meeting", "mechanic",
+    "explore_code", "inspect_system", "ssh_command", "local_command", "restart_docker_container",
   ];
 
   return (

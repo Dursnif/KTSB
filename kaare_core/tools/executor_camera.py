@@ -21,6 +21,7 @@ from kaare_core.tools.i18n import t, get_lang
 logger = logging.getLogger(__name__)
 
 CAMERA_TOOLS = {
+    "camera",
     "kamera",
     "hent_snapshot",
     "hent_frigate_hendelser",
@@ -49,7 +50,7 @@ async def describe_snapshot(camera: str, prompt: str) -> str | None:
 async def dispatch(name: str, arguments: Dict) -> str:
     lang = get_lang(arguments.get("_user_id", "global"))
 
-    if name == "kamera":
+    if name in ("camera", "kamera"):
         return await _kamera(arguments, lang)
 
     if name == "hent_snapshot":
@@ -285,7 +286,7 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
             return f"{analysis}\n\nBildet er klart: {_img_url}"
         return analysis
 
-    return f"Unknown action for kamera: '{action}'. Valid: snapshot, events, frigate, list, analyze, show_event."
+    return f"Unknown action for camera: '{action}'. Valid: snapshot, events, frigate, list, analyze, show_event."
 
 
 async def _compat_hent_snapshot(arguments: Dict, lang: str = "nb") -> str:

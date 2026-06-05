@@ -1,67 +1,67 @@
 always_included:
-- selvbilde
-- verden
-- brukerprofil
-- les_indre_tanker
-- les_tankehistorikk
+- self_image
+- world
+- user_profile
+- inner_thoughts
+- thought_history
 roles:
   child:
-  - styr_enhet
-  - les_ha
+  - ha_control
+  - ha_read
   - timer
   - get_weather
   - library
   - kare_image
-  - se_bilder
+  - view_images
   - media
-  - notat
+  - note
   - announce
   - reason_freely
   teen:
-  - styr_enhet
-  - les_ha
+  - ha_control
+  - ha_read
   - timer
   - get_weather
   - library
   - library_online
-  - søk_nett
+  - web_search
   - kare_image
-  - se_bilder
+  - view_images
   - media
-  - notat
+  - note
   - announce
   - reason_freely
   young_adult:
-  - styr_enhet
-  - les_ha
+  - ha_control
+  - ha_read
   - timer
   - get_weather
   - library
   - library_online
-  - søk_nett
+  - web_search
   - kare_image
-  - se_bilder
+  - view_images
   - media
-  - notat
+  - note
   - announce
   - reason_freely
-  - minne
+  - memory
   adult:
-  - styr_enhet
-  - les_ha
+  - ha_control
+  - ha_read
   - timer
   - get_weather
   - library
   - library_online
-  - søk_nett
+  - web_search
   - kare_image
-  - se_bilder
+  - view_images
   - media
-  - notat
+  - note
   - announce
   - reason_freely
-  - minne
-  - kamera
+  - memory
+  - camera
   admin:
   - all
 agent_tools:

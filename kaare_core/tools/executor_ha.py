@@ -21,6 +21,8 @@ _ALIASES_PATH = "/kaare/configs/aliases.yaml"
 HA_GATEWAY_URL = _svc("internal", "ha_gateway")
 
 HA_TOOLS = {
+    "ha_read",
+    "ha_control",
     "les_ha",
     "les_alias_lista",
     "les_ha_status",
@@ -337,7 +339,7 @@ async def _read_ha_status(entity_id: str, lang: str = "nb") -> str:
 async def dispatch(name: str, arguments: dict) -> str:
     lang = get_lang(arguments.get("_user_id", "global"))
 
-    if name == "les_ha":
+    if name in ("ha_read", "les_ha"):
         action = arguments.get("action", "")
         if action == "room_list":
             return _format_aliases(None, lang=lang)
@@ -345,7 +347,7 @@ async def dispatch(name: str, arguments: dict) -> str:
             return _format_aliases(arguments.get("room"), lang=lang)
         if action == "status":
             return await _read_ha_status(arguments.get("entity_id", ""), lang=lang)
-        return f"Unknown action for les_ha: '{action}'. Valid: room_list, room_devices, status."
+        return f"Unknown action for ha_read: '{action}'. Valid: room_list, room_devices, status."
 
     if name == "les_alias_lista":
         return _format_aliases(arguments.get("room"), lang=lang)
@@ -353,7 +355,7 @@ async def dispatch(name: str, arguments: dict) -> str:
     if name == "les_ha_status":
         return await _read_ha_status(arguments.get("entity_id", ""), lang=lang)
 
-    if name == "styr_enhet":
+    if name in ("ha_control", "styr_enhet"):
         action = arguments.get("action", "")
 
         if action == "ha_history":

@@ -368,7 +368,7 @@ _LEDER_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "les_brukerprofil",
+            "name": "read_user_profile",
             "description": "Les nåværende brukerprofil – hva Kåre vet om brukeren",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
@@ -400,7 +400,7 @@ _LEDER_TOOLS = [
 
 async def _execute_leder_tool(name: str, arguments: dict) -> str:
     try:
-        if name == "les_brukerprofil":
+        if name in ("read_user_profile", "les_brukerprofil"):
             profile = load_profile(_active_user_id)
             return f"User profile:\n{yaml.dump(profile, allow_unicode=True, default_flow_style=False)}"
 
@@ -419,8 +419,8 @@ async def _execute_leder_tool(name: str, arguments: dict) -> str:
             query = arguments.get("query", "").strip()
             if not query:
                 return t("meet_empty_search", get_lang("global"))
-            from adapters.web_search_adapter import søk_nett
-            return await søk_nett(query)
+            from adapters.web_search_adapter import web_search
+            return await web_search(query)
 
         return t("meet_unknown_tool", get_lang("global"), name=name)
     except Exception as e:

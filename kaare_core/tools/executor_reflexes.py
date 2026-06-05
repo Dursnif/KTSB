@@ -27,7 +27,7 @@ _RULES_PATH = Path("/kaare/configs/fastpath_rules.yaml")
 _PROPOSALS_PATH = Path("/kaare/state/reflex_proposals.json")
 _SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
 
-REFLEX_TOOLS = {"skriv_reflex"}
+REFLEX_TOOLS = {"write_reflex", "skriv_reflex"}
 
 
 def _get_threshold() -> int:
@@ -260,7 +260,7 @@ def _list_proposals(lang: str) -> str:
 async def dispatch(name: str, arguments: Dict) -> str:
     lang = get_lang(arguments.get("_user_id", "global"))
 
-    if name == "skriv_reflex":
+    if name in ("write_reflex", "skriv_reflex"):
         action = arguments.get("action", "")
         if action == "suggest":
             return _suggest(lang, arguments.get("_user_id", "global"))
@@ -271,7 +271,7 @@ async def dispatch(name: str, arguments: Dict) -> str:
         if action == "list":
             return _list_proposals(lang)
         return (
-            f"Unknown action for skriv_reflex: '{action}'. "
+            f"Unknown action for write_reflex: '{action}'. "
             "Valid: suggest, confirm, reject, list."
         )
 

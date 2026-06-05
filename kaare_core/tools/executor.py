@@ -134,7 +134,7 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
     if name in executor_world.WORLD_TOOLS:
         return await executor_world.dispatch(name, arguments)
 
-    if name == "notat":
+    if name in ("note", "notat"):
         action = arguments.get("action", "")
         liste = arguments.get("list_name", arguments.get("liste", "arkitekt"))
         user_id = arguments.get("_user_id", "global")
@@ -202,7 +202,7 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             return slett_notat((arguments.get("note_id") or arguments.get("notat_id") or ""), lang=lang)
         if action == "clear":
             return tøm_notater((arguments.get("category") or arguments.get("kategori")), lang=lang)
-        return f"Unknown action for notat: '{action}'. Valid: write, read, delete, clear."
+        return f"Unknown action for note: '{action}'. Valid: write, read, delete, clear."
 
     if name in executor_system.SYSTEM_TOOLS:
         return await executor_system.dispatch(name, arguments)
@@ -271,7 +271,7 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             return t("exec_image_failed", lang, error=res.get('error', 'ukjent feil'))
         return t("exec_image_ready", lang, image_id=res['image_id'])
 
-    if name == "se_bilder":
+    if name in ("view_images", "se_bilder"):
         import base64 as _b64
         from kaare_core.image_store import list_images, find_image
         uid = arguments.get("user_id") or arguments.get("_user_id", "global")

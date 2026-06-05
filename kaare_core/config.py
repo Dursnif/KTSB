@@ -285,7 +285,7 @@ def get_tools_for_role(role: str, user_id: str = "") -> list:
 
     result: list = []
     had_library  = False
-    has_søk_nett = any(t["function"]["name"] == "søk_nett" for t in candidate)
+    has_søk_nett = any(t["function"]["name"] == "web_search" for t in candidate)
 
     for tool in candidate:
         name: str = tool["function"]["name"]
@@ -300,7 +300,7 @@ def get_tools_for_role(role: str, user_id: str = "") -> list:
     # If agents off and role had library but not søk_nett → add direct web search
     if had_library and not agents_enabled and not has_søk_nett:
         for tool in get_tools(lang):
-            if tool["function"]["name"] == "søk_nett":
+            if tool["function"]["name"] == "web_search":
                 result.append(tool)
                 break
 

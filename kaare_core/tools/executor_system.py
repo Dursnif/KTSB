@@ -22,6 +22,10 @@ from kaare_core.tools.shared_tools import (
 )
 
 SYSTEM_TOOLS = {
+    "explore_code",
+    "inspect_system",
+    "ssh_command",
+    "local_command",
     "utforsk_kode",
     "inspiser_system",
     "read_file",
@@ -39,7 +43,7 @@ SYSTEM_TOOLS = {
 async def dispatch(name: str, arguments: Dict) -> str:
     lang = get_lang(arguments.get("_user_id", "global"))
 
-    if name == "utforsk_kode":
+    if name in ("explore_code", "utforsk_kode"):
         action = arguments.get("action", "")
         if action == "read":
             return _shared_read_file(arguments, lang=lang)
@@ -47,9 +51,9 @@ async def dispatch(name: str, arguments: Dict) -> str:
             return _shared_list_files(arguments, lang=lang)
         if action == "search":
             return _shared_search_code(arguments, lang=lang)
-        return f"Unknown action for utforsk_kode: '{action}'. Valid: read, list, search."
+        return f"Unknown action for explore_code: '{action}'. Valid: read, list, search."
 
-    if name == "inspiser_system":
+    if name in ("inspect_system", "inspiser_system"):
         action = arguments.get("action", "")
         if action == "log":
             return _shared_read_log(arguments, lang=lang)
@@ -80,7 +84,7 @@ async def dispatch(name: str, arguments: Dict) -> str:
             if not traces:
                 return t("inspiser_system_trace_mønstre_ingen", lang)
             return format_patterns_for_kare(traces, lang=lang)
-        return f"Unknown action for inspiser_system: '{action}'. Valid: log, services, resources, git_diff, git_log, fetch_trace, trace_patterns."
+        return f"Unknown action for inspect_system: '{action}'. Valid: log, services, resources, git_diff, git_log, fetch_trace, trace_patterns."
 
     if name == "read_file":
         return _shared_read_file(arguments, lang=lang)
@@ -100,7 +104,7 @@ async def dispatch(name: str, arguments: Dict) -> str:
     if name == "check_resources":
         return _shared_check_resources(arguments, lang=lang)
 
-    if name == "ssh_kommando":
+    if name in ("ssh_command", "ssh_kommando"):
         from kaare_core.config import get_ssh_nodes
         node = arguments.get("node", "").strip()
         kommando = arguments.get("kommando", "").strip()
@@ -198,7 +202,7 @@ async def dispatch(name: str, arguments: Dict) -> str:
         out = (result.stdout + result.stderr).strip()
         return out[:4000] if out else t("sys_no_output", lang)
 
-    if name == "local_kommando":
+    if name in ("local_command", "local_kommando"):
         # Shell commands require developer_tools: true in settings.yaml.
         try:
             _dev_cfg = yaml.safe_load(Path("/kaare/configs/settings.yaml").read_text())

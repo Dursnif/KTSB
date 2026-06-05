@@ -37,6 +37,7 @@ _ALLOWED_BASE   = "/kaare"
 
 AGENT_TOOLS = {
     "mechanic",
+    "search_argus",
     "søk_i_argus",
     "spør_mechanic",
     "deleger_til_mechanic",
@@ -402,8 +403,8 @@ async def dispatch(name: str, arguments: Dict) -> str:
 
         return f"Unknown action for mechanic: '{action}'. Valid: search, delegate, result, cancel, comment."
 
-    # ── søk_i_argus ──────────────────────────────────────────────────────────
-    if name == "søk_i_argus":
+    # ── search_argus ─────────────────────────────────────────────────────────
+    if name in ("search_argus", "søk_i_argus"):
         return await _search_argus(
             query=arguments.get("query", ""),
             grense=int(arguments.get("limit", 8)),

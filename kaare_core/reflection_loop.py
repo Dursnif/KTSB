@@ -22,6 +22,7 @@ def _get_jang_tools() -> list:
     if _JANG_TOOLS is None:
         from kaare_core.tools.definitions import get_tools
         allowed = {
+            "self_image", "note",
             "selvbilde", "notat",
         }
         _JANG_TOOLS = [t for t in get_tools("nb") if t.get("function", {}).get("name") in allowed]

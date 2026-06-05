@@ -11,7 +11,7 @@ from qdrant_client.models import (
     Prefetch, SparseVector as QSparseVector,
 )
 
-from adapters.web_search_adapter import søk_nett as _søk_nett, _fetch_content as _direct_fetch, _is_trusted as _url_trusted
+from adapters.web_search_adapter import web_search as _søk_nett, _fetch_content as _direct_fetch, _is_trusted as _url_trusted
 from kaare_core.config import get_service as _svc, get_model as _cfg_model, get_llm_config as _llm_cfg, get_qdrant_api_key as _qdrant_key
 from kaare_core.memory.long_term import get_ltm
 from kaare_core.tools.executor_personality import PERSONALITY_CORE_TEXT
@@ -57,6 +57,7 @@ def _load_library_personality() -> str:
 
 
 LIBRARY_TOOLS = {
+    "web_search",
     "søk_nett",
     "library",
     "spør_miss_library_online",
@@ -471,7 +472,7 @@ async def _reason_freely(query: str, lang: str = "nb") -> str:
 async def dispatch(name: str, arguments: dict) -> str:
     lang = get_lang(arguments.get("_user_id", "global"))
 
-    if name == "søk_nett":
+    if name in ("web_search", "søk_nett"):
         raw_query = arguments.get("query", "")
         loc = location_prefix()
         query = f"{loc}{raw_query}" if loc else raw_query

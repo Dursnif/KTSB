@@ -89,7 +89,7 @@ def _les_ha_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "les_ha",
+            "name": "ha_read",
             "description": _t("tool_les_ha_desc", lang),
             "parameters": {
                 "type": "object",
@@ -118,7 +118,7 @@ def _styr_enhet_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "styr_enhet",
+            "name": "ha_control",
             "description": _t("tool_styr_enhet_desc", lang),
             "parameters": {
                 "type": "object",
@@ -165,7 +165,7 @@ def _søk_nett_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "søk_nett",
+            "name": "web_search",
             "description": _t("tool_søk_nett_desc", lang),
             "parameters": {
                 "type": "object",
@@ -277,7 +277,7 @@ def _les_møte_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "les_møte",
+            "name": "read_meeting",
             "description": _t("tool_les_møte_desc", lang),
             "parameters": {
                 "type": "object",
@@ -302,7 +302,7 @@ def _minne_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "minne",
+            "name": "memory",
             "description": _t("tool_minne_desc", lang),
             "parameters": {
                 "type": "object",
@@ -349,7 +349,7 @@ def _search_argus_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "søk_i_argus",
+            "name": "search_argus",
             "description": _t("tool_søk_i_argus_desc", lang),
             "parameters": {
                 "type": "object",
@@ -473,7 +473,7 @@ def _les_indre_tanker_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "les_indre_tanker",
+            "name": "inner_thoughts",
             "description": _t("tool_les_indre_tanker_desc", lang),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
@@ -484,7 +484,7 @@ def _selvbilde_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "selvbilde",
+            "name": "self_image",
             "description": _t("tool_selvbilde_desc", lang),
             "parameters": {
                 "type": "object",
@@ -517,7 +517,7 @@ def _verden_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "verden",
+            "name": "world",
             "description": _t("tool_verden_desc", lang),
             "parameters": {
                 "type": "object",
@@ -571,7 +571,7 @@ def _brukerprofil_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "brukerprofil",
+            "name": "user_profile",
             "description": _t("tool_brukerprofil_desc", lang),
             "parameters": {
                 "type": "object",
@@ -620,7 +620,7 @@ def _notat_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "notat",
+            "name": "note",
             "description": _t("tool_notat_desc", lang),
             "parameters": {
                 "type": "object",
@@ -694,7 +694,7 @@ def _les_tankehistorikk_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "les_tankehistorikk",
+            "name": "thought_history",
             "description": _t("tool_les_tankehistorikk_desc", lang),
             "parameters": {
                 "type": "object",
@@ -722,7 +722,7 @@ def _utforsk_kode_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "utforsk_kode",
+            "name": "explore_code",
             "description": _t("tool_utforsk_kode_desc", lang),
             "parameters": {
                 "type": "object",
@@ -767,7 +767,7 @@ def _inspiser_system_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "inspiser_system",
+            "name": "inspect_system",
             "description": _t("tool_inspiser_system_desc", lang),
             "parameters": {
                 "type": "object",
@@ -837,7 +837,7 @@ def _kamera_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "kamera",
+            "name": "camera",
             "description": _t("tool_kamera_desc", lang),
             "parameters": {
                 "type": "object",
@@ -901,7 +901,7 @@ def _ssh_kommando_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "ssh_kommando",
+            "name": "ssh_command",
             "description": _t("tool_ssh_kommando_desc", lang),
             "parameters": {
                 "type": "object",
@@ -925,7 +925,7 @@ def _local_kommando_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "local_kommando",
+            "name": "local_command",
             "description": _t("tool_local_kommando_desc", lang),
             "parameters": {
                 "type": "object",
@@ -978,7 +978,7 @@ def _se_bilder_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "se_bilder",
+            "name": "view_images",
             "description": _t("tool_se_bilder_desc", lang),
             "parameters": {
                 "type": "object",
@@ -1101,16 +1101,16 @@ def _announce_tool(lang: str) -> dict:
                     },
                     "title": {
                         "type": "string",
-                        "description": "Display overlay title (default: 'Kåre').",
+                        "description": _t("tool_announce_title_desc", lang),
                     },
                     "duration": {
                         "type": "integer",
-                        "description": "Seconds the overlay is shown (default: 8).",
+                        "description": _t("tool_announce_duration_desc", lang),
                     },
                     "position": {
                         "type": "string",
                         "enum": ["bottom_right", "bottom_left", "top_right", "top_left", "center"],
-                        "description": "Overlay position on screen (default: bottom_right).",
+                        "description": _t("tool_announce_position_desc", lang),
                     },
                 },
                 "required": [],
@@ -1123,7 +1123,7 @@ def _skriv_reflex_tool(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
-            "name": "skriv_reflex",
+            "name": "write_reflex",
             "description": _t("tool_skriv_reflex_desc", lang),
             "parameters": {
                 "type": "object",
@@ -1212,28 +1212,28 @@ LIBRARY_NO_ONLINE = get_library_no_online("nb")
 TOOL_MODEL_TIERS: dict[str, float] = {
     # Tier 0 — any model (0.8B+)
     "timer":           0.0,
-    "notat":           0.0,
-    "styr_enhet":      0.0,
-    "les_ha":          0.0,
+    "note":            0.0,
+    "ha_control":      0.0,
+    "ha_read":         0.0,
     "get_weather":     0.0,
     "announce":        0.0,
     # Tier 3 — needs 3B+ to reason about context and search results
-    "søk_nett":        3.0,
+    "web_search":      3.0,
     "library":         3.0,
-    "minne":           3.0,
-    "kamera":          3.0,
-    "les_møte":        3.0,
+    "memory":          3.0,
+    "camera":          3.0,
+    "read_meeting":    3.0,
     "kare_image":      3.0,
-    "se_bilder":       3.0,
+    "view_images":     3.0,
     "media":           3.0,
     # Tier 9 — needs 9B+ for multi-step reasoning, shell access, delegation
     "mechanic":              9.0,
-    "utforsk_kode":          9.0,
-    "inspiser_system":       9.0,
-    "ssh_kommando":          9.0,
-    "local_kommando":        9.0,
+    "explore_code":          9.0,
+    "inspect_system":        9.0,
+    "ssh_command":           9.0,
+    "local_command":         9.0,
     "restart_docker_container": 9.0,
-    "søk_i_argus":           9.0,
+    "search_argus":          9.0,
     "reason_freely":         9.0,
-    "skriv_reflex":          9.0,
+    "write_reflex":          9.0,
 }

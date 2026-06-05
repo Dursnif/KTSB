@@ -309,8 +309,8 @@ async def execute_tool(name: str, arguments: dict) -> str:
             if not query:
                 return t("mech_empty_search", get_lang("global"))
             sys.path.insert(0, "/kaare")
-            from adapters.web_search_adapter import søk_nett
-            return await søk_nett(query)
+            from adapters.web_search_adapter import web_search
+            return await web_search(query)
 
         elif name == "søk_argus":
             query  = arguments.get("query", "").strip()

@@ -9,6 +9,7 @@ _WORLD_PATH = Path("/kaare/state/world.md")
 _WORLD_VARS_PATH = Path("/kaare/state/world_vars.json")
 
 WORLD_TOOLS = {
+    "world",
     "verden",
     "les_verden",
     "oppdater_felt_i_verden",
@@ -204,7 +205,7 @@ def _edit_world(fragment: str, new_text: str, lang: str = "nb") -> str:
 async def dispatch(name: str, arguments: dict) -> str:
     lang = get_lang(arguments.get("_user_id", "global"))
 
-    if name == "verden":
+    if name in ("world", "verden"):
         action = arguments.get("action", "")
         if action == "read":
             return _read_world(lang)
@@ -242,7 +243,7 @@ async def dispatch(name: str, arguments: dict) -> str:
             return _world_delete_var((arguments.get("key") or arguments.get("nokkel") or ""), lang)
         if action == "list_vars":
             return _world_list_vars(lang)
-        return f"Unknown action for verden: '{action}'. Valid: read, update_field, add, delete, edit, read_var, sett_var, delete_var, list_vars."
+        return f"Unknown action for world: '{action}'. Valid: read, update_field, add, delete, edit, read_var, sett_var, delete_var, list_vars."
 
     if name == "les_verden":
         return _read_world(lang)
