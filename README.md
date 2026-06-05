@@ -197,18 +197,23 @@ Go to **Settings → Cameras** to configure which cameras Kåre should monitor, 
 
 ## Choosing an AI model
 
-After the onboarding wizard, go to **Settings → LLM → Manage models** to pull an AI model. No command line needed — search by name, click Pull, and wait.
+After the onboarding wizard, go to **Settings → LLM → Manage models** to pull a model.
+No command line needed — search by name, click Pull, and wait.
 
 | Your GPU VRAM | Recommended model | Notes |
 |---|---|---|
-| No GPU | `qwen2.5:3b` | Slow on CPU, but works |
-| 6–8 GB | `qwen2.5:7b` | Good everyday balance |
-| 12–16 GB | `qwen3:8b` | Better reasoning, recommended |
-| 24 GB+ | `qwen3:14b` or larger | Best results |
+| No GPU (CPU) | `huihui_ai/qwen3.5-abliterated:2b` | 1.9 GB — slow, but works |
+| 4–6 GB | `huihui_ai/qwen3.5-abliterated:4b` | 3.3 GB — good for light use |
+| 8–16 GB | `huihui_ai/qwen3.5-abliterated:9b` | 6.6 GB — outperforms older 14B models |
+| 24 GB+ | `huihui_ai/Qwen3.6-abliterated:27b` | 17 GB — best results |
 
-Start by setting the same model for all roles (Kåre, Miss Kåre, Library, Mechanic) — this uses less VRAM and keeps things simple. You can give each agent its own model later once you are comfortable.
+Start by setting the same model for all roles (Kåre, Miss Kåre, Library, Mechanic) — this uses less VRAM and keeps things simple. You can assign each agent its own model later under **Settings → LLM**.
 
-**Qwen3 models** support extended thinking — Kåre pauses to reason before answering complex questions. Enable it per role under **Settings → LLM**.
+**Why abliterated models?** Kåre is a multi-agent system — agents evaluate each other, inspect logs, and ask sensitive questions internally. Standard models can refuse these internal requests, breaking the pipeline. Abliterated variants have the refusal direction removed, which makes the whole system more reliable. All recommendations above are from [huihui_ai on Ollama](https://ollama.com/huihui_ai).
+
+**Multimodal:** All recommended models understand both text and images. For the full agent setup — Kåre, Miss Kåre, Library, and Mechanic — using the same multimodal model across all roles ensures camera snapshots and images can be passed between agents without gaps.
+
+**Extended thinking:** Qwen3 models can pause and reason before answering complex questions. Enable it per role under **Settings → LLM**.
 
 **Prefer cloud?** Go to **Settings → LLM → Cloud** and enter an API key for OpenAI, NVIDIA NIM, or another OpenAI-compatible provider.
 

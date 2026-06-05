@@ -454,6 +454,10 @@ export default function TabForklaringer() {
         {sec("bruker_refleksjoner", GROUP_COLORS.user, <>
           <Items items={items("bruker_refleksjoner", 4)} />
         </>)}
+
+        {sec("bruker_stemmeopplaasing", GROUP_COLORS.user, <>
+          <Items items={items("bruker_stemmeopplaasing", 5)} />
+        </>)}
       </div>
     </div>
   );

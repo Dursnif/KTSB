@@ -39,7 +39,10 @@ from kaare_core.users.auth import (
     end_session,
     create_token,
 )
-from kaare_core.users.profile_manager import init_profile, get_profile_flag, set_profile_flag, get_household_visible
+from kaare_core.users.profile_manager import (
+    init_profile, get_profile_flag, set_profile_flag, get_household_visible,
+    get_unlock_config, set_unlock_config,
+)
 from adapters.llm_adapter import list_personalities
 
 # Simple in-memory rate limiter for login: max 5 failures per 15 min per IP.
@@ -327,6 +330,42 @@ def api_household_visible(username: str, payload: dict = Depends(require_auth)):
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
     return {"username": username, "household_visible": get_household_visible(username)}
+
+
+@router.get("/users/{username}/unlock")
+def api_get_unlock(username: str, payload: dict = Depends(require_auth)):
+    """Return voice unlock config for a user. Admin or self only."""
+    caller = payload["sub"]
+    caller_role = payload.get("role", "")
+    if caller != username and caller_role != "admin":
+        raise HTTPException(status_code=403, detail="Access denied.")
+    if not store.get_user(username):
+        raise HTTPException(status_code=404, detail="User not found.")
+    return {"username": username, **get_unlock_config(username)}
+
+
+class UnlockConfigRequest(BaseModel):
+    method: str
+    phrase: str = ""
+    pin: str = ""
+    global_lists: bool = False
+
+
+@router.put("/users/{username}/unlock")
+def api_put_unlock(username: str, req: UnlockConfigRequest, payload: dict = Depends(require_auth)):
+    """Update voice unlock config. Admin or self only. PIN length 4-12 if provided."""
+    caller = payload["sub"]
+    caller_role = payload.get("role", "")
+    if caller != username and caller_role != "admin":
+        raise HTTPException(status_code=403, detail="Access denied.")
+    if not store.get_user(username):
+        raise HTTPException(status_code=404, detail="User not found.")
+    if req.method not in ("phrase", "pin", "both", "none"):
+        raise HTTPException(status_code=400, detail="method must be phrase|pin|both|none.")
+    if req.pin and (len(req.pin) < 4 or len(req.pin) > 12):
+        raise HTTPException(status_code=400, detail="PIN must be 4–12 characters.")
+    set_unlock_config(username, req.method, req.phrase, req.pin, req.global_lists)
+    return {"ok": True}
 
 
 @router.post("/users/recover")

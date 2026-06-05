@@ -316,9 +316,8 @@ function getUserId(): string {
 
 export default function Home() {
   const { t } = useTranslation();
-  const [messages, setMessages] = useState<Message[]>([
-    { role: "kare", text: t("home.greeting") },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [input, setInput]               = useState("");
   const [loading, setLoading]           = useState(false);
   const [mkComment, setMkComment]       = useState<string | null>(null);
@@ -352,18 +351,26 @@ export default function Home() {
     return () => clearInterval(id);
   }, []);
 
-  // Restore chat history from STM on mount
+  // Restore chat history from STM on mount; fall back to greeting if empty
   useEffect(() => {
     const uid = getUserId();
+    const greeting = t("home.greeting");
     apiChatHistory(uid, 60).then(({ turns }) => {
-      if (!turns.length) return;
-      const restored: Message[] = turns.map(t => ({
-        role: t.role === "assistant" ? "kare" : "user",
-        text: t.text,
-      }));
-      setMessages([...restored]);
-    }).catch(() => { /* non-critical */ });
-  }, []);
+      if (turns.length) {
+        const restored: Message[] = turns.map(turn => ({
+          role: turn.role === "assistant" ? "kare" as const : "user" as const,
+          text: turn.text,
+        }));
+        setMessages(restored);
+      } else {
+        setMessages([{ role: "kare", text: greeting }]);
+      }
+    }).catch(() => {
+      setMessages([{ role: "kare", text: greeting }]);
+    }).finally(() => {
+      setHistoryLoaded(true);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll for pending timer notifications every 30s
   useEffect(() => {
@@ -550,6 +557,17 @@ export default function Home() {
           }}>
             <Trans i18nKey="home.miss_kare_hint" components={[<span style={{ color: MK_COLOR, fontWeight: 600 }} />]} />
           </div>
+          {!historyLoaded && messages.length === 0 && (
+            <div style={{ alignSelf: "flex-start", display: "flex", gap: 5, padding: "13px 16px", background: "#1e1e1e", borderRadius: "16px 16px 16px 4px" }}>
+              {[0, 1, 2].map(i => (
+                <span key={i} style={{
+                  width: 8, height: 8, borderRadius: "50%", display: "inline-block",
+                  background: theme.typingColor,
+                  animation: `bounceDot 1.2s ease-in-out ${i * 0.2}s infinite`,
+                }} />
+              ))}
+            </div>
+          )}
           {messages.map((m, i) => (
             <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "70%" }}>
               {m.images && m.images.length > 0 && (

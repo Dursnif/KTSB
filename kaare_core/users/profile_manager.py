@@ -15,16 +15,19 @@ Vault system:
 import base64
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import bcrypt
 import yaml
 
 from kaare_core.tools.i18n import t, get_lang
 
-# Keys kept in plaintext after migration (needed for household context without a session)
-_PLAINTEXT_KEYS = frozenset({"household_visible", "updated", "meta", "change_log", "flags"})
+# Keys kept in plaintext after migration (needed for household context without a session).
+# "unlock" must be plaintext so detection works before the user is authenticated.
+_PLAINTEXT_KEYS = frozenset({"household_visible", "updated", "meta", "change_log", "flags", "unlock"})
 
 logger = logging.getLogger(__name__)
 
@@ -404,6 +407,106 @@ def edit_observation_fragment(user_id: str, fragment: str, new_text: str) -> tup
         return False, 0
     _write_obs_text(user_id, "".join(result))
     return True, changed
+
+
+# ── Voice unlock config ────────────────────────────────────────────────────────
+
+_SPOKEN_DIGITS: dict[str, str] = {
+    "en": "1", "ett": "1", "én": "1", "one": "1", "eins": "1",
+    "to": "2", "two": "2", "zwei": "2",
+    "tre": "3", "three": "3", "drei": "3",
+    "fire": "4", "four": "4", "vier": "4",
+    "fem": "5", "five": "5", "fünf": "5",
+    "seks": "6", "six": "6", "sechs": "6",
+    "sju": "7", "syv": "7", "seven": "7", "sieben": "7",
+    "åtte": "8", "eight": "8", "acht": "8",
+    "ni": "9", "nine": "9", "neun": "9",
+    "null": "0", "zero": "0", "nul": "0",
+}
+
+
+def _normalize_spoken_pin(text: str) -> str:
+    """Convert spoken PIN to digit string. '1 2 3 4' or 'en to tre fire' → '1234'."""
+    text = text.strip()
+    digits_only = re.sub(r"[^0-9]", "", text)
+    if digits_only:
+        return digits_only
+    words = [w.strip(".,!?") for w in text.lower().split()]
+    result = [_SPOKEN_DIGITS[w] for w in words if w in _SPOKEN_DIGITS]
+    return "".join(result) if len(result) == len(words) and result else ""
+
+
+def get_unlock_config(user_id: str) -> dict:
+    """Return unlock config for a user — never includes the PIN hash."""
+    profile = load_profile(user_id)
+    unlock = profile.get("unlock") or {}
+    return {
+        "method":       unlock.get("method", "none"),
+        "phrase":       unlock.get("phrase", ""),
+        "global_lists": bool(unlock.get("global_lists", False)),
+    }
+
+
+def set_unlock_config(
+    user_id: str,
+    method: str,
+    phrase: str = "",
+    pin: str = "",
+    global_lists: bool = False,
+) -> None:
+    """Save unlock config. Hashes PIN with bcrypt. Clears irrelevant fields."""
+    if method not in ("phrase", "pin", "both", "none"):
+        method = "none"
+    profile = load_profile(user_id)
+    existing_hash = (profile.get("unlock") or {}).get("pin_hash", "")
+
+    unlock: dict[str, Any] = {"method": method, "global_lists": bool(global_lists)}
+    unlock["phrase"] = phrase.strip() if method in ("phrase", "both") else ""
+
+    if method in ("pin", "both"):
+        if pin:
+            unlock["pin_hash"] = bcrypt.hashpw(pin.encode(), bcrypt.gensalt()).decode()
+        else:
+            unlock["pin_hash"] = existing_hash  # keep existing if no new PIN supplied
+    else:
+        unlock["pin_hash"] = ""
+
+    profile["unlock"] = unlock
+    save_profile(user_id, profile)
+
+
+def check_unlock_phrase(user_id: str, text: str) -> tuple[bool, str]:
+    """Check if text starts with the user's phrase. Returns (matched, remainder)."""
+    profile = load_profile(user_id)
+    unlock = profile.get("unlock") or {}
+    if unlock.get("method") not in ("phrase", "both"):
+        return False, text
+    phrase = unlock.get("phrase", "").strip().lower()
+    if not phrase:
+        return False, text
+    t_lower = text.strip().lower()
+    if t_lower.startswith(phrase):
+        remainder = text.strip()[len(phrase):].lstrip(" ,.")
+        return True, remainder
+    return False, text
+
+
+def check_unlock_pin(user_id: str, text: str) -> bool:
+    """Return True if text (after digit normalization) matches the user's PIN."""
+    profile = load_profile(user_id)
+    unlock = profile.get("unlock") or {}
+    if unlock.get("method") not in ("pin", "both"):
+        return False
+    pin_hash = unlock.get("pin_hash", "")
+    if not pin_hash:
+        return False
+    normalized = _normalize_spoken_pin(text.strip())
+    if not normalized:
+        return False
+    try:
+        return bcrypt.checkpw(normalized.encode(), pin_hash.encode())
+    except Exception:
+        return False
 
 
 # ── Vault system (agent-writes when user is offline) ─────────────────────────────

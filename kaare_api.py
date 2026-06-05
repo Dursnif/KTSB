@@ -648,6 +648,7 @@ class PromptRequest(BaseModel):
     user_id: str | None = None
     context: dict | None = None
     rid: str | None = None
+    source_node: str | None = None
 
 
 @app.post("/api/generate")
@@ -836,6 +837,7 @@ async def generate(request: PromptRequest, http: Request):
         block_ha_write=_block_ha_write,
         network_context=_network_ctx,
         speaker_note=_speaker_note,
+        source_node=(request.source_node or "").strip(),
     )
     result["rid"] = rid
 

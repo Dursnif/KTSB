@@ -1416,7 +1416,23 @@
     "section_preview": "Preview",
     "preview_user": "This is how your messages look now",
     "preview_kare": "And this is how Kåre replies to you",
-    "reset": "Reset to defaults"
+    "reset": "Reset to defaults",
+    "section_voice_unlock": "Voice unlock",
+    "voice_unlock_hint": "Protect personal data (memories, profile, camera) behind a phrase or PIN. Active for 2 minutes after the last command.",
+    "unlock_method_label": "Unlock method",
+    "unlock_method_none": "Disabled",
+    "unlock_method_phrase": "Phrase",
+    "unlock_method_pin": "PIN",
+    "unlock_method_both": "Both",
+    "unlock_phrase_label": "Phrase",
+    "unlock_phrase_placeholder": "e.g. open session",
+    "unlock_pin_label": "PIN",
+    "unlock_pin_placeholder": "At least 4 characters",
+    "global_lists_label": "Shopping list and to-do list always open",
+    "global_lists_hint": "These lists are often shared in the household — no unlock needed.",
+    "unlock_save": "Save unlock settings",
+    "unlock_saved": "Saved",
+    "unlock_save_error": "Save failed"
   },
   "forklaringer": {
     "title": "What is what in Kåre?",
@@ -1678,6 +1694,15 @@
       "item_2": "PIN protection — Enter your PIN to read the content. Only you have access.",
       "item_3": "Meeting minutes are stored locally and never sent to third parties.",
       "item_4": "PIN buffering — Kåre remembers your PIN within the same browser session so you do not need to enter it for each meeting."
+    },
+    "bruker_stemmeopplaasing": {
+      "title": "User Settings → Voice Unlock",
+      "summary": "Protect personal data behind a phrase or PIN on voice nodes",
+      "item_1": "Applies to mic nodes only (ESP32 and Wyoming satellites) — not text chat.",
+      "item_2": "Choose a method: phrase, PIN, or both. Kåre recognises the phrase or spoken digits and opens a 2-minute session.",
+      "item_3": "An active session gives Kåre access to memory, profile, cameras, and agents. The session resets automatically with each command.",
+      "item_4": "«Global lists» — Notes (e.g. the shopping list) can be made available without unlocking, so the whole household can add items.",
+      "item_5": "Say «lock» to close the session manually. The session closes automatically after 2 minutes without activity."
     },
     "noder_kategorier": {
       "title": "Categories — AUDIO / MULTI / DISPLAY",

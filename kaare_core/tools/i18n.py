@@ -1555,6 +1555,26 @@ _T: dict = {
         "en": "Sorry, I could not reach Kåre.",
         "de": "Entschuldigung, ich konnte Kåre nicht erreichen.",
     },
+    "voice_unlock_ok": {
+        "nb": "Sesjon åpnet. Hva kan jeg hjelpe deg med?",
+        "en": "Session unlocked. How can I help you?",
+        "de": "Sitzung entsperrt. Wie kann ich dir helfen?",
+    },
+    "voice_unlock_ok_with_cmd": {
+        "nb": "Sesjon åpnet.",
+        "en": "Session unlocked.",
+        "de": "Sitzung entsperrt.",
+    },
+    "voice_lock_ok": {
+        "nb": "Sesjonen er låst.",
+        "en": "Session locked.",
+        "de": "Sitzung gesperrt.",
+    },
+    "voice_tool_blocked": {
+        "nb": "Denne funksjonen krever at du åpner sesjonen først. Si frasen eller PIN-koden din.",
+        "en": "This function requires an unlocked session. Say your phrase or PIN first.",
+        "de": "Diese Funktion erfordert eine entsperrte Sitzung. Sag zuerst deine Phrase oder PIN.",
+    },
     "api_hello": {
         "nb": "Hei fra Kåre! Hoved-AI kjører.",
         "en": "Hello from Kåre! Main AI is running.",

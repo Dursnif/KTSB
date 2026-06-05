@@ -1,7 +1,10 @@
+import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useUserPrefs } from "../../hooks/useUserPrefs";
 import { useTheme } from "../../theme";
+import { useAuth } from "../../auth/AuthContext";
+import { apiGetUnlockConfig, apiPutUnlockConfig } from "../../services/api";
 
 const ACCENT_PRESETS = [
   { value: "#646cff", label: "Blå-lilla" },
@@ -143,11 +146,180 @@ function AnimationPicker({
   );
 }
 
+type UnlockMethod = "none" | "phrase" | "pin" | "both";
+
+function VoiceUnlockSection({ username }: { username: string }) {
+  const { t } = useTranslation();
+  const [method, setMethod]           = useState<UnlockMethod>("none");
+  const [phrase, setPhrase]           = useState("");
+  const [pin, setPin]                 = useState("");
+  const [globalLists, setGlobalLists] = useState(false);
+  const [saveState, setSaveState]     = useState<"idle" | "saved" | "error">("idle");
+
+  useEffect(() => {
+    apiGetUnlockConfig(username)
+      .then(d => {
+        setMethod((d.method as UnlockMethod) || "none");
+        setPhrase(d.phrase || "");
+        setGlobalLists(!!d.global_lists);
+      })
+      .catch(() => {});
+  }, [username]);
+
+  const save = async () => {
+    try {
+      await apiPutUnlockConfig(username, { method, phrase, pin, global_lists: globalLists });
+      setPin("");
+      setSaveState("saved");
+      setTimeout(() => setSaveState("idle"), 2000);
+    } catch {
+      setSaveState("error");
+      setTimeout(() => setSaveState("idle"), 3000);
+    }
+  };
+
+  const methods: { v: UnlockMethod; label: string }[] = [
+    { v: "none",   label: t("user_settings.unlock_method_none") },
+    { v: "phrase", label: t("user_settings.unlock_method_phrase") },
+    { v: "pin",    label: t("user_settings.unlock_method_pin") },
+    { v: "both",   label: t("user_settings.unlock_method_both") },
+  ];
+
+  return (
+    <div style={{ marginBottom: 32 }}>
+      <div style={{
+        color: "#888", fontSize: 11, fontWeight: 600,
+        textTransform: "uppercase", letterSpacing: 1,
+        marginBottom: 14, paddingBottom: 8,
+        borderBottom: "1px solid #1e1e1e",
+      }}>
+        {t("user_settings.section_voice_unlock")}
+      </div>
+      <div style={{ color: "#555", fontSize: 12, lineHeight: 1.5, marginBottom: 18 }}>
+        {t("user_settings.voice_unlock_hint")}
+      </div>
+
+      {/* Method selector */}
+      <div style={{ marginBottom: 18 }}>
+        <div style={{ color: "#ccc", fontSize: 13, fontWeight: 500, marginBottom: 8 }}>
+          {t("user_settings.unlock_method_label")}
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {methods.map(m => (
+            <button
+              key={m.v}
+              onClick={() => setMethod(m.v)}
+              style={{
+                padding: "6px 14px", borderRadius: 8, border: "none",
+                background: method === m.v ? "#646cff22" : "#1e1e1e",
+                outline: method === m.v ? "1px solid #646cff88" : "1px solid #2a2a2a",
+                color: method === m.v ? "#a78bfa" : "#666",
+                fontSize: 12, fontWeight: 500, cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Phrase input */}
+      {(method === "phrase" || method === "both") && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ color: "#aaa", fontSize: 12, marginBottom: 6 }}>
+            {t("user_settings.unlock_phrase_label")}
+          </div>
+          <input
+            type="text"
+            value={phrase}
+            onChange={e => setPhrase(e.target.value)}
+            placeholder={t("user_settings.unlock_phrase_placeholder")}
+            style={{
+              width: "100%", padding: "8px 12px", borderRadius: 8,
+              border: "1px solid #2a2a2a", background: "#111",
+              color: "#ccc", fontSize: 13, boxSizing: "border-box",
+            }}
+          />
+        </div>
+      )}
+
+      {/* PIN input */}
+      {(method === "pin" || method === "both") && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ color: "#aaa", fontSize: 12, marginBottom: 6 }}>
+            {t("user_settings.unlock_pin_label")}
+          </div>
+          <input
+            type="password"
+            value={pin}
+            onChange={e => setPin(e.target.value)}
+            placeholder={t("user_settings.unlock_pin_placeholder")}
+            style={{
+              width: "100%", padding: "8px 12px", borderRadius: 8,
+              border: "1px solid #2a2a2a", background: "#111",
+              color: "#ccc", fontSize: 13, boxSizing: "border-box",
+            }}
+          />
+        </div>
+      )}
+
+      {/* Global lists toggle */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 20 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: "#ccc", fontSize: 14, fontWeight: 500 }}>
+            {t("user_settings.global_lists_label")}
+          </div>
+          <div style={{ color: "#555", fontSize: 12, marginTop: 2, lineHeight: 1.4 }}>
+            {t("user_settings.global_lists_hint")}
+          </div>
+        </div>
+        <button
+          onClick={() => setGlobalLists(v => !v)}
+          style={{
+            width: 44, height: 24, borderRadius: 12, border: "none",
+            background: globalLists ? "#646cff" : "#333",
+            cursor: "pointer", position: "relative", transition: "background 0.2s",
+            flexShrink: 0,
+          }}
+        >
+          <span style={{
+            position: "absolute", top: 3,
+            left: globalLists ? 23 : 3,
+            width: 18, height: 18, borderRadius: "50%",
+            background: "#fff", transition: "left 0.2s",
+            display: "block",
+          }} />
+        </button>
+      </div>
+
+      <button
+        onClick={save}
+        style={{
+          padding: "8px 18px", borderRadius: 8, border: "none",
+          background: saveState === "saved" ? "#1a3a1a" : saveState === "error" ? "#3a1a1a" : "#646cff22",
+          outline: "1px solid " + (saveState === "saved" ? "#4caf5088" : saveState === "error" ? "#f4433688" : "#646cff88"),
+          color: saveState === "saved" ? "#4caf50" : saveState === "error" ? "#f44336" : "#a78bfa",
+          fontSize: 13, fontWeight: 500, cursor: "pointer",
+          transition: "all 0.2s",
+        }}
+      >
+        {saveState === "saved"
+          ? t("user_settings.unlock_saved")
+          : saveState === "error"
+          ? t("user_settings.unlock_save_error")
+          : t("user_settings.unlock_save")}
+      </button>
+    </div>
+  );
+}
+
 export default function UserSettings() {
   const { t } = useTranslation();
   const { prefs, updatePrefs, resetPrefs } = useUserPrefs();
   const theme = useTheme();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   return (
     <div style={{
@@ -250,6 +422,9 @@ export default function UserSettings() {
             <Toggle checked={prefs.mkPanelEnabled} onChange={v => updatePrefs({ mkPanelEnabled: v })} />
           </SettingRow>
         </div>
+
+        {/* ── Stemmeopplåsing ── */}
+        {user?.username && <VoiceUnlockSection username={user.username} />}
 
         {/* ── Preview ── */}
         <div style={{ marginBottom: 32 }}>

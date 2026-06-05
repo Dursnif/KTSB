@@ -557,11 +557,14 @@ async def ask_kaare(
     speaker_confidence: float = 0.0,
     confirmed_by: str = "none",
     rid: str = "",
+    node_id: str = "",
 ) -> str:
     """Send tekst til Kåre API og returner svaret."""
     payload: dict = {"prompt": text, "source": "stt"}
     if rid:
         payload["rid"] = rid
+    if node_id:
+        payload["source_node"] = node_id
     context: dict = {}
     if room:
         context["room"] = room
@@ -675,6 +678,7 @@ async def run_pipeline(node_id: str, room: str = "", default_user: str = "") -> 
         speaker_confidence=speaker_confidence,
         confirmed_by=confirmed_by,
         rid=rid,
+        node_id=node_id,
     )
     _route_log_voice(rid, "stt_kaare_done", total_ms=int((time.time() - t0) * 1000))
 

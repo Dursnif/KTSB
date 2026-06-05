@@ -1416,7 +1416,23 @@
     "section_preview": "Vorschau",
     "preview_user": "So sehen deine Nachrichten jetzt aus",
     "preview_kare": "Und so antwortet dir Kåre",
-    "reset": "Auf Standard zurücksetzen"
+    "reset": "Auf Standard zurücksetzen",
+    "section_voice_unlock": "Sprachentsperrung",
+    "voice_unlock_hint": "Persönliche Daten (Erinnerungen, Profil, Kamera) hinter einer Phrase oder PIN schützen. 2 Minuten aktiv nach dem letzten Befehl.",
+    "unlock_method_label": "Entsperrmethode",
+    "unlock_method_none": "Deaktiviert",
+    "unlock_method_phrase": "Phrase",
+    "unlock_method_pin": "PIN",
+    "unlock_method_both": "Beide",
+    "unlock_phrase_label": "Phrase",
+    "unlock_phrase_placeholder": "z.B. sitzung öffnen",
+    "unlock_pin_label": "PIN",
+    "unlock_pin_placeholder": "Mindestens 4 Zeichen",
+    "global_lists_label": "Einkaufsliste und Aufgabenliste immer offen",
+    "global_lists_hint": "Diese Listen werden oft im Haushalt geteilt — keine Entsperrung nötig.",
+    "unlock_save": "Entsperreinstellungen speichern",
+    "unlock_saved": "Gespeichert",
+    "unlock_save_error": "Speichern fehlgeschlagen"
   },
   "forklaringer": {
     "title": "Was ist was in Kåre?",
@@ -1678,6 +1694,15 @@
       "item_2": "PIN-Schutz — Geben Sie Ihre PIN ein, um den Inhalt zu lesen. Nur Sie haben Zugang.",
       "item_3": "Besprechungsprotokolle werden lokal gespeichert und nie an Dritte weitergegeben.",
       "item_4": "PIN-Pufferung — Kåre merkt sich Ihre PIN in derselben Browser-Sitzung, sodass Sie sie nicht für jedes Treffen eingeben müssen."
+    },
+    "bruker_stemmeopplaasing": {
+      "title": "Benutzereinstellungen → Sprachentsperrung",
+      "summary": "Persönliche Daten auf Sprachknoten mit Phrase oder PIN schützen",
+      "item_1": "Gilt nur für Mic-Knoten (ESP32 und Wyoming-Satelliten) — nicht für den Text-Chat.",
+      "item_2": "Methode wählen: Phrase, PIN oder beides. Kåre erkennt die Phrase oder die gesprochenen Ziffern und öffnet eine 2-Minuten-Sitzung.",
+      "item_3": "Eine aktive Sitzung gibt Kåre Zugriff auf Erinnerungen, Profil, Kameras und Agenten. Die Sitzung wird bei jedem Befehl automatisch verlängert.",
+      "item_4": "«Globale Listen» — Notizen (z.B. die Einkaufsliste) können ohne Entsperren zugänglich gemacht werden, sodass der gesamte Haushalt Einträge hinzufügen kann.",
+      "item_5": "«Sperren» sagen, um die Sitzung manuell zu beenden. Nach 2 Minuten ohne Aktivität schließt die Sitzung automatisch."
     },
     "noder_kategorier": {
       "title": "Kategorien — AUDIO / MULTI / ANZEIGE",

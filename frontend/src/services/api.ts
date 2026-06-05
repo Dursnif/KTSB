@@ -120,6 +120,18 @@ export async function apiUpdatePin(username: string, new_pin: string) {
   return data as { ok: boolean };
 }
 
+export async function apiGetUnlockConfig(username: string) {
+  const { data } = await api.get(`/api/users/${username}/unlock`);
+  return data as { method: string; phrase: string; global_lists: boolean };
+}
+
+export async function apiPutUnlockConfig(username: string, payload: {
+  method: string; phrase: string; pin: string; global_lists: boolean;
+}) {
+  const { data } = await api.put(`/api/users/${username}/unlock`, payload);
+  return data as { ok: boolean };
+}
+
 export async function apiDeleteUser(username: string) {
   const { data } = await api.delete(`/api/users/${username}`);
   return data as { ok: boolean };

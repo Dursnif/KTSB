@@ -468,8 +468,17 @@ default user (for voice-triggered identity).
 Voice enrollment is per-user: record a short sample in Settings → Users, and Kåre will
 identify you by voice on supported hardware.
 
+**Node session unlock:**
+Mic nodes (ESP32 and Wyoming satellites) can require a spoken phrase or PIN before personal
+tools become available. Saying the phrase or PIN opens a 2-minute rolling session for that
+node — Kåre then has access to memory, user profile, camera snapshots, and agent
+delegation. The session renews automatically on each command and expires after 2 minutes
+of silence. A `global_lists` option keeps the notes tool available without unlocking, for
+shared household lists. Users configure their phrase and PIN in Settings → User Settings.
+Say "lock" to close the session manually.
+
 **Key files:** `kaare_core/voice/wyoming_server.py`, `kaare_core/voice/providers/`,
-`services/voice/`
+`services/voice/`, `kaare_core/app_state.py`, `kaare_core/users/profile_manager.py`
 
 ---
 
@@ -813,6 +822,7 @@ Configurable in `settings.yaml` under `data_retention:`. The nightly Step 0 dele
 | Onboarding wizard | ✅ | Core | `frontend/src/pages/Onboarding.tsx` |
 | PWA (install as app) | ✅ | Core | `frontend/public/manifest.json` |
 | Voice enrollment per user | ✅ | full | `kaare_core/voice/` |
+| Voice node session unlock | ✅ | Core | `kaare_core/app_state.py`, `kaare_core/users/profile_manager.py` |
 | Learned reflexes (skriv_reflex) | ✅ | Core | `kaare_fastpath.py` |
 | Per-user end-to-end encryption | ✅ | Core | `kaare_core/crypto.py`, `kaare_core/session_keys.py`, `kaare_core/memory/`, `kaare_core/users/` |
 | Account recovery (seed phrase) | ✅ | Core | `kaare_core/routers/router_users.py`, `frontend/src/pages/Recovery.tsx` |

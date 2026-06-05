@@ -12,6 +12,9 @@ import logging
 import re
 import time
 from datetime import datetime, timezone
+from pathlib import Path
+
+import yaml
 
 logger = logging.getLogger(__name__)
 from kaare_core.config import get_local_tz as _get_local_tz
@@ -139,6 +142,51 @@ _TOOL_PROMISES: list[tuple[set[str], str, re.Pattern]] = [
 ]
 
 
+_NODES_PATH = Path("/kaare/configs/nodes.yaml")
+
+# Lock commands in all three supported languages
+_LOCK_COMMANDS = frozenset({"lås", "las", "lock", "lock session", "sperr", "sperr sitzung"})
+
+
+def _node_users(node_id: str) -> list[str]:
+    """Return the list of user_ids configured on a node (from default_user field)."""
+    try:
+        data = yaml.safe_load(_NODES_PATH.read_text(encoding="utf-8")) or {}
+        node = data.get("nodes", {}).get(node_id, {})
+        raw = node.get("default_user", "") or ""
+        return [u.strip() for u in raw.split(",") if u.strip()]
+    except Exception:
+        return []
+
+
+def _is_mic_node(node_id: str) -> bool:
+    """Return True if the node has a microphone (ESP32 or Wyoming type)."""
+    if not node_id:
+        return False
+    try:
+        data = yaml.safe_load(_NODES_PATH.read_text(encoding="utf-8")) or {}
+        node = data.get("nodes", {}).get(node_id, {})
+        ntype = node.get("type", "")
+        return ntype in ("esp32", "wyoming") or bool(node.get("mic_enabled", False))
+    except Exception:
+        return False
+
+
+def _try_unlock(node_id: str, text: str) -> tuple[str | None, str, str]:
+    """
+    Try to match text against unlock phrase or PIN for any user on the node.
+    Returns (user_id, method, remainder_text) or (None, "", text) if no match.
+    """
+    from kaare_core.users.profile_manager import check_unlock_phrase, check_unlock_pin
+    for uid in _node_users(node_id):
+        matched, remainder = check_unlock_phrase(uid, text)
+        if matched:
+            return uid, "phrase", remainder
+        if check_unlock_pin(uid, text):
+            return uid, "pin", ""
+    return None, "", text
+
+
 async def _store_input_images(images: list[str], user_id: str) -> None:
     """Save user-sent images to state/images/{user_id}/input/ in the background."""
     try:
@@ -172,6 +220,7 @@ async def handle_generate(
     block_ha_write: bool = False,  # True for VPN users with vpn_access="ai_only"
     network_context: str = "local",  # "local" | "vpn" | "external"
     speaker_note: str = "",
+    source_node: str = "",
 ) -> Dict[str, Any]:
 
     start_total = time.time()
@@ -181,6 +230,46 @@ async def handle_generate(
     lang = _get_lang(user_id)
     if not user_text:
         return {"text": _t_i18n("gen_empty_message", lang)}
+
+    # =========================================================
+    # VOICE NODE UNLOCK / LOCK DETECTION
+    # Runs only for mic nodes (ESP32/Wyoming). Matches phrase or PIN
+    # against users configured on the node in nodes.yaml.
+    # =========================================================
+    from kaare_core import app_state as _app_state
+
+    _node_locked = False
+    if source_node and _is_mic_node(source_node):
+        text_lower = user_text.strip().lower()
+
+        # Lock command — works even when already locked
+        if text_lower in _LOCK_COMMANDS:
+            _app_state.lock_node(source_node)
+            return {"text": _t_i18n("voice_lock_ok", lang)}
+
+        # Check if already unlocked — touch the rolling timer
+        if _app_state.is_unlocked(source_node):
+            _app_state.touch_session(source_node)
+            session_user = _app_state.get_session_user(source_node)
+            if session_user and user_id == USER_GLOBAL:
+                user_id = session_user
+                lang = _get_lang(user_id)
+        else:
+            # Try to unlock via phrase or PIN
+            matched_uid, method, remainder = _try_unlock(source_node, user_text)
+            if matched_uid:
+                _app_state.unlock_node(source_node, matched_uid, method)
+                if user_id == USER_GLOBAL:
+                    user_id = matched_uid
+                    lang = _get_lang(user_id)
+                print(f"[ROUTER] voice unlock: node={source_node} user={matched_uid} method={method}")
+                if not remainder:
+                    return {"text": _t_i18n("voice_unlock_ok", lang)}
+                # Remainder after phrase: continue with the stripped command
+                user_text = remainder
+            else:
+                # No unlock — mark node as locked for tool gating below
+                _node_locked = True
 
     print(f"[ROUTER] user_id={user_id} source={source}")
 
@@ -500,6 +589,8 @@ async def handle_generate(
             args["_user_id"] = user_id
             args["_rid"] = rid
             args["_block_ha_write"] = block_ha_write
+            args["_source_node"] = source_node
+            args["_node_locked"] = _node_locked
             print(f"[ROUTER] tool-kall: {name}({args})")
             try:
                 res = await execute_tool(name, args)

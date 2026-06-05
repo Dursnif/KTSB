@@ -34,6 +34,30 @@ from kaare_core.tools import (
 logger = logging.getLogger(__name__)
 
 _VOICE_BRIDGE_URL = _svc("internal", "voice_bridge")
+
+# Tools that require an unlocked voice session when called from a mic node.
+# All tool aliases (nb/en variants) are included.
+_LOCKED_TOOLS: frozenset[str] = frozenset({
+    # Memory
+    "memory", "minne",
+    "read_meeting", "inner_thoughts", "thought_history",
+    # Profile & identity
+    "user_profile", "brukerprofil",
+    "self_image", "selvbilde", "les_selvbilde", "slett_fra_selvbilde",
+    # World model
+    "world", "verden", "les_verden", "oppdater_felt_i_verden", "legg_til_i_verden",
+    # Camera
+    "camera", "kamera", "hent_snapshot", "hent_frigate_hendelser", "les_kamerahendelser",
+    # Agents with full context
+    "mechanic", "spør_mechanic", "deleger_til_mechanic",
+    # File/system access
+    "explore_code", "utforsk_kode",
+    "inspect_system",
+})
+
+# These tools are locked by default but can be opened globally (no unlock needed)
+# if the user has enabled global_lists in their unlock config.
+_GLOBAL_LIST_TOOLS: frozenset[str] = frozenset({"note", "notat"})
 _TOOL_LOG         = Path("/kaare/logs/tool_calls.log")
 _SETTINGS_PATH    = Path("/kaare/configs/settings.yaml")
 
@@ -393,6 +417,21 @@ async def execute_tool(name: str, arguments: Dict[str, Any]) -> str:
     Utfører ett tool-kall og logger det.
     Returnerer alltid en streng — aldri exception.
     """
+    lang = get_lang(arguments.get("_user_id", "global"))
+
+    # Voice node gating: block personal tools when session is locked
+    if arguments.get("_node_locked"):
+        if name in _LOCKED_TOOLS:
+            return t("voice_tool_blocked", lang)
+        if name in _GLOBAL_LIST_TOOLS:
+            uid = arguments.get("_user_id", "global")
+            try:
+                from kaare_core.users.profile_manager import get_unlock_config
+                if not get_unlock_config(uid).get("global_lists", False):
+                    return t("voice_tool_blocked", lang)
+            except Exception:
+                return t("voice_tool_blocked", lang)
+
     t0 = _time.time()
     try:
         result = await _dispatch(name, arguments)

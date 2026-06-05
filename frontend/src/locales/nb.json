@@ -1416,7 +1416,23 @@
     "section_preview": "Forhåndsvisning",
     "preview_user": "Slik ser meldingene dine ut nå",
     "preview_kare": "Og slik svarer Kåre deg",
-    "reset": "Tilbakestill til standard"
+    "reset": "Tilbakestill til standard",
+    "section_voice_unlock": "Stemmeopplåsing",
+    "voice_unlock_hint": "Beskytt personlige data (minner, profil, kamera) bak en frase eller PIN. Aktiv i 2 minutter etter siste kommando.",
+    "unlock_method_label": "Opplåsingsmetode",
+    "unlock_method_none": "Deaktivert",
+    "unlock_method_phrase": "Frase",
+    "unlock_method_pin": "PIN",
+    "unlock_method_both": "Begge",
+    "unlock_phrase_label": "Frase",
+    "unlock_phrase_placeholder": "f.eks. åpne sesjon",
+    "unlock_pin_label": "PIN",
+    "unlock_pin_placeholder": "Minst 4 tegn",
+    "global_lists_label": "Handleliste og huskeliste alltid åpen",
+    "global_lists_hint": "Disse listene deles gjerne i husstand — ingen opplåsing nødvendig.",
+    "unlock_save": "Lagre opplåsingsinnstillinger",
+    "unlock_saved": "Lagret",
+    "unlock_save_error": "Feil ved lagring"
   },
   "forklaringer": {
     "title": "Hva er hva i Kåre?",
@@ -1678,6 +1694,15 @@
       "item_2": "PIN-beskyttelse — Tast inn din PIN for å lese innholdet. Kun du har tilgang.",
       "item_3": "Møtereferatene lagres lokalt og sendes aldri til tredjeparter.",
       "item_4": "PIN-buffering — Kåre husker PIN-en din i samme nettlesersesjon slik at du slipper å taste den inn for hvert møte."
+    },
+    "bruker_stemmeopplaasing": {
+      "title": "Brukerinnstillinger → Stemmeopplåsing",
+      "summary": "Beskytt personlige data bak en frase eller PIN på stemme-noder",
+      "item_1": "Gjelder kun mic-noder (ESP32 og Wyoming-satellitter) — ikke tekstchat.",
+      "item_2": "Velg metode: frase, PIN eller begge. Kåre gjenkjenner fransen eller sifrene og åpner en 2-minutters sesjon.",
+      "item_3": "Aktiv sesjon gir Kåre tilgang til minner, profil, kamera og agenter. Sesjonen fornyes automatisk for hver kommando.",
+      "item_4": "«Globale lister» — Notater (f.eks. handlelisten) kan gjøres tilgjengelig uten opplåsing, slik at hele husstanden kan legge til ting.",
+      "item_5": "Si «lås» for å lukke sesjonen manuelt. Sesjonen lukkes automatisk etter 2 minutter uten aktivitet."
     },
     "noder_kategorier": {
       "title": "Kategorier — LYD / MULTI / SKJERM",
