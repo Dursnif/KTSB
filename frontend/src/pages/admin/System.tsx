@@ -1,15 +1,16 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, RotateCcw, ShieldCheck, Cpu, BookmarkPlus, Trash2, Download, Upload, FlaskConical } from "lucide-react";
+import { Loader2, RefreshCw, RotateCcw, ShieldCheck, Cpu, Save, Trash2, Download, Upload, FlaskConical, HardDrive } from "lucide-react";
 import axios from "axios";
 import i18n from "@/i18n";
 import { useAuth } from "@/auth/AuthContext";
 import {
   apiAdminServices, apiRestartService, apiSettingsRollback,
-  apiSaveConfigSnapshot, apiListConfigSnapshots, apiRestoreConfigSnapshot, apiDeleteConfigSnapshot,
-  apiExportConfigSnapshot, apiImportConfigSnapshot, apiVerifyPin,
-  type ServiceKey, type AdminServiceStatus, type ConfigSnapshot,
+  apiVerifyPin,
+  apiExportBackup, apiRestoreBackup,
+  apiSaveBackupPoint, apiListBackupPoints, apiRestoreBackupPoint, apiDeleteBackupPoint, apiDownloadBackupPoint,
+  type ServiceKey, type AdminServiceStatus, type BackupPoint, type RestoreResult,
 } from "@/services/api";
 
 const BASE = `http://${window.location.hostname}:8000`;
@@ -371,314 +372,6 @@ function TestRunCard() {
   );
 }
 
-function SnapshotCard() {
-  const { t } = useTranslation();
-  const [snapshots, setSnapshots] = useState<ConfigSnapshot[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [restoring, setRestoring] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [actionMsg, setActionMsg] = useState<{ ok: boolean; text: string } | null>(null);
-
-  // Import/export current state
-  const [importName, setImportName] = useState("");
-  const [importFile, setImportFile] = useState<File | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const r = await apiListConfigSnapshots();
-      setSnapshots(r.snapshots);
-    } catch { /* ignore */ }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const atMax = snapshots.length >= 10;
-  const selected = snapshots.find(s => s.id === selectedId) ?? null;
-  const busy = restoring || deleting || exporting;
-
-  const formatDate = (iso: string) => {
-    try {
-      const locale = i18n.language === "nb" ? "nb-NO" : i18n.language;
-      return new Date(iso).toLocaleString(locale, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-    } catch { return iso; }
-  };
-
-  const doSave = async () => {
-    if (!name.trim()) { setSaveMsg({ ok: false, text: t("system.snapshots.name_required") }); return; }
-    setSaving(true); setSaveMsg(null);
-    try {
-      const r = await apiSaveConfigSnapshot(name.trim());
-      if (r.ok) {
-        setName("");
-        setSaveMsg({ ok: true, text: t("system.snapshots.save_button") + " ✓" });
-        await load();
-      } else if (r.error === "max_reached") {
-        setSaveMsg({ ok: false, text: t("system.snapshots.max_reached") });
-      } else {
-        setSaveMsg({ ok: false, text: t("system.snapshots.save_error") });
-      }
-    } catch {
-      setSaveMsg({ ok: false, text: t("system.snapshots.save_error") });
-    } finally {
-      setSaving(false);
-      setTimeout(() => setSaveMsg(null), 5000);
-    }
-  };
-
-  const doInstall = async () => {
-    if (!selected) return;
-    if (!window.confirm(t("system.snapshots.restore_confirm", { name: selected.name }))) return;
-    setRestoring(true); setActionMsg(null);
-    try {
-      const r = await apiRestoreConfigSnapshot(selected.id);
-      setActionMsg({ ok: r.ok, text: r.ok ? t("system.snapshots.restore_ok", { files: r.restored.join(", ") }) : t("system.snapshots.restore_error") });
-    } catch {
-      setActionMsg({ ok: false, text: t("system.snapshots.restore_error") });
-    } finally {
-      setRestoring(false);
-      setTimeout(() => setActionMsg(null), 6000);
-    }
-  };
-
-  const doDownload = async () => {
-    if (!selected) return;
-    setExporting(true);
-    try {
-      const slug = selected.name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40);
-      await apiExportConfigSnapshot(selected.id, `ktsb-config-${slug}-${selected.id}.zip`);
-    } catch {
-      setActionMsg({ ok: false, text: t("system.snapshots.save_error") });
-      setTimeout(() => setActionMsg(null), 4000);
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const doDelete = async () => {
-    if (!selected) return;
-    if (!window.confirm(t("system.snapshots.delete_confirm", { name: selected.name }))) return;
-    setDeleting(true);
-    try {
-      await apiDeleteConfigSnapshot(selected.id);
-      setSelectedId(null);
-      await load();
-    } catch {
-      setActionMsg({ ok: false, text: t("system.snapshots.delete_error") });
-      setTimeout(() => setActionMsg(null), 4000);
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  const doImport = async () => {
-    if (!importName.trim()) { setImportMsg({ ok: false, text: t("system.snapshots.name_required") }); return; }
-    if (!importFile) { setImportMsg({ ok: false, text: t("system.snapshots.import_error") }); return; }
-    setImporting(true); setImportMsg(null);
-    try {
-      const r = await apiImportConfigSnapshot(importName.trim(), importFile);
-      if (r.ok) {
-        setImportName(""); setImportFile(null);
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        setImportMsg({ ok: true, text: t("system.snapshots.import_ok", { count: r.count ?? 0 }) });
-        await load();
-      } else if (r.error === "max_reached") {
-        setImportMsg({ ok: false, text: t("system.snapshots.max_reached") });
-      } else if (r.error === "no_yaml_files") {
-        setImportMsg({ ok: false, text: t("system.snapshots.import_no_yaml") });
-      } else {
-        setImportMsg({ ok: false, text: t("system.snapshots.import_error") });
-      }
-    } catch {
-      setImportMsg({ ok: false, text: t("system.snapshots.import_error") });
-    } finally {
-      setImporting(false);
-      setTimeout(() => setImportMsg(null), 6000);
-    }
-  };
-
-  return (
-    <div className="admin-card" style={{ borderRadius: 12, padding: "20px 24px", border: "1px solid #3b82f633" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-        <BookmarkPlus size={15} style={{ color: "#60a5fa", flexShrink: 0 }} />
-        <span style={{ color: "#ddd", fontSize: 15, fontWeight: 600 }}>{t("system.snapshots.title")}</span>
-      </div>
-      <p style={{ color: "#666", fontSize: 13, marginBottom: 16 }}>{t("system.snapshots.description")}</p>
-
-      {/* Save row */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-        <input
-          type="text"
-          value={name}
-          onChange={e => setName(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && !atMax && doSave()}
-          placeholder={t("system.snapshots.name_placeholder")}
-          disabled={saving || atMax}
-          style={{ flex: 1, background: "#1a1a1a", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", color: "#ddd", fontSize: 13 }}
-        />
-        <Button size="sm" onClick={doSave} disabled={saving || atMax} className="gap-2">
-          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <BookmarkPlus className="h-3 w-3" />}
-          {saving ? t("system.snapshots.saving") : t("system.snapshots.save_button")}
-        </Button>
-      </div>
-
-      {/* Counter */}
-      <div style={{ fontSize: 12, marginBottom: 12, color: atMax ? "#f87171" : "#555" }}>
-        {t("system.snapshots.counter", { count: snapshots.length })}
-        {atMax && <span style={{ marginLeft: 8 }}>{t("system.snapshots.max_reached")}</span>}
-      </div>
-
-      {saveMsg && <p style={{ fontSize: 13, marginBottom: 10, color: saveMsg.ok ? "#4caf50" : "#f87171" }}>{saveMsg.text}</p>}
-
-      {/* Snapshot list — click to select */}
-      {snapshots.length === 0 ? (
-        <p style={{ color: "#555", fontSize: 13, marginBottom: 16 }}>{t("system.snapshots.empty")}</p>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
-          {snapshots.map(s => {
-            const isSelected = s.id === selectedId;
-            return (
-              <div
-                key={s.id}
-                onClick={() => setSelectedId(isSelected ? null : s.id)}
-                style={{
-                  background: isSelected ? "#1a2a3a" : "#111",
-                  border: `1px solid ${isSelected ? "#3b82f6" : "#222"}`,
-                  borderRadius: 8, padding: "10px 14px", cursor: "pointer",
-                  transition: "border-color 0.15s, background 0.15s",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <div style={{
-                    width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
-                    border: `2px solid ${isSelected ? "#3b82f6" : "#444"}`,
-                    background: isSelected ? "#3b82f6" : "transparent",
-                    transition: "all 0.15s",
-                  }} />
-                  <span style={{ color: isSelected ? "#93c5fd" : "#ddd", fontSize: 13, fontWeight: 500, flex: 1 }}>{s.name}</span>
-                  <span style={{ color: "#555", fontSize: 11 }}>{formatDate(s.created)}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Action bar — activates when a snapshot is selected */}
-      <div style={{ marginBottom: 16 }}>
-        {!selected && snapshots.length > 0 && (
-          <p style={{ color: "#444", fontSize: 12, marginBottom: 8 }}>{t("system.snapshots.select_hint")}</p>
-        )}
-        <div style={{ display: "flex", gap: 8 }}>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={doInstall}
-            disabled={!selected || busy}
-            className="gap-2"
-            style={{ flex: 1, opacity: selected ? 1 : 0.35, borderColor: "#4caf50", color: "#4caf50" }}
-          >
-            {restoring ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
-            {restoring ? t("system.snapshots.saving") : t("system.snapshots.install_button")}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={doDownload}
-            disabled={!selected || busy}
-            className="gap-2"
-            style={{ flex: 1, opacity: selected ? 1 : 0.35, borderColor: "#60a5fa", color: "#60a5fa" }}
-          >
-            {exporting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-            {exporting ? "…" : t("system.snapshots.download_button")}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={doDelete}
-            disabled={!selected || busy}
-            style={{ opacity: selected ? 1 : 0.35, color: "#666", padding: "0 10px" }}
-          >
-            {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-          </Button>
-        </div>
-        {actionMsg && (
-          <p style={{ fontSize: 12, marginTop: 8, color: actionMsg.ok ? "#4caf50" : "#f87171" }}>{actionMsg.text}</p>
-        )}
-      </div>
-
-      {/* Export current + Import section */}
-      <div style={{ borderTop: "1px solid #1e1e1e", paddingTop: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-          <Upload size={13} style={{ color: "#888" }} />
-          <span style={{ color: "#aaa", fontSize: 13, fontWeight: 600 }}>{t("system.snapshots.import_title")}</span>
-        </div>
-        <p style={{ color: "#555", fontSize: 12, marginBottom: 12 }}>{t("system.snapshots.import_description")}</p>
-
-        {/* Import zip */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <input
-            type="text"
-            value={importName}
-            onChange={e => setImportName(e.target.value)}
-            placeholder={t("system.snapshots.import_name_placeholder")}
-            disabled={importing}
-            style={{ flex: 1, minWidth: 140, background: "#1a1a1a", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", color: "#ddd", fontSize: 13 }}
-          />
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".zip"
-            id="snapshot-file-input"
-            onChange={e => {
-              const file = e.target.files?.[0] ?? null;
-              setImportFile(file);
-              if (file && !importName.trim()) {
-                const autoName = file.name
-                  .replace(/\.zip$/i, "")
-                  .replace(/^ktsb-config-/, "");
-                setImportName(autoName);
-              }
-            }}
-            disabled={importing}
-            style={{ display: "none" }}
-          />
-          <label
-            htmlFor="snapshot-file-input"
-            style={{
-              flex: 1, minWidth: 140,
-              display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "5px 10px", borderRadius: 8, fontSize: 12,
-              border: "1px solid #444", color: importFile ? "#ccc" : "#666",
-              cursor: importing ? "default" : "pointer",
-              background: "#1a1a1a",
-              userSelect: "none", overflow: "hidden",
-              opacity: importing ? 0.5 : 1,
-            }}
-          >
-            <Upload style={{ width: 12, height: 12, flexShrink: 0 }} />
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {importFile ? importFile.name : t("system.snapshots.choose_file")}
-            </span>
-          </label>
-          <Button size="sm" variant="outline" onClick={doImport} disabled={importing || !importFile} className="gap-2" style={{ borderColor: "#a78bfa", color: "#a78bfa" }}>
-            {importing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
-            {importing ? t("system.snapshots.importing") : t("system.snapshots.import_button")}
-          </Button>
-        </div>
-        {importMsg && (
-          <p style={{ fontSize: 12, marginTop: 8, color: importMsg.ok ? "#4caf50" : "#f87171" }}>{importMsg.text}</p>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function RollbackCard() {
   const { t } = useTranslation();
@@ -769,6 +462,428 @@ function RollbackCard() {
           </p>
         )}
         {status === "error" && <p style={{ color: "#f87171", fontSize: 13, marginTop: 12 }}>{t("system.rollback.error")}</p>}
+      </div>
+    </>
+  );
+}
+
+// ── BackupRestoreCard ──────────────────────────────────────────────────────────
+
+const ALL_CATEGORIES = [
+  "config", "ltm_database", "kaare_memory",
+  "personality", "user_profiles", "notes_state", "argus_events", "secrets", "images",
+] as const;
+type BackupCat = typeof ALL_CATEGORIES[number] | "user_keys";
+
+const ENCRYPTED_CATS: BackupCat[] = ["ltm_database", "kaare_memory", "personality", "user_profiles"];
+const DEFAULT_CATS: BackupCat[] = ["config", "ltm_database", "kaare_memory", "personality", "user_profiles", "notes_state"];
+
+function BackupRestoreCard() {
+  const { t } = useTranslation();
+
+  // shared category selection (used for both export and save-point)
+  const [cats, setCats] = useState<Set<BackupCat>>(new Set(DEFAULT_CATS));
+
+  // save-point state
+  const [pointName, setPointName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [points, setPoints] = useState<BackupPoint[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  // PIN modal for restore-from-point
+  const [restorePointId, setRestorePointId] = useState<string | null>(null);
+  const [pinModal, setPinModal] = useState(false);
+  const [pin, setPin] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [restoringPoint, setRestoringPoint] = useState(false);
+
+  // export (download) state
+  const [exporting, setExporting] = useState(false);
+  const [exportMsg, setExportMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // restore-from-file state
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restoreCats, setRestoreCats] = useState<Set<BackupCat>>(new Set());
+  const [restorePin, setRestorePin] = useState("");
+  const [restoring, setRestoring] = useState(false);
+  const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
+  const [restoreMsg, setRestoreMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const restoreFileRef = useRef<HTMLInputElement>(null);
+
+  const needsUserKeys = (c: Set<BackupCat>) => [...c].some(x => ENCRYPTED_CATS.includes(x as BackupCat));
+  const effectiveCats = (c: Set<BackupCat>): BackupCat[] => {
+    const out = new Set(c);
+    if (needsUserKeys(c)) out.add("user_keys");
+    return [...out];
+  };
+
+  const toggleCat = (cat: BackupCat) => {
+    if (cat === "user_keys") return;
+    setCats(prev => { const n = new Set(prev); n.has(cat) ? n.delete(cat) : n.add(cat); return n; });
+  };
+
+  const loadPoints = useCallback(async () => {
+    try {
+      const r = await apiListBackupPoints();
+      setPoints(r.points);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { loadPoints(); }, [loadPoints]);
+
+  const atMax = points.length >= 5;
+
+  const formatDate = (iso: string) => {
+    try {
+      const locale = i18n.language === "nb" ? "nb-NO" : i18n.language;
+      return new Date(iso).toLocaleString(locale, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    } catch { return iso; }
+  };
+  const formatSize = (bytes: number) => {
+    const mb = bytes / (1024 * 1024);
+    return mb < 1 ? "< 1 MB" : `${mb.toFixed(1)} MB`;
+  };
+
+  const doSavePoint = async () => {
+    const allCats = effectiveCats(cats);
+    if (allCats.filter(c => c !== "user_keys").length === 0) {
+      setSaveMsg({ ok: false, text: t("system.backup.no_categories") });
+      return;
+    }
+    setSaving(true); setSaveMsg(null);
+    try {
+      const r = await apiSaveBackupPoint(allCats, pointName.trim());
+      if (r.ok) {
+        setPointName("");
+        setSaveMsg({ ok: true, text: "✓ " + (r.name ?? t("system.backup.save_point_button")) });
+        await loadPoints();
+      } else {
+        setSaveMsg({ ok: false, text: t("system.backup.max_reached") });
+      }
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "";
+      setSaveMsg({ ok: false, text: detail === "max_reached" ? t("system.backup.max_reached") : (detail || "Error") });
+    } finally {
+      setSaving(false);
+      setTimeout(() => setSaveMsg(null), 5000);
+    }
+  };
+
+  const doDeletePoint = async (id: string, name: string) => {
+    if (!window.confirm(t("system.backup.delete_point_confirm", { name }))) return;
+    setDeletingId(id);
+    try {
+      await apiDeleteBackupPoint(id);
+      await loadPoints();
+    } catch { /* ignore */ }
+    setDeletingId(null);
+  };
+
+  const doDownloadPoint = async (id: string, name: string) => {
+    setDownloadingId(id);
+    try {
+      const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40);
+      await apiDownloadBackupPoint(id, `ktsb-backup-${safeName}-${id}.zip`);
+    } catch { /* ignore */ }
+    setDownloadingId(null);
+  };
+
+  const openPinModal = (id: string) => { setRestorePointId(id); setPinModal(true); setPin(""); setPinError(""); };
+  const closePinModal = () => { setPinModal(false); setRestorePointId(null); setPin(""); setPinError(""); };
+
+  const doRestorePoint = async () => {
+    if (!restorePointId || !pin.trim()) return;
+    setRestoringPoint(true); setPinError("");
+    try {
+      const r = await apiRestoreBackupPoint(restorePointId, [], pin);
+      closePinModal();
+      setRestoreMsg(r.ok
+        ? { ok: true, text: t("system.backup.restore_ok", { items: r.restored.join(", ") }) }
+        : { ok: false, text: r.errors.join("; ") || "Restore failed" },
+      );
+      if (r.restart_needed) setRestoreResult(r);
+      setTimeout(() => { setRestoreMsg(null); setRestoreResult(null); }, 8000);
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "";
+      setPinError(detail || t("system.rollback.pin_error"));
+    } finally {
+      setRestoringPoint(false);
+    }
+  };
+
+  const doExport = async () => {
+    const allCats = effectiveCats(cats);
+    if (allCats.filter(c => c !== "user_keys").length === 0) {
+      setExportMsg({ ok: false, text: t("system.backup.no_categories") });
+      return;
+    }
+    setExporting(true); setExportMsg(null);
+    try {
+      const ts = new Date().toISOString().slice(0, 10);
+      await apiExportBackup(allCats, `ktsb-backup-${ts}.zip`);
+      setExportMsg({ ok: true, text: "✓ " + t("system.backup.download_button") });
+    } catch {
+      setExportMsg({ ok: false, text: "Export failed" });
+    } finally {
+      setExporting(false);
+      setTimeout(() => setExportMsg(null), 5000);
+    }
+  };
+
+  const onRestoreFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setRestoreFile(file); setRestoreResult(null); setRestoreMsg(null);
+    setRestoreCats(file ? new Set(DEFAULT_CATS) : new Set());
+  };
+
+  const doRestore = async () => {
+    if (!restoreFile || restoreCats.size === 0 || !restorePin.trim()) return;
+    setRestoring(true); setRestoreMsg(null); setRestoreResult(null);
+    try {
+      const r = await apiRestoreBackup(restoreFile, [...restoreCats], restorePin);
+      setRestoreResult(r);
+      setRestoreMsg(r.ok
+        ? { ok: true, text: t("system.backup.restore_ok", { items: r.restored.join(", ") }) }
+        : { ok: false, text: r.errors.length > 0 ? t("system.backup.restore_errors", { errors: r.errors.join("; ") }) : "Restore failed" },
+      );
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "restore failed";
+      setRestoreMsg({ ok: false, text: detail });
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const hasSecrets = cats.has("secrets");
+  const userKeysAuto = needsUserKeys(cats);
+  const restorePointName = points.find(p => p.id === restorePointId)?.name ?? "";
+
+  return (
+    <>
+      {/* PIN modal for restore from saved point */}
+      {pinModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "#1a1a1a", border: "1px solid #f59e0b55", borderRadius: 12, padding: "28px 32px", maxWidth: 400, width: "90%" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <RotateCcw size={15} style={{ color: "#f59e0b" }} />
+              <span style={{ color: "#ddd", fontSize: 15, fontWeight: 600 }}>{t("system.backup.restore_point_title")}</span>
+            </div>
+            <p style={{ color: "#888", fontSize: 13, marginBottom: 18, lineHeight: 1.6 }}>
+              {t("system.backup.restore_point_warning", { name: restorePointName })}
+            </p>
+            <input
+              type="password"
+              inputMode="numeric"
+              value={pin}
+              onChange={e => setPin(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && doRestorePoint()}
+              placeholder={t("system.backup.pin_placeholder")}
+              autoFocus
+              style={{ width: "100%", background: "#111", border: "1px solid #555", borderRadius: 6, padding: "8px 12px", color: "#ddd", fontSize: 14, marginBottom: 8, boxSizing: "border-box" }}
+            />
+            {pinError && <p style={{ color: "#f87171", fontSize: 12, marginBottom: 8 }}>{pinError}</p>}
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <Button variant="outline" size="sm" onClick={doRestorePoint} disabled={restoringPoint || !pin.trim()} className="gap-2" style={{ flex: 1, borderColor: "#f59e0b", color: "#f59e0b" }}>
+                {restoringPoint ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+                {restoringPoint ? t("system.backup.restoring") : t("system.backup.restore_point_button")}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={closePinModal} disabled={restoringPoint} style={{ flex: 1 }}>
+                {t("system.rollback.pin_cancel")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="admin-card" style={{ borderRadius: 12, padding: "20px 24px", border: "1px solid #22c55e33" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <HardDrive size={15} style={{ color: "#22c55e", flexShrink: 0 }} />
+          <span style={{ color: "#ddd", fontSize: 15, fontWeight: 600 }}>{t("system.backup.title")}</span>
+        </div>
+        <p style={{ color: "#666", fontSize: 13, marginBottom: 16 }}>{t("system.backup.description")}</p>
+
+        {/* Category checkboxes */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "default", opacity: 0.6 }}>
+            <input type="checkbox" checked={userKeysAuto} disabled readOnly style={{ marginTop: 2 }} />
+            <span style={{ fontSize: 13, color: "#aaa" }}>
+              {t("system.backup.cat_user_keys")}
+              {userKeysAuto && <span style={{ fontSize: 11, color: "#555", marginLeft: 6 }}>— {t("system.backup.user_keys_required")}</span>}
+            </span>
+          </label>
+          {ALL_CATEGORIES.map(cat => (
+            <label key={cat} style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
+              <input type="checkbox" checked={cats.has(cat)} onChange={() => toggleCat(cat)} style={{ marginTop: 2 }} />
+              <span style={{ fontSize: 13, color: "#ddd" }}>
+                {t(`system.backup.cat_${cat}`)}
+                {cat === "secrets" && cats.has("secrets") && (
+                  <span style={{ fontSize: 11, color: "#f87171", marginLeft: 6, fontWeight: 500 }}>⚠ {t("system.backup.secrets_warning")}</span>
+                )}
+              </span>
+            </label>
+          ))}
+        </div>
+
+        {hasSecrets && (
+          <p style={{ fontSize: 12, color: "#f87171", marginBottom: 10, fontWeight: 500 }}>⚠ {t("system.backup.secrets_warning")}</p>
+        )}
+
+        {/* ── Saved backup points ── */}
+        <div style={{ borderTop: "1px solid #1e1e1e", marginTop: 6, paddingTop: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <span style={{ color: "#aaa", fontSize: 13, fontWeight: 600 }}>{t("system.backup.saved_points_title")}</span>
+            <span style={{ fontSize: 11, color: atMax ? "#f87171" : "#555" }}>{points.length}/5</span>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
+            <input
+              type="text"
+              value={pointName}
+              onChange={e => setPointName(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && !atMax && !saving && doSavePoint()}
+              placeholder={t("system.backup.save_point_name_placeholder")}
+              disabled={saving || atMax}
+              style={{ flex: 1, background: "#1a1a1a", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", color: "#ddd", fontSize: 13 }}
+            />
+            <Button size="sm" onClick={doSavePoint} disabled={saving || atMax} className="gap-2">
+              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+              {saving ? t("system.backup.saving_point") : t("system.backup.save_point_button")}
+            </Button>
+          </div>
+
+          {saveMsg && <p style={{ fontSize: 12, marginBottom: 6, color: saveMsg.ok ? "#4caf50" : "#f87171" }}>{saveMsg.text}</p>}
+          {atMax && !saveMsg && <p style={{ fontSize: 12, color: "#f87171", marginBottom: 6 }}>{t("system.backup.max_reached")}</p>}
+
+          {points.length === 0 ? (
+            <p style={{ color: "#555", fontSize: 13, marginBottom: 4 }}>{t("system.backup.saved_points_empty")}</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 4 }}>
+              {points.map(pt => (
+                <div key={pt.id} style={{ background: "#111", border: "1px solid #222", borderRadius: 8, padding: "10px 14px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ color: "#ddd", fontSize: 13, fontWeight: 500, flex: 1, minWidth: 80 }}>{pt.name}</span>
+                    <span style={{ color: "#555", fontSize: 11 }}>{formatDate(pt.created)}</span>
+                    <span style={{ color: "#444", fontSize: 11 }}>{formatSize(pt.size_bytes)}</span>
+                    <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                      <Button
+                        size="sm" variant="outline"
+                        onClick={() => openPinModal(pt.id)}
+                        disabled={!!deletingId || !!downloadingId}
+                        className="gap-1"
+                        style={{ fontSize: 11, padding: "2px 8px", borderColor: "#f59e0b", color: "#f59e0b" }}
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        {t("system.backup.restore_point_button")}
+                      </Button>
+                      <Button
+                        size="sm" variant="outline"
+                        onClick={() => doDownloadPoint(pt.id, pt.name)}
+                        disabled={downloadingId === pt.id || !!deletingId}
+                        style={{ padding: "2px 8px", borderColor: "#60a5fa", color: "#60a5fa" }}
+                      >
+                        {downloadingId === pt.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                      </Button>
+                      <Button
+                        size="sm" variant="ghost"
+                        onClick={() => doDeletePoint(pt.id, pt.name)}
+                        disabled={deletingId === pt.id || !!downloadingId}
+                        style={{ padding: "2px 6px", color: "#666" }}
+                      >
+                        {deletingId === pt.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                      </Button>
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 11, color: "#444" }}>{pt.categories.join(", ")}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {restoreMsg && (
+            <p style={{ fontSize: 12, marginTop: 8, color: restoreMsg.ok ? "#4caf50" : "#f87171", lineHeight: 1.5 }}>{restoreMsg.text}</p>
+          )}
+          {restoreResult?.restart_needed && (
+            <p style={{ fontSize: 12, marginTop: 4, color: "#60a5fa" }}>{t("system.backup.restarting")}</p>
+          )}
+        </div>
+
+        {/* ── Download ZIP ── */}
+        <div style={{ borderTop: "1px solid #1e1e1e", marginTop: 14, paddingTop: 14 }}>
+          <Button
+            size="sm" onClick={doExport} disabled={exporting} className="gap-2"
+            style={{ background: exporting ? undefined : "#166534", borderColor: "#22c55e", color: "#22c55e", border: "1px solid" }}
+          >
+            {exporting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+            {exporting ? t("system.backup.downloading") : t("system.backup.download_button")}
+          </Button>
+          {exportMsg && <p style={{ fontSize: 12, marginTop: 8, color: exportMsg.ok ? "#4caf50" : "#f87171" }}>{exportMsg.text}</p>}
+        </div>
+
+        {/* ── Restore from file ── */}
+        <div style={{ borderTop: "1px solid #1e1e1e", marginTop: 14, paddingTop: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+            <Upload size={13} style={{ color: "#888" }} />
+            <span style={{ color: "#aaa", fontSize: 13, fontWeight: 600 }}>{t("system.backup.restore_section")}</span>
+          </div>
+
+          <input ref={restoreFileRef} type="file" accept=".zip" id="backup-restore-file" onChange={onRestoreFileChange} style={{ display: "none" }} />
+          <label
+            htmlFor="backup-restore-file"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 12,
+              padding: "5px 10px", borderRadius: 8, fontSize: 12,
+              border: "1px solid #444", color: restoreFile ? "#ccc" : "#666",
+              cursor: "pointer", background: "#1a1a1a", userSelect: "none",
+              maxWidth: "100%", overflow: "hidden",
+            }}
+          >
+            <Upload style={{ width: 12, height: 12, flexShrink: 0 }} />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {restoreFile ? restoreFile.name : t("system.backup.choose_file")}
+            </span>
+          </label>
+
+          {restoreFile && (
+            <>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 12 }}>
+                {(["user_keys", ...ALL_CATEGORIES] as BackupCat[]).map(cat => (
+                  <label key={cat} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                    <input type="checkbox" checked={restoreCats.has(cat)} onChange={() => {
+                      setRestoreCats(prev => { const n = new Set(prev); n.has(cat) ? n.delete(cat) : n.add(cat); return n; });
+                    }} />
+                    <span style={{ fontSize: 12, color: "#bbb" }}>{t(`system.backup.cat_${cat}`)}</span>
+                  </label>
+                ))}
+              </div>
+
+              <p style={{ fontSize: 12, color: "#f59e0b", marginBottom: 12 }}>⚠ {t("system.backup.restore_warning")}</p>
+
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <input
+                  type="password" inputMode="numeric"
+                  value={restorePin} onChange={e => setRestorePin(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && !restoring && doRestore()}
+                  placeholder={t("system.backup.pin_placeholder")}
+                  disabled={restoring}
+                  style={{ flex: 1, minWidth: 120, maxWidth: 160, background: "#1a1a1a", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", color: "#ddd", fontSize: 13 }}
+                />
+                <Button
+                  size="sm" variant="outline" onClick={doRestore}
+                  disabled={restoring || !restorePin.trim() || restoreCats.size === 0}
+                  className="gap-2" style={{ borderColor: "#f59e0b", color: "#f59e0b" }}
+                >
+                  {restoring ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+                  {restoring ? t("system.backup.restoring") : t("system.backup.restore_button")}
+                </Button>
+              </div>
+
+              {restoreMsg && <p style={{ fontSize: 12, marginTop: 10, color: restoreMsg.ok ? "#4caf50" : "#f87171", lineHeight: 1.5 }}>{restoreMsg.text}</p>}
+              {restoreResult?.restart_needed && <p style={{ fontSize: 12, marginTop: 6, color: "#60a5fa" }}>{t("system.backup.restarting")}</p>}
+            </>
+          )}
+        </div>
       </div>
     </>
   );
@@ -930,8 +1045,8 @@ export default function System() {
           )}
         </div>
 
-        {/* Config snapshots */}
-        <SnapshotCard />
+        {/* Backup & restore */}
+        <BackupRestoreCard />
 
         {/* Rollback */}
         <RollbackCard />

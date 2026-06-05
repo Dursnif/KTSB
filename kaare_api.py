@@ -47,6 +47,7 @@ from kaare_core.routers.router_meetings import router as meetings_router
 from kaare_core.routers.router_system import router as system_router
 from kaare_core.routers.router_settings import router as settings_router
 from kaare_core.routers.router_memory import router as memory_router
+from kaare_core.routers.router_backup import router as backup_router
 
 _miss_kare_stm = MissKareSTM()
 _miss_kare_latest: dict[str, str] = {}  # user_id → latest comment (cleared on fetch)
@@ -213,6 +214,7 @@ app.include_router(meetings_router)
 app.include_router(system_router)
 app.include_router(settings_router)
 app.include_router(memory_router)
+app.include_router(backup_router)
 init_users_db()
 
 # Suppress uvicorn access log for high-frequency poll endpoints
@@ -658,7 +660,6 @@ async def generate(request: PromptRequest, http: Request):
         "weather_enabled": app_state.CAPABILITY_MAP.get("domains", {}).get("weather", {}).get("enabled", False),
         "time_date_enabled": app_state.CAPABILITY_MAP.get("domains", {}).get("time_date", {}).get("enabled", False),
     }
-    print(f"[KÅRE] Mottatt prompt: {prompt}")
     source = (request.source or http.headers.get("X-Kaare-Source") or "gui").lower()
     # Use caller-supplied RID when present (voice bridge, dev_meeting, etc.)
     if request.rid:
@@ -668,6 +669,7 @@ async def generate(request: PromptRequest, http: Request):
     _route_log("generate_in", rid=rid, prompt_preview=prompt[:120])
     from kaare_core.memory.long_term import USER_GLOBAL
     user_id = (request.user_id or "").strip() or USER_GLOBAL
+    print(f"[KÅRE] request rid={rid} user={user_id} source={source} chars={len(prompt)} images={len(images or [])}")
 
     # Rate limiting — skip internal sources (reflection, dev_meeting, voice bridge, STT)
     if source not in ("reflection", "dev_meeting", "voice_bridge", "stt", "fastpath"):
@@ -785,7 +787,7 @@ async def generate(request: PromptRequest, http: Request):
 
 
     mk_addressed = _detect_miss_kare_addressed(prompt)
-    print(f"[MISS KÅRE] prefix detektert: {mk_addressed} | prompt start: {prompt[:30]!r}")
+    print(f"[MISS KÅRE] rid={rid} addressed={mk_addressed}")
 
     _speaker_note = ""
     if source == "stt" and request.context:
@@ -839,10 +841,10 @@ async def generate(request: PromptRequest, http: Request):
 
     # fire-and-forget — never blocks the response
     async def _run_miss_kare(u_msg: str, k_reply: str, uid: str, addressed: bool):
-        print(f"[MISS KÅRE] evaluator starter | addressed={addressed}")
+        print(f"[MISS KÅRE] evaluator starter rid={rid} addressed={addressed}")
         try:
             comment = await _miss_kare_evaluate(u_msg, k_reply, uid, addressed_directly=addressed)
-            print(f"[MISS KÅRE] evaluator ferdig | comment={comment[:80]!r}")
+            print(f"[MISS KÅRE] evaluator ferdig rid={rid} silent={comment == '[STILLE]'}")
             _miss_kare_stm.add(uid, u_msg, k_reply, comment)
             if comment != "[STILLE]":
                 _miss_kare_latest[uid] = comment    # frontend poller dette

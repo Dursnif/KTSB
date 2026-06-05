@@ -125,6 +125,11 @@ export async function apiDeleteUser(username: string) {
   return data as { ok: boolean };
 }
 
+export async function apiRecover(username: string, seed_phrase: string, new_pin: string) {
+  const { data } = await api.post("/api/users/recover", { username, seed_phrase, new_pin });
+  return data as { token: string; user: { username: string; role: string; display_name: string; avatar: string } };
+}
+
 export async function apiListPersonalities() {
   const { data } = await api.get("/api/personalities");
   return data as { key: string; label: string }[];
@@ -692,6 +697,98 @@ export async function apiImportConfigSnapshot(
   form.append("name", name);
   form.append("file", file);
   const { data } = await api.post("/api/admin/config-snapshot/import", form);
+  return data;
+}
+
+// ── Full backup ────────────────────────────────────────────────────────────────
+
+export type BackupPoint = {
+  id: string;
+  name: string;
+  created: string;
+  categories: string[];
+  size_bytes: number;
+  ktsb_version: string;
+};
+
+export async function apiSaveBackupPoint(
+  categories: string[],
+  name: string,
+): Promise<{ ok: boolean; id?: string; name?: string; error?: string }> {
+  const { data } = await api.post("/api/backup/save-point", { categories, name });
+  return data;
+}
+
+export async function apiListBackupPoints(): Promise<{ points: BackupPoint[] }> {
+  const { data } = await api.get("/api/backup/points");
+  return data;
+}
+
+export async function apiRestoreBackupPoint(
+  id: string,
+  categories: string[],
+  pin: string,
+): Promise<RestoreResult> {
+  const { data } = await api.post(`/api/backup/points/${id}/restore`, { categories, pin });
+  return data;
+}
+
+export async function apiDeleteBackupPoint(id: string): Promise<{ ok: boolean }> {
+  const { data } = await api.delete(`/api/backup/points/${id}`);
+  return data;
+}
+
+export async function apiDownloadBackupPoint(id: string, downloadName: string): Promise<void> {
+  const token = sessionStorage.getItem("kaare_token");
+  const resp = await fetch(
+    `http://${window.location.hostname}:8000/api/backup/points/${id}/download`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!resp.ok) throw new Error("Download failed");
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = downloadName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function apiExportBackup(categories: string[], downloadName: string): Promise<void> {
+  const token = sessionStorage.getItem("kaare_token");
+  const params = new URLSearchParams({ categories: categories.join(",") });
+  const resp = await fetch(
+    `http://${window.location.hostname}:8000/api/backup/export?${params}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!resp.ok) throw new Error("Export failed");
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = downloadName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export type RestoreResult = {
+  ok: boolean;
+  restored: string[];
+  errors: string[];
+  restart_needed: boolean;
+  meta?: { ktsb_version?: string; created?: string };
+};
+
+export async function apiRestoreBackup(
+  file: File,
+  categories: string[],
+  pin: string,
+): Promise<RestoreResult> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("categories", JSON.stringify(categories));
+  form.append("pin", pin);
+  const { data } = await api.post("/api/backup/restore", form);
   return data;
 }
 
