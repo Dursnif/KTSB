@@ -232,11 +232,83 @@ def _write_analysis_log(entry: dict) -> None:
         log.warning("Could not write frigate_analysis.log: %s", e)
 
 
+_NOTIFY_LOG = Path("/kaare/logs/notifications.log")
+
+
+def _write_notify_log(entry: dict) -> None:
+    try:
+        _NOTIFY_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with _NOTIFY_LOG.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as e:
+        log.warning("[notify_log] write failed: %s", e)
+
+
+async def _maybe_notify_away(camera: str, label: str, score: float) -> None:
+    """Fire notify_user() for admin users when household is away and threat is HIGH."""
+    try:
+        from adapters.frigate_adapter import derive_hints
+        from kaare_core.notify import notify_user, Urgency
+        from kaare_core.users.store import list_users
+        from kaare_core.tools.i18n import t
+
+        cam_cfg = _cfg().get("cameras", {}).get(camera, {})
+        camera_role = cam_cfg.get("role", "")
+        hints = derive_hints({"label": label, "confidence": score, "zones": []}, camera_role)
+
+        if not hints.get("away_mode") or hints.get("priority") != "high":
+            return
+
+        admins = [u for u in list_users() if u.get("role") in ("admin", "adult")]
+        for user in admins:
+            uid = user["username"]
+            source_key = f"frigate:{camera}:{label or 'unknown'}"
+            lang = "nb"
+            try:
+                from kaare_core.tools.i18n import get_lang
+                lang = get_lang(uid)
+            except Exception:
+                pass
+
+            if label:
+                msg = t("notify_frigate_away_person", lang, camera=camera, label=label)
+            else:
+                msg = t("notify_frigate_away_unknown", lang, camera=camera)
+
+            # Graduated urgency: known-normal pattern at high-confidence baseline → MEDIUM
+            deviation_score = hints.get("deviation_score", 0.5)
+            baseline_confidence = hints.get("baseline_confidence", 0.0)
+            if baseline_confidence >= 0.5 and deviation_score < 0.3:
+                urgency = Urgency.MEDIUM
+                urgency_str = "medium"
+            else:
+                urgency = Urgency.HIGH
+                urgency_str = "high"
+
+            await notify_user(uid, msg, urgency=urgency, source_key=source_key)
+            _write_notify_log({
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "user_id": uid,
+                "urgency": urgency_str,
+                "source_key": source_key,
+                "channel": "sound_node",
+                "camera": camera,
+                "label": label,
+                "score": score,
+                "deviation_score": deviation_score,
+                "baseline_confidence": baseline_confidence,
+            })
+    except Exception as e:
+        log.warning("[frigate_responder] _maybe_notify_away failed: %s", e)
+
+
 async def handle_end_event(event: dict) -> None:
     camera = event.get("camera", "")
     label = event.get("label", "")
     score = float(event.get("score", 0))
     duration = float(event.get("duration", 0))
+
+    asyncio.create_task(_maybe_notify_away(camera, label, score))
 
     if not should_analyze(camera, label, score, duration):
         log.debug("Skipping event: camera=%s label=%s score=%.2f duration=%.1f", camera, label, score, duration)

@@ -120,7 +120,7 @@ def run_once(provider, behavior_cfg: dict, service_cfg: dict) -> None:
     prompt = (
         f"<|im_start|>system\n{SYSTEM}<|im_end|>\n"
         f"<|im_start|>user\n{context}<|im_end|>\n"
-        f"<|im_start|>assistant\n"
+        f"<|im_start|>assistant\n/no_think\n"
     )
 
     raw = provider.generate(prompt, max_tokens)

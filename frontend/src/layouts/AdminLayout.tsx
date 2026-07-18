@@ -3,39 +3,43 @@ import { usePupilAnimation } from "../hooks/usePupilAnimation";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Server, Bot, BookOpen,
-  Wrench, Settings, Home, ChevronLeft, ChevronRight, LogOut, Map, Speaker,
+  Wrench, Settings, Home, ChevronLeft, ChevronRight, LogOut, Map, Speaker, ShieldAlert,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { useTranslation } from "react-i18next";
+import { useAssistantName } from "../contexts/AssistantNameContext";
 import { KTSBLogo, KTSBEye } from "../components/KTSBLogo";
 import "../components/ktsb-logo.css";
 
 type NavItemDef = {
   to: string;
   labelKey: string;
+  label?: string;
   icon: React.ElementType;
   end?: boolean;
   separator?: boolean;
 };
 
-const navDefs: NavItemDef[] = [
-  { to: "/admin",                labelKey: "nav.dashboard",    icon: LayoutDashboard, end: true },
-  { to: "/admin/users",          labelKey: "nav.users",         icon: Users },
-  { to: "/admin/system",         labelKey: "nav.system",        icon: Server },
-  { to: "/admin/agent-messages", labelKey: "nav.agents",        icon: Bot },
-  { to: "/admin/reflections",    labelKey: "nav.reflections",   icon: BookOpen },
-  { to: "/admin/tools",          labelKey: "nav.tools",         icon: Wrench },
-  { to: "/admin/aliases",        labelKey: "nav.aliases",       icon: Map },
-  { to: "/admin/nodes",          labelKey: "nav.nodes",         icon: Speaker },
-  { to: "/admin/settings",       labelKey: "nav.settings",      icon: Settings },
-  { to: "/",                     labelKey: "nav.back_to_kare",  icon: Home, separator: true },
-];
-
 export default function AdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const assistantName = useAssistantName();
   usePupilAnimation();
+
+  const navDefs: NavItemDef[] = [
+    { to: "/admin",                labelKey: "nav.dashboard",   icon: LayoutDashboard, end: true },
+    { to: "/admin/users",          labelKey: "nav.users",        icon: Users },
+    { to: "/admin/system",         labelKey: "nav.system",       icon: Server },
+    { to: "/admin/agent-messages", labelKey: "nav.agents",       icon: Bot },
+    { to: "/admin/reflections",    labelKey: "nav.reflections",  icon: BookOpen },
+    { to: "/admin/security",       labelKey: "nav.security",     icon: ShieldAlert },
+    { to: "/admin/tools",          labelKey: "nav.tools",        icon: Wrench },
+    { to: "/admin/aliases",        labelKey: "nav.aliases",      icon: Map },
+    { to: "/admin/nodes",          labelKey: "nav.nodes",        icon: Speaker },
+    { to: "/admin/settings",       labelKey: "nav.settings",     icon: Settings },
+    { to: "/", labelKey: "nav.back_to", label: t("nav.back_to", { name: assistantName }), icon: Home, separator: true },
+  ];
 
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     return localStorage.getItem("admin-sidebar-collapsed") === "true";
@@ -118,38 +122,41 @@ export default function AdminLayout() {
 
         {/* ── Nav links ── */}
         <nav style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, padding: "12px 8px" }}>
-          {navDefs.map(({ to, labelKey, icon: Icon, end, separator }) => (
-            <div key={to}>
-              {separator && (
-                <div style={{ margin: "8px 4px", borderTop: "1px solid #252525" }} />
-              )}
-              <NavLink
-                to={to}
-                end={end}
-                title={collapsed ? t(labelKey) : undefined}
-                style={({ isActive }) => ({
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: collapsed ? "center" : "flex-start",
-                  gap: 10,
-                  padding: collapsed ? "10px 0" : "9px 9px",
-                  borderRadius: 7,
-                  borderLeft: isActive ? "3px solid #7c6aff" : "3px solid transparent",
-                  color: isActive ? "#a78bfa" : "#888",
-                  fontWeight: isActive ? 600 : 400,
-                  background: isActive ? "#1e1b3a" : "transparent",
-                  textDecoration: "none",
-                  fontSize: 14,
-                  transition: "background 0.15s, color 0.15s, border-color 0.15s",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                })}
-              >
-                <Icon size={17} style={{ flexShrink: 0 }} />
-                {!collapsed && <span>{t(labelKey)}</span>}
-              </NavLink>
-            </div>
-          ))}
+          {navDefs.map(({ to, labelKey, label, icon: Icon, end, separator }) => {
+            const displayLabel = label ?? t(labelKey);
+            return (
+              <div key={to}>
+                {separator && (
+                  <div style={{ margin: "8px 4px", borderTop: "1px solid #252525" }} />
+                )}
+                <NavLink
+                  to={to}
+                  end={end}
+                  title={collapsed ? displayLabel : undefined}
+                  style={({ isActive }) => ({
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: collapsed ? "center" : "flex-start",
+                    gap: 10,
+                    padding: collapsed ? "10px 0" : "9px 9px",
+                    borderRadius: 7,
+                    borderLeft: isActive ? "3px solid #7c6aff" : "3px solid transparent",
+                    color: isActive ? "#a78bfa" : "#888",
+                    fontWeight: isActive ? 600 : 400,
+                    background: isActive ? "#1e1b3a" : "transparent",
+                    textDecoration: "none",
+                    fontSize: 14,
+                    transition: "background 0.15s, color 0.15s, border-color 0.15s",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                  })}
+                >
+                  <Icon size={17} style={{ flexShrink: 0 }} />
+                  {!collapsed && <span>{displayLabel}</span>}
+                </NavLink>
+              </div>
+            );
+          })}
         </nav>
 
         {/* ── Footer: user + logout ── */}

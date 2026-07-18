@@ -13,9 +13,10 @@ from pydantic import BaseModel
 import kaare_core.app_state as app_state
 from kaare_core.users.store import get_user_with_hash, verify_pin
 
-_MEETING_LOCK  = Path("/kaare/state/meeting_active.lock")
-_TOPICS_FILE   = Path("/kaare/state/meeting_topics.json")
-_COMMENTS_DIR  = Path("/kaare/state/meeting_comments")
+_MEETING_LOCK       = Path("/kaare/state/meeting_active.lock")
+_TOPICS_FILE        = Path("/kaare/state/meeting_topics.json")
+_COMMENTS_DIR       = Path("/kaare/state/meeting_comments")
+_USER_TOPICS_DIR    = Path("/kaare/state/meeting_topics_user")
 
 # In-place-mutated dicts — same objects as in app_state
 _MEETING_STATUS = app_state._MEETING_STATUS
@@ -34,6 +35,14 @@ class _TopicBody(BaseModel):
 
 class _CommentBody(BaseModel):
     comment: str
+
+class _PinCommentBody(BaseModel):
+    pin: str
+    comment: str
+
+class _PinTopicBody(BaseModel):
+    pin: str
+    topic: str
 
 
 # ── Topic helpers ─────────────────────────────────────────────────────────────
@@ -150,6 +159,50 @@ def api_reflection_get(username: str, date: str, body: _PinBody):
     if not p.exists():
         raise HTTPException(404, "Not found")
     return {"date": date, "content": p.read_text(encoding="utf-8")}
+
+
+@router.post("/api/reflections/{username}/comment/{date}/get")
+def api_get_user_reflection_comment(username: str, date: str, body: _PinBody):
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+        raise HTTPException(400, "Invalid date format")
+    user = get_user_with_hash(username)
+    if not user or not verify_pin(body.pin, user["pin_hash"]):
+        raise HTTPException(403, "Invalid PIN")
+    p = _COMMENTS_DIR / "reflection" / username / f"{date}.txt"
+    return {"comment": p.read_text(encoding="utf-8").strip() if p.exists() else ""}
+
+
+@router.post("/api/reflections/{username}/comment/{date}")
+def api_set_user_reflection_comment(username: str, date: str, body: _PinCommentBody):
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+        raise HTTPException(400, "Invalid date format")
+    user = get_user_with_hash(username)
+    if not user or not verify_pin(body.pin, user["pin_hash"]):
+        raise HTTPException(403, "Invalid PIN")
+    p = _COMMENTS_DIR / "reflection" / username / f"{date}.txt"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(body.comment.strip(), encoding="utf-8")
+    return {"ok": True}
+
+
+@router.post("/api/reflections/{username}/topic/get")
+def api_get_user_reflection_topic(username: str, body: _PinBody):
+    user = get_user_with_hash(username)
+    if not user or not verify_pin(body.pin, user["pin_hash"]):
+        raise HTTPException(403, "Invalid PIN")
+    p = _USER_TOPICS_DIR / f"{username}.txt"
+    return {"topic": p.read_text(encoding="utf-8").strip() if p.exists() else ""}
+
+
+@router.post("/api/reflections/{username}/topic")
+def api_set_user_reflection_topic(username: str, body: _PinTopicBody):
+    user = get_user_with_hash(username)
+    if not user or not verify_pin(body.pin, user["pin_hash"]):
+        raise HTTPException(403, "Invalid PIN")
+    _USER_TOPICS_DIR.mkdir(parents=True, exist_ok=True)
+    p = _USER_TOPICS_DIR / f"{username}.txt"
+    p.write_text(body.topic.strip(), encoding="utf-8")
+    return {"ok": True}
 
 
 @router.get("/api/dev-meetings")

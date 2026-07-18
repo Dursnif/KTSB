@@ -44,8 +44,9 @@ HOUSEHOLD_VISIBLE_FIELDS: dict[str, Any] = {
     "role":            None,   # family | admin | guest
     "age":             None,   # integer or null
     "key_facts":       [],     # ["nøttallergi", "vegetarianer"]
-    "current_context": None,   # "Studerer til eksamen i mai"
+    "current_context": [],     # list of {text, set, expires, trigger} — or legacy string
     "recent_updates":  [],     # ["Farget håret rosa 2026-05-10"]
+    "notify_channel":  "sound_node",  # sound_node | push | chat | silent
 }
 
 
@@ -664,6 +665,44 @@ def get_all_household_visible() -> dict[str, dict]:
     return result
 
 
+def _resolve_current_context(raw) -> list[str]:
+    """Return active context texts from current_context field.
+
+    Handles two formats:
+    - Legacy string: returned as-is if non-empty.
+    - New list of {text, set, expires, trigger}: expired and trigger-cleared entries are filtered.
+    """
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        return [raw] if raw.strip() else []
+    if not isinstance(raw, list):
+        return []
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    household_mode = "home"
+    try:
+        from kaare_core.tools.household_state import read_household_state
+        household_mode = read_household_state().get("mode", "home")
+    except Exception:
+        pass
+    result = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            if isinstance(entry, str) and entry.strip():
+                result.append(entry)
+            continue
+        expires = entry.get("expires")
+        if expires and str(expires) < today_str:
+            continue
+        trigger = entry.get("trigger")
+        if trigger == "household_home" and household_mode == "home":
+            continue
+        text = entry.get("text", "").strip()
+        if text:
+            result.append(text)
+    return result
+
+
 def format_household_block(all_visible: dict[str, dict]) -> str:
     """Format all household_visible data as a compact system prompt block."""
     if not all_visible:
@@ -674,7 +713,7 @@ def format_household_block(all_visible: dict[str, dict]) -> str:
         role = hv.get("role")
         age = hv.get("age")
         key_facts = hv.get("key_facts") or []
-        current_context = hv.get("current_context")
+        context_texts = _resolve_current_context(hv.get("current_context"))
         recent_updates = hv.get("recent_updates") or []
 
         parts = []
@@ -690,8 +729,8 @@ def format_household_block(all_visible: dict[str, dict]) -> str:
         details = []
         if key_facts:
             details.append(", ".join(key_facts))
-        if current_context:
-            details.append(current_context)
+        for ctx in context_texts:
+            details.append(ctx)
         for upd in recent_updates[-3:]:
             details.append(upd)
 

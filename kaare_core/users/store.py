@@ -39,6 +39,7 @@ CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 """
 
 TEMP_PIN_TTL_HOURS = 1
+ADMIN_TEMP_PIN_TTL_MINUTES = 10
 
 VALID_ROLES = {"child", "teen", "young_adult", "adult", "admin"}
 VALID_VPN_ACCESS = {"local_only", "ai_only", "full_access"}
@@ -81,6 +82,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE users ADD COLUMN encrypted_private_key TEXT")
     if "argon2_salt" not in existing:
         conn.execute("ALTER TABLE users ADD COLUMN argon2_salt TEXT")
+    # Parent system (P64)
+    if "is_parent" not in existing:
+        conn.execute("ALTER TABLE users ADD COLUMN is_parent INTEGER NOT NULL DEFAULT 0")
+    if "pin_required" not in existing:
+        conn.execute("ALTER TABLE users ADD COLUMN pin_required INTEGER NOT NULL DEFAULT 0")
+    if "managed_children" not in existing:
+        conn.execute("ALTER TABLE users ADD COLUMN managed_children TEXT DEFAULT NULL")
 
 
 def _ensure_admin(conn: sqlite3.Connection) -> None:
@@ -118,6 +126,9 @@ def _row_to_dict(row) -> dict:
     d["must_change_pin"] = bool(d.get("must_change_pin", 0))
     d.setdefault("personality", "standard")
     d.setdefault("vpn_access", "full_access")
+    d["is_parent"] = bool(d.get("is_parent", 0))
+    d["pin_required"] = bool(d.get("pin_required", 0))
+    d.setdefault("managed_children", None)
     return d
 
 
@@ -215,7 +226,10 @@ def update_user(username: str, *, display_name: Optional[str] = None,
                 role: Optional[str] = None, avatar: Optional[str] = None,
                 is_active: Optional[bool] = None,
                 personality: Optional[str] = None,
-                vpn_access: Optional[str] = None) -> Optional[dict]:
+                vpn_access: Optional[str] = None,
+                is_parent: Optional[bool] = None,
+                pin_required: Optional[bool] = None,
+                managed_children: Optional[str] = None) -> Optional[dict]:
     if role and role not in VALID_ROLES:
         raise ValueError(f"Ugyldig rolle: {role}")
     if vpn_access and vpn_access not in VALID_VPN_ACCESS:
@@ -233,6 +247,12 @@ def update_user(username: str, *, display_name: Optional[str] = None,
         fields.append("personality=?"); params.append(personality)
     if vpn_access is not None:
         fields.append("vpn_access=?"); params.append(vpn_access)
+    if is_parent is not None:
+        fields.append("is_parent=?"); params.append(1 if is_parent else 0)
+    if pin_required is not None:
+        fields.append("pin_required=?"); params.append(1 if pin_required else 0)
+    if managed_children is not None:
+        fields.append("managed_children=?"); params.append(managed_children)
     if not fields:
         return get_user(username)
     params.append(username)
@@ -243,6 +263,29 @@ def update_user(username: str, *, display_name: Optional[str] = None,
         return get_user(username)
     finally:
         conn.close()
+
+
+def generate_temp_pin(username: str) -> str:
+    """Generate a 6-digit temp PIN for admin-assisted recovery. Requires allow_admin_pin_reset.
+
+    Returns the plaintext PIN (shown once to admin). Stores only the bcrypt hash.
+    Sets must_change_pin=1 and pin_expires_at = now + ADMIN_TEMP_PIN_TTL_MINUTES.
+    """
+    pin = str(secrets.randbelow(900000) + 100000)  # 100000–999999
+    pin_hash = hash_pin(pin)
+    expires = (
+        datetime.now(timezone.utc) + timedelta(minutes=ADMIN_TEMP_PIN_TTL_MINUTES)
+    ).isoformat(timespec="seconds")
+    conn = _get_conn()
+    try:
+        conn.execute(
+            "UPDATE users SET pin_hash=?, must_change_pin=1, pin_expires_at=? WHERE username=?",
+            (pin_hash, expires, username),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return pin
 
 
 def update_pin(username: str, new_pin: str) -> bool:

@@ -22,6 +22,7 @@ import kaare_core.app_state as app_state
 from kaare_core.audit import read_recent as _audit_read
 from kaare_core.config import get_model, get_service
 from kaare_core.users.auth import require_admin as _require_admin, require_auth as _require_auth
+from kaare_core.normalcy import get_recent_anomalies as _get_anomalies, add_correction as _add_correction
 
 router = APIRouter()
 
@@ -112,9 +113,11 @@ async def api_get_cameras(_u=Depends(_require_admin)):
     except Exception:
         pass
 
+    svc_cam_names: dict = {}
     try:
         svc_cfg = yaml.safe_load(Path("/kaare/configs/services.yaml").read_text()) or {}
         frigate_url = (svc_cfg.get("frigate") or {}).get("url", "http://localhost:5000")
+        svc_cam_names = (svc_cfg.get("frigate") or {}).get("camera_names") or {}
         async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.get(f"{frigate_url}/api/config")
             fcfg = r.json()
@@ -130,11 +133,19 @@ async def api_get_cameras(_u=Depends(_require_admin)):
             merged_cameras[cam_id] = saved_cameras[cam_id]
         else:
             merged_cameras[cam_id] = {
-                "display_name": cam_id,
+                "display_name": svc_cam_names.get(cam_id, cam_id),
                 "role": "road_facing",
                 "labels": {lbl: {"analyze": False, "min_confidence": 0.65, "announce": False} for lbl in available_labels},
             }
         merged_cameras[cam_id]["_id"] = cam_id
+
+    away_mode_defaults = {
+        "nighttime_start": 22,
+        "nighttime_end": 6,
+        "person_confidence_high": 0.6,
+        "unknown_night_high": True,
+    }
+    away_mode = {**away_mode_defaults, **(cfg.get("away_mode") or {})}
 
     return {
         "enabled": enabled,
@@ -142,6 +153,7 @@ async def api_get_cameras(_u=Depends(_require_admin)):
         "roles": roles,
         "available_labels": available_labels,
         "storage": cfg.get("storage", {}),
+        "away_mode": away_mode,
     }
 
 
@@ -341,6 +353,35 @@ async def api_put_cameras_storage(payload: dict, _u=Depends(_require_admin)):
     from kaare_core.domain.frigate_responder import load_camera_config
     load_camera_config()
     return {"ok": True, "storage": storage}
+
+
+@router.put("/api/settings/cameras/_away_mode")
+async def api_put_cameras_away_mode(payload: dict, _u=Depends(_require_admin)):
+    """Update away-mode threat assessment settings for Frigate events."""
+    try:
+        raw = yaml.safe_load(_FRIGATE_CAMERAS_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:
+        raw = {"enabled": True, "cameras": {}, "roles": {}}
+
+    am = raw.setdefault("away_mode", {})
+
+    if "nighttime_start" in payload:
+        am["nighttime_start"] = max(0, min(int(payload["nighttime_start"]), 23))
+    if "nighttime_end" in payload:
+        am["nighttime_end"] = max(0, min(int(payload["nighttime_end"]), 23))
+    if "person_confidence_high" in payload:
+        am["person_confidence_high"] = max(0.0, min(float(payload["person_confidence_high"]), 1.0))
+    if "unknown_night_high" in payload:
+        am["unknown_night_high"] = bool(payload["unknown_night_high"])
+
+    _FRIGATE_CAMERAS_PATH.write_text(
+        yaml.dump(raw, allow_unicode=True, default_flow_style=False, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    from kaare_core.domain.frigate_responder import load_camera_config
+    load_camera_config()
+    return {"ok": True, "away_mode": am}
 
 
 @router.put("/api/settings/cameras/{camera_id}")
@@ -1057,3 +1098,77 @@ async def api_system_overview():
         "services": [{**s, "online": ok, "check_url": None} for s, ok in zip(services, svc_results)],
         "models":   [{**m, "online": ok, "check_url": None} for m, ok in zip(models,   mdl_results)],
     }
+
+
+# ── Normalcy / anomaly event feed ─────────────────────────────────────────────
+
+class _CorrectionBody(BaseModel):
+    source_key:  str
+    hour_bucket: str
+    weekday:     str
+    verdict:     str           # "normal" | "suspicious"
+    comment:     str = ""
+
+
+@router.get("/api/normalcy/events")
+async def api_normalcy_events(
+    days: int = 7,
+    min_score: float = 0.5,
+    min_confidence: float = 0.0,
+    limit: int = 200,
+    label: str = "",
+    u=Depends(_require_admin),
+):
+    """Return recent Frigate events with high deviation scores for admin review."""
+    try:
+        from kaare_core.config import get_service as _svc
+        svc = _svc("notifications") or {}
+        cameras: list[str] = svc.get("normalcy_cameras") or []
+        labels = [label.strip()] if label.strip() else None
+        events = _get_anomalies(
+            days=min(days, 30),
+            min_score=max(0.0, min(1.0, min_score)),
+            min_confidence=max(0.0, min_confidence),
+            limit=min(limit, 1000),
+            cameras=cameras if cameras else None,
+            labels=labels,
+        )
+        return {"ok": True, "events": events}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@router.post("/api/normalcy/correct")
+async def api_normalcy_correct(body: _CorrectionBody, u=Depends(_require_admin)):
+    """Record an admin correction for a normalcy event (normal/suspicious verdict)."""
+    if body.verdict not in ("normal", "suspicious"):
+        raise HTTPException(400, "verdict must be 'normal' or 'suspicious'")
+    try:
+        username = u.get("username", "admin") if isinstance(u, dict) else "admin"
+        _add_correction(
+            body.source_key, body.hour_bucket, body.weekday,
+            body.verdict, body.comment, by=username,
+        )
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@router.get("/api/normalcy/snapshot/{event_id}")
+async def api_normalcy_snapshot(event_id: str, u=Depends(_require_admin)):
+    """Proxy a Frigate event snapshot to the frontend."""
+    try:
+        svc_cfg = yaml.safe_load(Path("/kaare/configs/services.yaml").read_text()) or {}
+        frigate_url = (svc_cfg.get("frigate") or {}).get("url", "http://localhost:5000")
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(f"{frigate_url}/api/events/{event_id}/snapshot.jpg",
+                                 params={"crop": 1, "quality": 70})
+        if r.status_code == 404:
+            raise HTTPException(404, "snapshot not found")
+        if r.status_code != 200:
+            raise HTTPException(502, "frigate error")
+        return Response(content=r.content, media_type="image/jpeg")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e))

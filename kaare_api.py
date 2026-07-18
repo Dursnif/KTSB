@@ -232,6 +232,17 @@ class _SuppressPolls(_logging.Filter):
 _logging.getLogger("uvicorn.access").addFilter(_SuppressPolls())
 
 
+@app.on_event("shutdown")
+async def _shutdown():
+    import logging
+    _log = logging.getLogger("kaare_api")
+    try:
+        app_state.STM_REGISTRY.snapshot_all("/kaare/state/stm_users")
+        _log.info("STM snapshots saved on shutdown")
+    except Exception as _e:
+        _log.warning("STM snapshot on shutdown failed: %s", _e)
+
+
 @app.on_event("startup")
 async def _startup():
     from kaare_core.tools.timer_service import restore_timers, start_action_queue_worker
@@ -244,6 +255,20 @@ async def _startup():
     from kaare_core.reflection_loop import start_reflection_loop
     asyncio.create_task(start_reflection_loop())
     asyncio.create_task(_stm_snapshot_loop())
+    from kaare_core.presence_monitor import start_presence_monitor
+    asyncio.create_task(start_presence_monitor())
+    from kaare_core.ha_context_task import start_ha_context_task
+    asyncio.create_task(start_ha_context_task())
+    from kaare_core.media_context_task import start_media_context_task
+    asyncio.create_task(start_media_context_task())
+    try:
+        from local import register_local_extensions
+        register_local_extensions()
+    except ImportError:
+        pass
+    except Exception as _local_err:
+        import logging as _ll
+        _ll.getLogger("kaare_api").warning("Local extensions not loaded: %s", _local_err)
 
 
 def _stm_cfg() -> dict:
@@ -879,9 +904,19 @@ async def api_chat_history(user_id: str = "global", limit: int = 60, _u=Depends(
     Returns the last N dialog turns for a user from STM (already persisted to disk).
     Used by the frontend to restore chat after logout/login.
     Only returns user/assistant turns (skips internal system turns).
+    Returns needs_unlock=true when encrypted snapshot exists but session key is missing
+    (service restarted with valid JWT still in browser) — signals client to re-authenticate.
     """
+    from kaare_core.session_keys import get_session_key_sync
     limit = max(1, min(limit, 200))
     _user_stm = app_state.get_stm(user_id)
+
+    needs_unlock = False
+    if user_id != "global":
+        enc_path = Path("/kaare/state/stm_users") / f"{user_id}.enc"
+        if enc_path.exists() and get_session_key_sync(user_id) is None:
+            needs_unlock = True
+
     with _user_stm._lock:
         turns = [
             t for t in _user_stm._dialog
@@ -891,6 +926,7 @@ async def api_chat_history(user_id: str = "global", limit: int = 60, _u=Depends(
     return {
         "user_id": user_id,
         "turns": [{"role": t.role, "text": t.text, "ts": t.ts} for t in turns],
+        "needs_unlock": needs_unlock,
     }
 
 

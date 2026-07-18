@@ -1,4 +1,5 @@
 import json as _json
+import re as _re
 import subprocess as _sp
 import yaml
 import httpx
@@ -160,8 +161,12 @@ async def _handle_media(arguments: Dict[str, Any], lang: str = "nb") -> str:
             lines = result.stdout.strip().splitlines()
             status_line = next((l for l in lines if "[" in l), lines[0] if lines else "")
             current_title = current.stdout.strip()
+            volume_str = ""
+            vol_match = _re.search(r"volume:\s*(\d+)%", result.stdout)
+            if vol_match:
+                volume_str = f" (volume: {vol_match.group(1)}%)"
             if current_title:
-                return f"Radio: {current_title}\n{status_line}"
+                return f"Radio: {current_title}{volume_str}\n{status_line}"
             return "\n".join(lines)
         except Exception as exc:
             return t("media_radio_status_error", lang, error=exc)

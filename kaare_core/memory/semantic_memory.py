@@ -63,12 +63,12 @@ EMBED_TIMEOUT = 10.0
 MIN_SCORE     = 0.35
 
 
-def _get_client() -> QdrantClient:
-    return QdrantClient(url=QDRANT_URL, api_key=_qdrant_key(write=False))
+def _get_client(write: bool = False) -> QdrantClient:
+    return QdrantClient(url=QDRANT_URL, api_key=_qdrant_key(write=write))
 
 
 def ensure_collection() -> None:
-    client = _get_client()
+    client = _get_client(write=True)
     existing = [c.name for c in client.get_collections().collections]
     if COLLECTION not in existing:
         client.create_collection(
@@ -114,7 +114,7 @@ async def index_episode(
 
     stored_narrative = narrative if user_id == "global" else _enc_narrative(narrative, user_id)
     try:
-        client = _get_client()
+        client = _get_client(write=True)
         client.upsert(
             collection_name=COLLECTION,
             points=[PointStruct(

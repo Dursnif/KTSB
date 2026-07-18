@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useUserPrefs } from "../../hooks/useUserPrefs";
 import { useTheme } from "../../theme";
 import { useAuth } from "../../auth/AuthContext";
-import { apiGetUnlockConfig, apiPutUnlockConfig } from "../../services/api";
+import { apiGetUnlockConfig, apiPutUnlockConfig, apiGetUserFlags, apiPutUserFlags } from "../../services/api";
 
 const ACCENT_PRESETS = [
   { value: "#646cff", label: "Blå-lilla" },
@@ -320,6 +320,27 @@ export default function UserSettings() {
   const theme = useTheme();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [allowPinReset, setAllowPinReset] = useState(false);
+  const [pinResetSaving, setPinResetSaving] = useState(false);
+
+  useEffect(() => {
+    if (user?.username) {
+      apiGetUserFlags(user.username)
+        .then(flags => setAllowPinReset(!!flags.allow_admin_pin_reset))
+        .catch(() => {});
+    }
+  }, [user?.username]);
+
+  const togglePinReset = async (val: boolean) => {
+    if (!user?.username) return;
+    setPinResetSaving(true);
+    try {
+      await apiPutUserFlags(user.username, { allow_admin_pin_reset: val });
+      setAllowPinReset(val);
+    } finally {
+      setPinResetSaving(false);
+    }
+  };
 
   return (
     <div style={{
@@ -454,6 +475,38 @@ export default function UserSettings() {
             }}>
               {t("user_settings.preview_kare")}
             </div>
+          </div>
+        </div>
+
+        {/* ── Admin PIN-gjenoppretting ── */}
+        <div style={{ marginBottom: 32 }}>
+          <SectionTitle>{t("user_settings.section_pin_recovery")}</SectionTitle>
+          <div style={{ color: "#666", fontSize: 13, lineHeight: 1.6, marginBottom: 14 }}>
+            {t("user_settings.pin_recovery_desc")}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div
+              role="switch"
+              aria-checked={allowPinReset}
+              onClick={() => !pinResetSaving && togglePinReset(!allowPinReset)}
+              style={{
+                display: "inline-block", width: 44, height: 24,
+                background: allowPinReset ? "#4caf50" : "#333",
+                borderRadius: 12, cursor: pinResetSaving ? "wait" : "pointer",
+                position: "relative", transition: "background 0.2s", flexShrink: 0,
+              }}
+            >
+              <div style={{
+                position: "absolute", top: 3,
+                left: allowPinReset ? 23 : 3,
+                width: 18, height: 18,
+                background: "#fff", borderRadius: "50%",
+                transition: "left 0.2s",
+              }} />
+            </div>
+            <span style={{ color: "#888", fontSize: 13 }}>
+              {t("user_settings.pin_recovery_toggle")}
+            </span>
           </div>
         </div>
 

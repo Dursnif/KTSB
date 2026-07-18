@@ -10,10 +10,11 @@
     "aliases": "Aliase",
     "nodes": "Knoten",
     "settings": "Einstellungen",
-    "back_to_kare": "Zurück zu Kåre",
+    "back_to": "Zurück zu {{name}}",
     "logout": "Abmelden",
     "sidebar_expand": "Seitenleiste erweitern",
-    "sidebar_collapse": "Seitenleiste einklappen"
+    "sidebar_collapse": "Seitenleiste einklappen",
+    "security": "Sicherheit"
   },
   "common": {
     "save": "Speichern",
@@ -74,7 +75,8 @@
       "integrasjoner": "Integrationen",
       "distribusjon": "Distribution",
       "agenter": "Agenten-Einstellungen",
-      "forklaringer": "Erklärungen"
+      "forklaringer": "Erklärungen",
+      "varsler": "Benachrichtigungen"
     },
     "generelt": {
       "location": {
@@ -923,6 +925,28 @@
       "download_button": "Herunterladen",
       "select_hint": "Einen Snapshot auswählen zum Installieren oder Herunterladen",
       "choose_file": "Datei wählen"
+    },
+    "varsler": {
+      "master": {
+        "title": "Benachrichtigungssystem",
+        "description": "Das gesamte Benachrichtigungssystem aktivieren oder deaktivieren",
+        "toggle": "Benachrichtigungen aktivieren"
+      },
+      "push": {
+        "title": "Push-Benachrichtigungen",
+        "description": "HA notify-Entität für Push an Telefon (CRITICAL urgency)",
+        "entity_label": "HA notify-Entität",
+        "entity_hint": "Z.B. notify.mobile_app_mein_telefon. Leer = deaktiviert."
+      },
+      "normalcy": {
+        "title": "Normalcy-Schwellenwerte",
+        "description": "Schwellenwerte für den Ereignis-Feed auf der Sicherheitsseite",
+        "min_score_label": "Minimaler Abweichungswert (0–1)",
+        "min_confidence_label": "Minimale Datenabdeckung (0–1)",
+        "cameras_label": "Überwachte Kameras",
+        "cameras_hint": "Leer = alle konfigurierten Kameras"
+      },
+      "events_link": "Ereignisse anzeigen"
     }
   },
   "dashboard": {
@@ -957,6 +981,7 @@
   "login": {
     "title": "Kåre",
     "subtitle": "Anmelden um fortzufahren",
+    "reauth_subtitle": "Dienst wurde neugestartet. PIN eingeben, um den Verlauf wiederherzustellen.",
     "username": "Benutzername",
     "pin": "PIN",
     "logging_in": "Anmelden…",
@@ -1024,6 +1049,16 @@
       "active_label": "Aktiv",
       "can_manage_child_timers": "Elternkontrolle",
       "can_manage_child_timers_desc": "Kann Timer für Kinder und Teenager setzen",
+      "is_parent": "Ist ein Elternteil",
+      "is_parent_desc": "Kann Profile und Reflexionen der Kinder einsehen und kommentieren",
+      "managed_children": "Verwaltet Kinder",
+      "pin_required": "PIN bei jedem Login erforderlich",
+      "pin_required_desc": "Kein «Angemeldet bleiben» — PIN bei jedem Login",
+      "pin_recovery_label": "PIN-Wiederherstellung (erfordert Benutzerberechtigung)",
+      "pin_recovery_btn": "Temporäre PIN generieren",
+      "pin_recovery_generating": "Wird generiert…",
+      "pin_recovery_expires": "Gültig für {{minutes}} Min.",
+      "pin_recovery_error": "Wiederherstellung fehlgeschlagen.",
       "save": "Speichern",
       "cancel": "Abbrechen",
       "error_generic": "Etwas ist schiefgelaufen."
@@ -1294,7 +1329,19 @@
     "log_meta_score": "Sicherheit",
     "log_meta_zones": "Zonen",
     "log_meta_face": "Gesicht",
-    "log_meta_duration": "Dauer (Sek.)"
+    "log_meta_duration": "Dauer (Sek.)",
+    "away_mode_title": "Abwesenheitsmodus",
+    "away_mode_hint": "Passt die Bedrohungsschwellen für Frigate-Ereignisse an, wenn der Haushaltsmodus 'abwesend' ist.",
+    "away_mode_nighttime_start": "Nachtzeit beginnt (Stunde)",
+    "away_mode_nighttime_end": "Nachtzeit endet (Stunde)",
+    "away_mode_person_confidence": "Personen-Schwellenwert am Perimeter",
+    "away_mode_person_confidence_hint": "Person an Tür/Einfahrt mit ≥ diesem Vertrauen → HIGH-Priorität",
+    "away_mode_unknown_night": "Unbekannte Person am Perimeter nachts → HIGH",
+    "away_mode_unknown_night_hint": "Kein Label oder geringes Vertrauen an Perimeter-Kamera nachts wird auf HIGH-Priorität gesetzt",
+    "away_mode_save": "Abwesenheitseinstellungen speichern",
+    "away_mode_saving": "Speichert…",
+    "away_mode_saved": "Gespeichert ✓",
+    "away_mode_perimeter_roles": "Perimeter-Rollen (gesteuert durch Kamera-Rolle oben)"
   },
   "home": {
     "img_alt": "Generiertes Bild",
@@ -1365,15 +1412,37 @@
     "leder_preset_utforskende": "Erkundend",
     "leder_preset_analytisk": "Analytisch",
     "leder_preset_utfordrende": "Herausfordernd",
-    "leder_preset_egendefinert": "Benutzerdefiniert"
+    "leder_preset_egendefinert": "Benutzerdefiniert",
+    "no_eligible_reflection_users": "Junge Erwachsene und Erwachsene verwalten ihre Reflexionen privat über die Benutzeroberfläche."
   },
   "user_sidebar": {
-    "home": "Kåre",
+    "home": "{{name}}",
     "reflections": "Reflexionen",
+    "mine_barn": "Meine Kinder",
     "settings": "Einstellungen",
     "change_pin": "PIN ändern",
     "admin_panel": "Adminbereich",
     "logout": "Abmelden"
+  },
+  "children_page": {
+    "title": "Meine Kinder",
+    "subtitle": "Reflexionen und Aktivitäten deiner Kinder anzeigen",
+    "no_children": "Noch keine Kinder mit deinem Konto verknüpft. Bitte einen Admin, Kinder unter deinem Benutzer hinzuzufügen.",
+    "loading": "Lädt…",
+    "reflections_label": "Reflexionen",
+    "no_reflections": "Noch keine Reflexionssitzungen",
+    "select_reflection": "Wähle eine Sitzung zum Lesen",
+    "unlock_btn": "Entsperren",
+    "pin_title": "Kinderreflexion entsperren",
+    "pin_hint": "{{name}}s PIN eingeben, um den Inhalt anzuzeigen",
+    "pin_cancel": "Abbrechen",
+    "pin_open": "Öffnen",
+    "pin_error": "Falsche PIN – erneut versuchen",
+    "comment_label": "Dein Kommentar an das Kind",
+    "comment_placeholder": "Kommentar schreiben…",
+    "comment_save": "Kommentar speichern",
+    "comment_saved": "Kommentar gespeichert",
+    "comment_error": "Kommentar konnte nicht gespeichert werden"
   },
   "user_reflections": {
     "title": "Reflexionssitzungen",
@@ -1387,7 +1456,13 @@
     "pin_cancel": "Abbrechen",
     "pin_open": "Öffnen",
     "pin_error": "Falsche PIN — erneut versuchen",
-    "pin_cached": "PIN für diese Sitzung gespeichert"
+    "pin_cached": "PIN für diese Sitzung gespeichert",
+    "comment_title": "Dein Kommentar zu diesem Meeting",
+    "comment_ph": "Schreib einen Kommentar — was hat funktioniert, was hat gefehlt, was soll Kåre sich merken?",
+    "comment_save": "Speichern",
+    "topic_title": "Thema für das nächste Meeting vorschlagen",
+    "topic_ph": "Gibt es etwas, worauf sich das nächste Meeting konzentrieren soll?",
+    "topic_save": "Speichern"
   },
   "user_settings": {
     "title": "Einstellungen",
@@ -1417,6 +1492,9 @@
     "preview_user": "So sehen deine Nachrichten jetzt aus",
     "preview_kare": "Und so antwortet dir Kåre",
     "reset": "Auf Standard zurücksetzen",
+    "section_pin_recovery": "PIN-Wiederherstellung",
+    "pin_recovery_desc": "Erteile dem Admin die Berechtigung, eine temporäre PIN zu erstellen, falls du ausgesperrt bist. Nur du kannst dies aktivieren — der Admin kann es nicht erzwingen.",
+    "pin_recovery_toggle": "Admin erlauben, meine PIN wiederherzustellen",
     "section_voice_unlock": "Sprachentsperrung",
     "voice_unlock_hint": "Persönliche Daten (Erinnerungen, Profil, Kamera) hinter einer Phrase oder PIN schützen. 2 Minuten aktiv nach dem letzten Befehl.",
     "unlock_method_label": "Entsperrmethode",
@@ -1432,7 +1510,30 @@
     "global_lists_hint": "Diese Listen werden oft im Haushalt geteilt — keine Entsperrung nötig.",
     "unlock_save": "Entsperreinstellungen speichern",
     "unlock_saved": "Gespeichert",
-    "unlock_save_error": "Speichern fehlgeschlagen"
+    "unlock_save_error": "Speichern fehlgeschlagen",
+    "notify_channel_label": "Benachrichtigungskanal",
+    "notify_channel": {
+      "sound_node": "Lautsprecherknoten (TTS)",
+      "push": "Push",
+      "chat": "Chat (STM)",
+      "silent": "Stumm"
+    }
+  },
+  "security": {
+    "title": "Sicherheitsereignisse",
+    "subtitle": "Frigate-Erkennungen mit hohem Abweichungswert. Bewerte Ereignisse, um die Baseline zu verbessern.",
+    "deviation": "{{score}}% Abweichung",
+    "confidence": "{{pct}}% Datenbasis",
+    "mark_normal": "Als normal markieren",
+    "mark_suspicious": "Als verdächtig bestätigen",
+    "comment_placeholder": "Kommentar (optional)",
+    "corrected_normal": "Als normal markiert",
+    "corrected_suspicious": "Als verdächtig bestätigt",
+    "by": "von {{by}}",
+    "empty": "Keine Ereignisse über dem Abweichungsschwellenwert.",
+    "loading": "Ereignisse laden…",
+    "filter_days": "Letzte {{n}} Tage",
+    "no_baseline": "Baseline nicht bereit (erfordert ≥1 Tag Daten)"
   },
   "forklaringer": {
     "title": "Was ist was in Kåre?",
@@ -1558,6 +1659,15 @@
       "item_4": "Snapshot — Kåre macht auf Anfrage ein Sofortbild von einer Kamera.",
       "item_5": "Ereignisse — Kåre ruft Bewegungsereignisse und Objekterkennung von Frigate ab."
     },
+    "sikkerhet": {
+      "title": "Sicherheit",
+      "summary": "Kameraereignisse, Anomalien und Anwesend/Abwesend-Modus",
+      "item_1": "Ereignis-Feed — Aktuelle Kameraerkennungen gruppiert nach Objekt und Kamera, mit Vorschaubild bei Klick auf eine Zeile.",
+      "item_2": "Abweichungswert — Wie ungewöhnlich ein Ereignis im Vergleich zu den letzten 28 Tagen zu derselben Kamera, Uhrzeit und demselben Wochentag ist. 0 = passiert fast immer zu dieser Zeit, 1 = ist zu dieser Zeit noch nie vorgekommen.",
+      "item_3": "Konfidenz — Wie viel Historie Kåre für den Abweichungswert zur Verfügung hat. Bei weniger als etwa zwei Wochen Daten wird der Wert noch nicht für die Alarmierung verwendet.",
+      "item_4": "Korrektur — Ein Ereignis als normal oder ungewöhnlich markieren. Die Korrektur fließt in die Baseline-Neuberechnung der nächsten Nacht ein.",
+      "item_5": "Anwesend/Abwesend-Modus — Wird der Haushalt auf „abwesend“ gesetzt, werden Kamera-Alarme eskaliert (besonders unbekannte Objekte an Kameras am Grundstücksrand nachts), und Kåre erkennt automatisch, wenn jemand über GPS oder lokales Netzwerk zurückkehrt."
+    },
     "agenter": {
       "title": "Agenten-Nachrichten",
       "summary": "Nachrichten von Kåres inneren Agenten",
@@ -1676,6 +1786,15 @@
       "item_1": "Mechanic — Wählen Sie, welche Werkzeuge Mechanic im Namen von Kåre verwenden kann.",
       "item_2": "Miss Kåre — Wählen Sie, ob und wie Miss Kåre an Reflexionstreffen teilnimmt.",
       "item_3": "Werkzeugmatrix — Passen Sie an, welche Werkzeuge pro Benutzerrolle erlaubt sind. Änderungen treten sofort in Kraft."
+    },
+    "innst_varsler": {
+      "title": "Einstellungen → Benachrichtigungen",
+      "summary": "Alarmschwellen, Ruhezeiten und Push",
+      "body": "Steuert, wann und wie Kåre Sie über etwas Ungewöhnliches benachrichtigt — von einer stillen Chat-Nachricht bis zu einer sofortigen Lautsprecher-Ansage.",
+      "item_1": "Hauptschalter — Das Benachrichtigungssystem global ein- oder ausschalten.",
+      "item_2": "Push-Ziel — Eine Home-Assistant-notify-Entität, die bei kritischen Ereignissen Push-Benachrichtigungen erhält.",
+      "item_3": "Schwellenwerte — Minimaler Abweichungswert und minimale Konfidenz, die ein Ereignis haben muss, um einen Alarm auszulösen.",
+      "item_4": "Kamerafilter — Einschränken, welche Kameras Alarme auslösen können."
     },
     "bruker_chat": {
       "title": "Chat (Startseite)",

@@ -8,6 +8,7 @@ POST /api/users             → opprett bruker (admin)
 PUT  /api/users/{username}  → oppdater bruker (admin)
 PUT  /api/users/{username}/pin → bytt PIN (admin eller seg selv)
 DELETE /api/users/{username} → slett bruker (admin)
+GET  /api/users/{username}/summary → grunnleggende brukerinfo (self, admin, eller forelder)
 """
 
 import base64
@@ -41,7 +42,7 @@ from kaare_core.users.auth import (
 )
 from kaare_core.users.profile_manager import (
     init_profile, get_profile_flag, set_profile_flag, get_household_visible,
-    get_unlock_config, set_unlock_config,
+    update_household_visible, get_unlock_config, set_unlock_config,
 )
 from adapters.llm_adapter import list_personalities
 
@@ -96,6 +97,10 @@ class UpdateUserRequest(BaseModel):
     personality: Optional[str] = None
     vpn_access: Optional[str] = None
     can_manage_child_timers: Optional[bool] = None
+    notify_channel: Optional[str] = None
+    is_parent: Optional[bool] = None
+    pin_required: Optional[bool] = None
+    managed_children: Optional[str] = None
 
 class UpdatePinRequest(BaseModel):
     new_pin: str
@@ -173,6 +178,8 @@ def api_list_users(payload: dict = Depends(require_admin)):
         u["is_online"] = is_user_online(u["username"])
         u["last_seen"] = last_seen.get(u["username"])
         u["can_manage_child_timers"] = get_profile_flag(u["username"], "can_manage_child_timers")
+        hv = get_household_visible(u["username"])
+        u["notify_channel"] = hv.get("notify_channel", "sound_node") if hv else "sound_node"
     return users
 
 
@@ -213,6 +220,9 @@ def api_update_user(username: str, req: UpdateUserRequest,
             is_active=req.is_active,
             personality=req.personality,
             vpn_access=req.vpn_access,
+            is_parent=req.is_parent,
+            pin_required=req.pin_required,
+            managed_children=req.managed_children,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -221,7 +231,30 @@ def api_update_user(username: str, req: UpdateUserRequest,
     if req.can_manage_child_timers is not None:
         set_profile_flag(username, "can_manage_child_timers", req.can_manage_child_timers)
     user["can_manage_child_timers"] = get_profile_flag(username, "can_manage_child_timers")
+    if req.notify_channel is not None:
+        update_household_visible(username, "notify_channel", req.notify_channel)
     return user
+
+
+@router.post("/users/{username}/generate_temp_pin")
+def api_generate_temp_pin(username: str, payload: dict = Depends(require_admin)):
+    """Admin-only: generate a temporary PIN for a user who has granted permission.
+
+    Requires allow_admin_pin_reset=True in the user's profile.
+    Returns the plaintext PIN once — never stored. User must change it on next login.
+    """
+    allowed = get_profile_flag(username, "allow_admin_pin_reset")
+    if not allowed:
+        raise HTTPException(
+            status_code=403,
+            detail="User has not granted permission for admin PIN recovery.",
+        )
+    user = store.get_user(username)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    temp_pin = store.generate_temp_pin(username)
+    _audit(f"admin_temp_pin_generated: {username} by {payload.get('sub', '?')}")
+    return {"temp_pin": temp_pin, "expires_minutes": store.ADMIN_TEMP_PIN_TTL_MINUTES}
 
 
 @router.put("/users/{username}/pin")
@@ -315,6 +348,62 @@ async def api_voice_delete(username: str, _=Depends(require_admin)):
         raise HTTPException(status_code=503, detail="Voice bridge not available.")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── User-settable profile flags ───────────────────────────────────────────────
+
+_USER_SETTABLE_FLAGS = {"allow_admin_pin_reset"}
+
+
+@router.get("/users/{username}/flags")
+def api_get_user_flags(username: str, payload: dict = Depends(require_auth)):
+    """Return user-settable profile flags. Self or admin only."""
+    caller = payload["sub"]
+    if caller != username and payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Access denied.")
+    return {flag: get_profile_flag(username, flag) for flag in _USER_SETTABLE_FLAGS}
+
+
+@router.put("/users/{username}/flags")
+def api_put_user_flags(username: str, body: dict, payload: dict = Depends(require_auth)):
+    """Set user-settable profile flags. Self only — admin cannot override."""
+    caller = payload["sub"]
+    if caller != username:
+        raise HTTPException(status_code=403, detail="Users can only set their own flags.")
+    for key, val in body.items():
+        if key not in _USER_SETTABLE_FLAGS:
+            raise HTTPException(status_code=400, detail=f"Unknown flag: {key}")
+        set_profile_flag(username, key, bool(val))
+    return {flag: get_profile_flag(username, flag) for flag in _USER_SETTABLE_FLAGS}
+
+
+# ── Parent child-summary access ───────────────────────────────────────────────
+
+@router.get("/users/{username}/summary")
+def api_user_summary(username: str, payload: dict = Depends(require_auth)):
+    """Return basic display info for a user. Self, admin, or authenticated parent (has username in managed_children)."""
+    import json as _json
+    caller = payload["sub"]
+    caller_role = payload.get("role", "")
+    if caller != username and caller_role != "admin":
+        caller_user = store.get_user(caller)
+        children_raw = caller_user.get("managed_children") if caller_user else None
+        try:
+            children: list = _json.loads(children_raw) if children_raw else []
+        except Exception:
+            children = []
+        if username not in children:
+            raise HTTPException(status_code=403, detail="Access denied.")
+    user = store.get_user(username)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return {
+        "username": user["username"],
+        "display_name": user.get("display_name", user["username"]),
+        "avatar": user.get("avatar", "👤"),
+        "role": user.get("role", "child"),
+        "pin_required": bool(user.get("pin_required", 0)),
+    }
 
 
 # ── Recovery & household-visible ──────────────────────────────────────────────

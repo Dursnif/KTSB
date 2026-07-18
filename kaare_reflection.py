@@ -30,9 +30,11 @@ import logging
 import os
 import re
 import socket
+import sqlite3
+import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -64,7 +66,18 @@ from kaare_core.users.profile_manager import (
     write_vault_entry,
 )
 from kaare_core import session_keys as _session_keys
+from kaare_core.config import get_service as _svc
+from kaare_core.memory.long_term import load_recent_daily_summaries
+from kaare_core.tools.household_state import read_household_state
 from kaare_core.tools.i18n import t, get_lang
+from kaare_core.users import store as _store
+from adapters.llm_adapter import (
+    call_llm_chat,
+    _build_role_age_block,
+    _current_rid as _rid_ctx_refl,
+    _current_source as _src_ctx_refl,
+)
+from adapters.web_search_adapter import web_search
 
 logging.basicConfig(
     level=logging.INFO,
@@ -79,11 +92,8 @@ REFLECTIONS_BASE = Path("/kaare/state/memory/reflections")
 USER_ID         = os.getenv("REFLECTION_USER_ID", "admin")   # set by runner or env
 _active_user_id = USER_ID   # updated by main() — used by tool functions
 
-from kaare_core.config import get_service as _svc
-
 _proxy_base    = _llm("default")["base_url"]
 _mk_base       = _llm("miss_kare")["base_url"]
-_cloud_base    = _llm("cloud")["base_url"]
 _KARE_PROVIDER = _llm("default").get("provider", "ollama")
 
 _kare_chat_path = "/v1/chat/completions" if _KARE_PROVIDER == "vllm" else "/api/chat"
@@ -93,8 +103,6 @@ LEDER_URL       = KARE_URL
 LEDER_MODEL     = _cfg_model("kare")
 MISS_KARE_URL   = _mk_base + "/api/chat"       # direct GPU → 5060 Ti (9b) — always Ollama
 MISS_KARE_MODEL = _cfg_model("miss_kare")
-CLOUD_URL       = _cloud_base + "/chat/completions"
-CLOUD_MODEL     = _cfg_model("cloud")
 
 KARE_API_URL    = _svc("internal", "kaare_api")
 
@@ -186,6 +194,37 @@ def _load_user_knowledge(user_id: str) -> str:
     return path.read_text(encoding="utf-8").strip()
 
 
+def _get_admin_comment_r() -> str:
+    """Return the most recent admin comment for the reflection meeting, if any.
+
+    Admin comments live at state/meeting_comments/reflection/YYYY-MM-DD.txt
+    (no username subdirectory — admin-scoped).
+    User comments (per-user) are in state/meeting_comments/reflection/{username}/YYYY-MM-DD.txt.
+    """
+    comments_dir = Path("/kaare/state/meeting_comments/reflection")
+    try:
+        files = sorted(
+            [f for f in comments_dir.glob("*.txt") if f.is_file()],
+            reverse=True,
+        )
+        for f in files:
+            text = f.read_text(encoding="utf-8").strip()
+            if text:
+                return text
+    except Exception:
+        pass
+    return ""
+
+
+def _get_user_role_r(user_id: str) -> str:
+    """Fetch user role from users.db for reflection meeting context."""
+    try:
+        rec = _store.get_user(user_id)
+        return (rec or {}).get("role", "adult")
+    except Exception:
+        return "adult"
+
+
 def _load(path: str) -> str:
     try:
         return Path(path).read_text(encoding="utf-8").strip()
@@ -221,7 +260,6 @@ KARE_BEHAVIOR = _load("/kaare/configs/personality_behavior.md")
 def _get_recent_interactions(n: int = 5, user_id: str | None = None) -> str:
     """Fetch the last N compressed episodes from LTM (SQLite)."""
     try:
-        import sqlite3
         conn = sqlite3.connect("/kaare/state/memory/interactions.db")
         if user_id:
             cur = conn.execute(
@@ -248,7 +286,6 @@ def _get_recent_interactions(n: int = 5, user_id: str | None = None) -> str:
 def _get_stm_daily_summaries(days: int = 3) -> str:
     """Fetch the last N daily STM summaries — compressed snapshots of recent days."""
     try:
-        from kaare_core.memory.long_term import load_recent_daily_summaries
         entries = load_recent_daily_summaries(days=days)
         if not entries:
             return ""
@@ -279,7 +316,6 @@ async def _ask_kare(
     max_tokens: int = KARE_MAX_TOKENS,
 ) -> str:
     """Call the default role (Kåre). Provider (vLLM/Ollama) is read from llm.yaml."""
-    from adapters.llm_adapter import call_llm_chat
     options = {"num_predict": max_tokens, "temperature": temperature, "num_ctx": _KARE_NUM_CTX}
     result = await call_llm_chat("default", messages, options=options, timeout=timeout)
     return result.get("text") or "[No response]"
@@ -312,55 +348,6 @@ async def _ask_ollama(
     except Exception as e:
         log.error("Ollama call failed (%s): %s", url, e)
         return f"[Unavailable: {e}]"
-
-
-# ── Online LLM call ───────────────────────────────────────────────────────────
-async def _ask_cloud(conversation: str, is_final: bool) -> str:
-    env = _load_env("/kaare/configs/nvidia.env")
-    api_key = env.get("NVIDIA_API_KEY", "")
-    if not api_key:
-        return t("meet_no_api_key", get_lang("global"))
-
-    if is_final:
-        instruction = (
-            "Gi en avsluttende vurdering av hva møtet lærte om brukeren i dag. "
-            "Oppsummer de viktigste innsiktene og gi ett konkret forslag til hvordan "
-            "Kåre kan støtte brukeren bedre. Maks 5 setninger."
-        )
-    else:
-        instruction = (
-            "Gi ett kort innspill om brukeren – noe de kan ha oversett, "
-            "et mønster eller en menneskelig vinkel de ikke har nevnt. "
-            "Maks 3 setninger."
-        )
-
-    system = (
-        "Du er en ekstern stemme i et internt møte mellom to AI-agenter: Kåre (hjemme-AI) "
-        "og Miss Kåre (varm analytiker). Møtet handler om brukeren de betjener. "
-        "Du har lest samtalen så langt. "
-        f"{instruction} Vær direkte. Ikke presenter deg selv."
-    )
-
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT_SECS) as client:
-            r = await client.post(
-                CLOUD_URL,
-                json={
-                    "model": CLOUD_MODEL,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": f"Møtet så langt:\n\n{conversation}\n\nDitt innspill:"},
-                    ],
-                    "temperature": 0.4,
-                    "max_tokens": 300,
-                },
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            )
-            r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"].strip() or "[Cloud did not respond]"
-    except Exception as e:
-        log.error("Cloud call failed: %s", e)
-        return f"[Cloud unavailable: {e}]"
 
 
 # ── Meeting leader tools ──────────────────────────────────────────────────────
@@ -419,7 +406,6 @@ async def _execute_leder_tool(name: str, arguments: dict) -> str:
             query = arguments.get("query", "").strip()
             if not query:
                 return t("meet_empty_search", get_lang("global"))
-            from adapters.web_search_adapter import web_search
             return await web_search(query)
 
         return t("meet_unknown_tool", get_lang("global"), name=name)
@@ -433,7 +419,6 @@ async def _ask_leder(messages: list[dict], with_tools: bool = False) -> str:
     On failure returns _LEDER_FAIL + translated error string.
     Callers detect errors with result.startswith(_LEDER_FAIL).
     """
-    from adapters.llm_adapter import call_llm_chat
     options = {"temperature": 0.3, "num_predict": KARE_MAX_TOKENS, "num_ctx": _KARE_NUM_CTX}
     tools = _LEDER_TOOLS if with_tools else None
     current_messages = list(messages)
@@ -501,6 +486,59 @@ _MK_ROLE_DESC: dict[str, dict[str, str]] = {
 }
 
 
+def _get_prev_reflection_summaries(user_id: str, n: int = 3) -> str:
+    """Return opening excerpts from the last n reflection reports for this user."""
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        files = sorted(
+            [f for f in (REFLECTIONS_BASE / user_id).glob("*.md") if f.stem != today],
+            reverse=True,
+        )[:n]
+    except Exception:
+        return ""
+
+    sections: list[str] = []
+    for f in files:
+        try:
+            text = f.read_text(encoding="utf-8")
+            m = re.search(r"## Conversation\s*\n(.*?)(?=\n##|\Z)", text, re.DOTALL)
+            excerpt = (m.group(1).strip()[:200] if m else text.strip()[:200])
+            if excerpt:
+                sections.append(f"**{f.stem}:**\n{excerpt}")
+        except Exception:
+            continue
+
+    return "\n\n".join(sections)
+
+
+def _get_user_comment(user_id: str) -> str:
+    """Return the most recent user comment on a reflection meeting, if any."""
+    comments_dir = Path("/kaare/state/meeting_comments/reflection") / user_id
+    try:
+        files = sorted(comments_dir.glob("*.txt"), reverse=True)
+        for f in files:
+            text = f.read_text(encoding="utf-8").strip()
+            if text:
+                return f"Brukerens kommentar til møtet {f.stem}:\n{text}"
+    except Exception:
+        pass
+    return ""
+
+
+def _get_user_topic(user_id: str) -> str:
+    """Return and clear the user's topic suggestion for this meeting."""
+    p = Path("/kaare/state/meeting_topics_user") / f"{user_id}.txt"
+    try:
+        if p.exists():
+            text = p.read_text(encoding="utf-8").strip()
+            if text:
+                p.write_text("", encoding="utf-8")
+                return text
+    except Exception:
+        pass
+    return ""
+
+
 def _load_leder_reflection_preset(lang: str = "nb") -> str:
     cfg = _load_reflection_meeting_cfg()
     preset = cfg.get("leder_preset", "standard")
@@ -515,14 +553,76 @@ def _load_leder_reflection_preset(lang: str = "nb") -> str:
         return (_LEDER_PRESET_DIR_R / "reflection_standard.md").read_text(encoding="utf-8").strip()
 
 
-def _build_leder_system() -> str:
+def _build_leder_system(
+    prev_block: str = "",
+    admin_topic: str = "",
+    user_topic: str = "",
+    user_comment: str = "",
+    role: str = "",
+    admin_comment: str = "",
+    user_display_name: str = "",
+) -> str:
     hostname = socket.gethostname()
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     lang = _get_kare_language_r()
     mk_role = _get_miss_kare_meeting_role()
     mk_desc = _MK_ROLE_DESC.get(lang, _MK_ROLE_DESC["nb"]).get(mk_role, mk_role)
     preset_text = _load_leder_reflection_preset(lang)
-    return preset_text.format(mk_desc=mk_desc, hostname=hostname, time=now)
+    base = preset_text.format(mk_desc=mk_desc, hostname=hostname, time=now)
+
+    sep = "\n\n---\n\n"
+    blocks = [base]
+
+    if role in ("child", "teen"):
+        role_block = _build_role_age_block(role, lang)
+        if role_block:
+            blocks.append(role_block)
+
+    if prev_block:
+        blocks.append(f"**Tidligere refleksjonsmøter — utdrag:**\n{prev_block}")
+    if admin_comment:
+        label = "**Admin-kommentar til forrige møte** (siter ordrett — ikke parafrase):"
+        blocks.append(f"{label}\n{admin_comment}")
+    name_label = f" fra {user_display_name}" if user_display_name else ""
+    if user_comment:
+        blocks.append(f"**Brukerkommentar{name_label} til forrige møte:**\n{user_comment}")
+    if admin_topic:
+        blocks.append(
+            f"**Admin har foreslått tema:** {admin_topic}\n"
+            "Prioriter dette temaet i møteagendaen."
+        )
+    if user_topic:
+        blocks.append(
+            f"**Brukeren har foreslått tema:** {user_topic}\n"
+            "Ta dette med i agendaen — det er noe brukeren selv ønsker å utforske."
+        )
+
+    try:
+        hs = read_household_state()
+        if hs.get("mode") == "away":
+            away_since = hs.get("away_since")
+            days_away = 0
+            if away_since:
+                try:
+                    delta = datetime.now(timezone.utc) - datetime.fromisoformat(away_since)
+                    days_away = delta.days
+                except Exception:
+                    pass
+            away_note = "**Husstanden er på bortreise.**"
+            if hs.get("away_reason"):
+                away_note += f" Årsak: {hs['away_reason']}."
+            if hs.get("expected_return"):
+                away_note += f" Forventet hjemkomst: {hs['expected_return']}."
+            if days_away >= 2:
+                away_note += f" Borte i {days_away} dager. Vurder å ta opp sikkerhetsmodus og hvile/ro i møteagendaen."
+            blocks.append(away_note)
+    except Exception:
+        pass
+
+    # Time goes last to preserve KV-cache on the static blocks above
+    blocks.append(f"Nåværende tidspunkt: {now}")
+
+    return sep.join(blocks)
 
 
 # ── Opening sequence: topic proposals from participants ───────────────────────
@@ -557,10 +657,10 @@ async def _miss_kare_temaforslag(miss_kare_messages: list[dict], kare_tema: str)
     return svar
 
 
-async def _leder_presenter_admin_input(admin_input: str) -> str:
+async def _leder_presenter_admin_input(admin_input: str, leder_system: str = "") -> str:
     """Meeting leader presents admin input as the first item after the opening sequence."""
     messages = [
-        {"role": "system", "content": _build_leder_system()},
+        {"role": "system", "content": leder_system or _build_leder_system()},
         {"role": "user", "content": (
             f"Admin har sendt inn dette innspillet til møtet:\n\"{admin_input}\"\n\n"
             "Introduser dette innspillet for Kåre og Miss Kåre. "
@@ -574,10 +674,10 @@ async def _leder_presenter_admin_input(admin_input: str) -> str:
     return result
 
 
-async def _leder_sett_agenda(kare_tema: str, miss_kare_tema: str, user_context: str) -> str:
+async def _leder_sett_agenda(kare_tema: str, miss_kare_tema: str, user_context: str, leder_system: str = "") -> str:
     """Meeting leader picks one topic from each participant and sets the agenda."""
     messages = [
-        {"role": "system", "content": _build_leder_system()},
+        {"role": "system", "content": leder_system or _build_leder_system()},
         {"role": "user", "content": (
             f"Kåre vil utforske: «{kare_tema}»\n"
             f"Miss Kåre vil utforske: «{miss_kare_tema}»\n\n"
@@ -593,10 +693,10 @@ async def _leder_sett_agenda(kare_tema: str, miss_kare_tema: str, user_context: 
     return result
 
 
-async def _leder_intro_gruppe2(prev_summary: str) -> str:
+async def _leder_intro_gruppe2(prev_summary: str, leder_system: str = "") -> str:
     """Meeting leader sets agenda for group 2."""
     messages = [
-        {"role": "system", "content": _build_leder_system()},
+        {"role": "system", "content": leder_system or _build_leder_system()},
         {"role": "user", "content": (
             f"Gruppe 2 starter. Oppsummering fra gruppe 1:\n\n{prev_summary}\n\n"
             "Gi en kort intro (2-4 setninger) med ny fokusert agenda. "
@@ -609,21 +709,24 @@ async def _leder_intro_gruppe2(prev_summary: str) -> str:
     return result
 
 
-async def _leder_runde_sjekk(conversation_tail: str, global_round: int) -> tuple[str, str]:
+async def _leder_runde_sjekk(conversation_tail: str, global_round: int, leder_system: str = "") -> tuple[str, str]:
     """Brief check after a round. Returns (action, value)."""
+    decision_instructions = (
+        "Avgjør hva som skjer etter denne runden.\n"
+        "Svar med NØYAKTIG én linje – ingen forklaring:\n"
+        "  FORTSETT\n"
+        "  HENT_AKTIVITET\n"
+        "  NETTSØK: <søketerm>\n"
+        "  INNSPILL: <maks 2 setninger>\n"
+        "Svar på norsk."
+    )
+    system_content = (
+        f"{leder_system}\n\n---\n\n{decision_instructions}"
+        if leder_system else
+        f"Du er møteleder i et møte om brukeren. {decision_instructions}"
+    )
     messages = [
-        {
-            "role": "system",
-            "content": (
-                "Du er møteleder i et møte om brukeren. Avgjør hva som skjer etter denne runden.\n"
-                "Svar med NØYAKTIG én linje – ingen forklaring:\n"
-                "  FORTSETT\n"
-                "  HENT_AKTIVITET\n"
-                "  NETTSØK: <søketerm>\n"
-                "  INNSPILL: <maks 2 setninger>\n"
-                "Svar på norsk."
-            ),
-        },
+        {"role": "system", "content": system_content},
         {
             "role": "user",
             "content": (
@@ -682,13 +785,13 @@ async def _handle_leder_action(
     miss_kare_messages.append({"role": "user", "content": inject})
 
 
-async def _leder_vurder(conversation: str, group: int, max_groups: int) -> tuple[bool, str]:
+async def _leder_vurder(conversation: str, group: int, max_groups: int, leder_system: str = "") -> tuple[bool, str]:
     """Meeting leader evaluates whether to continue. Returns (should_continue, reason)."""
     if group >= max_groups:
         return False, t("meet_max_groups", get_lang("global"))
 
     messages = [
-        {"role": "system", "content": _build_leder_system()},
+        {"role": "system", "content": leder_system or _build_leder_system()},
         {"role": "user", "content": (
             f"Gruppe {group} av {max_groups} er ferdig.\n\n"
             f"Samtalen:\n{conversation[-2500:]}\n\n"
@@ -782,6 +885,7 @@ async def _update_user_knowledge(
     user_id: str,
     exchanges: list[tuple[str, str]],
     existing: str,
+    leder_system: str = "",
 ) -> None:
     """Distil concluded knowledge from the meeting and write user_knowledge.md."""
     transcript = "\n".join(f"{who}: {text[:300]}" for who, text in exchanges[-20:])
@@ -797,7 +901,7 @@ async def _update_user_knowledge(
         "Maks 10 punkter. Kun punkter som representerer konkludert, stabil kunnskap."
     )
     messages = [
-        {"role": "system", "content": _build_leder_system()},
+        {"role": "system", "content": leder_system or _build_leder_system()},
         {"role": "user", "content": prompt},
     ]
     try:
@@ -846,7 +950,6 @@ def _write_reflection(user_id: str, date_str: str, exchanges: list[tuple[str, st
 # ── Main flow ──────────────────────────────────────────────────────────────────
 async def main(user_id: str | None = None) -> None:
     global _active_user_id
-    from adapters.llm_adapter import _current_rid as _rid_ctx_refl, _current_source as _src_ctx_refl
     _refl_rid    = f"rid-refl-{int(time.time()*1000)}"
     _refl_token  = _rid_ctx_refl.set(_refl_rid)
     _src_token   = _src_ctx_refl.set("refl")
@@ -863,15 +966,37 @@ async def main(user_id: str | None = None) -> None:
     _topics_file = Path("/kaare/state/meeting_topics.json")
     _admin_topic = ""
     try:
-        import json as _json
-        _topics = _json.loads(_topics_file.read_text(encoding="utf-8"))
+        _topics = json.loads(_topics_file.read_text(encoding="utf-8"))
         _admin_topic = _topics.get("reflection", "").strip()
         if _admin_topic:
             _topics["reflection"] = ""
-            _topics_file.write_text(_json.dumps(_topics, ensure_ascii=False, indent=2), encoding="utf-8")
+            _topics_file.write_text(json.dumps(_topics, ensure_ascii=False, indent=2), encoding="utf-8")
             log.info("Admin topic read and cleared: %s", _admin_topic[:80])
     except Exception:
         pass
+
+    # ── Møteleder kontekst-blokker ────────────────────────────────────────────
+    log.info("=== Building Møteleder context ===")
+    _prev_block    = _get_prev_reflection_summaries(user_id)
+    _user_comment  = _get_user_comment(user_id)
+    _user_topic    = _get_user_topic(user_id)
+    _admin_comment = _get_admin_comment_r()
+    _user_role_r   = _get_user_role_r(user_id)
+    try:
+        _rec_r = _store.get_user(user_id)
+        _display_name_r = (_rec_r or {}).get("display_name", "") if _rec_r else ""
+    except Exception:
+        _display_name_r = ""
+    leder_system   = _build_leder_system(
+        prev_block=_prev_block,
+        admin_topic=_admin_topic,
+        user_topic=_user_topic,
+        user_comment=_user_comment,
+        role=_user_role_r,
+        admin_comment=_admin_comment,
+        user_display_name=_display_name_r,
+    )
+    log.info("[Møteleder system] %d chars", len(leder_system))
 
     profile_text, observations_text, interactions_text, stm_text = _get_user_context(user_id)
     portrait = _load_miss_kare_portrait(user_id)
@@ -941,7 +1066,7 @@ async def main(user_id: str | None = None) -> None:
     exchanges.append(("Miss Kåre", miss_kare_tema))
     log.info("[Miss Kåre topic] %s", miss_kare_tema[:120])
 
-    agenda = await _leder_sett_agenda(kare_tema, miss_kare_tema, user_context_summary)
+    agenda = await _leder_sett_agenda(kare_tema, miss_kare_tema, user_context_summary, leder_system=leder_system)
     exchanges.append(("Møteleder", agenda))
     log.info("[meeting leader agenda] %s", agenda[:120])
 
@@ -952,7 +1077,7 @@ async def main(user_id: str | None = None) -> None:
     # ── Admin input round (one extra round if admin submitted a topic) ────────
     if _admin_topic:
         log.info("=== Admin input round ===")
-        admin_intro = await _leder_presenter_admin_input(_admin_topic)
+        admin_intro = await _leder_presenter_admin_input(_admin_topic, leder_system=leder_system)
         exchanges.append(("Møteleder", admin_intro))
         log.info("[meeting leader admin intro] %s", admin_intro[:120])
 
@@ -988,7 +1113,7 @@ async def main(user_id: str | None = None) -> None:
         log.info("=== Group %d of %d ===", group, max_groups)
 
         if group > 1:
-            intro = await _leder_intro_gruppe2(prev_summary)
+            intro = await _leder_intro_gruppe2(prev_summary, leder_system=leder_system)
             exchanges.append(("Møteleder", intro))
             log.info("[meeting leader group 2] %s", intro[:120])
             kare_messages.append({"role": "user", "content": f"Møteleder sier: {intro}"})
@@ -1022,21 +1147,11 @@ async def main(user_id: str | None = None) -> None:
 
             if local_round < ROUNDS_PER_GROUP - 1:
                 conv_tail = "\n\n".join(f"{a}: {t}" for a, t in exchanges[-6:])
-                action, value = await _leder_runde_sjekk(conv_tail, global_round)
+                action, value = await _leder_runde_sjekk(conv_tail, global_round, leder_system=leder_system)
                 await _handle_leder_action(action, value, kare_messages, miss_kare_messages, exchanges)
 
-        is_final_group = group == max_groups
-        log.info("--- Online (group %d) ---", group)
         conversation_text = "\n\n".join(f"{a}: {t}" for a, t in exchanges)
-        cloud_reply = await _ask_cloud(conversation_text, is_final=is_final_group)
-        exchanges.append(("Online", cloud_reply))
-        log.info("[Online] %s", cloud_reply[:120])
-
-        online_msg = f"Online sier: {cloud_reply}"
-        kare_messages.append({"role": "user", "content": online_msg})
-        miss_kare_messages.append({"role": "user", "content": online_msg})
-
-        fortsett, begrunnelse = await _leder_vurder(conversation_text, group, max_groups)
+        fortsett, begrunnelse = await _leder_vurder(conversation_text, group, max_groups, leder_system=leder_system)
         exchanges.append(("Møteleder", begrunnelse))
         prev_summary = begrunnelse
 
@@ -1103,7 +1218,7 @@ async def main(user_id: str | None = None) -> None:
 
     _write_reflection(user_id, date_str, exchanges)
     _save_meeting_insights(user_id, kare_closing)
-    await _update_user_knowledge(user_id, exchanges, user_knowledge)
+    await _update_user_knowledge(user_id, exchanges, user_knowledge, leder_system=leder_system)
     log.info("=== Reflection meeting done — %d local rounds ===", global_round)
     _rid_ctx_refl.reset(_refl_token)
     _src_ctx_refl.reset(_src_token)

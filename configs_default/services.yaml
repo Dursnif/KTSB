@@ -11,11 +11,14 @@ frigate:
   timeout: 10
   url: ""
 home_assistant:
+  awareness_entities: []
+  ha_notify_entity: ""
   log_bridge:
     reconnect_delay: 10
     subscribe_events:
     - state_changed
     - call_service
+    - automation_triggered
   timeout: 5
   url: ""
 internal:
@@ -41,6 +44,7 @@ mqtt:
   reconnect_interval: 30
   tls_enabled: false
   topic_prefix: frigate
+  zigbee_awareness: []
 ollama:
   embed: http://kaare-embedding:11446
   kare: http://ollama:11434
@@ -83,3 +87,9 @@ jang:
 inner_voices:
   node_label: Local
   push_token: ''
+
+notifications:
+  enabled: true
+  normalcy_min_score: 0.5
+  normalcy_min_confidence: 0.0
+  normalcy_cameras: []

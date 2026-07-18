@@ -4,13 +4,14 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   MessageSquare, BookOpen, Settings, LogOut,
-  ChevronLeft, ChevronRight, ShieldCheck,
+  ChevronLeft, ChevronRight, ShieldCheck, Users,
 } from "lucide-react";
 import { KTSBLogo } from "../components/KTSBLogo";
 import "../components/ktsb-logo.css";
 
 const HEADER_H = 140; // px — fixed logo header height
 import { useAuth } from "../auth/AuthContext";
+import { useAssistantName } from "../contexts/AssistantNameContext";
 import { apiUpdatePin, apiPing } from "../services/api";
 import { useTheme } from "../theme";
 import type { Role } from "../services/api";
@@ -91,6 +92,7 @@ export default function UserLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const theme = useTheme();
+  const assistantName = useAssistantName();
   usePupilAnimation({ loginFocus: true });
 
   const [showPin, setShowPin] = useState(false);
@@ -113,6 +115,7 @@ export default function UserLayout() {
   }, []);
 
   const showReflections = user && REFLECTION_ROLES.includes(user.role);
+  const showChildren = user?.is_parent === true;
 
   const navLinkStyle = (isActive: boolean) => ({
     display: "flex",
@@ -223,7 +226,7 @@ export default function UserLayout() {
             style={({ isActive }) => navLinkStyle(isActive)}
           >
             <MessageSquare size={17} style={{ flexShrink: 0 }} />
-            <span>{t("user_sidebar.home")}</span>
+            <span>{t("user_sidebar.home", { name: assistantName })}</span>
           </NavLink>
 
           {showReflections && (
@@ -233,6 +236,16 @@ export default function UserLayout() {
             >
               <BookOpen size={17} style={{ flexShrink: 0 }} />
               <span>{t("user_sidebar.reflections")}</span>
+            </NavLink>
+          )}
+
+          {showChildren && (
+            <NavLink
+              to="/children"
+              style={({ isActive }) => navLinkStyle(isActive)}
+            >
+              <Users size={17} style={{ flexShrink: 0 }} />
+              <span>{t("user_sidebar.mine_barn")}</span>
             </NavLink>
           )}
 

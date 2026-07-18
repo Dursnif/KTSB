@@ -25,7 +25,7 @@ from kaare_core.agents.mechanic.tools import (
     MECHANIC_TOOLS, UNDERSØKER_TOOLS, KRITIKER_TOOLS, ANALYTIKER_TOOLS,
     execute_tool as _mechanic_execute_tool,
 )
-from kaare_core.config import get_service as _svc, get_llm_config as _llm_cfg
+from kaare_core.config import get_service as _svc, get_llm_config as _llm_cfg, get_qdrant_api_key as _qdrant_key
 from kaare_core.memory.long_term import get_ltm
 from kaare_core.model_lock import lock_11445, LockTimeout
 from kaare_core.tools.i18n import t, get_lang
@@ -114,6 +114,7 @@ async def _search_argus(query: str, grense: int = 8, lang: str = "nb") -> str:
             r = await client.post(
                 f"{qdrant_url}/collections/argus_events/points/query",
                 json={"query": vector, "limit": grense, "with_payload": True},
+                headers={"api-key": _qdrant_key(write=False) or ""},
                 timeout=15.0,
             )
             r.raise_for_status()
@@ -228,8 +229,8 @@ async def _fetch_search_content(
 
 async def _mechanic_search(arguments: Dict, lang: str) -> str:
     """File/grep/log fetch followed by one-shot Mechanic summary."""
-    search_type = arguments.get("search_type", "files")
-    question    = arguments.get("question", "Summarize the content.")
+    search_type = arguments.get("type", arguments.get("search_type", "files"))
+    question    = arguments.get("query", arguments.get("question", "Summarize the content."))
 
     if not _llm_cfg("mechanic").get("enabled", True):
         return t("agent_mechanic_disabled", lang)
@@ -280,8 +281,20 @@ async def _mechanic_search(arguments: Dict, lang: str) -> str:
                                       headers={"x-kaare-source": "mechanic_search"})
                 r.raise_for_status()
                 content_out = r.json().get("message", {}).get("content", "").strip()
-                return re.sub(r"<think>.*?</think>", "", content_out, flags=re.DOTALL).strip() \
-                       or "[No response from Mechanic]"
+                answer = re.sub(r"<think>.*?</think>", "", content_out, flags=re.DOTALL).strip() \
+                         or "[No response from Mechanic]"
+                try:
+                    asyncio.create_task(get_ltm().log_agent_message(
+                        from_agent="kare",
+                        to_agent="mechanic",
+                        query=question,
+                        response=answer,
+                        rid=arguments.get("_rid", ""),
+                        user_id=arguments.get("_user_id", "global"),
+                    ))
+                except Exception:
+                    pass
+                return answer
     except LockTimeout:
         return t("svc_mechanic_busy", lang)
     except Exception as e:

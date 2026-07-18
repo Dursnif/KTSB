@@ -67,11 +67,12 @@ _SECRET = _load_or_create_secret()
 
 # ── Token ──────────────────────────────────────────────────────────────────────
 
-def create_token(username: str, role: str) -> str:
+def create_token(username: str, role: str, expiry_hours: int | None = None) -> str:
+    hours = expiry_hours if expiry_hours is not None else TOKEN_EXPIRY_HOURS
     payload = {
         "sub": username,
         "role": role,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRY_HOURS),
+        "exp": datetime.now(timezone.utc) + timedelta(hours=hours),
         "iat": datetime.now(timezone.utc),
     }
     return jwt.encode(payload, _SECRET, algorithm=ALGORITHM)
@@ -222,14 +223,17 @@ def login(username: str, pin: str) -> Optional[dict]:
     if not verify_pin(pin, user["pin_hash"]):
         return None
 
-    token = create_token(user["username"], user["role"])
+    pin_required = bool(user.get("pin_required", 0))
+    token_hours = 1 if pin_required else TOKEN_EXPIRY_HOURS
+    token = create_token(user["username"], user["role"], expiry_hours=token_hours)
     safe_user = {k: v for k, v in user.items()
                  if k not in ("pin_hash", "pin_expires_at",
                               "encrypted_private_key", "argon2_salt", "public_key")}
     safe_user["is_active"] = bool(safe_user["is_active"])
     safe_user["must_change_pin"] = bool(safe_user.get("must_change_pin", 0))
+    safe_user["pin_required"] = pin_required
     touch_last_seen(user["username"])
-    expires_at = time.time() + TOKEN_EXPIRY_HOURS * 3600
+    expires_at = time.time() + token_hours * 3600
     return {
         "token": token,
         "user": safe_user,

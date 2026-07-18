@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 type AnalysisEntry = {
@@ -41,12 +41,20 @@ type StorageConfig = {
   log_max_mb?: number;
 };
 
+type AwayModeConfig = {
+  nighttime_start: number;
+  nighttime_end: number;
+  person_confidence_high: number;
+  unknown_night_high: boolean;
+};
+
 type CamerasData = {
   enabled: boolean;
   cameras: CameraConfig[];
   roles: Record<string, Role>;
   available_labels: string[];
   storage: StorageConfig;
+  away_mode: AwayModeConfig;
 };
 
 const API = `http://${window.location.hostname}:8000`;
@@ -75,6 +83,11 @@ export default function Cameras() {
   const [usageSnap, setUsageSnap] = useState<number>(0);
   const [usageLog, setUsageLog] = useState<number>(0);
 
+  const [awayMode, setAwayMode] = useState<AwayModeConfig>({
+    nighttime_start: 22, nighttime_end: 6,
+    person_confidence_high: 0.6, unknown_night_high: true,
+  });
+
   useEffect(() => {
     fetch(`${API}/api/settings/cameras`, { headers: authHeaders() })
       .then(r => {
@@ -88,6 +101,7 @@ export default function Cameras() {
         setCameras(d.cameras ?? []);
         setSnapshotsMb(d.storage?.snapshots_max_mb ?? 500);
         setLogMb(d.storage?.log_max_mb ?? 50);
+        if (d.away_mode) setAwayMode(d.away_mode);
       })
       .catch((e: Error) => setError(e.message || t("cameras.error_load")));
 
@@ -273,6 +287,9 @@ export default function Cameras() {
         </div>
       </div>
 
+      {/* Away mode settings */}
+      <AwayModePanel awayMode={awayMode} onChange={setAwayMode} />
+
       {/* Analysis log panel */}
       <AnalysisPanel />
 
@@ -300,6 +317,102 @@ export default function Cameras() {
     </div>
   );
 }
+
+function AwayModePanel({ awayMode, onChange }: { awayMode: AwayModeConfig; onChange: (v: AwayModeConfig) => void }) {
+  const { t } = useTranslation();
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    setSaving(true); setError(null);
+    try {
+      const r = await fetch(`${API}/api/settings/cameras/_away_mode`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify(awayMode),
+      });
+      if (!r.ok) throw new Error(`${r.status}`);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const row = (label: string, hint: string, children: React.ReactNode) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <label style={{ color: "#888", fontSize: 13, minWidth: 260 }}>{label}</label>
+        {children}
+      </div>
+      <span style={{ color: "#444", fontSize: 11, paddingLeft: 2 }}>{hint}</span>
+    </div>
+  );
+
+  return (
+    <div style={{
+      background: "#111", border: "1px solid #222", borderRadius: 10,
+      padding: "16px 20px", marginBottom: 20,
+    }}>
+      <div style={{ color: "#aaa", fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
+        {t("cameras.away_mode_title")}
+      </div>
+      <div style={{ color: "#555", fontSize: 12, marginBottom: 14 }}>{t("cameras.away_mode_hint")}</div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {row(t("cameras.away_mode_nighttime_start"), "", (
+          <input type="number" min={0} max={23}
+            value={awayMode.nighttime_start}
+            onChange={e => onChange({ ...awayMode, nighttime_start: parseInt(e.target.value) || 0 })}
+            style={{ width: 60, background: "#1a1a1a", border: "1px solid #333", borderRadius: 5, color: "#ccc", padding: "5px 8px", fontSize: 13 }}
+          />
+        ))}
+        {row(t("cameras.away_mode_nighttime_end"), "", (
+          <input type="number" min={0} max={23}
+            value={awayMode.nighttime_end}
+            onChange={e => onChange({ ...awayMode, nighttime_end: parseInt(e.target.value) || 0 })}
+            style={{ width: 60, background: "#1a1a1a", border: "1px solid #333", borderRadius: 5, color: "#ccc", padding: "5px 8px", fontSize: 13 }}
+          />
+        ))}
+        {row(t("cameras.away_mode_person_confidence"), t("cameras.away_mode_person_confidence_hint"), (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input type="range" min={0} max={100} step={5}
+              value={Math.round(awayMode.person_confidence_high * 100)}
+              onChange={e => onChange({ ...awayMode, person_confidence_high: parseInt(e.target.value) / 100 })}
+              style={{ width: 100, accentColor: "#6366f1" }}
+            />
+            <span style={{ color: "#888", fontSize: 12, minWidth: 32 }}>
+              {Math.round(awayMode.person_confidence_high * 100)}%
+            </span>
+          </div>
+        ))}
+        {row(t("cameras.away_mode_unknown_night"), t("cameras.away_mode_unknown_night_hint"), (
+          <Toggle
+            value={awayMode.unknown_night_high}
+            onChange={v => onChange({ ...awayMode, unknown_night_high: v })}
+          />
+        ))}
+      </div>
+
+      <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10 }}>
+        <button onClick={save} disabled={saving} style={{
+          background: saved ? "#16a34a" : "#6366f1",
+          border: "none", borderRadius: 7, color: "#fff",
+          padding: "7px 20px", fontSize: 13, fontWeight: 600,
+          cursor: saving ? "not-allowed" : "pointer",
+          opacity: saving ? 0.7 : 1, transition: "background 0.2s",
+        }}>
+          {saving ? t("cameras.away_mode_saving") : saved ? t("cameras.away_mode_saved") : t("cameras.away_mode_save")}
+        </button>
+        {error && <span style={{ color: "#f87171", fontSize: 12 }}>{error}</span>}
+      </div>
+    </div>
+  );
+}
+
 
 function AnalysisPanel() {
   const { t } = useTranslation();

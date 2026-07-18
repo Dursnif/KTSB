@@ -34,6 +34,7 @@ from kaare_core.config import get_service as _svc, get_qdrant_api_key as _qdrant
 from kaare_core.memory.long_term import _ENC_PREFIX
 from kaare_core.memory.semantic_memory import ensure_collection, index_episode
 from adapters.llm_adapter import call_llm_chat as _llm_chat
+from kaare_core.normalcy import compute_baseline as _compute_baseline
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Konfigurasjon
@@ -167,6 +168,7 @@ async def _compress_with_llm(interactions: list[dict]) -> str:
         "default",
         [{"role": "user", "content": prompt}],
         options={"temperature": 0.2, "num_predict": 400},
+        disable_thinking=True,
     )
     if not result.get("ok"):
         log.warning("LLM-komprimering feilet: %s", result.get("error", "ukjent"))
@@ -242,6 +244,7 @@ async def compress_daily_stm(conn: sqlite3.Connection) -> None:
             "default",
             [{"role": "user", "content": prompt}],
             options={"temperature": 0.2, "num_predict": 350},
+            disable_thinking=True,
         )
         if not result.get("ok"):
             log.warning("STM daily summary LLM call failed for %s: %s", uid, result.get("error", "ukjent"))
@@ -359,6 +362,7 @@ async def _compress_global_with_llm(interactions: list[dict]) -> str:
         "default",
         [{"role": "user", "content": prompt}],
         options={"temperature": 0.2, "num_predict": 300},
+        disable_thinking=True,
     )
     if not result.get("ok"):
         log.warning("Global LLM-komprimering feilet: %s", result.get("error", "ukjent"))
@@ -554,6 +558,13 @@ async def run_nightjob() -> None:
             log.info("Argus-cleanup: ingen gamle hendelser å slette.")
     except Exception as e:
         log.warning("Argus-cleanup feil: %s — continuing.", e)
+
+    # Normalcy baseline — nightly recompute from Frigate event history
+    try:
+        _compute_baseline()
+        log.info("Normalcy baseline recomputed")
+    except Exception as e:
+        log.warning("Normalcy baseline failed: %s", e)
 
     conn.close()
     log.info(

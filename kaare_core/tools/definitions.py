@@ -255,7 +255,7 @@ def _timer_tool(lang: str) -> dict:
                         "description": _t("tool_timer_target_node_desc", lang),
                     },
                     "ha_payload": {
-                        "type": "object",
+                        "type": "string",
                         "description": _t("tool_timer_ha_payload_desc", lang),
                     },
                     "for_user_id": {
@@ -632,7 +632,7 @@ def _notat_tool(lang: str) -> dict:
                     },
                     "list_name": {
                         "type": "string",
-                        "enum": ["arkitekt", "handle", "huske", "kare"],
+                        "enum": ["architect", "shopping", "remember", "kare"],
                         "description": _t("tool_notat_list_name_desc", lang),
                     },
                     "text": {
@@ -849,7 +849,7 @@ def _kamera_tool(lang: str) -> dict:
                     },
                     "scope": {
                         "type": "string",
-                        "enum": ["ett", "alle"],
+                        "enum": ["one", "all"],
                         "description": _t("tool_kamera_scope_desc", lang),
                     },
                     "camera": {
@@ -952,7 +952,7 @@ def _kare_image_tool(lang: str) -> dict:
                 "properties": {
                     "mode": {
                         "type": "string",
-                        "enum": ["generate", "edit"],
+                        "enum": ["generate"],
                         "description": _t("tool_kare_image_mode_desc", lang),
                     },
                     "prompt": {
@@ -1002,7 +1002,7 @@ def _se_bilder_tool(lang: str) -> dict:
                     },
                     "mode": {
                         "type": "string",
-                        "enum": ["vis", "analyser"],
+                        "enum": ["view", "analyze"],
                         "description": _t("tool_se_bilder_mode_desc", lang),
                     },
                 },
@@ -1113,7 +1113,7 @@ def _announce_tool(lang: str) -> dict:
                         "description": _t("tool_announce_position_desc", lang),
                     },
                 },
-                "required": [],
+                "required": ["action"],
             },
         },
     }
@@ -1136,6 +1136,35 @@ def _skriv_reflex_tool(lang: str) -> dict:
                     "proposal_id": {
                         "type": "string",
                         "description": _t("tool_skriv_reflex_proposal_id_desc", lang),
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    }
+
+
+def _household_tool(lang: str) -> dict:
+    return {
+        "type": "function",
+        "function": {
+            "name": "household",
+            "description": _t("tool_household_desc", lang),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["set_away", "set_home", "get_status"],
+                        "description": _t("tool_household_action_desc", lang),
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": _t("tool_household_reason_desc", lang),
+                    },
+                    "expected_return": {
+                        "type": "string",
+                        "description": _t("tool_household_return_desc", lang),
                     },
                 },
                 "required": ["action"],
@@ -1192,6 +1221,8 @@ def get_tools(lang: str = "nb") -> list:
         _announce_tool(lang),
         # Reflex learning
         _skriv_reflex_tool(lang),
+        # Household presence mode
+        _household_tool(lang),
     ]
 
 
@@ -1236,4 +1267,5 @@ TOOL_MODEL_TIERS: dict[str, float] = {
     "search_argus":          9.0,
     "reason_freely":         9.0,
     "write_reflex":          9.0,
+    "household":             0.0,
 }

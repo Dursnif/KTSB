@@ -29,6 +29,10 @@ fi
 
 rsync -av --delete \
   --exclude='.git/' \
+  --exclude='local/' \
+  --exclude='docs/claude/' \
+  --exclude='ov_cache/' \
+  --exclude='*.blob' \
   --exclude='configs/*.env' \
   --exclude='configs/settings.yaml' \
   --exclude='.env' \
@@ -50,6 +54,7 @@ rsync -av --delete \
   --exclude='frontend/node_modules/' \
   --exclude='frontend/dist/' \
   --exclude='models/' \
+  --exclude='services/inner_voices/ov_cache/' \
   --exclude='*.onnx' \
   --exclude='*.bin' \
   --exclude='*.safetensors' \

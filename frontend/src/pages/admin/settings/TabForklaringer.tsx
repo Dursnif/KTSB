@@ -14,6 +14,7 @@ const TAB_COLORS = {
   integrasjoner: "#55efc4",
   distribusjon:  "#fdcb6e",
   agenter:       "#74b9ff",
+  varsler:       "#e84393",
 };
 
 const GROUP_COLORS = {
@@ -359,6 +360,10 @@ export default function TabForklaringer() {
         {sec("kameraer", GROUP_COLORS.admin, <>
           <Items items={items("kameraer", 5)} />
         </>)}
+
+        {sec("sikkerhet", GROUP_COLORS.admin, <>
+          <Items items={items("sikkerhet", 5)} />
+        </>)}
       </div>
 
       {/* ── Group 3: Kåres indre liv ──────────────────────────────── */}
@@ -440,6 +445,11 @@ export default function TabForklaringer() {
 
         {sec("innst_agenter", TAB_COLORS.agenter, <>
           <Items items={items("innst_agenter", 3)} />
+        </>)}
+
+        {sec("innst_varsler", TAB_COLORS.varsler, <>
+          <Body text={t("forklaringer.innst_varsler.body")} />
+          <Items items={items("innst_varsler", 4)} />
         </>)}
       </div>
 

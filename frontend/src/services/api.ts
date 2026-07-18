@@ -6,7 +6,7 @@ const BASE = window.location.protocol === "https:"
     ? window.location.origin
     : `http://${window.location.hostname}:8000`;
 
-const api = axios.create({ baseURL: BASE });
+export const api = axios.create({ baseURL: BASE });
 
 api.interceptors.request.use((config) => {
   const token = sessionStorage.getItem("kaare_token");
@@ -56,7 +56,7 @@ export type ChatTurn = { role: "user" | "assistant"; text: string; ts: string };
 
 export async function apiChatHistory(user_id: string, limit = 60) {
   const { data } = await api.get(`/api/chat_history?user_id=${encodeURIComponent(user_id)}&limit=${limit}`);
-  return data as { user_id: string; turns: ChatTurn[] };
+  return data as { user_id: string; turns: ChatTurn[]; needs_unlock: boolean };
 }
 
 export async function apiSystemStatus() {
@@ -118,6 +118,29 @@ export async function apiUpdateUser(username: string, payload: UpdateUserPayload
 export async function apiUpdatePin(username: string, new_pin: string) {
   const { data } = await api.put(`/api/users/${username}/pin`, { new_pin });
   return data as { ok: boolean };
+}
+
+export async function apiGetUserFlags(username: string): Promise<Record<string, boolean>> {
+  const { data } = await api.get(`/api/users/${username}/flags`);
+  return data;
+}
+
+export type UserSummary = {
+  username: string;
+  display_name: string;
+  avatar: string;
+  role: string;
+  pin_required: boolean;
+};
+
+export async function apiGetUserSummary(username: string): Promise<UserSummary> {
+  const { data } = await api.get(`/api/users/${username}/summary`);
+  return data;
+}
+
+export async function apiPutUserFlags(username: string, flags: Record<string, boolean>): Promise<Record<string, boolean>> {
+  const { data } = await api.put(`/api/users/${username}/flags`, flags);
+  return data;
 }
 
 export async function apiGetUnlockConfig(username: string) {
@@ -191,6 +214,10 @@ export type KaareUser = {
   vpn_access: VpnAccess;
   created_at: string;
   can_manage_child_timers?: boolean;
+  notify_channel?: string;
+  is_parent?: boolean;
+  pin_required?: boolean;
+  managed_children?: string | null;
 };
 
 export type Role = "child" | "teen" | "young_adult" | "adult" | "admin";
@@ -211,7 +238,16 @@ export type UpdateUserPayload = {
   personality?: string;
   vpn_access?: VpnAccess;
   can_manage_child_timers?: boolean;
+  notify_channel?: string;
+  is_parent?: boolean;
+  pin_required?: boolean;
+  managed_children?: string | null;
 };
+
+export async function apiGenerateTempPin(username: string): Promise<{ temp_pin: string; expires_minutes: number }> {
+  const { data } = await api.post(`/api/users/${username}/generate_temp_pin`);
+  return data;
+}
 
 export async function apiGetTimerSettings() {
   const { data } = await api.get("/api/settings/timers");
@@ -254,6 +290,26 @@ export async function apiReflectionDates(username: string) {
 export async function apiReflectionContent(username: string, date: string, pin: string) {
   const { data } = await api.post(`/api/reflections/${username}/${date}`, { pin });
   return data as { date: string; content: string };
+}
+
+export async function apiGetReflectionComment(username: string, date: string, pin: string) {
+  const { data } = await api.post(`/api/reflections/${username}/comment/${date}/get`, { pin });
+  return data as { comment: string };
+}
+
+export async function apiSetReflectionComment(username: string, date: string, pin: string, comment: string) {
+  const { data } = await api.post(`/api/reflections/${username}/comment/${date}`, { pin, comment });
+  return data as { ok: boolean };
+}
+
+export async function apiGetReflectionTopic(username: string, pin: string) {
+  const { data } = await api.post(`/api/reflections/${username}/topic/get`, { pin });
+  return data as { topic: string };
+}
+
+export async function apiSetReflectionTopic(username: string, pin: string, topic: string) {
+  const { data } = await api.post(`/api/reflections/${username}/topic`, { pin, topic });
+  return data as { ok: boolean };
 }
 
 export async function apiGetMeetingTopic(type: "reflection" | "dev") {
@@ -1289,4 +1345,65 @@ export async function apiTtsFile(text: string): Promise<{ url: string }> {
   });
   if (!res.ok) throw new Error(`TTS error: ${res.status}`);
   return res.json();
+}
+
+// ── Notifications + Normalcy ──────────────────────────────────────────────────
+
+export type NormalcyEvent = {
+  ts: string;
+  camera: string;
+  camera_friendly: string;
+  label: string;
+  score: number;
+  deviation_score: number;
+  baseline_confidence: number;
+  source_key: string;
+  hour_bucket: string;
+  weekday: string;
+  correction: { verdict: string; comment: string; by: string; ts: string } | null;
+  event_id: string;
+};
+
+export async function apiGetNotifications() {
+  const { data } = await api.get("/api/settings/notifications");
+  return data as {
+    enabled: boolean;
+    normalcy_min_score: number;
+    normalcy_min_confidence: number;
+    normalcy_cameras: string[];
+    ha_notify_entity: string;
+  };
+}
+
+export async function apiPutNotifications(payload: {
+  enabled?: boolean;
+  normalcy_min_score?: number;
+  normalcy_min_confidence?: number;
+  normalcy_cameras?: string[];
+  ha_notify_entity?: string;
+}) {
+  const { data } = await api.put("/api/settings/notifications", payload);
+  return data as { ok: boolean };
+}
+
+export async function apiGetNormalcyEvents(params?: {
+  days?: number;
+  min_score?: number;
+  min_confidence?: number;
+  limit?: number;
+  label?: string;
+}) {
+  const { data } = await api.get("/api/normalcy/events", { params });
+  return data as { events: NormalcyEvent[] };
+}
+
+export async function apiPostNormalcyCorrect(body: {
+  source_key: string;
+  hour_bucket: string;
+  weekday: string;
+  verdict: string;
+  comment?: string;
+}) {
+  const { data } = await api.post("/api/normalcy/correct", body);
+  return data as { ok: boolean };
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { apiLogin, apiUpdatePin } from "../services/api";
 import { useAuth } from "../auth/AuthContext";
@@ -44,6 +44,8 @@ export default function Login() {
   const { t } = useTranslation();
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isReauth = searchParams.get("reauth") === "1";
   const [username, setUsername] = useState("");
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
@@ -102,7 +104,7 @@ export default function Login() {
     <div style={S.page}>
       <div style={S.card}>
         <div style={S.title}>{t("login.title")}</div>
-        <div style={S.subtitle}>{t("login.subtitle")}</div>
+        <div style={S.subtitle}>{isReauth ? t("login.reauth_subtitle") : t("login.subtitle")}</div>
         <form onSubmit={handleSubmit}>
           <label style={S.label}>{t("login.username")}</label>
           <input

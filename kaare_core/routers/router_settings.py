@@ -79,7 +79,8 @@ _VLLM_ARG_MAP = {
 
 async def _run_vllm_restart(role: str, container: str, vllm_cfg: dict) -> None:
     """Stop, remove, and re-create a vLLM Docker container with updated args from llm.yaml."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
+    print(f"[vLLM restart] task started for {container}")
     _vllm_restart_status[role] = {"status": "inspecting"}
     try:
         # 1. Inspect current container to get static args, volumes, ports, image
@@ -87,8 +88,11 @@ async def _run_vllm_restart(role: str, container: str, vllm_cfg: dict) -> None:
             ["docker", "inspect", container],
             capture_output=True, text=True, timeout=10,
         ))
+        print(f"[vLLM restart] inspect returncode={inspect_raw.returncode}")
         if inspect_raw.returncode != 0:
-            _vllm_restart_status[role] = {"status": "error", "detail": f"Container '{container}' not found"}
+            detail = inspect_raw.stderr.strip()[:300]
+            print(f"[vLLM restart] inspect failed: {detail}")
+            _vllm_restart_status[role] = {"status": "error", "detail": f"Container '{container}' not found: {detail}"}
             return
 
         info = json.loads(inspect_raw.stdout)[0]
@@ -122,17 +126,21 @@ async def _run_vllm_restart(role: str, container: str, vllm_cfg: dict) -> None:
                 docker_run.extend(["-p", f"{host_port}:{cport.split('/')[0]}"])
         docker_run.append(image)
         docker_run.extend(new_cmd)
+        print(f"[vLLM restart] docker run cmd: {' '.join(docker_run)}")
 
         # 4. Stop old container
+        print(f"[vLLM restart] stopping {container}")
         _vllm_restart_status[role] = {"status": "stopping"}
         await loop.run_in_executor(None, lambda: subprocess.run(
             ["docker", "stop", container], capture_output=True, timeout=30
         ))
+        print(f"[vLLM restart] stopped {container}")
 
         # 5. Remove old container
         await loop.run_in_executor(None, lambda: subprocess.run(
             ["docker", "rm", container], capture_output=True, timeout=10
         ))
+        print(f"[vLLM restart] removed {container}")
 
         # 6. Start new container
         _vllm_restart_status[role] = {"status": "starting"}
@@ -140,10 +148,14 @@ async def _run_vllm_restart(role: str, container: str, vllm_cfg: dict) -> None:
             docker_run, capture_output=True, text=True, timeout=15
         ))
         if result.returncode != 0:
-            _vllm_restart_status[role] = {"status": "error", "detail": result.stderr.strip()[:300]}
+            detail = result.stderr.strip()[:300]
+            print(f"[vLLM restart] docker run failed for {container}: {detail}")
+            _vllm_restart_status[role] = {"status": "error", "detail": detail}
         else:
+            print(f"[vLLM restart] {container} started successfully")
             _vllm_restart_status[role] = {"status": "started"}
     except Exception as exc:
+        print(f"[vLLM restart] exception for {container}: {exc}")
         _vllm_restart_status[role] = {"status": "error", "detail": str(exc)[:300]}
 
 
@@ -570,6 +582,11 @@ async def api_put_llm_role(role: str, payload: dict, _u=Depends(_require_admin))
 
 @router.post("/api/settings/llm/{role}/restart_docker")
 async def api_restart_vllm_docker(role: str, _u=Depends(_require_admin)):
+    settings = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
+    if not settings.get("allow_docker_control", False):
+        raise HTTPException(403, "Docker control is disabled in settings")
+    if not _docker_socket_ok():
+        raise HTTPException(503, "Docker socket not available")
     data = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
     if role not in data:
         raise HTTPException(404, f"Role {role} not in llm.yaml")
@@ -577,8 +594,8 @@ async def api_restart_vllm_docker(role: str, _u=Depends(_require_admin)):
     provider = s.get("provider", "ollama")
     if provider != "vllm":
         raise HTTPException(400, f"Role {role} uses provider={provider}, not vllm")
-    container = f"vllm-{role}"
     vllm_cfg  = s.get("vllm_docker", {})
+    container = vllm_cfg.get("container") or f"vllm-{role}"
     if role in _vllm_restart_tasks and not _vllm_restart_tasks[role].done():
         return {"ok": False, "error": "Restart already in progress", "container": container}
     _vllm_restart_tasks[role] = asyncio.create_task(_run_vllm_restart(role, container, vllm_cfg))
@@ -1521,6 +1538,15 @@ async def api_put_dev_meeting(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True}
 
 
+@router.get("/api/settings/assistant_name")
+async def api_get_assistant_name():
+    try:
+        data = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:
+        data = {}
+    return {"assistant_name": data.get("assistant_name", "Kåre")}
+
+
 @router.get("/api/settings/kare")
 async def api_get_kare_settings(_u=Depends(_require_admin)):
     try:
@@ -2084,3 +2110,53 @@ async def api_inner_voices_push(payload: dict):
             f.write(f"\n\n[Jang {timestamp}]\n{content}")
 
     return {"ok": True}
+
+
+# ── Notification settings ──────────────────────────────────────────────────────
+
+_NOTIF_DEFAULTS: dict = {
+    "enabled":               True,
+    "normalcy_min_score":    0.5,
+    "normalcy_min_confidence": 0.0,
+    "normalcy_cameras":      [],
+}
+
+
+@router.get("/api/settings/notifications")
+async def api_get_notifications(_u=Depends(_require_admin)):
+    """Return notification settings: master toggle, push entity, normalcy thresholds."""
+    try:
+        svc = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
+        notif = {**_NOTIF_DEFAULTS, **(svc.get("notifications") or {})}
+        ha_notify_entity = (svc.get("home_assistant") or {}).get("ha_notify_entity", "")
+        return {"ok": True, "notifications": notif, "ha_notify_entity": ha_notify_entity}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@router.put("/api/settings/notifications")
+async def api_put_notifications(payload: dict, _u=Depends(_require_admin)):
+    """Save notification settings."""
+    try:
+        svc = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
+
+        notif = svc.setdefault("notifications", {})
+        if "enabled" in payload:
+            notif["enabled"] = bool(payload["enabled"])
+        if "normalcy_min_score" in payload:
+            notif["normalcy_min_score"] = float(payload["normalcy_min_score"])
+        if "normalcy_min_confidence" in payload:
+            notif["normalcy_min_confidence"] = float(payload["normalcy_min_confidence"])
+        if "normalcy_cameras" in payload:
+            notif["normalcy_cameras"] = list(payload["normalcy_cameras"])
+
+        # ha_notify_entity lives under home_assistant
+        if "ha_notify_entity" in payload:
+            svc.setdefault("home_assistant", {})["ha_notify_entity"] = str(payload["ha_notify_entity"])
+
+        _SERVICES_PATH.write_text(
+            yaml.dump(svc, allow_unicode=True, default_flow_style=False), encoding="utf-8"
+        )
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(500, str(e))

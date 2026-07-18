@@ -73,10 +73,10 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
     _uid = arguments.get("_user_id", "global")
 
     if action == "snapshot":
-        _audit("camera_access", _uid, f"action=snapshot scope={arguments.get('scope','ett')}")
-        scope = arguments.get("scope", "ett")
+        _audit("camera_access", _uid, f"action=snapshot scope={arguments.get('scope','one')}")
+        scope = arguments.get("scope", "one")
         ts = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-        if scope == "alle":
+        if scope in ("all", "alle"):
             prompt_text = arguments.get("spørsmål", "").strip() or t("cam_prompt_all", lang)
             cams = await get_cameras()
             if not cams:
@@ -290,9 +290,9 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
 
 
 async def _compat_hent_snapshot(arguments: Dict, lang: str = "nb") -> str:
-    scope = arguments.get("scope", "ett")
+    scope = arguments.get("scope", "one")
     ts = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-    if scope == "alle":
+    if scope in ("all", "alle"):
         prompt_text = arguments.get("spørsmål", "").strip() or t("cam_prompt_all", lang)
         cams = await get_cameras()
         if not cams:

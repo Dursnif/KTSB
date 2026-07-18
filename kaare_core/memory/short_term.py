@@ -123,6 +123,11 @@ class ShortTermMemory:
         # key insertion order for eviction
         self._state_order: Deque[str] = deque()
 
+        # True once load_snapshot() has successfully decrypted an .enc file this session.
+        # save_snapshot() will not overwrite an existing .enc until this is set — prevents
+        # a post-restart thin session (1–2 turns before login) from destroying rich history.
+        self._enc_snapshot_loaded: bool = False
+
         # autosave
         self._autosave_path: Optional[str] = None
         self._autosave_min_interval: float = 5.0
@@ -460,8 +465,12 @@ class ShortTermMemory:
             p.parent.mkdir(parents=True, exist_ok=True)
             current_turns = self.snapshot_counts().get("dialog_turns", 0)
 
-            # Don't let a blank-restart STM destroy a richer existing snapshot
+            # Don't let a blank-restart STM destroy a richer existing snapshot.
+            # Guard 1: never overwrite an existing .enc unless it was successfully loaded
+            # this session — catches the case where 1+ turns accumulate before login.
             enc_path = p.with_suffix(".enc")
+            if enc_path.exists() and not self._enc_snapshot_loaded:
+                return True
             existing = enc_path if enc_path.exists() else (p if p.exists() else None)
             if existing and current_turns == 0:
                 return True
@@ -500,6 +509,7 @@ class ShortTermMemory:
                 json_text = unseal(encrypted_blob, private_key)
                 data = _json.loads(json_text)
                 self.load_from_dict(data)
+                self._enc_snapshot_loaded = True
                 return True
             elif p.exists():
                 data = _json.loads(p.read_text(encoding="utf-8"))
@@ -521,7 +531,9 @@ class STMRegistry:
     def get(self, user_id: str) -> ShortTermMemory:
         with self._lock:
             if user_id not in self._users:
-                self._users[user_id] = ShortTermMemory(user_id=user_id, **self._kwargs)
+                stm = ShortTermMemory(user_id=user_id, **self._kwargs)
+                stm.configure_autosave(f"/kaare/state/stm_users/{user_id}.json")
+                self._users[user_id] = stm
             return self._users[user_id]
 
     def set_entity_state(self, entity_id: str, state_value: Any,

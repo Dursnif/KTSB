@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../auth/AuthContext";
-import { apiReflectionDates, apiReflectionContent } from "../../services/api";
+import {
+  apiReflectionDates,
+  apiReflectionContent,
+  apiGetReflectionComment,
+  apiSetReflectionComment,
+  apiGetReflectionTopic,
+  apiSetReflectionTopic,
+} from "../../services/api";
 import { useTheme } from "../../theme";
 
 const AGENT_LABELS: Record<string, string> = {
@@ -120,6 +127,149 @@ function renderContent(md: string) {
   });
 }
 
+function UserCommentBox({
+  username, date, pin, accent,
+}: { username: string; date: string; pin: string; accent: string }) {
+  const { t } = useTranslation();
+  const [comment, setComment] = useState("");
+  const [saved, setSaved]     = useState(false);
+  const [saving, setSaving]   = useState(false);
+
+  useEffect(() => {
+    setSaved(false);
+    setComment("");
+    apiGetReflectionComment(username, date, pin)
+      .then(r => setComment(r.comment))
+      .catch(() => {});
+  }, [username, date, pin]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await apiSetReflectionComment(username, date, pin, comment);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 24, borderTop: "1px solid #222", paddingTop: 16 }}>
+      <div style={{ color: "#555", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+        {t("user_reflections.comment_title")}
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+        <textarea
+          value={comment}
+          onChange={e => { setComment(e.target.value); setSaved(false); }}
+          onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) save(); }}
+          placeholder={t("user_reflections.comment_ph")}
+          rows={3}
+          style={{
+            flex: 1, background: "#0d0d0d", border: `1px solid ${accent}33`, borderRadius: 8,
+            color: "#ccc", fontSize: 13, padding: "8px 10px", resize: "none",
+            outline: "none", fontFamily: "inherit", lineHeight: 1.5,
+          }}
+        />
+        <button
+          onClick={save}
+          disabled={saving}
+          style={{
+            padding: "8px 14px", borderRadius: 8, border: `1px solid ${accent}55`,
+            background: saved ? `${accent}22` : "#1a1a1a",
+            color: saved ? accent : "#666",
+            fontSize: 13, fontWeight: 600, cursor: "pointer",
+            whiteSpace: "nowrap", transition: "all 0.2s", minWidth: 64,
+          }}
+        >
+          {saved ? "✓ OK" : t("user_reflections.comment_save")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function UserTopicBox({
+  username,
+  pin,
+  onNeedPin,
+  accent,
+}: {
+  username: string;
+  pin: string | null;
+  onNeedPin: (topic: string) => void;
+  accent: string;
+}) {
+  const { t } = useTranslation();
+  const [topic, setTopic]   = useState("");
+  const [saved, setSaved]   = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!pin) return;
+    setSaved(false);
+    apiGetReflectionTopic(username, pin)
+      .then(r => setTopic(r.topic))
+      .catch(() => {});
+  }, [username, pin]);
+
+  const save = async () => {
+    if (!pin) { onNeedPin(topic); return; }
+    setSaving(true);
+    try {
+      await apiSetReflectionTopic(username, pin, topic);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{
+      marginBottom: 20, background: "#111", borderRadius: 10,
+      padding: "12px 16px", border: `1px solid ${accent}22`,
+    }}>
+      <div style={{ color: "#555", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+        {t("user_reflections.topic_title")}
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+        <textarea
+          value={topic}
+          onChange={e => { setTopic(e.target.value); setSaved(false); }}
+          onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) save(); }}
+          placeholder={t("user_reflections.topic_ph")}
+          rows={2}
+          style={{
+            flex: 1, background: "#0d0d0d", border: `1px solid ${accent}33`, borderRadius: 8,
+            color: "#ccc", fontSize: 13, padding: "8px 10px", resize: "none",
+            outline: "none", fontFamily: "inherit", lineHeight: 1.5,
+          }}
+        />
+        <button
+          onClick={save}
+          disabled={saving}
+          style={{
+            padding: "8px 14px", borderRadius: 8, border: `1px solid ${accent}55`,
+            background: saved ? `${accent}22` : "#1a1a1a",
+            color: saved ? accent : "#666",
+            fontSize: 13, fontWeight: 600, cursor: "pointer",
+            whiteSpace: "nowrap", transition: "all 0.2s", minWidth: 64,
+          }}
+        >
+          {saved ? "✓ OK" : t("user_reflections.topic_save")}
+        </button>
+      </div>
+      {!pin && (
+        <div style={{ color: "#444", fontSize: 11, marginTop: 6 }}>
+          {t("user_reflections.pin_hint")}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function UserReflections() {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -129,11 +279,14 @@ export default function UserReflections() {
   const [selected, setSelected] = useState<string | null>(null);
   const [content, setContent] = useState<string>("");
   const [loading, setLoading] = useState(false);
+
+  // pinTarget: null = no modal | "topic" = save topic | ISO date = load reflection
   const [pinTarget, setPinTarget] = useState<string | null>(null);
   const [pinError, setPinError] = useState(false);
   const [cachedPin, setCachedPin] = useState<string | null>(() =>
     sessionStorage.getItem(PIN_SESSION_KEY)
   );
+  const [pendingTopicText, setPendingTopicText] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -158,6 +311,25 @@ export default function UserReflections() {
     }
   };
 
+  const handlePinConfirm = async (pin: string) => {
+    if (pinTarget === "topic") {
+      if (user && pendingTopicText !== null) {
+        try {
+          await apiSetReflectionTopic(user.username, pin, pendingTopicText);
+          setCachedPin(pin);
+          sessionStorage.setItem(PIN_SESSION_KEY, pin);
+          setPendingTopicText(null);
+          setPinTarget(null);
+          setPinError(false);
+        } catch {
+          setPinError(true);
+        }
+      }
+    } else if (pinTarget) {
+      await loadDate(pinTarget, pin);
+    }
+  };
+
   const handleDateClick = (date: string) => {
     if (cachedPin) {
       loadDate(date, cachedPin);
@@ -167,14 +339,20 @@ export default function UserReflections() {
     }
   };
 
+  const handleTopicNeedsPin = (topic: string) => {
+    setPendingTopicText(topic);
+    setPinTarget("topic");
+    setPinError(false);
+  };
+
   const accent = theme.primary;
 
   return (
     <>
       {pinTarget && (
         <PinModal
-          onConfirm={pin => loadDate(pinTarget, pin)}
-          onCancel={() => { setPinTarget(null); setPinError(false); }}
+          onConfirm={handlePinConfirm}
+          onCancel={() => { setPinTarget(null); setPinError(false); setPendingTopicText(null); }}
           error={pinError}
         />
       )}
@@ -183,7 +361,7 @@ export default function UserReflections() {
         display: "flex", flexDirection: "column", height: "100%",
         padding: "28px 28px 20px", overflow: "hidden",
       }}>
-        <div style={{ marginBottom: 24, flexShrink: 0 }}>
+        <div style={{ marginBottom: 20, flexShrink: 0 }}>
           <h1 style={{ color: "#fff", fontSize: 20, fontWeight: 700, margin: 0 }}>
             {t("user_reflections.title")}
           </h1>
@@ -191,6 +369,16 @@ export default function UserReflections() {
             {t("user_reflections.subtitle")}
           </p>
         </div>
+
+        {/* Topic for next meeting — always visible */}
+        {user && (
+          <UserTopicBox
+            username={user.username}
+            pin={cachedPin}
+            onNeedPin={handleTopicNeedsPin}
+            accent={accent}
+          />
+        )}
 
         <div style={{ display: "flex", gap: 20, flex: 1, minHeight: 0 }}>
           {/* Date list */}
@@ -255,7 +443,17 @@ export default function UserReflections() {
             )}
 
             {!loading && content && (
-              <div>{renderContent(content)}</div>
+              <>
+                <div>{renderContent(content)}</div>
+                {selected && cachedPin && user && (
+                  <UserCommentBox
+                    username={user.username}
+                    date={selected}
+                    pin={cachedPin}
+                    accent={accent}
+                  />
+                )}
+              </>
             )}
           </div>
         </div>

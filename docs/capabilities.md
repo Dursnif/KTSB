@@ -11,20 +11,21 @@ underneath. Start at the top for the user experience; scroll down for implementa
 1. [Chat Interface](#1-chat-interface)
 2. [Smart Home Control](#2-smart-home-control)
 3. [Camera Intelligence](#3-camera-intelligence)
-4. [Memory and Personalization](#4-memory-and-personalization)
-5. [The Agent Network](#5-the-agent-network)
-6. [Nightly Operations](#6-nightly-operations)
-7. [Notes, Timers, and Media](#7-notes-timers-and-media)
-8. [Search and Knowledge](#8-search-and-knowledge)
-9. [Image Generation](#9-image-generation)
-10. [Voice System](#10-voice-system)
-11. [Users, Roles, and Access Control](#11-users-roles-and-access-control)
-12. [Admin Panel and Configuration](#12-admin-panel-and-configuration)
-13. [Tool System](#13-tool-system)
-14. [LLM Backends and Integrations](#14-llm-backends-and-integrations)
-15. [Service Profiles](#15-service-profiles)
-16. [Security](#16-security)
-17. [Capability Matrix](#17-capability-matrix)
+4. [Home Awareness and Notifications](#4-home-awareness-and-notifications)
+5. [Memory and Personalization](#5-memory-and-personalization)
+6. [The Agent Network](#6-the-agent-network)
+7. [Nightly Operations](#7-nightly-operations)
+8. [Notes, Timers, and Media](#8-notes-timers-and-media)
+9. [Search and Knowledge](#9-search-and-knowledge)
+10. [Image Generation](#10-image-generation)
+11. [Voice System](#11-voice-system)
+12. [Users, Roles, and Access Control](#12-users-roles-and-access-control)
+13. [Admin Panel and Configuration](#13-admin-panel-and-configuration)
+14. [Tool System](#14-tool-system)
+15. [LLM Backends and Integrations](#15-llm-backends-and-integrations)
+16. [Service Profiles](#16-service-profiles)
+17. [Security](#17-security)
+18. [Capability Matrix](#18-capability-matrix)
 
 ---
 
@@ -118,13 +119,93 @@ can filter by known face label.
 - Per-camera object configuration with confidence sliders and duration thresholds
 - Storage limits for snapshots and analysis logs
 - Analysis log with thumbnails, metadata, and retry for failed analyses
+- Away-mode escalation panel: nighttime window (start/end hour), minimum confidence for
+  escalation, and whether an unlabelled detection at a perimeter camera at night is
+  automatically treated as high priority
 
 **Key files:** `adapters/frigate_adapter.py`, `kaare_core/tools/executor_camera.py`,
 `adapters/mqtt_adapter.py`
 
 ---
 
-## 4. Memory and Personalization
+## 4. Home Awareness and Notifications
+
+Beyond responding to direct requests, Kåre maintains background awareness of the
+household — who's around, what sensors are reporting, and whether anything is out of the
+ordinary — and can proactively notify a user when something needs attention.
+
+### Household mode (home / away)
+
+A single household-wide state (`state/household_state.yaml` — never per-user) tracks
+whether the house is expected to be occupied. Kåre reads and writes it via the
+`household` tool:
+
+- `set_away` — with an optional reason and expected return date
+- `set_home` — clears away state
+- `get_status` — current mode, away-since timestamp, and reason
+
+**Automatic return detection:** a background task polls three signals every 5 minutes
+while away — the expected-return date, Home Assistant `person.*` geo-trackers, and
+local-network `device_tracker.*` entities. Two or more signals agreeing on two
+consecutive polls switches the household back to `home` automatically and clears any
+away-mode flags written to user profiles.
+
+### Situational context
+
+A compact context block is assembled and injected into every system prompt, giving Kåre
+always-available awareness without needing to call a tool:
+
+- Who is speaking, from which node, and over which network (local / VPN / external)
+- Current household mode (home/away)
+- Recent activity from other users or nodes (drawn from STM)
+- Frigate recent detections — tailed directly from the MQTT event log, deduplicated by
+  camera and label
+- Home Assistant entity states and recently-triggered automations
+- Zigbee2MQTT sensor states, read directly over MQTT — bypasses Home Assistant entirely
+- Current media activity (MPD via subprocess, Plex via a background poller)
+
+All sources are optional and silently omitted if unavailable. Anything derived from a
+sensor is phrased as "likely", never stated as certain.
+
+### Anomaly detection (normalcy baseline)
+
+A nightly job builds a frequency table from 28 days of Frigate detection history,
+bucketed by camera, object label, hour, and weekday. Every new detection is scored with a
+**deviation score** (0.0 = this happens at this hour almost every day, 1.0 = this has
+never happened at this hour) and a **confidence** value based on how many days of history
+exist for that bucket — under roughly two weeks of data, the score is recorded but not
+yet used for alert routing. This is what lets away-mode alerting tell "the mail carrier,
+every weekday around 11" apart from "someone at the back door at 3am."
+
+The **Security** admin page shows a grouped, filterable feed of recent detections with
+deviation scores, confidence badges, and click-to-view snapshot thumbnails. Admins can
+correct mis-scored events; corrections feed back into future baseline computation.
+
+### Notifications
+
+A single notification entry point is used by away-mode camera alerts (and available to
+other sources) with four urgency tiers:
+
+| Urgency | Behaviour |
+|---------|-----------|
+| Low | Injected into the user's short-term memory — surfaces next time they chat |
+| Medium | Spoken announcement if outside quiet hours, otherwise held for chat |
+| High | Spoken announcement immediately, regardless of hour |
+| Critical | Spoken announcement immediately, plus a push notification once a push channel is configured |
+
+In-memory deduplication per user and event type prevents repeated alerts for the same
+ongoing situation; critical alerts are never deduplicated. Quiet hours, the push
+notification target, per-user notification channel, and anomaly-alert thresholds are
+configured in Settings → Notifications; per-camera away-mode timing lives in
+Settings → Cameras (see section 3).
+
+**Key files:** `kaare_core/tools/household_state.py`, `kaare_core/presence_monitor.py`,
+`kaare_core/context_builder.py`, `kaare_core/normalcy.py`, `kaare_core/notify.py`,
+`kaare_core/domain/frigate_responder.py`, `frontend/src/pages/admin/Security.tsx`
+
+---
+
+## 5. Memory and Personalization
 
 Kåre has three memory layers, an evolving user profile, a self-image it writes itself,
 and a per-user portrait maintained by Miss Kåre.
@@ -132,7 +213,8 @@ and a per-user portrait maintained by Miss Kåre.
 ### Short-Term Memory (STM)
 
 Held in RAM, global with per-user filtering. Stores the last 40 conversation turns plus
-tool call results. Auto-saved to disk every 5 seconds as a snapshot.
+tool call results. Auto-saved to disk every 5 seconds as a snapshot, and again on
+controlled shutdown so no in-progress conversation is lost on a service restart.
 
 The STM is injected into the LLM context at the start of every request — this is how Kåre
 remembers what was said earlier in the same conversation.
@@ -192,7 +274,7 @@ the current turn.
 
 ---
 
-## 5. The Agent Network
+## 6. The Agent Network
 
 KTSB is not a single AI — it is a small team. Six agents run simultaneously, each with a
 distinct role.
@@ -237,7 +319,7 @@ consult Miss Library directly during evaluation via a structured query format.
 
 ---
 
-## 6. Nightly Operations
+## 7. Nightly Operations
 
 One sequential job starts at 03:00 via `kaare-night-sequence.timer`. Each step has a
 timeout; a failure or timeout in one step does not stop the subsequent steps.
@@ -259,6 +341,7 @@ timeout; a failure or timeout in one step does not stop the subsequent steps.
 4. Compresses yesterday's STM into a daily summary
 5. Ingests Jing's accumulated thought fragments into the global episode stream (batches of 30)
 6. Cleans up Argus events older than 30 days from Qdrant
+7. Recomputes the Frigate anomaly baseline (see section 4) from the last 28 days of history
 
 Result: tomorrow's semantic search includes today's conversations.
 
@@ -281,7 +364,8 @@ active non-admin user, under a meeting lock that prevents Jang from interfering.
 **Participants:** Kåre + Miss Kåre + Meeting Leader + a user-configured cloud LLM (external perspective)
 
 **Input context:** user profile, Miss Kåre portrait, 14 days of observations, last LTM
-episodes, last daily summaries, admin-submitted topic (if any)
+episodes, last daily summaries, admin-submitted topic (if any), the user's own submitted
+topic and comment (if any)
 
 **Structure:** proposal round → agenda → two groups of rounds → cloud check-in → closing
 
@@ -291,7 +375,9 @@ episodes, last daily summaries, admin-submitted topic (if any)
 - `state/users/{user_id}/profile.yaml` — updated with insights
 - `state/users/{user_id}/user_knowledge.md` — stable, concluded facts
 
-Reflections are PIN-protected in the GUI; users choose whether to read their own.
+Reflections are PIN-protected in the GUI; users choose whether to read their own. A parent
+account (see section 12) can additionally read and comment on a managed child's
+reflection.
 
 ### Step 4 — Developer meeting (up to 60 min)
 
@@ -313,7 +399,7 @@ are visible in the Reflections tab.
 
 ---
 
-## 7. Notes, Timers, and Media
+## 8. Notes, Timers, and Media
 
 ### Notes
 
@@ -348,8 +434,9 @@ keeping the notification queue clean.
 **Plex:** Search library, browse episodes, check what is currently playing, check playback
 history, cast to any Plex client by name. Kåre uses Home Assistant as the casting bridge.
 
-**Radio / MPD:** Play internet radio stations by name or URL, check status, stop, adjust
-volume. Station presets configured in `configs/radio_stations.yaml`.
+**Radio / MPD:** Play internet radio stations by name or URL, check status (including
+current volume), stop, adjust volume. Station presets configured in
+`configs/radio_stations.yaml`.
 
 **Announce:** Speak any text over any speaker on the network — or display a message on any
 screen node. Used automatically by camera alerts and timers.
@@ -358,7 +445,7 @@ screen node. Used automatically by camera alerts and timers.
 
 ---
 
-## 8. Search and Knowledge
+## 9. Search and Knowledge
 
 ### Web Search
 
@@ -406,7 +493,7 @@ today, humidity, and air pressure.
 
 ---
 
-## 9. Image Generation
+## 10. Image Generation
 
 Kåre can generate and analyse images.
 
@@ -427,7 +514,7 @@ and re-analyse them with the vision model on demand.
 
 ---
 
-## 10. Voice System
+## 11. Voice System
 
 Kåre runs a Wyoming-protocol TCP server (port 10300). Any Wyoming-compatible satellite —
 including the official Home Assistant voice satellite firmware — can connect and use Kåre
@@ -482,7 +569,7 @@ Say "lock" to close the session manually.
 
 ---
 
-## 11. Users, Roles, and Access Control
+## 12. Users, Roles, and Access Control
 
 ### Five roles
 
@@ -524,13 +611,28 @@ hostname and a Caddy reverse proxy (included in the `vpn` Docker profile).
 The admin can customise which tools each role can access — the defaults above are a
 starting point. Changes take effect immediately without restart.
 
+### Parent oversight
+
+A user account can be flagged as a parent and linked to one or more child accounts
+(managed via Settings → Users). A parent can:
+
+- View a summary of a managed child's recent activity
+- Read and leave a comment on a child's nightly reflection through a PIN-authenticated
+  viewer ("My children" in the user menu)
+- Generate a one-time temporary PIN for a child account
+
+A child account can be marked as requiring a PIN before its own reflections are shown —
+even to the child — keeping the nightly reflection meaningfully private while still
+giving a parent a supervised way in.
+
 **Key files:** `kaare_core/users/auth.py`, `kaare_core/users/store.py`,
 `kaare_core/rate_limiter.py`, `kaare_core/audit.py`,
-`kaare_core/vpn.py`, `configs/tool_permissions.yaml`
+`kaare_core/vpn.py`, `configs/tool_permissions.yaml`,
+`frontend/src/pages/user/UserChildren.tsx`
 
 ---
 
-## 12. Admin Panel and Configuration
+## 13. Admin Panel and Configuration
 
 The admin panel is a React application (port 5173). All configuration happens here — no
 manual YAML editing required after the initial install.
@@ -540,12 +642,13 @@ manual YAML editing required after the initial install.
 | Page | Purpose |
 |------|---------|
 | Dashboard | Live service status, active users, onboarding checklist |
-| Users | Create / edit / delete users, PIN management, VPN client QR codes, voice enrollment, tool permission matrix |
-| Settings | 12 configuration areas (see below) |
+| Users | Create / edit / delete users, PIN management, VPN client QR codes, voice enrollment, tool permission matrix, parent/child linking |
+| Settings | 13 configuration areas (see below) |
 | Aliases | Map device names to HA entity IDs; manage room groupings |
 | Nodes | Configure voice and display output nodes (14 types: 6 audio-only, 7 multi audio+display, 1 display-only) |
 | Tools | SSH node management (add/edit/delete/test, linux and HA OS presets, sudo config); active timers with per-user counts and configurable max; tool execution log (last 80 entries, live, colour-coded by source) |
 | Reflections | Meeting notes by date, topic submission, PIN-protected user views |
+| Security | Grouped, filterable feed of recent camera detections with anomaly deviation scores, confidence badges, and snapshot thumbnails; multi-select batch actions and baseline corrections |
 | System | Hot-reload config, health check, hardware info, service restart, manual memory compression, server-side backup points (save / restore with PIN / download ZIP, max 5), config rollback, automated test suite (36 tests — run from GUI, results shown inline) |
 | Agent Messages | Read-only view of inter-agent exchanges |
 
@@ -559,7 +662,8 @@ manual YAML editing required after the initial install.
 | LLM / Models | **Infrastructure:** Docker socket control, running container table. **Per agent role** (Kåre, Miss Kåre, Mechanic, Miss Library, fallback, cloud, image): provider (Ollama / vLLM / OpenVINO / cloud), base URL, model selection with installed-model dropdown (pull / delete), thinking mode, keep-warm toggle, model sharing (share_with), GPU assignment, vLLM Docker parameters (gpu_memory_utilization, kv_cache_dtype, max_model_len), Docker restart. **Whisper STT:** enable/disable, backend (faster-whisper or OpenVINO), model preset (large-v3 / turbo / medium / small), compute type, language. **Piper TTS:** one voice model per language, download and activate presets per language. **BGE-M3 embedding:** device (NPU/CPU), model selection, model path. **Semantic memory embedding (MiniLM):** enable/disable, model path |
 | Reflection | Meeting schedule (enable/disable); token limits per participant; Meeting Leader preset for both reflection (standard / analytical / challenging / custom) and developer meeting (standard / strict / exploratory / custom) |
 | Web & Weather | Weather provider + feature toggles (feels-like, UV, sun times, alerts, air quality, tides, camera weather); 9 HA sensor entity fields; web search provider + fallback provider (DDG / Brave / SearXNG); Brave API key and locale; trusted-sources list (categories + domains, add/remove) |
-| Images | Frigate URL, snapshot and analysis log retention; per-camera analysis config (object types, confidence thresholds, announce on detection), detection log with thumbnails |
+| Images | Frigate URL, snapshot and analysis log retention; per-camera analysis config (object types, confidence thresholds, announce on detection), detection log with thumbnails; away-mode escalation (nighttime window, minimum confidence, unknown-object-at-night toggle) |
+| Notifications | Master enable toggle; push notification target (Home Assistant `notify` entity); anomaly-alert thresholds (minimum deviation score, minimum baseline confidence); per-camera filter; link to the Security event feed |
 | Assistant Settings | Personality mode (6 levels: minimal / lightweight / standard / full / complete / custom with editable text); assistant name; hotword; self-image contributor control (all users / selected users / admin only) |
 | Integrations | Frigate URL, timeout, enable/disable; Plex URL and token |
 | Distribution | Three preset profiles (full / medium / lightweight) with one-click apply; per-domain enable/disable toggles (Home Assistant, Frigate, weather, time etc.); per-service enable/disable toggles (embedding, agents, voice, Jing, Jang) with availability badges |
@@ -568,13 +672,13 @@ manual YAML editing required after the initial install.
 
 ---
 
-## 13. Tool System
+## 14. Tool System
 
 Kåre uses a structured tool system. All tools follow the **action-parameter pattern**:
 one tool per domain, with an `action` enum that selects the operation. This keeps the
 schema small and predictable for the LLM.
 
-### All 28 tools
+### All 29 tools
 
 | Tool | Domain | Actions |
 |------|--------|---------|
@@ -606,6 +710,7 @@ schema small and predictable for the LLM.
 | `les_møte` | Meeting notes | *(type: reflection / development)* |
 | `announce` | TTS / display | say, display, list_display |
 | `skriv_reflex` | Learned reflexes | suggest, confirm, reject, list |
+| `household` | Home/away household mode | set_away, set_home, get_status |
 
 ### Model tier requirements
 
@@ -613,7 +718,7 @@ Tools are filtered based on the active model size. Models under 9B receive no to
 
 | Tier | Minimum model size | Tools |
 |------|--------------------|-------|
-| 0 | 0.8B+ | timer, notat, styr_enhet, les_ha, get_weather, announce |
+| 0 | 0.8B+ | timer, notat, styr_enhet, les_ha, get_weather, announce, household |
 | 3 | 3B+ | søk_nett, library, minne, kamera, les_møte, kare_image, se_bilder, media |
 | 9 | 9B+ | mechanic, utforsk_kode, inspiser_system, ssh_kommando, local_kommando, restart_docker_container, søk_i_argus, reason_freely, skriv_reflex |
 | always | any | selvbilde, verden, brukerprofil, les_indre_tanker, les_tankehistorikk |
@@ -647,7 +752,7 @@ check whether latency or fallback rate has degraded overnight.
 
 ---
 
-## 14. LLM Backends and Integrations
+## 15. LLM Backends and Integrations
 
 ### LLM providers
 
@@ -666,7 +771,9 @@ Fallback waterfall: primary provider → cloud (if configured and a conversation
 Ollama fallback on the Miss Kåre instance. Tool-calling requests skip the cloud step and
 fall back directly to the local Ollama instance. The fallback shares the same lock as
 Miss Kåre and Mechanic — if either is active when the fallback is needed, Kåre queues
-and waits.
+and waits. If the cloud endpoint is unreachable (e.g. no credit left on the key), the
+nightly meetings detect it at the start and skip the cloud participant for that run
+instead of failing.
 
 ### Integrations
 
@@ -675,7 +782,7 @@ and waits.
 | Home Assistant | REST + WebSocket | Device control, sensor data, event stream |
 | Frigate | REST + MQTT | Camera snapshots, motion events, face recognition |
 | Plex | Plex API | Media library search and casting |
-| MQTT broker | MQTT | Frigate events, sensor data, device triggers |
+| MQTT broker | MQTT | Frigate events, Zigbee2MQTT sensor data, device triggers |
 | Qdrant | HTTP | Vector storage for semantic memory and Argus events |
 | WireGuard | VPN tunnel | Secure remote access |
 | DuckDNS + Caddy | DNS + HTTPS | Automatic TLS certificates and remote hostname |
@@ -683,7 +790,7 @@ and waits.
 
 ---
 
-## 15. Service Profiles
+## 16. Service Profiles
 
 Set `COMPOSE_PROFILES` in your `.env` to control which services start. Profiles combine:
 `COMPOSE_PROFILES=ollama,full` starts everything.
@@ -710,7 +817,7 @@ _With a GPU, the LLM stays in VRAM — system RAM stays at the ~650 MB baseline 
 
 ---
 
-## 16. Security
+## 17. Security
 
 ### Authentication and sessions
 
@@ -741,6 +848,7 @@ Each personal user account has a per-user X25519 keypair (PyNaCl / libsodium):
 - At account creation: a random X25519 keypair and an Argon2id salt are generated; the private key is encrypted with a key derived from the user's PIN (Argon2id, OWASP-recommended parameters) and stored in `users.db`
 - At login: PIN → Argon2id derivation → decrypt private key → store in RAM for the duration of the JWT session; cleared on logout or token expiry
 - `admin` system accounts never get a keypair — the admin role is for system management only, not personal data
+- If a session outlives a service restart, the encrypted snapshot on disk cannot be decrypted with the (now-gone) in-RAM key; the API detects this and signals the frontend to re-authenticate rather than silently showing stale or empty history
 
 **Vault file system:** agents that need to write to a user's profile while the user is offline (e.g. the nightly reflection meeting) use SealedBox encryption with the user's public key. The result is written as a `vault_*.bin` file. On next login, the vault files are decrypted with the private key, applied, and deleted. This means personal observations from nightly meetings are unreadable without the user's PIN — even to the admin.
 
@@ -770,7 +878,7 @@ Configurable in `settings.yaml` under `data_retention:`. The nightly Step 0 dele
 
 ---
 
-## 17. Capability Matrix
+## 18. Capability Matrix
 
 | Capability | Status | Min. profile | Key files |
 |-----------|--------|-------------|-----------|
@@ -789,6 +897,12 @@ Configurable in `settings.yaml` under `data_retention:`. The nightly Step 0 dele
 | Frigate event search | ✅ | Core | `adapters/frigate_adapter.py` |
 | Face recognition (Frigate) | ✅ | Core | `adapters/frigate_adapter.py` |
 | MQTT event triggers | ✅ | Core | `adapters/mqtt_adapter.py` |
+| Household home/away mode | ✅ | Core | `kaare_core/tools/household_state.py` |
+| Automatic return detection | ✅ | Core | `kaare_core/presence_monitor.py` |
+| Situational context injection | ✅ | Core | `kaare_core/context_builder.py` |
+| Frigate anomaly baseline | ✅ | Core | `kaare_core/normalcy.py` |
+| Notification framework (urgency tiers, quiet hours) | ✅ | Core | `kaare_core/notify.py` |
+| Security event feed | ✅ | Core | `frontend/src/pages/admin/Security.tsx` |
 | Short-term memory (STM) | ✅ | Core | `kaare_core/memory/short_term.py` |
 | Long-term memory (LTM) | ✅ | Core | `kaare_core/memory/long_term.py` |
 | Semantic memory (Qdrant) | ✅ | medium | `kaare_core/memory/semantic_memory.py` |
@@ -797,6 +911,7 @@ Configurable in `settings.yaml` under `data_retention:`. The nightly Step 0 dele
 | World model | ✅ | Core | `kaare_core/tools/executor_personality.py` |
 | Miss Kåre per-user portrait | ✅ | Core | `kaare_miss_kare_nightjob.py` |
 | 5-role access control | ✅ | Core | `kaare_core/users/auth.py` |
+| Parent / child oversight | ✅ | Core | `kaare_core/routers/router_users.py`, `frontend/src/pages/user/UserChildren.tsx` |
 | WireGuard VPN | ✅ | vpn | `kaare_core/vpn.py` |
 | Web search (DDG/Brave/SearXNG) | ✅ | Core | `adapters/web_search_adapter.py` |
 | Local Wikipedia search | 📋 | medium | `kaare_core/agents/miss_library/` |
@@ -829,3 +944,4 @@ Configurable in `settings.yaml` under `data_retention:`. The nightly Step 0 dele
 | Server-side backup points | ✅ | Core | `kaare_core/routers/router_backup.py` |
 | Mood system (VAD) | 📋 | Core | — |
 | LTM source trust weighting | 📋 | Core | — |
+</content>

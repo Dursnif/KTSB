@@ -10,10 +10,11 @@
     "aliases": "Aliaser",
     "nodes": "Noder",
     "settings": "Innstillinger",
-    "back_to_kare": "Tilbake til Kåre",
+    "back_to": "Tilbake til {{name}}",
     "logout": "Logg ut",
     "sidebar_expand": "Utvid sidebar",
-    "sidebar_collapse": "Minimer sidebar"
+    "sidebar_collapse": "Minimer sidebar",
+    "security": "Sikkerhet"
   },
   "common": {
     "save": "Lagre",
@@ -74,7 +75,8 @@
       "integrasjoner": "Integrasjoner",
       "distribusjon": "Distribusjon",
       "agenter": "Agent-instillinger",
-      "forklaringer": "Forklaringer"
+      "forklaringer": "Forklaringer",
+      "varsler": "Varsler"
     },
     "generelt": {
       "location": {
@@ -923,6 +925,28 @@
       "download_button": "Last ned",
       "select_hint": "Velg et snapshot for å installere eller laste ned",
       "choose_file": "Velg fil"
+    },
+    "varsler": {
+      "master": {
+        "title": "Varselssystem",
+        "description": "Aktiver eller deaktiver hele varselssystemet",
+        "toggle": "Aktiver varselssystem"
+      },
+      "push": {
+        "title": "Push-varsler",
+        "description": "HA notify-entitet for push til telefon (CRITICAL urgency)",
+        "entity_label": "HA notify-entitet",
+        "entity_hint": "F.eks. notify.mobile_app_stian_sin_telefon. Tom = deaktivert."
+      },
+      "normalcy": {
+        "title": "Normalcy-grenser",
+        "description": "Terskler for hendelsesfeeden i Sikkerhet-siden",
+        "min_score_label": "Minimum avvikscore (0–1)",
+        "min_confidence_label": "Minimum datadekning (0–1)",
+        "cameras_label": "Kameraer som overvåkes",
+        "cameras_hint": "Tom = alle konfigurerte kameraer"
+      },
+      "events_link": "Se hendelser"
     }
   },
   "dashboard": {
@@ -957,6 +981,7 @@
   "login": {
     "title": "Kåre",
     "subtitle": "Logg inn for å fortsette",
+    "reauth_subtitle": "Tjenesten ble restartet. Oppgi PIN for å gjenopprette historikken.",
     "username": "Brukernavn",
     "pin": "PIN",
     "logging_in": "Logger inn…",
@@ -1024,6 +1049,16 @@
       "active_label": "Aktiv",
       "can_manage_child_timers": "Foreldrekontroll",
       "can_manage_child_timers_desc": "Kan sette timere for barn og tenåringer",
+      "is_parent": "Er forelder",
+      "is_parent_desc": "Kan se og kommentere barns profiler og refleksjoner",
+      "managed_children": "Administrerer barn",
+      "pin_required": "Krever PIN hver gang",
+      "pin_required_desc": "Ingen «husk meg» — PIN kreves ved hvert innlogg",
+      "pin_recovery_label": "PIN-gjenoppretting (krever brukertillatelse)",
+      "pin_recovery_btn": "Generer midlertidig PIN",
+      "pin_recovery_generating": "Genererer…",
+      "pin_recovery_expires": "Gyldig i {{minutes}} min",
+      "pin_recovery_error": "Gjenoppretting feilet.",
       "save": "Lagre",
       "cancel": "Avbryt",
       "error_generic": "Noe gikk galt."
@@ -1294,7 +1329,19 @@
     "log_meta_score": "Sikkerhet",
     "log_meta_zones": "Soner",
     "log_meta_face": "Ansikt",
-    "log_meta_duration": "Varighet (sek)"
+    "log_meta_duration": "Varighet (sek)",
+    "away_mode_title": "Bortreisemodus",
+    "away_mode_hint": "Justerer trusselterskel for Frigate-hendelser når husstandsmodus er «borte».",
+    "away_mode_nighttime_start": "Nattetid starter (time)",
+    "away_mode_nighttime_end": "Nattetid slutter (time)",
+    "away_mode_person_confidence": "Personterskel ved perimeterovergang",
+    "away_mode_person_confidence_hint": "Person ved inngangsdør/innkjørsel med ≥ denne sikkerhet → HIGH-prioritet",
+    "away_mode_unknown_night": "Ukjent ved perimeter om natten → HIGH",
+    "away_mode_unknown_night_hint": "Ingen label eller lav sikkerhet ved perimeterplassert kamera om natten settes til HIGH-prioritet",
+    "away_mode_save": "Lagre bortreiseinnstillinger",
+    "away_mode_saving": "Lagrer…",
+    "away_mode_saved": "Lagret ✓",
+    "away_mode_perimeter_roles": "Perimeterroller (styres av kamerarollen over)"
   },
   "home": {
     "img_alt": "Generert bilde",
@@ -1365,15 +1412,37 @@
     "leder_preset_utforskende": "Utforskende",
     "leder_preset_analytisk": "Analytisk",
     "leder_preset_utfordrende": "Utfordrende",
-    "leder_preset_egendefinert": "Egendefinert"
+    "leder_preset_egendefinert": "Egendefinert",
+    "no_eligible_reflection_users": "Unge voksne og voksne administrerer sine refleksjoner privat via bruker-GUI."
   },
   "user_sidebar": {
-    "home": "Kåre",
+    "home": "{{name}}",
     "reflections": "Refleksjoner",
+    "mine_barn": "Mine barn",
     "settings": "Innstillinger",
     "change_pin": "Bytt PIN",
     "admin_panel": "Adminpanel",
     "logout": "Logg ut"
+  },
+  "children_page": {
+    "title": "Mine barn",
+    "subtitle": "Se refleksjoner og aktivitet for barna dine",
+    "no_children": "Ingen barn er koblet til kontoen din ennå. Be admin om å legge til barn under brukeren din.",
+    "loading": "Laster…",
+    "reflections_label": "Refleksjoner",
+    "no_reflections": "Ingen refleksjonsmøter ennå",
+    "select_reflection": "Velg et møte for å lese det",
+    "unlock_btn": "Lås opp",
+    "pin_title": "Lås opp barnets refleksjon",
+    "pin_hint": "Skriv inn {{name}}s PIN for å se innholdet",
+    "pin_cancel": "Avbryt",
+    "pin_open": "Åpne",
+    "pin_error": "Feil PIN — prøv igjen",
+    "comment_label": "Din kommentar til barnet",
+    "comment_placeholder": "Skriv en kommentar…",
+    "comment_save": "Lagre kommentar",
+    "comment_saved": "Kommentar lagret",
+    "comment_error": "Kunne ikke lagre kommentar"
   },
   "user_reflections": {
     "title": "Refleksjonsmøter",
@@ -1387,7 +1456,13 @@
     "pin_cancel": "Avbryt",
     "pin_open": "Åpne",
     "pin_error": "Feil PIN — prøv igjen",
-    "pin_cached": "PIN lagret for denne sesjonen"
+    "pin_cached": "PIN lagret for denne sesjonen",
+    "comment_title": "Din kommentar til dette møtet",
+    "comment_ph": "Skriv en kommentar — hva traff, hva savnet du, hva vil du at Kåre husker?",
+    "comment_save": "Lagre",
+    "topic_title": "Foreslå tema for neste møte",
+    "topic_ph": "Er det noe du ønsker at møtet skal fokusere på neste gang?",
+    "topic_save": "Lagre"
   },
   "user_settings": {
     "title": "Innstillinger",
@@ -1417,6 +1492,9 @@
     "preview_user": "Slik ser meldingene dine ut nå",
     "preview_kare": "Og slik svarer Kåre deg",
     "reset": "Tilbakestill til standard",
+    "section_pin_recovery": "PIN-gjenoppretting",
+    "pin_recovery_desc": "Gi admin tillatelse til å generere en midlertidig PIN hvis du låser deg ute. Kun du kan aktivere dette — admin kan ikke tvinge det på.",
+    "pin_recovery_toggle": "Gi admin tillatelse til å gjenopprette min PIN",
     "section_voice_unlock": "Stemmeopplåsing",
     "voice_unlock_hint": "Beskytt personlige data (minner, profil, kamera) bak en frase eller PIN. Aktiv i 2 minutter etter siste kommando.",
     "unlock_method_label": "Opplåsingsmetode",
@@ -1432,7 +1510,30 @@
     "global_lists_hint": "Disse listene deles gjerne i husstand — ingen opplåsing nødvendig.",
     "unlock_save": "Lagre opplåsingsinnstillinger",
     "unlock_saved": "Lagret",
-    "unlock_save_error": "Feil ved lagring"
+    "unlock_save_error": "Feil ved lagring",
+    "notify_channel_label": "Varselkanal",
+    "notify_channel": {
+      "sound_node": "Lydnode (TTS)",
+      "push": "Push",
+      "chat": "Chat (STM)",
+      "silent": "Stille"
+    }
+  },
+  "security": {
+    "title": "Sikkerhetshendelser",
+    "subtitle": "Frigate-hendelser med høy avvikscore. Bedøm hendelsene for å forbedre baseline.",
+    "deviation": "{{score}}% avvik",
+    "confidence": "{{pct}}% datadekning",
+    "mark_normal": "Dette er normalt",
+    "mark_suspicious": "Bekreft som mistenkelig",
+    "comment_placeholder": "Kommentar (valgfritt)",
+    "corrected_normal": "Merket normalt",
+    "corrected_suspicious": "Bekreftet mistenkelig",
+    "by": "av {{by}}",
+    "empty": "Ingen hendelser med avviksscore over grenseverdien.",
+    "loading": "Laster hendelser…",
+    "filter_days": "Siste {{n}} dager",
+    "no_baseline": "Baseline ikke klar (krever ≥1 dag med data)"
   },
   "forklaringer": {
     "title": "Hva er hva i Kåre?",
@@ -1558,6 +1659,15 @@
       "item_4": "Snapshot — Kåre tar et øyeblikksbilde fra et kamera på forespørsel.",
       "item_5": "Hendelser — Kåre henter bevegelseshendelser og objektdeteksjon fra Frigate."
     },
+    "sikkerhet": {
+      "title": "Sikkerhet",
+      "summary": "Kamerahendelser, avvik og hjemme/borte-modus",
+      "item_1": "Hendelsesfeed — Nylige kamera-deteksjoner gruppert per objekt og kamera, med miniatyrbilde ved klikk på en rad.",
+      "item_2": "Avviksscore — Hvor uvanlig en hendelse er sammenlignet med de siste 28 dagene på samme kamera, klokkeslett og ukedag. 0 = skjer nesten alltid på dette tidspunktet, 1 = har aldri skjedd her før.",
+      "item_3": "Konfidens — Hvor mye historikk Kåre har å bygge avviksscoren på. Med under ca. to ukers data brukes ikke scoren i varslingsvurderingen ennå.",
+      "item_4": "Korrigering — Merk en hendelse som normal eller unormal. Rettelsen tas med i neste natts baseline-beregning.",
+      "item_5": "Hjemme/borte-modus — Når huset settes i «borte»-modus eskaleres kameravarsler (særlig ukjente objekter ved yttergrensen om natten), og Kåre kjenner automatisk igjen når noen er tilbake via GPS eller lokalnettverk."
+    },
     "agenter": {
       "title": "Agent Messages",
       "summary": "Meldinger fra Kåres indre agenter",
@@ -1676,6 +1786,15 @@
       "item_1": "Mechanic — Velg hvilke verktøy Mechanic kan bruke på vegne av Kåre.",
       "item_2": "Miss Kåre — Velg om og hvordan Miss Kåre deltar i refleksjonsmøter.",
       "item_3": "Tool-matrise — Juster per brukerrolle hvilke verktøy som er tillatt. Endringer trer i kraft umiddelbart."
+    },
+    "innst_varsler": {
+      "title": "Innstillinger → Varsler",
+      "summary": "Varslingsterskler, stille timer og push",
+      "body": "Bestemmer når og hvordan Kåre varsler deg om noe uvanlig — fra en stille melding i chatten til høyttalervarsel med en gang.",
+      "item_1": "Hovedbryter — Skru varslingssystemet av eller på globalt.",
+      "item_2": "Push-mål — En Home Assistant notify-enhet som mottar push-varsler ved kritiske hendelser.",
+      "item_3": "Terskler — Minste avviksscore og minste konfidens en hendelse må ha for å utløse et varsel.",
+      "item_4": "Kamerafilter — Begrens hvilke kameraer som kan utløse varsler."
     },
     "bruker_chat": {
       "title": "Chat (Hjem-siden)",

@@ -7,7 +7,7 @@ import {
   apiUpdatePin, apiDeleteUser, apiListPersonalities,
   apiVpnListClients, apiVpnCreateClient, apiVpnDeleteClient,
   apiVoiceStatus, apiVoiceEnroll, apiVoiceDelete,
-  apiGetToolPermissions, apiSaveToolPermissions,
+  apiGetToolPermissions, apiSaveToolPermissions, apiGenerateTempPin,
   type KaareUser, type Role, type VpnAccess, type VpnClient, type ToolPermissions,
 } from "../../services/api";
 
@@ -402,7 +402,7 @@ export default function Users() {
             <CreateModal onDone={() => { load(); setModal(null); }} onError={setError} error={error} />
           )}
           {modal.type === "edit" && (
-            <EditModal user={modal.user} onDone={() => { load(); setModal(null); }} onError={setError} error={error} />
+            <EditModal user={modal.user} allUsers={users} onDone={() => { load(); setModal(null); }} onError={setError} error={error} />
           )}
           {modal.type === "pin" && (
             <PinModal user={modal.user} onDone={() => setModal(null)} onError={setError} error={error} />
@@ -513,9 +513,45 @@ function CreateModal({ onDone, onError, error }: { onDone: () => void; onError: 
 
 // ── Edit ──────────────────────────────────────────────────────────────────────
 
-function EditModal({ user, onDone, onError, error }: { user: KaareUser; onDone: () => void; onError: (e: string) => void; error: string }) {
+function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div
+      role="switch"
+      aria-checked={on}
+      onClick={() => onChange(!on)}
+      style={{
+        display: "inline-block", width: 44, height: 24,
+        background: on ? "#4caf50" : "#333",
+        borderRadius: 12, cursor: "pointer",
+        position: "relative", transition: "background 0.2s", flexShrink: 0,
+      }}
+    >
+      <div style={{
+        position: "absolute", top: 3,
+        left: on ? 23 : 3,
+        width: 18, height: 18,
+        background: "#fff", borderRadius: "50%",
+        transition: "left 0.2s",
+      }} />
+    </div>
+  );
+}
+
+function EditModal({ user, allUsers, onDone, onError, error }: {
+  user: KaareUser;
+  allUsers: KaareUser[];
+  onDone: () => void;
+  onError: (e: string) => void;
+  error: string;
+}) {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+
+  const parsedChildren: string[] = (() => {
+    try { return user.managed_children ? JSON.parse(user.managed_children) : []; }
+    catch { return []; }
+  })();
+
   const [f, setF] = useState({
     display_name: user.display_name,
     role: user.role,
@@ -524,8 +560,14 @@ function EditModal({ user, onDone, onError, error }: { user: KaareUser; onDone: 
     personality: user.personality || "standard",
     vpn_access: (user.vpn_access || "local_only") as VpnAccess,
     can_manage_child_timers: user.can_manage_child_timers ?? false,
+    notify_channel: user.notify_channel || "sound_node",
+    is_parent: user.is_parent ?? false,
+    pin_required: user.pin_required ?? false,
+    managed_children_arr: parsedChildren,
   });
   const [personalities, setPersonalities] = useState<{ key: string; label: string }[]>([]);
+  const [tempPin, setTempPin] = useState<string | null>(null);
+  const [pinLoading, setPinLoading] = useState(false);
 
   useEffect(() => {
     apiListPersonalities().then(setPersonalities).catch(() => {});
@@ -534,15 +576,37 @@ function EditModal({ user, onDone, onError, error }: { user: KaareUser; onDone: 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await apiUpdateUser(user.username, f);
+      await apiUpdateUser(user.username, {
+        ...f,
+        managed_children: f.is_parent ? JSON.stringify(f.managed_children_arr) : null,
+      });
       onDone();
     } catch (err: any) {
       onError(err?.response?.data?.detail ?? t("users.edit.error_generic"));
     }
   };
 
+  const handleGeneratePin = async () => {
+    setPinLoading(true);
+    try {
+      const res = await apiGenerateTempPin(user.username);
+      setTempPin(res.temp_pin);
+    } catch (err: any) {
+      onError(err?.response?.data?.detail ?? t("users.edit.pin_recovery_error"));
+    } finally {
+      setPinLoading(false);
+    }
+  };
+
+  const childCandidates = allUsers.filter(u =>
+    (u.role === "child" || u.role === "teen") && u.username !== user.username
+  );
+
+  const isAdult = f.role === "adult" || f.role === "young_adult" || f.role === "admin";
+  const isChild = f.role === "child" || f.role === "teen";
+
   return (
-    <div style={{ ...S.modal, width: isMobile ? "calc(100vw - 32px)" : 420, maxHeight: "90vh", overflowY: "auto" }}>
+    <div style={{ ...S.modal, width: isMobile ? "calc(100vw - 32px)" : 440, maxHeight: "90vh", overflowY: "auto" }}>
       <div style={S.mTitle}>{t("users.edit.title", { name: user.display_name })}</div>
       <form onSubmit={submit}>
         <label style={S.label}>{t("users.edit.display_name")}</label>
@@ -573,38 +637,75 @@ function EditModal({ user, onDone, onError, error }: { user: KaareUser; onDone: 
           {" "}{t("users.edit.active_label")}
         </label>
 
-        {/* Parental control toggle — only for adult+ roles */}
-        {(f.role === "adult" || f.role === "young_adult" || f.role === "admin") && (
+        {/* can_manage_child_timers — adult+ only */}
+        {isAdult && (
           <div style={{ marginBottom: 16 }}>
-            <div style={{ color: "#aaa", fontSize: 13, marginBottom: 6 }}>
-              {t("users.edit.can_manage_child_timers")}
-            </div>
+            <div style={{ color: "#aaa", fontSize: 13, marginBottom: 6 }}>{t("users.edit.can_manage_child_timers")}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div
-                role="switch"
-                aria-checked={f.can_manage_child_timers}
-                onClick={() => setF({ ...f, can_manage_child_timers: !f.can_manage_child_timers })}
-                style={{
-                  display: "inline-block", width: 44, height: 24,
-                  background: f.can_manage_child_timers ? "#4caf50" : "#333",
-                  borderRadius: 12, cursor: "pointer",
-                  position: "relative", transition: "background 0.2s", flexShrink: 0,
-                }}
-              >
-                <div style={{
-                  position: "absolute", top: 3,
-                  left: f.can_manage_child_timers ? 23 : 3,
-                  width: 18, height: 18,
-                  background: "#fff", borderRadius: "50%",
-                  transition: "left 0.2s",
-                }} />
-              </div>
-              <span style={{ color: "#888", fontSize: 12 }}>
-                {t("users.edit.can_manage_child_timers_desc")}
-              </span>
+              <Toggle on={f.can_manage_child_timers} onChange={v => setF({ ...f, can_manage_child_timers: v })} />
+              <span style={{ color: "#888", fontSize: 12 }}>{t("users.edit.can_manage_child_timers_desc")}</span>
             </div>
           </div>
         )}
+
+        {/* is_parent — adult+ only */}
+        {isAdult && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ color: "#aaa", fontSize: 13, marginBottom: 6 }}>{t("users.edit.is_parent")}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <Toggle on={f.is_parent} onChange={v => setF({ ...f, is_parent: v })} />
+              <span style={{ color: "#888", fontSize: 12 }}>{t("users.edit.is_parent_desc")}</span>
+            </div>
+            {f.is_parent && childCandidates.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ color: "#aaa", fontSize: 12, marginBottom: 6 }}>{t("users.edit.managed_children")}</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {childCandidates.map(c => {
+                    const selected = f.managed_children_arr.includes(c.username);
+                    return (
+                      <div
+                        key={c.username}
+                        onClick={() => setF({
+                          ...f,
+                          managed_children_arr: selected
+                            ? f.managed_children_arr.filter(u => u !== c.username)
+                            : [...f.managed_children_arr, c.username],
+                        })}
+                        style={{
+                          padding: "4px 10px", borderRadius: 12, cursor: "pointer", fontSize: 13,
+                          background: selected ? "#1a4a2a" : "#222",
+                          border: `1px solid ${selected ? "#4caf50" : "#444"}`,
+                          color: selected ? "#4caf50" : "#aaa",
+                        }}
+                      >
+                        {c.avatar} {c.display_name}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* pin_required — child/teen only */}
+        {isChild && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ color: "#aaa", fontSize: 13, marginBottom: 6 }}>{t("users.edit.pin_required")}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <Toggle on={f.pin_required} onChange={v => setF({ ...f, pin_required: v })} />
+              <span style={{ color: "#888", fontSize: 12 }}>{t("users.edit.pin_required_desc")}</span>
+            </div>
+          </div>
+        )}
+
+        <label style={S.label}>{t("users.notify_channel_label")}</label>
+        <select style={S.select} value={f.notify_channel} onChange={e => setF({ ...f, notify_channel: e.target.value })}>
+          <option value="sound_node">{t("users.notify_channel.sound_node")}</option>
+          <option value="push">{t("users.notify_channel.push")}</option>
+          <option value="chat">{t("users.notify_channel.chat")}</option>
+          <option value="silent">{t("users.notify_channel.silent")}</option>
+        </select>
 
         {error && <div style={S.err}>{error}</div>}
         <div style={S.row}>
@@ -612,6 +713,26 @@ function EditModal({ user, onDone, onError, error }: { user: KaareUser; onDone: 
           <button type="button" style={S.btn("#333")} onClick={onDone}>{t("users.edit.cancel")}</button>
         </div>
       </form>
+
+      {/* PIN recovery — separate from save form */}
+      <div style={{ borderTop: "1px solid #2a2a2a", marginTop: 16, paddingTop: 16 }}>
+        <div style={{ color: "#666", fontSize: 12, marginBottom: 8 }}>{t("users.edit.pin_recovery_label")}</div>
+        {tempPin ? (
+          <div style={{ background: "#1a1a1a", borderRadius: 8, padding: "10px 14px", fontFamily: "monospace" }}>
+            <span style={{ color: "#4caf50", fontSize: 20, letterSpacing: 4 }}>{tempPin}</span>
+            <span style={{ color: "#555", fontSize: 11, marginLeft: 12 }}>{t("users.edit.pin_recovery_expires", { minutes: 10 })}</span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={pinLoading}
+            onClick={handleGeneratePin}
+            style={{ ...S.btn("#2a2a2a"), fontSize: 13, opacity: pinLoading ? 0.6 : 1 }}
+          >
+            {pinLoading ? t("users.edit.pin_recovery_generating") : t("users.edit.pin_recovery_btn")}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

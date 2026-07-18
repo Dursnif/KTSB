@@ -26,6 +26,7 @@ import logging
 import os
 import re
 import socket
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -89,7 +90,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("dev_meeting")
 
-# ── Konfigurasjon ─────────────────────────────────────────────────────────────
+# ── Configuration ─────────────────────────────────────────────────────────────
 DEV_DIR      = Path("/kaare/state/memory/dev_meetings")
 LATEST_PATH  = Path("/kaare/state/memory/dev_meeting_latest.md")
 
@@ -198,7 +199,7 @@ def _parse_kare_resp(resp: dict) -> tuple[str, list]:
     return content, tool_calls
 
 
-# ── Hjelpefunksjoner ──────────────────────────────────────────────────────────
+# ── Helper functions ──────────────────────────────────────────────────────────
 def _load(path: str) -> str:
     try:
         return Path(path).read_text(encoding="utf-8").strip()
@@ -262,11 +263,8 @@ def _load_mechanic_memory() -> str:
         return ""
 
 
-def _get_memory_context() -> str:
-    """
-    Fetch recent STM daily summaries + LTM episodes for meeting context.
-    Returns a formatted block, or empty string if nothing is available.
-    """
+def _get_memory_context(lang: str = "nb") -> str:
+    """Fetch recent STM daily summaries + LTM episodes for meeting context."""
     parts = []
     try:
         from kaare_core.memory.long_term import load_recent_daily_summaries
@@ -274,8 +272,8 @@ def _get_memory_context() -> str:
         if entries:
             lines = []
             for e in reversed(entries):
-                lines.append(f"[{e['date']}] ({e['count']} interaksjoner):\n{e['summary']}")
-            parts.append("Daglige STM-sammendrag (siste 3 dager):\n" + "\n\n".join(lines))
+                lines.append(t("meet_mem_daily_item", lang, date=e["date"], count=e["count"], summary=e["summary"]))
+            parts.append(t("meet_mem_daily_header", lang) + "\n" + "\n\n".join(lines))
     except Exception as e:
         log.warning("Could not load STM daily summaries: %s", e)
 
@@ -289,8 +287,8 @@ def _get_memory_context() -> str:
         if rows:
             lines = []
             for i, (narrative, topics) in enumerate(reversed(rows), 1):
-                lines.append(f"Episode {i} (temaer: {topics or 'ukjent'}):\n{narrative}")
-            parts.append("Siste komprimerte episoder (LTM):\n" + "\n\n".join(lines))
+                lines.append(t("meet_mem_episode_item", lang, n=i, topics=topics or t("meet_mem_topic_unknown", lang), narrative=narrative))
+            parts.append(t("meet_mem_episodes_header", lang) + "\n" + "\n\n".join(lines))
     except Exception as e:
         log.warning("Could not load LTM episodes: %s", e)
 
@@ -300,16 +298,16 @@ def _get_memory_context() -> str:
             lines = prev.splitlines()
             # Extract the proposals + last conversation turns (last 40 lines)
             excerpt = "\n".join(lines[-40:])
-            parts.append(f"Gårsdagens utviklingsmøte (avslutning):\n{excerpt}")
+            parts.append(t("meet_mem_prev_meeting", lang, excerpt=excerpt))
     except Exception as e:
         log.warning("Could not load previous dev meeting: %s", e)
 
     if not parts:
         return ""
-    return "--- MINNE OG INTERAKSJONSHISTORIKK ---\n" + "\n\n".join(parts)
+    return t("meet_mem_header", lang) + "\n" + "\n\n".join(parts)
 
 
-async def _run_health_check() -> str:
+async def _run_health_check(lang: str = "nb") -> str:
     """Run scripts/health_check.py --json and return a formatted text summary for the meeting."""
     try:
         env = {**os.environ, "PYTHONPATH": "/kaare"}
@@ -322,11 +320,11 @@ async def _run_health_check() -> str:
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=35)
         data = json.loads(stdout.decode())
     except asyncio.TimeoutError:
-        return t("meet_system_timeout", get_lang("global"))
+        return t("meet_system_timeout", lang)
     except Exception as e:
-        return f"[Systemsjekk feilet: {e}]"
+        return t("meet_health_failed", lang, error=e)
 
-    lines = [f"SYSTEMSJEKK VED MØTESTART ({data['timestamp']}):"]
+    lines = [t("meet_health_header", lang, timestamp=data["timestamp"])]
 
     # Services
     svc_results = data.get("services", {}).get("results", [])
@@ -334,62 +332,54 @@ async def _run_health_check() -> str:
     svc_fail = data.get("services", {}).get("failed", 0)
     svc_down = [s for s in svc_results if not s["ok"]]
     if svc_down:
-        lines.append(f"  ⚠ TJENESTER NEDE ({svc_fail} av {svc_up + svc_fail}):")
+        lines.append(t("meet_health_services_down", lang, failed=svc_fail, total=svc_up + svc_fail))
         for s in svc_down:
             lines.append(f"    – {s['name']}: {s['detail']}")
     else:
-        lines.append(f"  ✓ Tjenester: alle {svc_up} oppe og svarer")
+        lines.append(t("meet_health_services_ok", lang, count=svc_up))
 
     # Imports
     imp_errors = data.get("imports", {}).get("errors", [])
     imp_ok     = data.get("imports", {}).get("passed", 0)
     imp_skip   = data.get("imports", {}).get("skipped", 0)
     if imp_errors:
-        lines.append(f"  ⚠ IMPORT-FEIL ({len(imp_errors)}):")
+        lines.append(t("meet_health_import_errors", lang, count=len(imp_errors)))
         for e in imp_errors:
             lines.append(f"    – {e['name']}: {e['detail']}")
     else:
-        skip_note = (
-            f" ({imp_skip} hoppet over — voice-venv-moduler som chromecast/airplay/dlna "
-            f"krever services/voice/venv/, ikke en feil)"
-            if imp_skip else ""
-        )
-        lines.append(f"  ✓ Importer: {imp_ok} OK{skip_note}")
+        skip_note = t("meet_health_import_skip", lang, count=imp_skip) if imp_skip else ""
+        lines.append(t("meet_health_imports_ok", lang, count=imp_ok, skip=skip_note))
 
     # Configs
     cfg_errors = data.get("configs", {}).get("errors", [])
     cfg_ok     = data.get("configs", {}).get("passed", 0)
     if cfg_errors:
-        lines.append(f"  ⚠ KONFIG-FEIL ({len(cfg_errors)}):")
+        lines.append(t("meet_health_config_errors", lang, count=len(cfg_errors)))
         for e in cfg_errors:
             lines.append(f"    – {e['name']}: {e['detail']}")
     else:
-        lines.append(f"  ✓ Konfig: {cfg_ok} filer OK")
+        lines.append(t("meet_health_config_ok", lang, count=cfg_ok))
 
     total_errors = data.get("total_errors", 0)
     if total_errors == 0:
-        lines.append(t("meet_system_ok", get_lang("global")))
+        lines.append(t("meet_system_ok", lang))
     else:
-        lines.append(t("meet_system_errors", get_lang("global"), count=total_errors))
+        lines.append(t("meet_system_errors", lang, count=total_errors))
     return "\n".join(lines)
 
 
-# ── Kåres verktøy i møtet ─────────────────────────────────────────────────────
+# ── Kåre's tools in the meeting ───────────────────────────────────────────────
 # All Mechanic tools (except sandkasse) + Kåre's own domain tools.
 
 _KARE_MEETING_TOOLS = _build_kare_dev_tools()
 
 
-# ── Kåre-kall (møte – med verktøystøtte) ─────────────────────────────────────
-async def _kare_investigate(system_prompt: str) -> str:
-    """Kåre undersøker med sine verktøy og returnerer et sammendrag av funn."""
+# ── Kåre calls (meeting – with tool support) ──────────────────────────────────
+async def _kare_investigate(system_prompt: str, lang: str = "nb") -> str:
+    """Kåre investigates with his tools and returns a summary of findings."""
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": (
-            "Undersøk systemet nå. Bruk alle verktøyene dine for å finne reelle problemer "
-            "og mønstre fra siste 24 timer. Start bredt: les logg-filer, søk i argus, "
-            "sjekk minnet. Zoom inn på det viktigste. Bruk verktøyene – ikke gjett."
-        )},
+        {"role": "user", "content": t("meet_kare_investigate_user", lang)},
     ]
 
     for _ in range(MAX_INVEST_ROUNDS):
@@ -416,7 +406,7 @@ async def _kare_investigate(system_prompt: str) -> str:
             if stripped:
                 return stripped
             # Think-block used all tokens — retry without thinking
-            log.warning("[Kåre investigate] Tom respons (thinking brukte alle tokens) — retry uten thinking")
+            log.warning("[Kåre investigate] Empty response (think used all tokens) — retry without thinking")
             try:
                 async with httpx.AsyncClient(timeout=TIMEOUT_SECS) as client:
                     r = await client.post(
@@ -426,10 +416,10 @@ async def _kare_investigate(system_prompt: str) -> str:
                     )
                     r.raise_for_status()
                     content, _ = _parse_kare_resp(r.json())
-                    return _strip_think(content) or "[Ingen funn]"
+                    return _strip_think(content) or "[No findings]"
             except Exception as e:
-                log.error("Kåre investigate retry feilet: %s", e)
-                return "[Ingen funn]"
+                log.error("Kåre investigate retry failed: %s", e)
+                return "[No findings]"
 
         messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
         for tc in tool_calls:
@@ -448,7 +438,7 @@ async def _kare_investigate(system_prompt: str) -> str:
             messages.append({"role": "tool", "content": result, "name": name})
 
     # Force a summary after max rounds — always without thinking to avoid empty responses
-    messages.append({"role": "user", "content": "Oppsummer funnene dine. Hva er de viktigste problemene?"})
+    messages.append({"role": "user", "content": t("meet_kare_summarize_user", lang)})
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT_SECS) as client:
             r = await client.post(
@@ -458,7 +448,7 @@ async def _kare_investigate(system_prompt: str) -> str:
             )
             r.raise_for_status()
             content, _ = _parse_kare_resp(r.json())
-            return _strip_think(content) or "[Ingen funn]"
+            return _strip_think(content) or "[No findings]"
     except httpx.HTTPStatusError as e:
         log.error("Kåre investigate-oppsummering feilet: %s\nBody: %s", e, e.response.text[:1000])
         return t("meet_kare_failed", get_lang("global"), error=e)
@@ -467,7 +457,7 @@ async def _kare_investigate(system_prompt: str) -> str:
 
 
 async def _ask_kare(messages: list[dict]) -> str:
-    """Kåre i diskusjonsfasen – med verktøystøtte (maks 2 tool-runder)."""
+    """Kåre in the discussion phase – with tool support (max 2 tool rounds)."""
     current = list(_trim(messages, KARE_WINDOW))
 
     for _ in range(2):
@@ -494,7 +484,7 @@ async def _ask_kare(messages: list[dict]) -> str:
             if stripped:
                 return stripped
             # Think-block used all tokens — retry without thinking to get an actual response
-            log.warning("[Kåre discuss] Tom respons (thinking brukte alle tokens) — retry uten thinking")
+            log.warning("[Kåre discuss] Empty response (think used all tokens) — retry without thinking")
             try:
                 async with httpx.AsyncClient(timeout=TIMEOUT_SECS) as client:
                     r = await client.post(
@@ -504,10 +494,10 @@ async def _ask_kare(messages: list[dict]) -> str:
                     )
                     r.raise_for_status()
                     content, _ = _parse_kare_resp(r.json())
-                    return _strip_think(content) or "[Ingen respons]"
+                    return _strip_think(content) or "[No response]"
             except Exception as e:
-                log.error("Kåre discuss retry feilet: %s", e)
-                return "[Ingen respons]"
+                log.error("Kåre discuss retry failed: %s", e)
+                return "[No response]"
 
         current.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
         for tc in tool_calls:
@@ -535,31 +525,21 @@ async def _ask_kare(messages: list[dict]) -> str:
             )
             r.raise_for_status()
             content, _ = _parse_kare_resp(r.json())
-            return _strip_think(content) or "[Ingen respons]"
+            return _strip_think(content) or "[No response]"
     except httpx.HTTPStatusError as e:
-        log.error("Kåre diskusjon-kall feilet: %s\nBody: %s", e, e.response.text[:1000])
-        return f"[Kåre utilgjengelig: {e}]"
+        log.error("Kåre discuss force-reply failed: %s\nBody: %s", e, e.response.text[:1000])
+        return t("meet_kare_unavailable", get_lang("global"), error=e)
     except Exception as e:
-        log.error("Kåre diskusjon-kall feilet: %s", e)
-        return f"[Kåre utilgjengelig: {e}]"
+        log.error("Kåre discuss force-reply failed: %s", e)
+        return t("meet_kare_unavailable", get_lang("global"), error=e)
 
 
-# ── Mechanic ───────────────────────────────────────────────────────────────
-async def _mechanic_investigate(system_prompt: str) -> str:
-    """Mechanic i undersøker-modus — graver i systemet med fokuserte verktøy."""
+# ── Mechanic ──────────────────────────────────────────────────────────────────
+async def _mechanic_investigate(system_prompt: str, lang: str = "nb") -> str:
+    """Mechanic in investigator mode — digs into the system with focused tools."""
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": (
-            "Undersøk systemet. Bruk søk_argus, les_logg, git_log, sjekk_tjenester "
-            "og sjekk_ressurser for å finne reelle problemer fra siste 24 timer. "
-            "Start bredt – logger, tjenestestatus, siste kodeendringer. "
-            "Kall også inspiser_system(action='trace_mønstre', antall=100, source='all') og inkluder i rapporten: "
-            "antall traces per source (user/refl/meet), gjennomsnittlig latency, hyppigste tools, "
-            "andel 9B-fallback per source (korrelerer de med bestemt tidspunkt?), "
-            "og traces med unormalt høy latency eller recovered=True (tomme svar). "
-            "Oppsummer funnene konkret til slutt. Ikke gjett. "
-            "Avslutt med hukommelse(action='skriv') for å lagre 1–2 viktige tekniske observasjoner."
-        )},
+        {"role": "user", "content": t("meet_mechanic_investigate_user", lang)},
     ]
     return await _mechanic_ask(
         messages=messages,
@@ -569,18 +549,13 @@ async def _mechanic_investigate(system_prompt: str) -> str:
     )
 
 
-async def _mechanic_kritiker(kare_funn: str, mechanic_memory: str) -> str:
-    """Mechanic i kritiker-modus — stiller kritiske spørsmål til Kåres funn."""
+async def _mechanic_kritiker(kare_funn: str, mechanic_memory: str, lang: str = "nb") -> str:
+    """Mechanic in critic mode — asks critical questions about Kåre's findings."""
     pers = _load_mechanic_pers("kritiker")
-    mem_block = f"\n\n--- DIN HUKOMMELSE ---\n{mechanic_memory}" if mechanic_memory else ""
+    mem_block = f"\n\n{t('meet_mechanic_your_mem_header', lang)}\n{mechanic_memory}" if mechanic_memory else ""
     messages = [
         {"role": "system", "content": f"/no_think\n{pers}{mem_block}"},
-        {"role": "user", "content": (
-            f"Kåre har rapportert følgende fra sin undersøkelse:\n\n{kare_funn}\n\n"
-            "Still 3–5 kritiske, konkrete spørsmål. "
-            "Hva ble ikke sjekket? Hva er antatt, ikke bekreftet? Hva mangler tall? "
-            "Gi ingen svar eller løsninger — bare spørsmål."
-        )},
+        {"role": "user", "content": t("meet_mechanic_kritiker_user", lang, kare_funn=kare_funn)},
     ]
     return await _mechanic_ask(
         messages=messages,
@@ -591,7 +566,7 @@ async def _mechanic_kritiker(kare_funn: str, mechanic_memory: str) -> str:
 
 
 async def _ask_mechanic(messages: list[dict]) -> str:
-    """Mechanic i diskusjonsfasen – kan bruke undersøkelsesverktøy."""
+    """Mechanic in the discussion phase – can use investigation tools."""
     return await _mechanic_ask(
         messages=_trim(messages, MECHANIC_WINDOW),
         url=MECHANIC_URL,
@@ -600,7 +575,7 @@ async def _ask_mechanic(messages: list[dict]) -> str:
     )
 
 
-# ── Møteleder ─────────────────────────────────────────────────────────────────
+# ── Meeting leader ────────────────────────────────────────────────────────────
 def _get_kare_language() -> str:
     try:
         data = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
@@ -639,6 +614,101 @@ _TOOL_NOTE_TMPL: dict[str, str] = {
     "de": " In der GUI deaktiviert: {tools}.",
 }
 
+_ADMIN_COMMENT_TMPL: dict[str, str] = {
+    "nb": (
+        "**Admin-kommentar til møterapporten:**\n{comment}\n\n"
+        "VIKTIG: Presenter denne kommentaren ordrett i din åpningsmelding. "
+        "Ikke omformuler, ikke forkorte, ikke parafrasere. Sitér admin direkte."
+    ),
+    "en": (
+        "**Admin comment on the meeting report:**\n{comment}\n\n"
+        "IMPORTANT: Present this comment verbatim in your opening message. "
+        "Do not rephrase, shorten, or paraphrase it. Quote the admin directly."
+    ),
+    "de": (
+        "**Admin-Kommentar zum Meetingbericht:**\n{comment}\n\n"
+        "WICHTIG: Präsentiere diesen Kommentar wörtlich in deiner Eröffnungsnachricht. "
+        "Nicht umformulieren, kürzen oder paraphrasieren. Zitiere den Admin direkt."
+    ),
+}
+
+
+def _get_admin_comment(lang: str = "nb") -> str:
+    """Return the admin comment for the most recent dev-meeting report, if any."""
+    comments_dir = Path("/kaare/state/meeting_comments/dev")
+    try:
+        files = sorted(comments_dir.glob("*.txt"), reverse=True)
+        for f in files:
+            text = f.read_text(encoding="utf-8").strip()
+            if text:
+                return t("meet_admin_comment_prefix", lang, date=f.stem, text=text)
+    except Exception:
+        pass
+    return ""
+
+
+def _get_recent_changes(lang: str = "nb") -> str:
+    """Return a compact block of recent git commits + pending sync entries, capped at ~800 chars."""
+    parts: list[str] = []
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", "/kaare", "log", "--oneline", "--since=48 hours ago"],
+            capture_output=True, text=True, timeout=10,
+        )
+        commits = result.stdout.strip()
+        if commits:
+            parts.append(t("meet_changes_commits", lang, commits=commits[:400]))
+    except Exception:
+        pass
+
+    try:
+        pending = Path("/kaare/PENDING_SYNC.md")
+        if pending.exists():
+            lines = [
+                ln for ln in pending.read_text(encoding="utf-8").splitlines()
+                if ln.strip() and not ln.startswith("#")
+            ]
+            if lines:
+                parts.append(t("meet_changes_pending", lang, lines="\n".join(lines[:20])))
+    except Exception:
+        pass
+
+    if not parts:
+        return ""
+    raw = "\n\n".join(parts)
+    return raw[:800]
+
+
+def _get_prev_meeting_summaries(n: int = 3) -> str:
+    """Return the 'Forslag til forbedringer' section from the last n dev-meeting reports."""
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        files = sorted(
+            [f for f in DEV_DIR.glob("*.md") if f.stem != today],
+            reverse=True,
+        )[:n]
+    except Exception:
+        return ""
+
+    sections: list[str] = []
+    for f in files:
+        try:
+            text = f.read_text(encoding="utf-8")
+            # Try to extract '## Forslag til forbedringer'
+            m = re.search(r"##\s*(?:Forslag til forbedringer|Improvement Proposals|Verbesserungsvorschläge)\s*\n(.*?)(?=\n##|\Z)", text, re.DOTALL)
+            if m:
+                excerpt = m.group(1).strip()[:300]
+            else:
+                m2 = re.search(r"##\s*(?:Samtale|Conversation|Gespräch)\s*\n(.*?)(?=\n##|\Z)", text, re.DOTALL)
+                excerpt = (m2.group(1).strip()[:200] if m2 else text.strip()[:200])
+            if excerpt:
+                sections.append(f"**{f.stem}:**\n{excerpt}")
+        except Exception:
+            continue
+
+    return "\n\n".join(sections)
+
 
 def _load_leder_dev_preset(lang: str = "nb") -> str:
     cfg = _load_dev_meeting_cfg()
@@ -654,9 +724,15 @@ def _load_leder_dev_preset(lang: str = "nb") -> str:
         return (_LEDER_PRESET_DIR / "dev_standard.md").read_text(encoding="utf-8").strip()
 
 
-def _build_leder_system() -> str:
+def _build_leder_system(
+    cloud_ok: bool = True,
+    health_block: str = "",
+    changes_block: str = "",
+    prev_block: str = "",
+    admin_topic: str = "",
+    admin_comment: str = "",
+) -> str:
     hostname = socket.gethostname()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
     lang = _get_kare_language()
     ps_role = _get_mechanic_meeting_role()
     ps_desc = _PS_ROLE_DESC.get(lang, _PS_ROLE_DESC["nb"]).get(ps_role, ps_role)
@@ -665,8 +741,31 @@ def _build_leder_system() -> str:
     disabled_ps = [t for t, on in ps_perms.items() if on is False]
     tool_note = _TOOL_NOTE_TMPL.get(lang, _TOOL_NOTE_TMPL["nb"]).format(tools=", ".join(disabled_ps)) if disabled_ps else ""
 
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
     preset_text = _load_leder_dev_preset(lang)
-    return preset_text.format(ps_desc=ps_desc, hostname=hostname, time=now, tool_note=tool_note)
+    base = preset_text.format(ps_desc=ps_desc, hostname=hostname, time=now, tool_note=tool_note)
+
+    sep = "\n\n---\n\n"
+    blocks = [base]
+
+    if not cloud_ok:
+        blocks.append(t("meet_cloud_offline", lang))
+    if health_block:
+        blocks.append(t("meet_leder_sys_health", lang, block=health_block))
+    if changes_block:
+        blocks.append(t("meet_leder_sys_changes", lang, block=changes_block))
+    if prev_block:
+        blocks.append(t("meet_leder_sys_prev", lang, block=prev_block))
+    if admin_comment:
+        tmpl = _ADMIN_COMMENT_TMPL.get(lang, _ADMIN_COMMENT_TMPL["nb"])
+        blocks.append(tmpl.format(comment=admin_comment))
+    if admin_topic:
+        blocks.append(t("meet_leder_sys_topic", lang, topic=admin_topic))
+
+    # Time goes last to preserve KV-cache on the static blocks above
+    blocks.append(t("meet_leder_sys_time", lang, time=now))
+
+    return sep.join(blocks)
 
 
 _LEDER_TOOLS = [
@@ -674,7 +773,7 @@ _LEDER_TOOLS = [
         "type": "function",
         "function": {
             "name": "nettsøk",
-            "description": "Søk etter teknisk informasjon på nettet.",
+            "description": "Search for technical information on the web.",
             "parameters": {
                 "type": "object",
                 "properties": {"query": {"type": "string"}},
@@ -687,9 +786,9 @@ _LEDER_TOOLS = [
         "function": {
             "name": "systemsjekk",
             "description": (
-                "Kjør en komplett systemsjekk: Python-importer, konfig-filer og live tjenestestatus. "
-                "Bruk dette hvis du mistenker at en tjeneste har krasjet siden møtestart, "
-                "eller for å bekrefte at en tjeneste er oppe igjen etter feilsøking."
+                "Run a full system check: Python imports, config files, and live service status. "
+                "Use this if you suspect a service has crashed since meeting start, "
+                "or to confirm a service is back up after troubleshooting."
             ),
             "parameters": {
                 "type": "object",
@@ -733,7 +832,7 @@ async def _ask_leder(messages: list[dict], with_tools: bool = False) -> str:
         content, tool_calls = _parse_kare_resp(resp)
 
         if not tool_calls or not with_tools or tool_round >= 3:
-            return _strip_think(content) or "[Ingen respons]"
+            return _strip_think(content) or "[No response]"
 
         current_messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
         for tc in tool_calls:
@@ -747,7 +846,7 @@ async def _ask_leder(messages: list[dict], with_tools: bool = False) -> str:
             result = await _execute_leder_tool(name, args)
             current_messages.append({"role": "tool", "content": result, "name": name})
 
-    return "[Ingen respons]"
+    return "[No response]"
 
 
 async def _leder_sett_agenda(
@@ -757,77 +856,64 @@ async def _leder_sett_agenda(
     prev_summary: str = "",
     mechanic_kritikk: str = "",
     health_summary: str = "",
+    leder_system: str = "",
+    lang: str = "nb",
 ) -> str:
-    """Møteleder leser begge rapporter + kritikk og setter konkret agenda for diskusjonsrunden."""
-    kontekst = ""
-    if prev_summary:
-        kontekst = f"Forrige gruppe oppsummert: {prev_summary}\n\n"
-
+    """Meeting leader reads both reports + critique and sets a concrete agenda for the discussion round."""
+    context = t("meet_leder_agenda_context", lang, summary=prev_summary) if prev_summary else ""
     kritikk_block = (
-        f"**Mechanics kritiske spørsmål til Kåres funn:**\n{mechanic_kritikk[:800]}\n\n"
+        t("meet_leder_agenda_kritikk", lang, text=mechanic_kritikk[:800])
         if mechanic_kritikk else ""
     )
 
-    health_block = (
-        f"**Systemstatus ved møtestart:**\n{health_summary}\n\n"
-        if health_summary else ""
-    )
-
     messages = [
-        {"role": "system", "content": _build_leder_system()},
-        {"role": "user", "content": (
-            f"{health_block}"
-            f"{kontekst}"
-            f"Undersøkelsesfasen er ferdig. Her er funnene:\n\n"
-            f"**Kåres funn (interaksjoner og systemhendelser):**\n{kare_funn[:1500]}\n\n"
-            f"**Mechanics funn (kode, logger, tjenester):**\n{mechanic_funn[:1500]}\n\n"
-            f"{kritikk_block}"
-            f"Åpne gruppe {group} av møtet. Velg 1-2 konkrete temaer å fokusere på basert på funnene. "
-            f"Vær spesifikk: pek på filer, tjenester eller mønstre de skal gå dypere inn i. "
-            f"Be Mechanic starte undersøkelsen."
+        {"role": "system", "content": leder_system or _build_leder_system()},
+        {"role": "user", "content": t(
+            "meet_leder_agenda_user", lang,
+            context=context,
+            kare_funn=kare_funn[:1500],
+            mechanic_funn=mechanic_funn[:1500],
+            kritikk_block=kritikk_block,
+            group=group,
         )},
     ]
     return await _ask_leder(messages, with_tools=False)
 
 
-async def _leder_styr(conversation_tail: str, round_num: int) -> str:
-    """Møteleder styrer diskusjonen aktivt mellom runder."""
+async def _leder_styr(conversation_tail: str, round_num: int, leder_system: str = "", lang: str = "nb") -> str:
+    """Meeting leader actively directs the discussion between rounds."""
     messages = [
-        {"role": "system", "content": _build_leder_system()},
-        {"role": "user", "content": (
-            f"Runde {round_num} er ferdig. Siste del av diskusjonen:\n{conversation_tail}\n\n"
-            "Er de på rett spor? Styr dem: be om mer dybde, bytt fokus, eller stopp et sidespor. "
-            "Maks 2 setninger. Gi klar retning for neste runde."
+        {"role": "system", "content": leder_system or _build_leder_system()},
+        {"role": "user", "content": t("meet_leder_styr_user", lang, round_num=round_num, conv_tail=conversation_tail)},
+    ]
+    return await _ask_leder(messages, with_tools=False)
+
+
+async def _leder_presenter_admin_input(
+    admin_input: str, kare_funn: str, mechanic_funn: str, leder_system: str = "", lang: str = "nb"
+) -> str:
+    """Meeting leader raises admin input as the first item after the investigation phase."""
+    messages = [
+        {"role": "system", "content": leder_system or _build_leder_system()},
+        {"role": "user", "content": t(
+            "meet_leder_admin_input_user", lang,
+            kare_funn=kare_funn[:800],
+            mechanic_funn=mechanic_funn[:800],
+            admin_input=admin_input,
         )},
     ]
     return await _ask_leder(messages, with_tools=False)
 
 
-async def _leder_presenter_admin_input(admin_input: str, kare_funn: str, mechanic_funn: str) -> str:
-    """Møteleder løfter admin-innspill som første sak etter undersøkelsesfasen."""
-    messages = [
-        {"role": "system", "content": _build_leder_system()},
-        {"role": "user", "content": (
-            f"Undersøkelsesfasen er ferdig. Funnene er:\n\n"
-            f"Kåre: {kare_funn[:800]}\n\nMechanic: {mechanic_funn[:800]}\n\n"
-            f"Admin har sendt inn dette innspillet til møtet:\n\"{admin_input}\"\n\n"
-            "Åpne møtet med å presentere admin sitt innspill. Koble det gjerne til funnene hvis relevant. "
-            "Be Mechanic starte med sin vurdering. Maks 3 setninger."
-        )},
-    ]
-    return await _ask_leder(messages, with_tools=False)
-
-
-async def _leder_vurder(conv_text: str, group: int, max_groups: int) -> tuple[bool, str]:
-    """Møteleder avgjør om vi fortsetter til neste gruppe."""
+async def _leder_vurder(conv_text: str, group: int, max_groups: int, leder_system: str = "", lang: str = "nb") -> tuple[bool, str]:
+    """Meeting leader decides whether to continue to the next group."""
     if group >= max_groups:
         return False, t("meet_max_groups", get_lang("global"))
     messages = [
-        {"role": "system", "content": _build_leder_system()},
-        {"role": "user", "content": (
-            f"Gruppe {group} av {max_groups} er ferdig.\n\n"
-            f"Samtalen:\n{conv_text[-2000:]}\n\n"
-            "Svar KUN med: 'FORTSETT: <begrunnelse>' eller 'AVSLUTT: <begrunnelse>'."
+        {"role": "system", "content": leder_system or _build_leder_system()},
+        {"role": "user", "content": t(
+            "meet_leder_vurder_user", lang,
+            group=group, max_groups=max_groups, conv_tail=conv_text[-2000:]
         )},
     ]
     svar = await _ask_leder(messages)
@@ -836,22 +922,39 @@ async def _leder_vurder(conv_text: str, group: int, max_groups: int) -> tuple[bo
 
 
 # ── Cloud ─────────────────────────────────────────────────────────────────────
-async def _ask_cloud(conversation: str, is_final: bool) -> str:
-    env     = _load_env("/kaare/configs/nvidia.env")
-    api_key = env.get("NVIDIA_API_KEY", "")
+
+async def _probe_cloud() -> bool:
+    """Return True if the cloud endpoint accepts our API key."""
+    cloud_cfg = _llm("cloud")
+    api_key_env = cloud_cfg.get("api_key_env", "CLOUD_API_KEY")
+    api_key = _load_env("/kaare/configs/nvidia.env").get(api_key_env, "")
+    if not api_key:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post(
+                CLOUD_URL,
+                json={"model": CLOUD_MODEL, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1},
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            )
+            return r.status_code < 500
+    except Exception:
+        return False
+
+
+async def _ask_cloud(conversation: str, is_final: bool, lang: str = "nb") -> str:
+    cloud_cfg = _llm("cloud")
+    api_key_env = cloud_cfg.get("api_key_env", "CLOUD_API_KEY")
+    api_key = _load_env("/kaare/configs/nvidia.env").get(api_key_env, "")
     if not api_key:
         return t("meet_no_api_key", get_lang("global"))
 
     instruction = (
-        "Gi en avsluttende vurdering av forslagene. Hvilke er mest verdifulle? Er det noe de gikk glipp av? Maks 5 setninger."
+        t("meet_cloud_instruction_final", lang)
         if is_final else
-        "Gi ett konkret teknisk innspill – noe de har oversett eller en bedre løsning. Maks 3 setninger."
+        t("meet_cloud_instruction_mid", lang)
     )
-    system = (
-        "Du er en ekstern teknisk ekspert som kommenterer et utviklingsmøte mellom "
-        f"Kåre (hjemme-AI) og Mechanic (teknisk problemløser). {instruction} "
-        "Vær direkte. Ikke presenter deg selv."
-    )
+    system = t("meet_cloud_system", lang, instruction=instruction)
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT_SECS) as client:
             r = await client.post(
@@ -860,7 +963,7 @@ async def _ask_cloud(conversation: str, is_final: bool) -> str:
                     "model": CLOUD_MODEL,
                     "messages": [
                         {"role": "system", "content": system},
-                        {"role": "user", "content": f"Møtet så langt:\n\n{conversation}\n\nDitt innspill:"},
+                        {"role": "user", "content": t("meet_cloud_user", lang, conversation=conversation)},
                     ],
                     "temperature": 0.4,
                     "max_tokens": 300,
@@ -868,18 +971,20 @@ async def _ask_cloud(conversation: str, is_final: bool) -> str:
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             )
             r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"].strip() or "[Cloud svarte ikke]"
+            return r.json()["choices"][0]["message"]["content"].strip() or t("meet_cloud_no_response", lang)
     except Exception as e:
-        log.error("Cloud-kall feilet: %s", e)
-        return f"[Cloud utilgjengelig: {e}]"
+        log.error("Cloud call failed: %s", e)
+        return t("meet_cloud_unavailable", lang, error=e)
 
 
-# ── Rapport ───────────────────────────────────────────────────────────────────
+# ── Report ────────────────────────────────────────────────────────────────────
 def _write_report(
     date_str: str,
     kare_funn: str,
     mechanic_funn: str,
     exchanges: list[tuple[str, str]],
+    cloud_ok: bool = True,
+    lang: str = "nb",
 ) -> Path:
     DEV_DIR.mkdir(parents=True, exist_ok=True)
     out_path = DEV_DIR / f"{date_str}.md"
@@ -890,31 +995,32 @@ def _write_report(
             if linje.upper().startswith("FORSLAG:"):
                 forslag.append(linje.strip())
 
+    online_line = "- Online" if cloud_ok else t("meet_report_online_offline", lang)
     lines = [
-        f"# Utviklingsmøte – {date_str}",
+        t("meet_report_title", lang, date=date_str),
         "",
-        "## Deltakere",
+        t("meet_report_participants", lang),
         "- Kåre",
         "- Mechanic",
         "- Møteleder",
-        "- Online",
+        online_line,
         "",
-        "## Undersøkelsesfunn",
+        t("meet_report_findings", lang),
         "",
-        "### Kåres funn",
+        t("meet_report_kare_findings", lang),
         kare_funn,
         "",
-        "### Mechanics funn",
+        t("meet_report_mechanic_findings", lang),
         mechanic_funn,
         "",
     ]
     if forslag:
-        lines += ["## Forslag til forbedringer", ""]
+        lines += [t("meet_report_proposals", lang), ""]
         for f in forslag:
             lines.append(f"- {f}")
         lines.append("")
 
-    lines += ["## Samtale", ""]
+    lines += [t("meet_report_conversation", lang), ""]
     for agent, text in exchanges:
         lines.append(f"**[{agent}]**")
         lines.append(text)
@@ -925,11 +1031,11 @@ def _write_report(
     tmp.write_text(content, encoding="utf-8")
     tmp.replace(out_path)
     LATEST_PATH.write_text(content, encoding="utf-8")
-    log.info("Utviklingsrapport skrevet: %s", out_path)
+    log.info("Development report written: %s", out_path)
     return out_path
 
 
-# ── Hovedflyt ─────────────────────────────────────────────────────────────────
+# ── Main flow ─────────────────────────────────────────────────────────────────
 async def main() -> None:
     global _CURRENT_MEET_RID
     from adapters.llm_adapter import _current_rid as _rid_ctx_meet, _current_source as _src_ctx_meet
@@ -940,6 +1046,7 @@ async def main() -> None:
     now       = datetime.now()
     date_str  = now.strftime("%Y-%m-%d")
     now_str   = now.strftime("%Y-%m-%d %H:%M")
+    _lang     = _get_kare_language()
     exchanges: list[tuple[str, str]] = []
     max_groups = MAX_ROUNDS // ROUNDS_PER_GROUP
 
@@ -959,104 +1066,107 @@ async def main() -> None:
     except Exception:
         pass
 
-    _topic_block = f"\nADMIN HAR FORESLÅTT TEMA FOR DETTE MØTET: {_admin_topic}\nDette skal prioriteres i undersøkelses- og diskusjonsfasen.\n" if _admin_topic else ""
+    _topic_block = t("meet_admin_topic_anchor", _lang, topic=_admin_topic) if _admin_topic else ""
+    _time_anchor = t("meet_time_anchor", _lang, time=now_str) + _topic_block
 
-    _time_anchor = (
-        f"NÅVÆRENDE TIDSPUNKT: {now_str}.\n"
-        "Fokuser KUN på hendelser fra de siste 24 timene. "
-        "Ignorer feil og hendelser som er eldre enn det – de er ikke relevante for dette møtet.\n"
-        f"{_topic_block}"
-    )
-
-    # ── Minne og interaksjonshistorikk ────────────────────────────────────────
-    _memory_ctx = _get_memory_context()
+    # ── Memory and interaction history ───────────────────────────────────────
+    _memory_ctx = _get_memory_context(_lang)
     _memory_block = f"\n\n{_memory_ctx}\n" if _memory_ctx else ""
 
-    # Mechanics personlige minne
+    # Mechanic's personal memory
     _mechanic_mem = _load_mechanic_memory()
-    _mechanic_mem_block = f"\n\n--- MECHANICS HUKOMMELSE ---\n{_mechanic_mem}\n" if _mechanic_mem else ""
+    _mechanic_mem_block = f"\n\n{t('meet_mechanic_mem_header', _lang)}\n{_mechanic_mem}\n" if _mechanic_mem else ""
 
-    # ── Systemsjekk ───────────────────────────────────────────────────────────
-    log.info("=== Systemsjekk ===")
-    _health_summary = await _run_health_check()
-    log.info("[Systemsjekk] %s", _health_summary.replace("\n", " ")[:200])
+    # ── System check ──────────────────────────────────────────────────────────
+    log.info("=== System check ===")
+    _health_summary = await _run_health_check(_lang)
+    log.info("[System check] %s", _health_summary.replace("\n", " ")[:200])
     _health_block = f"\n\n--- {_health_summary}\n"
 
-    # ── System-prompts ────────────────────────────────────────────────────────
+    # ── Cloud probe ───────────────────────────────────────────────────────────
+    _cloud_ok = await _probe_cloud()
+    log.info("[Cloud-probe] %s", "tilgjengelig" if _cloud_ok else "utilgjengelig")
+
+    # ── Meeting leader context blocks ─────────────────────────────────────────
+    log.info("=== Building meeting leader context ===")
+    _changes_block  = _get_recent_changes(_lang)
+    _prev_block     = _get_prev_meeting_summaries()
+    _admin_comment  = _get_admin_comment(_lang)
+    leder_system = _build_leder_system(
+        cloud_ok=_cloud_ok,
+        health_block=_health_summary,
+        changes_block=_changes_block,
+        prev_block=_prev_block,
+        admin_topic=_admin_topic,
+        admin_comment=_admin_comment,
+    )
+    log.info("[Møteleder system] %d tegn", len(leder_system))
+
+    # ── System prompts ────────────────────────────────────────────────────────
     kare_investigate_system = (
         f"{KARE_CORE}\n\n{KARE_BEHAVIOR}\n\n"
-        "--- UNDERSØKELSESFASE: UTVIKLINGSMØTE ---\n"
+        f"{t('meet_phase_investigate', _lang)}\n"
         f"{_time_anchor}"
         f"{_health_block}"
         f"{_memory_block}"
-        "Din oppgave: finn reelle problemer i systemet ved å søke i argus og minne.\n"
-        "Se etter: feil, mønstre som gjentar seg, ting du ikke klarer å svare på, "
-        "interaksjoner med dårlig utfall. Bruk verktøyene – ikke gjett.\n"
-        "Oppsummer funnene konkret og ærlig."
+        f"{t('meet_kare_investigate_task', _lang)}"
     )
 
     kare_discuss_system = (
         f"{KARE_CORE}\n\n{KARE_BEHAVIOR}\n\n"
-        "--- DISKUSJONSFASE: UTVIKLINGSMØTE ---\n"
+        f"{t('meet_phase_discuss', _lang)}\n"
         f"{_time_anchor}"
         f"{_health_block}"
         f"{_memory_block}"
-        "Du er i et teknisk møte med Mechanic. Evaluer forslagene kritisk fra ditt perspektiv.\n"
-        "Du kjenner systemet fra innsiden – hva stemmer, hva mangler, hva er viktigst?\n"
-        "Vær direkte. Svar alltid på norsk. Maks 5 setninger per innlegg."
+        f"{t('meet_kare_discuss_task', _lang, lang_respond=t('meet_lang_respond', _lang))}"
     )
 
     mechanic_investigate_system = (
         f"{_load_mechanic_pers('undersøker')}\n\n"
-        "--- UNDERSØKELSESFASE: UTVIKLINGSMØTE ---\n"
+        f"{t('meet_phase_investigate', _lang)}\n"
         f"{_time_anchor}"
         f"{_health_block}"
         f"{_memory_block}"
         f"{_mechanic_mem_block}"
-        "Din oppgave: kartlegg systemets nåværende tilstand med verktøyene dine.\n"
-        "Bruk søk_argus, les_logg, git_log, sjekk_tjenester og sjekk_ressurser.\n"
-        "Let etter: feil i logger, ustabile tjenester, siste kodeendringer, ressurspress.\n"
-        "Bruk verktøyene – ikke gjett. Oppsummer funnene konkret."
+        f"{t('meet_mechanic_investigate_task', _lang)}"
     )
 
     mechanic_discuss_system = (
         f"{_load_mechanic_pers('standard')}\n\n"
-        "--- DISKUSJONSFASE: UTVIKLINGSMØTE ---\n"
+        f"{t('meet_phase_discuss', _lang)}\n"
         f"{_time_anchor}"
         f"{_memory_block}"
         f"{_mechanic_mem_block}"
-        "Du er i teknisk møte med Kåre. Agenda er satt av Møteleder basert på reelle funn.\n"
-        "Bruk verktøyene dine hvis du trenger mer data. Merk forslag med 'FORSLAG: ...'.\n"
-        "Maks 5 setninger per innlegg. Svar alltid på norsk."
+        f"{t('meet_mechanic_discuss_task', _lang, lang_respond=t('meet_lang_respond', _lang))}"
     )
 
-    # ── Fase 1: Undersøkelse (parallelt) ─────────────────────────────────────
+    # ── Phase 1: Investigation (parallel) ────────────────────────────────────
     log.info("=== Fase 1: Undersøkelse ===")
 
     mechanic_funn, kare_funn = await asyncio.gather(
-        _mechanic_investigate(mechanic_investigate_system),
-        _kare_investigate(kare_investigate_system),
+        _mechanic_investigate(mechanic_investigate_system, _lang),
+        _kare_investigate(kare_investigate_system, _lang),
     )
     log.info("[Mechanic funn] %s", mechanic_funn[:150])
     log.info("[Kåre funn] %s", kare_funn[:150])
 
-    # ── Fase 1b: Kritiker-runde ───────────────────────────────────────────────
+    # ── Phase 1b: Critic round ───────────────────────────────────────────────
     log.info("=== Fase 1b: Mechanic kritiker ===")
-    mechanic_kritikk = await _mechanic_kritiker(kare_funn, _mechanic_mem)
+    mechanic_kritikk = await _mechanic_kritiker(kare_funn, _mechanic_mem, _lang)
     log.info("[Mechanic kritikk] %s", mechanic_kritikk[:150])
     exchanges.append(("Mechanic", mechanic_kritikk))
 
-    # ── Fase 2: Admin-innspill (én ekstra runde hvis admin har sendt noe) ────────
+    # ── Phase 2: Admin input (one extra round if admin submitted something) ─────
     kare_messages       = [{"role": "system", "content": kare_discuss_system}]
     mechanic_messages = [{"role": "system", "content": mechanic_discuss_system}]
 
     if _admin_topic:
         log.info("=== Admin-innspillsrunde ===")
-        admin_intro = await _leder_presenter_admin_input(_admin_topic, kare_funn, mechanic_funn)
+        admin_intro = await _leder_presenter_admin_input(_admin_topic, kare_funn, mechanic_funn, leder_system=leder_system, lang=_lang)
         exchanges.append(("Møteleder", admin_intro))
         log.info("[Møteleder admin-intro] %s", admin_intro[:120])
 
-        admin_msg = f"Møteleder sier: {admin_intro}"
+        admin_msg = t("meet_leder_says", _lang, text=admin_intro)
         mechanic_messages.append({"role": "user", "content": admin_msg})
         kare_messages.append({"role": "user", "content": admin_msg})
 
@@ -1065,14 +1175,14 @@ async def main() -> None:
         exchanges.append(("Mechanic", p_reply))
         log.info("[Mechanic admin-runde] %s", p_reply[:120])
 
-        kare_messages.append({"role": "user", "content": f"Mechanic sier:\n{p_reply}\n\nHva tenker du?"})
+        kare_messages.append({"role": "user", "content": t("meet_kare_admin_react", _lang, text=p_reply)})
         k_reply = await _ask_kare(kare_messages)
         kare_messages.append({"role": "assistant", "content": k_reply})
         mechanic_messages.append({"role": "user", "content": f"Kåre svarer:\n{k_reply}"})
         exchanges.append(("Kåre", k_reply))
         log.info("[Kåre admin-runde] %s", k_reply[:120])
 
-    # ── Fase 3: Diskusjonsrunder ──────────────────────────────────────────────
+    # ── Phase 3: Discussion rounds ────────────────────────────────────────────
     global_round = 0
     prev_summary = ""
 
@@ -1080,11 +1190,11 @@ async def main() -> None:
         log.info("=== Gruppe %d av %d ===", group, max_groups)
 
         # Møteleder setter agenda basert på undersøkelsesfunnene
-        agenda = await _leder_sett_agenda(kare_funn, mechanic_funn, group, prev_summary, mechanic_kritikk, _health_summary)
+        agenda = await _leder_sett_agenda(kare_funn, mechanic_funn, group, prev_summary, mechanic_kritikk, _health_summary, leder_system=leder_system, lang=_lang)
         exchanges.append(("Møteleder", agenda))
         log.info("[Møteleder agenda] %s", agenda[:120])
 
-        agenda_msg = f"Møteleder sier: {agenda}"
+        agenda_msg = t("meet_leder_says", _lang, text=agenda)
         kare_messages.append({"role": "user", "content": agenda_msg})
         mechanic_messages.append({"role": "user", "content": agenda_msg})
 
@@ -1092,11 +1202,11 @@ async def main() -> None:
             global_round += 1
             log.info("--- Runde %d/%d ---", global_round, MAX_ROUNDS)
 
-            # Mechanic – kan bruke verktøy
+            # Mechanic – can use tools
             p_prompt = (
-                "Din tur – undersøk det Møteleder pekte på med verktøyene dine."
+                t("meet_mechanic_turn_1", _lang)
                 if global_round == 1 else
-                "Din tur – grav dypere eller kom med konkrete forslag. Bruk verktøy ved behov."
+                t("meet_mechanic_turn_n", _lang)
             )
             mechanic_messages.append({"role": "user", "content": p_prompt})
             p_reply = await _ask_mechanic(_trim(mechanic_messages, MECHANIC_WINDOW))
@@ -1104,8 +1214,8 @@ async def main() -> None:
             exchanges.append(("Mechanic", p_reply))
             log.info("[Mechanic] %s", p_reply[:120])
 
-            # Kåre – evaluerer fra sitt perspektiv
-            kare_messages.append({"role": "user", "content": f"Mechanic sier:\n{p_reply}\n\nEvaluer dette fra ditt perspektiv."})
+            # Kåre – evaluates from his perspective
+            kare_messages.append({"role": "user", "content": t("meet_kare_evaluate", _lang, text=p_reply)})
             k_reply = await _ask_kare(kare_messages)
             kare_messages.append({"role": "assistant", "content": k_reply})
             mechanic_messages.append({"role": "user", "content": f"Kåre svarer:\n{k_reply}"})
@@ -1115,25 +1225,28 @@ async def main() -> None:
             # Møteleder styrer mellom runder (ikke etter siste runde i gruppen)
             if local_round < ROUNDS_PER_GROUP - 1:
                 conv_tail = "\n\n".join(f"{a}: {t}" for a, t in exchanges[-4:])
-                styring = await _leder_styr(conv_tail, global_round)
+                styring = await _leder_styr(conv_tail, global_round, leder_system=leder_system, lang=_lang)
                 exchanges.append(("Møteleder", styring))
                 log.info("[Møteleder styring] %s", styring[:120])
-                styring_msg = f"Møteleder sier: {styring}"
+                styring_msg = t("meet_leder_says", _lang, text=styring)
                 kare_messages.append({"role": "user", "content": styring_msg})
                 mechanic_messages.append({"role": "user", "content": styring_msg})
 
-        # Online etter gruppen
-        is_final  = (group == max_groups)
-        conv_text = "\n\n".join(f"{a}: {t}" for a, t in exchanges)
-        cloud_reply = await _ask_cloud(conv_text, is_final=is_final)
-        exchanges.append(("Online", cloud_reply))
-        log.info("[Online] %s", cloud_reply[:120])
+        # Online etter gruppen — hoppes over hvis cloud ikke er tilgjengelig
+        if _cloud_ok:
+            is_final  = (group == max_groups)
+            conv_text = "\n\n".join(f"{a}: {t}" for a, t in exchanges)
+            cloud_reply = await _ask_cloud(conv_text, is_final=is_final, lang=_lang)
+            if cloud_reply.startswith("["):
+                log.warning("[Online] unavailable: %s", cloud_reply[:120])
+            else:
+                exchanges.append(("Online", cloud_reply))
+                log.info("[Online] %s", cloud_reply[:120])
+                online_msg = t("meet_online_says", _lang, text=cloud_reply)
+                kare_messages.append({"role": "user", "content": online_msg})
+                mechanic_messages.append({"role": "user", "content": online_msg})
 
-        online_msg = f"Online sier: {cloud_reply}"
-        kare_messages.append({"role": "user", "content": online_msg})
-        mechanic_messages.append({"role": "user", "content": online_msg})
-
-        fortsett, begrunnelse = await _leder_vurder(conv_text, group, max_groups)
+        fortsett, begrunnelse = await _leder_vurder(conv_text, group, max_groups, leder_system=leder_system, lang=_lang)
         exchanges.append(("Møteleder", begrunnelse))
         prev_summary = begrunnelse
 
@@ -1141,26 +1254,20 @@ async def main() -> None:
             log.info("Møteleder avslutter: %s", begrunnelse)
             break
 
-    # ── Oppsummering ──────────────────────────────────────────────────────────
+    # ── Summary ───────────────────────────────────────────────────────────────
     log.info("--- Mechanics oppsummering ---")
-    mechanic_messages.append({"role": "user", "content": (
-        "Møtet er over. Gi en punktliste med alle dine konkrete forslag – ett per linje, "
-        "hvert merket med 'FORSLAG: ...'. Inkluder kun forslag du faktisk har undersøkt og bevist."
-    )})
+    mechanic_messages.append({"role": "user", "content": t("meet_closing_mechanic", _lang)})
     p_closing = await _ask_mechanic(_trim(mechanic_messages, MECHANIC_WINDOW))
     exchanges.append(("Mechanic", p_closing))
     log.info("[Mechanic avslutning] %s", p_closing[:120])
 
     log.info("--- Kåres oppsummering ---")
-    kare_messages.append({"role": "user", "content": (
-        "Møtet er over. Prioriter Mechanics forslag – hva er viktigst å ta videre til brukeren? "
-        "Maks 5 setninger."
-    )})
+    kare_messages.append({"role": "user", "content": t("meet_closing_kare", _lang)})
     k_closing = await _ask_kare(kare_messages)
     exchanges.append(("Kåre", k_closing))
     log.info("[Kåre avslutning] %s", k_closing[:120])
 
-    _write_report(date_str, kare_funn, mechanic_funn, exchanges)
+    _write_report(date_str, kare_funn, mechanic_funn, exchanges, cloud_ok=_cloud_ok, lang=_lang)
     log.info("=== Utviklingsmøte ferdig – %d runder ===", global_round)
     _rid_ctx_meet.reset(_meet_token)
     _src_ctx_meet.reset(_src_token)

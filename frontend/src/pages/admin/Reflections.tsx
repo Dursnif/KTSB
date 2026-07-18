@@ -19,6 +19,8 @@ const apiPost = (path: string) => axios.post(BASE + path, {}, { headers: authHea
 
 type MeetingType = "reflection" | "dev";
 
+const PRIVATE_REFLECTION_ROLES = new Set(["young_adult", "adult"]);
+
 interface MeetingStatus {
   running: boolean;
   progress: number;
@@ -343,7 +345,11 @@ export default function Reflections() {
 
   useEffect(() => {
     apiListUsers().then(all => {
-      const activeUsers = all.filter(u => u.is_active && u.username !== "admin");
+      const activeUsers = all.filter(u =>
+        u.is_active &&
+        u.username !== "admin" &&
+        !PRIVATE_REFLECTION_ROLES.has(u.role)
+      );
       setUsers(activeUsers);
       if (activeUsers.length > 0) setSelectedUser(activeUsers[0]);
     });
@@ -480,6 +486,11 @@ export default function Reflections() {
         </div>
 
         {/* User selector — reflection only */}
+        {meetingType === "reflection" && users.length === 0 && (
+          <div style={{ color: "#555", fontSize: 12, marginBottom: 16, fontStyle: "italic" }}>
+            {t("reflections.no_eligible_reflection_users")}
+          </div>
+        )}
         {meetingType === "reflection" && users.length > 1 && (
           <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
             {users.map(u => (

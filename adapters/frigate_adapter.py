@@ -12,6 +12,7 @@ import httpx
 
 sys.path.insert(0, "/kaare")
 from kaare_core.config import get_service as _svc
+from kaare_core.normalcy import get_deviation_score as _get_deviation_score
 
 log = logging.getLogger("frigate_adapter")
 
@@ -155,6 +156,14 @@ async def fetch_event_snapshot(event_id: str) -> bytes:
         return r.content
 
 
+async def get_event(event_id: str) -> dict:
+    """Fetches full event JSON from Frigate REST API — includes path_data, top_score, etc."""
+    async with httpx.AsyncClient(timeout=_timeout()) as client:
+        r = await client.get(f"{_frigate_url()}/api/events/{event_id}")
+        r.raise_for_status()
+        return r.json()
+
+
 # ── Event parsing (inbound from Frigate via HTTP POST to Kåre) ────────────────
 
 def parse_frigate_event(payload: dict) -> dict:
@@ -201,10 +210,31 @@ def parse_frigate_event(payload: dict) -> dict:
     }
 
 
-def derive_hints(event: dict) -> dict:
+# Camera roles that count as perimeter (outside/around the building).
+_PERIMETER_ROLES = {"front_door", "driveway", "road_facing", "garden"}
+
+
+def _is_nighttime(nighttime_start: int, nighttime_end: int) -> bool:
+    hour = time.localtime().tm_hour
+    if nighttime_start > nighttime_end:
+        return hour >= nighttime_start or hour < nighttime_end
+    return nighttime_start <= hour < nighttime_end
+
+
+def _load_away_mode_cfg() -> dict:
+    try:
+        from kaare_core.domain.frigate_responder import _cfg
+        return _cfg().get("away_mode") or {}
+    except Exception:
+        return {}
+
+
+def derive_hints(event: dict, camera_role: str = "") -> dict:
+    camera = event.get("camera", "")
     label = event.get("label")
     confidence = event.get("confidence", 0.0)
     zones = event.get("zones", [])
+    deviation_score, baseline_confidence = _get_deviation_score(camera, label or "")
 
     if label == "person":
         category = "security"
@@ -237,11 +267,46 @@ def derive_hints(event: dict) -> dict:
     else:
         ttl_sec = 20
 
+    # Away-mode threat recalibration
+    away_mode = False
+    away_reason = None
+    try:
+        from kaare_core.tools.household_state import is_away
+        if is_away():
+            away_mode = True
+            am_cfg = _load_away_mode_cfg()
+            night_start = int(am_cfg.get("nighttime_start", 22))
+            night_end = int(am_cfg.get("nighttime_end", 6))
+            person_threshold = float(am_cfg.get("person_confidence_high", 0.6))
+            unknown_night_high = bool(am_cfg.get("unknown_night_high", True))
+
+            is_perimeter = camera_role in _PERIMETER_ROLES
+            is_night = _is_nighttime(night_start, night_end)
+
+            if is_perimeter:
+                # Any person at perimeter at >= threshold → HIGH
+                if label == "person" and confidence >= person_threshold:
+                    priority = "high"
+                    notify = True
+                    away_reason = "Person at perimeter during absence"
+
+                # Unknown or low-confidence at perimeter at night → HIGH
+                if unknown_night_high and is_night and (not label or label == "generic" or confidence < 0.5):
+                    priority = "high"
+                    notify = True
+                    away_reason = "Unidentified presence at perimeter at night during absence"
+    except Exception:
+        pass
+
     return {
         "category": category,
         "priority": priority,
         "notify": notify,
         "ttl_sec": ttl_sec,
+        "away_mode": away_mode,
+        "away_reason": away_reason,
+        "deviation_score": round(deviation_score, 2),
+        "baseline_confidence": round(baseline_confidence, 2),
     }
 
 
@@ -265,9 +330,19 @@ def is_duplicate(key: str, ttl_sec: int) -> bool:
 async def handle_frigate_event(payload: dict, rid: str) -> dict:
     try:
         event = parse_frigate_event(payload)
-        hints = derive_hints(event)
     except ValueError as e:
         return {"text": f"Invalid Frigate event: {e}", "rid": rid}
+
+    # Look up camera role from config for away-mode threat assessment
+    camera_role = ""
+    try:
+        from kaare_core.domain.frigate_responder import _cfg
+        cam_cfg = _cfg().get("cameras", {}).get(event.get("camera", ""), {})
+        camera_role = cam_cfg.get("role", "")
+    except Exception:
+        pass
+
+    hints = derive_hints(event, camera_role=camera_role)
 
     return {
         "text": "Frigate event received.",

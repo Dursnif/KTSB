@@ -147,7 +147,7 @@ export function InnerVoicesCard({ data, onSaved }: { data: InnerVoicesData; onSa
           </p>
 
           <VoiceRow
-            name="Jing (0.6B)"
+            name="Jing"
             provider={jingProvider}
             modelPath={jingModelPath}
             intervalSeconds={data.jing.interval_seconds}
@@ -157,7 +157,7 @@ export function InnerVoicesCard({ data, onSaved }: { data: InnerVoicesData; onSa
           />
 
           <VoiceRow
-            name="Jang (4B)"
+            name="Jang"
             provider={jangProvider}
             modelPath={jangModelPath}
             intervalSeconds={data.jang.interval_seconds}

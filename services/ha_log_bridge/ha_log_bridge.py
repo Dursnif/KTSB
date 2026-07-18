@@ -92,6 +92,16 @@ def make_entry(event_type: str, data: dict) -> dict | None:
             "entity_id": str(svc_data.get("entity_id", "")),
         }
 
+    if event_type == "automation_triggered":
+        return {
+            "ts":        ts,
+            "source":    "ha-events",
+            "subsystem": "home",
+            "stage":     "automation_triggered",
+            "name":      data.get("name", ""),
+            "entity_id": data.get("entity_id", ""),
+        }
+
     return None
 
 

@@ -28,7 +28,7 @@ from kaare_core.tools import (
     executor_world, executor_memory, executor_personality,
     executor_ha, executor_media, executor_library,
     executor_agents, executor_system, executor_camera,
-    executor_reflexes,
+    executor_reflexes, executor_household,
 )
 
 logger = logging.getLogger(__name__)
@@ -234,6 +234,9 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
     if name in executor_camera.CAMERA_TOOLS:
         return await executor_camera.dispatch(name, arguments)
 
+    if name in executor_household.HOUSEHOLD_TOOLS:
+        return await executor_household.dispatch(name, arguments, user_id=user_id)
+
     if name in ("get_weather", "hent_yr_varsel"):
         return await _fetch_weather(arguments.get("location"), lang=lang)
 
@@ -302,13 +305,13 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
         folder = arguments.get("folder", "all")
         limit = int(arguments.get("limit", 10))
         image_id = arguments.get("image_id", "").strip()
-        mode = arguments.get("mode", "vis").strip()
+        mode = arguments.get("mode", "view").strip()
 
         if image_id:
             path = find_image(image_id)
             if not path:
                 return t("exec_image_not_found", lang, image_id=image_id)
-            if mode == "analyser":
+            if mode in ("analyze", "analyser"):
                 b64 = _b64.b64encode(path.read_bytes()).decode()
                 return f"[VISION:{b64}]"
             return f"Bildet er klart. Inkluder denne URL-en ordrett i svaret ditt: /api/image/{image_id}"

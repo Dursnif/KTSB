@@ -30,7 +30,7 @@ import httpx
 
 from kaare_core.model_lock import lock_11445, LockTimeout
 from kaare_core.tools.i18n import t, get_lang
-from kaare_core.config import get_model as _cfg_model, get_llm_config as _llm, get_service as _svc, is_agent_tool_enabled, get_ssh_nodes as _get_ssh_nodes
+from kaare_core.config import get_model as _cfg_model, get_llm_config as _llm, get_service as _svc, is_agent_tool_enabled, get_ssh_nodes as _get_ssh_nodes, get_qdrant_api_key as _qdrant_key
 from kaare_core.tools.shared_tools import (
     read_file as _shared_read_file,
     list_files as _shared_list_files,
@@ -51,14 +51,14 @@ MAX_TOOL_ROUNDS = 10
 TIMEOUT         = _llm("mechanic")["timeout"]
 MAX_TOKENS      = _llm("mechanic")["options"]["num_predict"]
 NUM_CTX         = _llm("mechanic")["options"]["num_ctx"]
-_MSG_WINDOW     = 10  # tool-meldinger som beholdes verbatim (eldre maskeres)
+_MSG_WINDOW     = 10  # keep last N tool messages verbatim; mask older ones
 
 MEMORY_PATH   = Path("/kaare/state/mechanic_memory.md")
 _SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
 
 
 def _fmt_ts_local(ts_raw: str) -> str:
-    """Konverter UTC ISO-tidsstempel til lokal tid for visning."""
+    """Convert UTC ISO timestamp to local time for display."""
     if not ts_raw:
         return "?"
     try:
@@ -71,7 +71,7 @@ def _fmt_ts_local(ts_raw: str) -> str:
     except Exception:
         return ts_raw[:16].replace("T", " ")
 
-# ── Tool-definisjoner ─────────────────────────────────────────────────────────
+# ── Tool definitions ──────────────────────────────────────────────────────────
 
 def _build_shell_tool() -> dict:
     ssh_data  = _get_ssh_nodes()
@@ -84,21 +84,21 @@ def _build_shell_tool() -> dict:
         for n in node_ids
     )
     sudo_note = (
-        "Tillatt sudo per node: konfigurert i ssh_nodes.yaml (sudo_commands-listen). "
+        "Sudo allowed per node: configured in ssh_nodes.yaml (sudo_commands list). "
         if node_ids else ""
     )
     desc = (
-        "Kjør en les-bare kommando lokalt på AI-pc eller på en nettverksnode via SSH. "
-        "node='local': AI-pc (ingen sudo). "
-        + (node_lines + " " if node_lines else "Ingen SSH-noder konfigurert ennå. ")
-        + "Les-bare: cat, head, tail, grep, find, ls, ps, df, free, uptime, journalctl, "
+        "Run a read-only command locally on the AI-pc or on a network node via SSH. "
+        "node='local': AI-pc (no sudo). "
+        + (node_lines + " " if node_lines else "No SSH nodes configured yet. ")
+        + "Read-only: cat, head, tail, grep, find, ls, ps, df, free, uptime, journalctl, "
         "systemctl status/list, dpkg, apt list, docker ps/logs, ip, ss, nvidia-smi, pihole status. "
         + sudo_note
-        + "Ingen sudo på local."
+        + "No sudo on local."
     )
     node_desc = (
-        "'local' = denne maskinen (ingen sudo)."
-        + (" " + ", ".join(f"'{n}'" for n in node_ids) + " = SSH-noder." if node_ids else "")
+        "'local' = this machine (no sudo)."
+        + (" " + ", ".join(f"'{n}'" for n in node_ids) + " = SSH nodes." if node_ids else "")
     )
     return {
         "type": "function",
@@ -113,7 +113,7 @@ def _build_shell_tool() -> dict:
                         "enum": node_enum,
                         "description": node_desc,
                     },
-                    "kommando": {"type": "string", "description": "Shell-kommando å kjøre."},
+                    "kommando": {"type": "string", "description": "Shell command to run."},
                 },
                 "required": ["node", "kommando"],
             },
@@ -127,11 +127,11 @@ MECHANIC_TOOLS = [
         "function": {
             "name": "utforsk",
             "description": (
-                "Utforsk /kaare-kodebasen. Tre operasjoner: "
-                "action='les': les en fil (krever 'sti'). Uten fra_linje/til_linje: første 200 linjer. "
-                "Med fra_linje og til_linje: eksakt blokk (maks 300 linjer). "
-                "action='liste': list filer og undermapper (valgfri 'mappe', valgfri 'rekursiv'). "
-                "action='søk': grep-søk etter mønster i .py/.yaml/.md/.json/.sh (krever 'mønster', valgfri 'mappe')."
+                "Explore the /kaare codebase. Three operations: "
+                "action='les': read a file (requires 'sti'). Without fra_linje/til_linje: first 200 lines. "
+                "With fra_linje and til_linje: exact block (max 300 lines). "
+                "action='liste': list files and subdirectories (optional 'mappe', optional 'rekursiv'). "
+                "action='søk': grep search for pattern in .py/.yaml/.md/.json/.sh (requires 'mønster', optional 'mappe')."
             ),
             "parameters": {
                 "type": "object",
@@ -140,17 +140,17 @@ MECHANIC_TOOLS = [
                         "type": "string",
                         "enum": ["les", "liste", "søk"],
                         "description": (
-                            "'les' = les fil (krever 'sti'). "
-                            "'liste' = list filer/mapper (valgfri 'mappe', 'rekursiv'). "
-                            "'søk' = grep-søk (krever 'mønster', valgfri 'mappe')."
+                            "'les' = read file (requires 'sti'). "
+                            "'liste' = list files/dirs (optional 'mappe', 'rekursiv'). "
+                            "'søk' = grep search (requires 'mønster', optional 'mappe')."
                         ),
                     },
-                    "sti": {"type": "string", "description": "Absolutt filsti under /kaare. Kun ved action='les'."},
-                    "fra_linje": {"type": "integer", "description": "Første linje (1-basert). Kun ved action='les'."},
-                    "til_linje": {"type": "integer", "description": "Siste linje (inklusiv). Kun ved action='les'."},
-                    "mappe": {"type": "string", "description": "Absolutt mappe-sti under /kaare. Brukes ved 'liste' og 'søk'."},
-                    "rekursiv": {"type": "boolean", "description": "List rekursivt (maks 200 filer). Kun ved action='liste'. Standard: false."},
-                    "mønster": {"type": "string", "description": "Søketekst eller regex. Kun ved action='søk'."},
+                    "sti": {"type": "string", "description": "Absolute file path under /kaare. Only for action='les'."},
+                    "fra_linje": {"type": "integer", "description": "First line (1-based). Only for action='les'."},
+                    "til_linje": {"type": "integer", "description": "Last line (inclusive). Only for action='les'."},
+                    "mappe": {"type": "string", "description": "Absolute directory path under /kaare. Used for 'liste' and 'søk'."},
+                    "rekursiv": {"type": "boolean", "description": "List recursively (max 200 files). Only for action='liste'. Default: false."},
+                    "mønster": {"type": "string", "description": "Search text or regex. Only for action='søk'."},
                 },
                 "required": ["action"],
             },
@@ -161,14 +161,14 @@ MECHANIC_TOOLS = [
         "function": {
             "name": "inspiser",
             "description": (
-                "Inspiser systemstatus og logger. Fem operasjoner: "
-                "action='logg': les eller søk i /kaare/logs/. Uten 'fil': oversikt over alle logger. "
-                "Med 'fil': tail. Med 'mønster': grep-søk. Med fra_linje/til_linje: eksakt bulk. "
-                "action='tjenester': systemd-status for Kåre-tjenester. "
-                "Uten 'tjeneste': aktiv/inaktiv for alle. Med 'tjeneste': detaljer + journalctl. "
-                "action='ressurser': sanntids CPU, RAM, disk og GPU VRAM. "
-                "action='git_diff': ukommitterte endringer (valgfri 'sti'). "
-                "action='git_log': commit-historikk (valgfri 'sti', 'antall')."
+                "Inspect system status and logs. Five operations: "
+                "action='logg': read or search /kaare/logs/. Without 'fil': overview of all logs. "
+                "With 'fil': tail. With 'mønster': grep search. With fra_linje/til_linje: exact block. "
+                "action='tjenester': systemd status for Kåre services. "
+                "Without 'tjeneste': active/inactive for all. With 'tjeneste': details + journalctl. "
+                "action='ressurser': real-time CPU, RAM, disk and GPU VRAM. "
+                "action='git_diff': uncommitted changes (optional 'sti'). "
+                "action='git_log': commit history (optional 'sti', 'antall')."
             ),
             "parameters": {
                 "type": "object",
@@ -177,23 +177,23 @@ MECHANIC_TOOLS = [
                         "type": "string",
                         "enum": ["logg", "tjenester", "ressurser", "git_diff", "git_log"],
                         "description": (
-                            "'logg' = les/søk loggfiler (valgfri 'fil', 'linjer', 'mønster', 'maks_treff', 'fra_linje', 'til_linje'). "
-                            "'tjenester' = systemd-status (valgfri 'tjeneste', 'logglinjer'). "
-                            "'ressurser' = CPU/RAM/disk/GPU sanntid. "
-                            "'git_diff' = ukommitterte endringer (valgfri 'sti'). "
-                            "'git_log' = commit-historikk (valgfri 'sti', 'antall')."
+                            "'logg' = read/search log files (optional 'fil', 'linjer', 'mønster', 'maks_treff', 'fra_linje', 'til_linje'). "
+                            "'tjenester' = systemd status (optional 'tjeneste', 'logglinjer'). "
+                            "'ressurser' = CPU/RAM/disk/GPU real-time. "
+                            "'git_diff' = uncommitted changes (optional 'sti'). "
+                            "'git_log' = commit history (optional 'sti', 'antall')."
                         ),
                     },
-                    "fil": {"type": "string", "description": "Loggfilnavn uten sti, f.eks. 'kaare_ha_gateway.log'. Kun ved action='logg'."},
-                    "linjer": {"type": "integer", "description": "Antall linjer (tail). Standard 20, maks 200. Kun ved action='logg'."},
-                    "mønster": {"type": "string", "description": "Søketekst/regex for grep. Kun ved action='logg'."},
-                    "maks_treff": {"type": "integer", "description": "Maks grep-treff. Standard 50, maks 200. Kun ved action='logg'."},
-                    "fra_linje": {"type": "integer", "description": "Første linje (1-basert). Kun ved action='logg'."},
-                    "til_linje": {"type": "integer", "description": "Siste linje (inklusiv). Kun ved action='logg'."},
-                    "tjeneste": {"type": "string", "description": "Tjenestenavn for detaljert visning, f.eks. 'kaare', 'kaare-agents'. Kun ved action='tjenester'."},
-                    "logglinjer": {"type": "integer", "description": "Antall journalctl-linjer. Standard 20, maks 50. Kun ved action='tjenester'."},
-                    "sti": {"type": "string", "description": "Absolutt filsti/mappe. Brukes ved action='git_diff'/'git_log'."},
-                    "antall": {"type": "integer", "description": "Antall commits. Standard 10, maks 50. Kun ved action='git_log'."},
+                    "fil": {"type": "string", "description": "Log file name without path, e.g. 'kaare_ha_gateway.log'. Only for action='logg'."},
+                    "linjer": {"type": "integer", "description": "Number of lines (tail). Default 20, max 200. Only for action='logg'."},
+                    "mønster": {"type": "string", "description": "Search text/regex for grep. Only for action='logg'."},
+                    "maks_treff": {"type": "integer", "description": "Max grep hits. Default 50, max 200. Only for action='logg'."},
+                    "fra_linje": {"type": "integer", "description": "First line (1-based). Only for action='logg'."},
+                    "til_linje": {"type": "integer", "description": "Last line (inclusive). Only for action='logg'."},
+                    "tjeneste": {"type": "string", "description": "Service name for detailed view, e.g. 'kaare', 'kaare-agents'. Only for action='tjenester'."},
+                    "logglinjer": {"type": "integer", "description": "Number of journalctl lines. Default 20, max 50. Only for action='tjenester'."},
+                    "sti": {"type": "string", "description": "Absolute file/directory path. Used for action='git_diff'/'git_log'."},
+                    "antall": {"type": "integer", "description": "Number of commits. Default 10, max 50. Only for action='git_log'."},
                 },
                 "required": ["action"],
             },
@@ -203,11 +203,11 @@ MECHANIC_TOOLS = [
         "type": "function",
         "function": {
             "name": "nettsøk",
-            "description": "Søk på nettet etter teknisk informasjon.",
+            "description": "Search the web for technical information.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Søketekst. Norsk eller engelsk."}
+                    "query": {"type": "string", "description": "Search query. Any language."}
                 },
                 "required": ["query"],
             },
@@ -218,16 +218,16 @@ MECHANIC_TOOLS = [
         "function": {
             "name": "søk_argus",
             "description": (
-                "Semantisk søk i systemloggen via Qdrant (BGE-M3, 1024-dim). "
-                "Finner semantisk nærliggende hendelser fra alle loggkilder. "
-                "Bruk for å se HA-handlinger, feil, treghet, stoppede forespørsler. "
-                "Eksempel: søk_argus(query='HA feil siste dag')"
+                "Semantic search in the system log via Qdrant (BGE-M3, 1024-dim). "
+                "Finds semantically related events from all log sources. "
+                "Use to find HA actions, errors, slowness, stalled requests. "
+                "Example: søk_argus(query='HA error last day')"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Søketekst. Norsk eller engelsk."},
-                    "grense": {"type": "integer", "description": "Maks resultater. Standard: 10, maks: 20."},
+                    "query": {"type": "string", "description": "Search query. Any language."},
+                    "grense": {"type": "integer", "description": "Max results. Default: 10, max: 20."},
                 },
                 "required": ["query"],
             },
@@ -239,10 +239,10 @@ MECHANIC_TOOLS = [
         "function": {
             "name": "hukommelse",
             "description": (
-                "Mechanics personlige minne — ting han har lært om systemet og seg selv. "
-                "Bruk 'skriv' for å lagre ny lærdom (datostemplet automatisk). "
-                "Bruk 'les' for å hente alt du har lagret. "
-                "Bruk 'slett_gammel' for å rydde ut oppføringer eldre enn N dager."
+                "Mechanic's personal memory — things he has learned about the system and himself. "
+                "Use 'skriv' to store new knowledge (auto-dated). "
+                "Use 'les' to retrieve everything stored. "
+                "Use 'slett_gammel' to clean out entries older than N days."
             ),
             "parameters": {
                 "type": "object",
@@ -250,10 +250,10 @@ MECHANIC_TOOLS = [
                     "action": {
                         "type": "string",
                         "enum": ["les", "skriv", "slett_gammel"],
-                        "description": "les: hent hukommelse. skriv: legg til ny lærdom. slett_gammel: fjern gamle oppføringer.",
+                        "description": "les: retrieve memory. skriv: add new knowledge. slett_gammel: remove old entries.",
                     },
-                    "tekst": {"type": "string", "description": "Tekst å lagre (kun ved action=skriv). Konkret og faktabasert."},
-                    "dager": {"type": "integer", "description": "Fjern oppføringer eldre enn N dager (kun ved action=slett_gammel). Standard: 30."},
+                    "tekst": {"type": "string", "description": "Text to store (only for action=skriv). Concrete and fact-based."},
+                    "dager": {"type": "integer", "description": "Remove entries older than N days (only for action=slett_gammel). Default: 30."},
                 },
                 "required": ["action"],
             },
@@ -262,7 +262,7 @@ MECHANIC_TOOLS = [
 ]
 
 
-# ── Rolle-baserte verktøysett ─────────────────────────────────────────────────
+# ── Role-based tool sets ──────────────────────────────────────────────────────
 
 def _tools_by_name(*names: str) -> list:
     return [t for t in MECHANIC_TOOLS if t["function"]["name"] in names]
@@ -276,7 +276,7 @@ KRITIKER_TOOLS = _tools_by_name("hukommelse")
 ANALYTIKER_TOOLS = _tools_by_name("utforsk", "hukommelse")
 
 
-# ── Tool-eksekvering ──────────────────────────────────────────────────────────
+# ── Tool execution ────────────────────────────────────────────────────────────
 
 async def execute_tool(name: str, arguments: dict) -> str:
     try:
@@ -288,7 +288,7 @@ async def execute_tool(name: str, arguments: dict) -> str:
                 return _shared_list_files(arguments)
             elif action == "søk":
                 return _shared_search_code(arguments)
-            return f"[Ukjent action for utforsk: {action}]"
+            return t("mech_unknown_action", get_lang("global"), tool="utforsk", action=action)
 
         elif name == "inspiser":
             action = arguments.get("action", "")
@@ -302,7 +302,7 @@ async def execute_tool(name: str, arguments: dict) -> str:
                 return _shared_git_diff(arguments)
             elif action == "git_log":
                 return _shared_git_log(arguments)
-            return f"[Ukjent action for inspiser: {action}]"
+            return t("mech_unknown_action", get_lang("global"), tool="inspiser", action=action)
 
         elif name == "nettsøk":
             query = arguments.get("query", "").strip()
@@ -327,16 +327,17 @@ async def execute_tool(name: str, arguments: dict) -> str:
                     r = await client.post(
                         f"{qdrant_url}/collections/argus_events/points/query",
                         json={"query": vector, "limit": grense, "with_payload": True},
+                        headers={"api-key": _qdrant_key(write=False) or ""},
                         timeout=15.0,
                     )
                     r.raise_for_status()
                     data = r.json()
             except Exception as e:
-                return f"[Argus utilgjengelig: {e}]"
+                return t("mech_argus_unavailable", get_lang("global"), error=e)
             hits = data.get("result", {}).get("points", [])
             if not hits:
                 return t("mech_no_log_results", get_lang("global"), query=query)
-            lines = [f"Argus: {len(hits)} treff — '{query}'\n"]
+            lines = [t("mech_argus_results", get_lang("global"), count=len(hits), query=query)]
             for h in hits:
                 f     = h.get("payload", {})
                 ts    = _fmt_ts_local(f.get("ts", ""))
@@ -446,7 +447,7 @@ async def execute_tool(name: str, arguments: dict) -> str:
                 if not MEMORY_PATH.exists():
                     return t("mech_no_memory", get_lang("global"))
                 content = MEMORY_PATH.read_text(encoding="utf-8").strip()
-                return content if content else "[Tom hukommelse]"
+                return content if content else t("mech_no_memory", get_lang("global"))
 
             elif action == "skriv":
                 tekst = arguments.get("tekst", "").strip()
@@ -457,7 +458,7 @@ async def execute_tool(name: str, arguments: dict) -> str:
                 entry = f"\n- [{ts}] {tekst}"
                 with open(MEMORY_PATH, "a", encoding="utf-8") as f:
                     f.write(entry)
-                return f"[Lagret: {tekst[:80]}]"
+                return t("mech_memory_saved", get_lang("global"), text=tekst[:80])
 
             elif action == "slett_gammel":
                 dager = int(arguments.get("dager", 30))
@@ -482,16 +483,16 @@ async def execute_tool(name: str, arguments: dict) -> str:
                 MEMORY_PATH.write_text("\n".join(kept), encoding="utf-8")
                 return t("mech_memory_deleted", get_lang("global"), count=removed, days=dager)
 
-            return f"[Ukjent action for hukommelse: {action}]"
+            return t("mech_unknown_action", get_lang("global"), tool="hukommelse", action=action)
 
         return t("mech_unknown_tool", get_lang("global"), name=name)
 
     except Exception as e:
-        log.error("Verktøyfeil %s: %s", name, e)
+        log.error("Tool error %s: %s", name, e)
         return t("mech_tool_error", get_lang("global"), name=name, error=e)
 
 
-# ── Tool-loop (kjøres av agents-server og dev-møtet) ─────────────────────────
+# ── Tool loop (used by agents-server and dev meeting) ─────────────────────────
 
 async def ask_with_tools(
     messages: list[dict],
@@ -504,10 +505,10 @@ async def ask_with_tools(
     tools: list | None = None,
 ) -> str:
     """
-    Kjører en tool-using samtale med Mechanic.
-    messages: komplett meldingsliste inkl. system-melding.
+    Run a tool-using conversation with Mechanic.
+    messages: complete message list including system message.
     job_state: shared dict from _jobs[job_id] — checked between rounds for injected comments.
-    Returnerer alltid en streng.
+    Always returns a string.
     """
     if tools is not None:
         active_tools = tools
@@ -524,22 +525,22 @@ async def ask_with_tools(
         "tools": active_tools,
     }
 
-    # Faste meldinger (system + brukeroppgave) skilles fra tool-historikk
+    # Fixed messages (system + user task) are kept separate from tool history
     _fixed = list(messages)
     _history: list[dict] = []
-    _seen_calls: set[str] = set()  # loop-deteksjon
+    _seen_calls: set[str] = set()  # loop detection
 
     def _build_messages() -> list[dict]:
         # Observation masking (ref. arxiv 2508.21433):
-        # Behold siste _MSG_WINDOW meldinger verbatim, erstatt eldre tool-output med placeholder.
-        # Assistant-meldinger (med tool_calls) beholdes alltid — modellen trenger å se sine egne valg.
+        # Keep last _MSG_WINDOW messages verbatim; replace older tool output with placeholder.
+        # Assistant messages (with tool_calls) are always kept — model needs to see its own choices.
         if len(_history) <= _MSG_WINDOW:
             return _fixed + _history
         cutoff = len(_history) - _MSG_WINDOW
         masked = []
         for i, msg in enumerate(_history):
             if i < cutoff and msg["role"] == "tool":
-                masked.append({**msg, "content": f"[Output maskert — {len(msg['content'])} tegn]"})
+                masked.append({**msg, "content": t("mech_output_masked", get_lang("global"), chars=len(msg["content"]))})
             else:
                 masked.append(msg)
         return _fixed + masked
@@ -559,15 +560,15 @@ async def ask_with_tools(
             log.error("Mechanic: %s", e)
             return t("mech_model_busy", get_lang("global"))
         except Exception as e:
-            log.error("Mechanic LLM-kall feilet (runde %d): %s", round_num, e)
-            return f"[Mechanic utilgjengelig: {e}]"
+            log.error("Mechanic LLM call failed (round %d): %s", round_num, e)
+            return t("mech_mechanic_unavailable", get_lang("global"), error=e)
 
         msg        = resp.get("message", {})
         tool_calls = msg.get("tool_calls", [])
 
         if not tool_calls or round_num >= max_tool_rounds:
             content = msg.get("content", "").strip()
-            return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip() or "[Ingen respons]"
+            return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip() or t("mech_no_response", get_lang("global"))
 
         _history.append({
             "role": "assistant",
@@ -590,10 +591,7 @@ async def ask_with_tools(
                 log.warning("[Mechanic loop] Duplikat ignorert: %s", sig[:80])
                 _history.append({
                     "role": "tool",
-                    "content": (
-                        f"[Duplikat ignorert: {tool_name} ble allerede kalt med samme argumenter. "
-                        "Prøv et annet verktøy eller endre argumentene.]"
-                    ),
+                    "content": t("mech_loop_detected", get_lang("global"), tool=tool_name),
                     "name": tool_name,
                 })
                 continue
@@ -611,4 +609,4 @@ async def ask_with_tools(
                 log.info("[Mechanic] injecting user comment: %s", str(injected)[:60])
                 _history.append({"role": "user", "content": f"[User comment mid-task]: {injected}"})
 
-    return "[Ingen respons]"
+    return t("mech_no_response", get_lang("global"))

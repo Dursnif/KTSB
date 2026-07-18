@@ -17,7 +17,8 @@ from kaare_core.config import get_service as _svc
 
 log = logging.getLogger("mqtt_adapter")
 
-_FRIGATE_LOG = Path("/kaare/logs/frigate_mqtt.log")
+_FRIGATE_LOG         = Path("/kaare/logs/frigate_mqtt.log")
+_ZIGBEE_CONTEXT_PATH = Path("/kaare/state/zigbee_context.json")
 
 
 def _write_event_log(event_type: str, level: str, message: str, extra: dict | None = None) -> None:
@@ -39,17 +40,74 @@ def _write_event_log(event_type: str, level: str, message: str, extra: dict | No
         pass
 
 _STATUS: dict = {"connected": False, "last_event_ts": None, "events_received": 0}
-_END_EVENT_CALLBACK: Callable | None = None
+_END_EVENT_HOOKS: list[Callable] = []
 
 
 def register_end_event_callback(cb: Callable) -> None:
-    """Register an async callback invoked with a normalized event dict on Frigate 'end' events."""
-    global _END_EVENT_CALLBACK
-    _END_EVENT_CALLBACK = cb
+    """Register an async callback for Frigate 'end' events (appends to hook list)."""
+    _END_EVENT_HOOKS.append(cb)
+
+
+def register_end_event_hook(cb: Callable) -> None:
+    """Register an additional hook for Frigate 'end' events."""
+    _END_EVENT_HOOKS.append(cb)
 
 
 def get_status() -> dict:
     return dict(_STATUS)
+
+
+def _load_zigbee_awareness() -> list[dict]:
+    """Load zigbee_awareness topic list from services.yaml mqtt.zigbee_awareness."""
+    try:
+        entries = (_svc("mqtt") or {}).get("zigbee_awareness") or []
+        return [e for e in entries if isinstance(e, dict) and e.get("topic")]
+    except Exception:
+        return []
+
+
+def _process_zigbee_awareness(topic: str, payload_bytes: bytes) -> None:
+    """
+    Process an incoming Zigbee2MQTT awareness topic message.
+    Updates state/zigbee_context.json with current sensor state.
+    """
+    awareness = _load_zigbee_awareness()
+    cfg = next((e for e in awareness if e.get("topic") == topic), None)
+    if not cfg:
+        return
+    try:
+        payload = json.loads(payload_bytes)
+    except Exception:
+        return
+
+    state_field = cfg.get("state_field", "state")
+    on_value    = str(cfg.get("on_value", "true"))
+    on_label    = cfg.get("on_label", "on")
+    off_label   = cfg.get("off_label", "off")
+    label       = cfg.get("label", topic.split("/")[-1])
+
+    raw_val = payload.get(state_field)
+    if raw_val is None:
+        return
+
+    current_state = on_label if str(raw_val) == on_value else off_label
+
+    try:
+        ctx: dict = {}
+        if _ZIGBEE_CONTEXT_PATH.exists():
+            ctx = json.loads(_ZIGBEE_CONTEXT_PATH.read_text(encoding="utf-8"))
+        ctx[topic] = {
+            "label": label,
+            "state": current_state,
+            "ts":    datetime.now(timezone.utc).isoformat(),
+        }
+        _ZIGBEE_CONTEXT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _ZIGBEE_CONTEXT_PATH.write_text(
+            json.dumps(ctx, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        log.debug("Zigbee awareness updated: %s = %s", label, current_state)
+    except Exception as e:
+        log.debug("Zigbee context write error: %s", e)
 
 
 def _load_mqtt_config() -> dict:
@@ -142,8 +200,9 @@ async def _process_frigate_event(payload_bytes: bytes) -> None:
         },
     )
 
-    # On end events, fire the analysis callback (registered by kaare_api.py at startup)
-    if event_type == "end" and _END_EVENT_CALLBACK is not None:
+    # On end events, fire all registered hooks
+    if event_type == "end" and _END_EVENT_HOOKS:
+        has_clip = bool(src.get("has_clip") or before.get("has_clip", False))
         event_dict = {
             "camera": camera,
             "label": label,
@@ -155,8 +214,10 @@ async def _process_frigate_event(payload_bytes: bytes) -> None:
             "sub_label_score": sub_label_score,
             "duration": duration,
             "has_snapshot": has_snapshot,
+            "has_clip": has_clip,
         }
-        asyncio.create_task(_END_EVENT_CALLBACK(event_dict))
+        for _hook in _END_EVENT_HOOKS:
+            asyncio.create_task(_hook(event_dict))
 
 
 async def publish_mqtt(topic: str, payload: str) -> bool:
@@ -242,8 +303,22 @@ async def run_mqtt_listener() -> None:
                 log.info("MQTT connected to %s:%s", cfg["host"], cfg["port"])
                 _write_event_log("mqtt_connected", "info", f"Connected to {cfg['host']}:{cfg['port']}")
                 await client.subscribe(cfg["topic_events"])
+
+                # Subscribe to Zigbee awareness topics (opt-in, empty by default)
+                zigbee_topics: set[str] = set()
+                for entry in _load_zigbee_awareness():
+                    t = entry.get("topic", "")
+                    if t:
+                        await client.subscribe(t)
+                        zigbee_topics.add(t)
+                        log.info("MQTT subscribed to Zigbee awareness topic: %s", t)
+
                 async for message in client.messages:
-                    await _process_frigate_event(bytes(message.payload))
+                    msg_topic = str(message.topic)
+                    if msg_topic in zigbee_topics:
+                        _process_zigbee_awareness(msg_topic, bytes(message.payload))
+                    else:
+                        await _process_frigate_event(bytes(message.payload))
         except Exception as e:
             _STATUS["connected"] = False
             log.warning(

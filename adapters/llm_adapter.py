@@ -80,6 +80,7 @@ from kaare_core.tools.i18n import t, get_lang
 # -------------------------------------------------
 
 import glob as _glob
+from kaare_core.context_builder import build_situational_context as _build_situational_context
 
 def _load_text(path: str) -> str:
     try:
@@ -320,6 +321,46 @@ def _current_user_block(user_id: str, lang: str = "nb") -> str:
     return t("llm_current_user_header", lang) + "\n" + t("llm_current_user_line", lang, name=name)
 
 
+def _build_role_age_block(role: str, lang: str = "nb") -> str:
+    """Return a calibration block for child/teen users; empty for adult/admin."""
+    if role == "child":
+        return t("llm_role_age_child", lang)
+    if role == "teen":
+        return t("llm_role_age_teen", lang)
+    return ""
+
+
+def _load_user_knowledge(user_id: str, lang: str = "nb") -> str:
+    """Inject settled butler knowledge about the user (written nightly by reflection meeting)."""
+    if not user_id or user_id == "global":
+        return ""
+    try:
+        from pathlib import Path as _Path
+        path = _Path(f"/kaare/state/users/{user_id}/user_knowledge.md")
+        if not path.exists():
+            return ""
+        content = path.read_text(encoding="utf-8").strip()
+        if not content:
+            return ""
+        if len(content) > 2000:
+            content = content[:2000] + "\n[…]"
+        return t("llm_user_knowledge_header", lang) + "\n" + content
+    except Exception:
+        return ""
+
+
+def _get_user_role(user_id: str) -> str:
+    """Fetch role from users.db for system prompt injection. Returns 'adult' on any error."""
+    if not user_id or user_id == "global":
+        return "adult"
+    try:
+        from kaare_core.users import store as _store
+        rec = _store.get_user(user_id)
+        return (rec or {}).get("role", "adult")
+    except Exception:
+        return "adult"
+
+
 def _build_disabled_modules_block(lang: str = "nb") -> str:
     """Return a prompt block listing disabled agents/domains and Mechanic tool limits, or '' if everything is active."""
     disabled: list[str] = []
@@ -399,13 +440,18 @@ def _build_system(base: str, personality: str = "standard", user_id: str = "") -
 
     profile_top = _load_user_profile_top(user_id)
     user_obs = _load_user_obs(user_id, lang)
+    user_knowledge = _load_user_knowledge(user_id, lang)
     kare_reminders = _load_kare_reminders()
     current_user = _current_user_block(user_id, lang)
+    role_age = _build_role_age_block(_get_user_role(user_id), lang)
+    from kaare_core.tools.household_state import household_mode_block as _household_mode_block
+    _household_mode = _household_mode_block()
+    _situational = _build_situational_context(user_id, lang)
     parts = [p for p in [
-        _ASSISTANT_NAME_BLOKK, _PERSONALITY_CORE, current_user, behavior,
+        _ASSISTANT_NAME_BLOKK, _PERSONALITY_CORE, current_user, role_age, behavior,
         _LOKASJON_BLOKK, _LANGUAGE_BLOKK, (base or "").strip(),
-        personality_self, kare_reminders, _HOUSEHOLD_BLOCK, profile_top, user_obs,
-        world_ctx, _build_disabled_modules_block(lang), _time_block(lang)
+        personality_self, kare_reminders, _HOUSEHOLD_BLOCK, _household_mode, _situational, profile_top, user_obs,
+        user_knowledge, world_ctx, _build_disabled_modules_block(lang), _time_block(lang)
     ] if p]
     return "\n\n---\n\n".join(parts)
 

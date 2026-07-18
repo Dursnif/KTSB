@@ -10,10 +10,11 @@
     "aliases": "Aliases",
     "nodes": "Nodes",
     "settings": "Settings",
-    "back_to_kare": "Back to Kåre",
+    "back_to": "Back to {{name}}",
     "logout": "Log out",
     "sidebar_expand": "Expand sidebar",
-    "sidebar_collapse": "Collapse sidebar"
+    "sidebar_collapse": "Collapse sidebar",
+    "security": "Security"
   },
   "common": {
     "save": "Save",
@@ -74,7 +75,8 @@
       "integrasjoner": "Integrations",
       "distribusjon": "Distribution",
       "agenter": "Agent Settings",
-      "forklaringer": "Explanations"
+      "forklaringer": "Explanations",
+      "varsler": "Notifications"
     },
     "generelt": {
       "location": {
@@ -923,6 +925,28 @@
       "download_button": "Download",
       "select_hint": "Select a snapshot to install or download",
       "choose_file": "Choose file"
+    },
+    "varsler": {
+      "master": {
+        "title": "Notification system",
+        "description": "Enable or disable the entire notification system",
+        "toggle": "Enable notifications"
+      },
+      "push": {
+        "title": "Push notifications",
+        "description": "HA notify entity for push to phone (CRITICAL urgency)",
+        "entity_label": "HA notify entity",
+        "entity_hint": "E.g. notify.mobile_app_my_phone. Empty = disabled."
+      },
+      "normalcy": {
+        "title": "Normalcy thresholds",
+        "description": "Thresholds for the event feed on the Security page",
+        "min_score_label": "Minimum deviation score (0–1)",
+        "min_confidence_label": "Minimum data coverage (0–1)",
+        "cameras_label": "Monitored cameras",
+        "cameras_hint": "Empty = all configured cameras"
+      },
+      "events_link": "View events"
     }
   },
   "dashboard": {
@@ -957,6 +981,7 @@
   "login": {
     "title": "Kåre",
     "subtitle": "Log in to continue",
+    "reauth_subtitle": "Service was restarted. Enter your PIN to restore your history.",
     "username": "Username",
     "pin": "PIN",
     "logging_in": "Logging in…",
@@ -1024,6 +1049,16 @@
       "active_label": "Active",
       "can_manage_child_timers": "Parental control",
       "can_manage_child_timers_desc": "Can set timers for children and teens",
+      "is_parent": "Is a parent",
+      "is_parent_desc": "Can view and comment on children's profiles and reflections",
+      "managed_children": "Manages children",
+      "pin_required": "Require PIN every time",
+      "pin_required_desc": "No remember-me — PIN required on every login",
+      "pin_recovery_label": "PIN recovery (requires user permission)",
+      "pin_recovery_btn": "Generate temporary PIN",
+      "pin_recovery_generating": "Generating…",
+      "pin_recovery_expires": "Valid for {{minutes}} min",
+      "pin_recovery_error": "Recovery failed.",
       "save": "Save",
       "cancel": "Cancel",
       "error_generic": "Something went wrong."
@@ -1294,7 +1329,19 @@
     "log_meta_score": "Confidence",
     "log_meta_zones": "Zones",
     "log_meta_face": "Face",
-    "log_meta_duration": "Duration (sec)"
+    "log_meta_duration": "Duration (sec)",
+    "away_mode_title": "Away Mode",
+    "away_mode_hint": "Adjusts threat thresholds for Frigate events when household mode is 'away'.",
+    "away_mode_nighttime_start": "Nighttime starts (hour)",
+    "away_mode_nighttime_end": "Nighttime ends (hour)",
+    "away_mode_person_confidence": "Person threshold at perimeter",
+    "away_mode_person_confidence_hint": "Person at door/driveway with ≥ this confidence → HIGH priority",
+    "away_mode_unknown_night": "Unknown at perimeter at night → HIGH",
+    "away_mode_unknown_night_hint": "No label or low confidence at perimeter camera at night is set to HIGH priority",
+    "away_mode_save": "Save away mode settings",
+    "away_mode_saving": "Saving…",
+    "away_mode_saved": "Saved ✓",
+    "away_mode_perimeter_roles": "Perimeter roles (controlled by camera role above)"
   },
   "home": {
     "img_alt": "Generated image",
@@ -1365,15 +1412,37 @@
     "leder_preset_utforskende": "Exploratory",
     "leder_preset_analytisk": "Analytical",
     "leder_preset_utfordrende": "Challenging",
-    "leder_preset_egendefinert": "Custom"
+    "leder_preset_egendefinert": "Custom",
+    "no_eligible_reflection_users": "Young adults and adults manage their reflections privately via the user interface."
   },
   "user_sidebar": {
-    "home": "Kåre",
+    "home": "{{name}}",
     "reflections": "Reflections",
+    "mine_barn": "My children",
     "settings": "Settings",
     "change_pin": "Change PIN",
     "admin_panel": "Admin panel",
     "logout": "Log out"
+  },
+  "children_page": {
+    "title": "My children",
+    "subtitle": "View reflections and activity for your children",
+    "no_children": "No children are linked to your account yet. Ask an admin to add children under your user.",
+    "loading": "Loading…",
+    "reflections_label": "Reflections",
+    "no_reflections": "No reflection meetings yet",
+    "select_reflection": "Select a meeting to read it",
+    "unlock_btn": "Unlock",
+    "pin_title": "Unlock child's reflection",
+    "pin_hint": "Enter {{name}}'s PIN to view the content",
+    "pin_cancel": "Cancel",
+    "pin_open": "Open",
+    "pin_error": "Wrong PIN — try again",
+    "comment_label": "Your comment to the child",
+    "comment_placeholder": "Write a comment…",
+    "comment_save": "Save comment",
+    "comment_saved": "Comment saved",
+    "comment_error": "Could not save comment"
   },
   "user_reflections": {
     "title": "Reflection meetings",
@@ -1387,7 +1456,13 @@
     "pin_cancel": "Cancel",
     "pin_open": "Open",
     "pin_error": "Wrong PIN — try again",
-    "pin_cached": "PIN saved for this session"
+    "pin_cached": "PIN saved for this session",
+    "comment_title": "Your comment on this meeting",
+    "comment_ph": "Write a comment — what worked, what was missing, what do you want Kåre to remember?",
+    "comment_save": "Save",
+    "topic_title": "Suggest a topic for next meeting",
+    "topic_ph": "Is there something you'd like the next meeting to focus on?",
+    "topic_save": "Save"
   },
   "user_settings": {
     "title": "Settings",
@@ -1417,6 +1492,9 @@
     "preview_user": "This is how your messages look now",
     "preview_kare": "And this is how Kåre replies to you",
     "reset": "Reset to defaults",
+    "section_pin_recovery": "PIN recovery",
+    "pin_recovery_desc": "Grant admin permission to generate a temporary PIN if you get locked out. Only you can enable this — admin cannot force it.",
+    "pin_recovery_toggle": "Allow admin to recover my PIN",
     "section_voice_unlock": "Voice unlock",
     "voice_unlock_hint": "Protect personal data (memories, profile, camera) behind a phrase or PIN. Active for 2 minutes after the last command.",
     "unlock_method_label": "Unlock method",
@@ -1432,7 +1510,30 @@
     "global_lists_hint": "These lists are often shared in the household — no unlock needed.",
     "unlock_save": "Save unlock settings",
     "unlock_saved": "Saved",
-    "unlock_save_error": "Save failed"
+    "unlock_save_error": "Save failed",
+    "notify_channel_label": "Notification channel",
+    "notify_channel": {
+      "sound_node": "Sound node (TTS)",
+      "push": "Push",
+      "chat": "Chat (STM)",
+      "silent": "Silent"
+    }
+  },
+  "security": {
+    "title": "Security Events",
+    "subtitle": "Frigate detections with high deviation score. Rate events to improve the baseline.",
+    "deviation": "{{score}}% deviation",
+    "confidence": "{{pct}}% coverage",
+    "mark_normal": "Mark as normal",
+    "mark_suspicious": "Confirm as suspicious",
+    "comment_placeholder": "Comment (optional)",
+    "corrected_normal": "Marked normal",
+    "corrected_suspicious": "Confirmed suspicious",
+    "by": "by {{by}}",
+    "empty": "No events above the deviation threshold.",
+    "loading": "Loading events…",
+    "filter_days": "Last {{n}} days",
+    "no_baseline": "Baseline not ready (requires ≥1 day of data)"
   },
   "forklaringer": {
     "title": "What is what in Kåre?",
@@ -1558,6 +1659,15 @@
       "item_4": "Snapshot — Kåre takes an instant photo from a camera on request.",
       "item_5": "Events — Kåre fetches motion events and object detection from Frigate."
     },
+    "sikkerhet": {
+      "title": "Security",
+      "summary": "Camera events, anomalies, and home/away mode",
+      "item_1": "Event feed — Recent camera detections grouped by object and camera, with a snapshot thumbnail on row click.",
+      "item_2": "Deviation score — How unusual an event is compared to the last 28 days on the same camera, hour, and weekday. 0 = happens almost every time at this hour, 1 = has never happened at this hour before.",
+      "item_3": "Confidence — How much history Kåre has to base the deviation score on. Under roughly two weeks of data, the score isn't yet used in alert routing.",
+      "item_4": "Correction — Mark an event as normal or unusual. The correction feeds into next night's baseline recomputation.",
+      "item_5": "Home/away mode — When the household is set to \"away\", camera alerts escalate (especially unknown objects at perimeter cameras at night), and Kåre automatically detects when someone returns via GPS or local network presence."
+    },
     "agenter": {
       "title": "Agent Messages",
       "summary": "Messages from Kåre's inner agents",
@@ -1676,6 +1786,15 @@
       "item_1": "Mechanic — Choose which tools Mechanic can use on behalf of Kåre.",
       "item_2": "Miss Kåre — Choose whether and how Miss Kåre participates in reflection meetings.",
       "item_3": "Tool matrix — Adjust which tools are allowed per user role. Changes take effect immediately."
+    },
+    "innst_varsler": {
+      "title": "Settings → Notifications",
+      "summary": "Alert thresholds, quiet hours, and push",
+      "body": "Controls when and how Kåre notifies you about something unusual — from a quiet chat message to an immediate speaker announcement.",
+      "item_1": "Master switch — Turn the notification system on or off globally.",
+      "item_2": "Push target — A Home Assistant notify entity that receives push notifications for critical events.",
+      "item_3": "Thresholds — Minimum deviation score and minimum confidence an event must have to trigger an alert.",
+      "item_4": "Camera filter — Restrict which cameras can trigger alerts."
     },
     "bruker_chat": {
       "title": "Chat (Home page)",

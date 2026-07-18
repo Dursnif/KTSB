@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
+import { AssistantNameProvider } from "./contexts/AssistantNameContext";
 import { useTranslation } from "react-i18next";
 import { apiGetLanguage } from "./services/api";
 
@@ -17,10 +18,12 @@ import Tools from "./pages/admin/Tools";
 import Settings from "./pages/admin/Settings";
 import Aliases from "./pages/admin/Aliases";
 import Nodes from "./pages/admin/Nodes";
+import Security from "./pages/admin/Security";
 import Onboarding from "./pages/Onboarding";
 import Home from "./pages/user/Home";
 import UserReflections from "./pages/user/UserReflections";
 import UserSettings from "./pages/user/UserSettings";
+import UserChildren from "./pages/user/UserChildren";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -62,6 +65,7 @@ function AppRoutes() {
         <Route path="tools" element={<Tools />} />
         <Route path="aliases" element={<Aliases />} />
         <Route path="nodes" element={<Nodes />} />
+        <Route path="security" element={<Security />} />
         <Route path="settings" element={<Settings />} />
       </Route>
 
@@ -72,6 +76,7 @@ function AppRoutes() {
       <Route path="/" element={<RequireAuth><UserLayout /></RequireAuth>}>
         <Route index element={<Home />} />
         <Route path="reflections" element={<UserReflections />} />
+        <Route path="children" element={<UserChildren />} />
         <Route path="settings" element={<UserSettings />} />
       </Route>
 
@@ -84,8 +89,10 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <LanguageSync />
-        <AppRoutes />
+        <AssistantNameProvider>
+          <LanguageSync />
+          <AppRoutes />
+        </AssistantNameProvider>
       </AuthProvider>
     </BrowserRouter>
   );

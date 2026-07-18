@@ -202,10 +202,9 @@ async def _build_backup_zip(cats: set) -> bytes:
                 zf.writestr("qdrant/kaare_memory.snapshot", data)
 
         if "argus_events" in cats:
-            for col in ("argus_events", "vaktmester_events"):
-                data = await _qdrant_snapshot_bytes(col)
-                if data:
-                    zf.writestr(f"qdrant/{col}.snapshot", data)
+            data = await _qdrant_snapshot_bytes("argus_events")
+            if data:
+                zf.writestr("qdrant/argus_events.snapshot", data)
 
         if "personality" in cats:
             for fname in (
@@ -335,7 +334,7 @@ async def _restore_from_zip(content: bytes, cats: set, username: str) -> dict:
                     restored.append("kaare_memory")
 
         if "argus_events" in cats:
-            for col in ("argus_events", "vaktmester_events"):
+            for col in ("argus_events",):
                 arc = f"qdrant/{col}.snapshot"
                 if arc in names:
                     err = await _qdrant_restore_collection(col, zf.read(arc))

@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation, Trans } from "react-i18next";
 import { apiGenerate, apiMissKareComment, apiChatHistory, apiTranscribe, apiTtsFile, apiGetServices, apiGetPendingNotifications, apiAckNotification } from "../../services/api";
+import { useAuth } from "../../auth/AuthContext";
 import type { TraceStep } from "../../services/api";
 import { useTheme } from "../../theme";
 import { useUserPrefs } from "../../hooks/useUserPrefs";
@@ -316,6 +318,8 @@ function getUserId(): string {
 
 export default function Home() {
   const { t } = useTranslation();
+  const { logout } = useAuth();
+  const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [input, setInput]               = useState("");
@@ -351,11 +355,19 @@ export default function Home() {
     return () => clearInterval(id);
   }, []);
 
-  // Restore chat history from STM on mount; fall back to greeting if empty
+  // Restore chat history from STM on mount; fall back to greeting if empty.
+  // If needs_unlock is true, the service restarted while the JWT was still valid —
+  // session key is gone, encrypted STM can't be read. Force re-login so unlock_session
+  // runs and the encrypted snapshot is restored.
   useEffect(() => {
     const uid = getUserId();
     const greeting = t("home.greeting");
-    apiChatHistory(uid, 60).then(({ turns }) => {
+    apiChatHistory(uid, 60).then(({ turns, needs_unlock }) => {
+      if (needs_unlock) {
+        logout();
+        navigate("/login?reauth=1");
+        return;
+      }
       if (turns.length) {
         const restored: Message[] = turns.map(turn => ({
           role: turn.role === "assistant" ? "kare" as const : "user" as const,

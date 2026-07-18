@@ -9,6 +9,7 @@ Run with: python server.py  (not uvicorn server:app directly)
 
 import sys
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import numpy as np
@@ -56,7 +57,22 @@ def _wait_for_ready() -> str:
         return model_dir
 
 
-app = FastAPI(title="Kåre Semantic Embed")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    enabled, model_dir = _read_config()
+    if enabled and _model_ready(model_dir):
+        local_embedder.load(model_dir)
+        print(f"[memory-embed] Model loaded from {model_dir}", flush=True)
+    else:
+        print(
+            f"[memory-embed] WARNING: Model not loaded at startup "
+            f"(enabled={enabled}, model_dir='{model_dir}')",
+            flush=True,
+        )
+    yield
+
+
+app = FastAPI(title="Kåre Semantic Embed", lifespan=lifespan)
 
 
 class EmbedRequest(BaseModel):

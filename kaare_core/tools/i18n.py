@@ -1647,6 +1647,351 @@ _T: dict = {
         "en": "[Tool error {name}: {error}]",
         "de": "[Werkzeugfehler {name}: {error}]",
     },
+    "meet_health_header": {
+        "nb": "SYSTEMSJEKK VED MØTESTART ({timestamp}):",
+        "en": "SYSTEM CHECK AT MEETING START ({timestamp}):",
+        "de": "SYSTEMPRÜFUNG ZU MEETINGBEGINN ({timestamp}):",
+    },
+    "meet_health_failed": {
+        "nb": "[Systemsjekk feilet: {error}]",
+        "en": "[System check failed: {error}]",
+        "de": "[Systemprüfung fehlgeschlagen: {error}]",
+    },
+    "meet_health_services_down": {
+        "nb": "  ⚠ TJENESTER NEDE ({failed} av {total}):",
+        "en": "  ⚠ SERVICES DOWN ({failed} of {total}):",
+        "de": "  ⚠ DIENSTE AUSGEFALLEN ({failed} von {total}):",
+    },
+    "meet_health_services_ok": {
+        "nb": "  ✓ Tjenester: alle {count} oppe og svarer",
+        "en": "  ✓ Services: all {count} up and responding",
+        "de": "  ✓ Dienste: alle {count} aktiv und antwortend",
+    },
+    "meet_health_import_errors": {
+        "nb": "  ⚠ IMPORT-FEIL ({count}):",
+        "en": "  ⚠ IMPORT ERRORS ({count}):",
+        "de": "  ⚠ IMPORT-FEHLER ({count}):",
+    },
+    "meet_health_import_skip": {
+        "nb": " ({count} hoppet over — voice-venv-moduler krever services/voice/venv/, ikke en feil)",
+        "en": " ({count} skipped — voice-venv modules require services/voice/venv/, not an error)",
+        "de": " ({count} übersprungen — voice-venv-Module erfordern services/voice/venv/, kein Fehler)",
+    },
+    "meet_health_imports_ok": {
+        "nb": "  ✓ Importer: {count} OK{skip}",
+        "en": "  ✓ Imports: {count} OK{skip}",
+        "de": "  ✓ Importe: {count} OK{skip}",
+    },
+    "meet_health_config_errors": {
+        "nb": "  ⚠ KONFIG-FEIL ({count}):",
+        "en": "  ⚠ CONFIG ERRORS ({count}):",
+        "de": "  ⚠ KONFIG-FEHLER ({count}):",
+    },
+    "meet_health_config_ok": {
+        "nb": "  ✓ Konfig: {count} filer OK",
+        "en": "  ✓ Config: {count} files OK",
+        "de": "  ✓ Konfiguration: {count} Dateien OK",
+    },
+    "meet_mem_header": {
+        "nb": "--- MINNE OG INTERAKSJONSHISTORIKK ---",
+        "en": "--- MEMORY AND INTERACTION HISTORY ---",
+        "de": "--- GEDÄCHTNIS UND INTERAKTIONSHISTORIE ---",
+    },
+    "meet_mem_daily_header": {
+        "nb": "Daglige STM-sammendrag (siste 3 dager):",
+        "en": "Daily STM summaries (last 3 days):",
+        "de": "Tägliche STM-Zusammenfassungen (letzte 3 Tage):",
+    },
+    "meet_mem_daily_item": {
+        "nb": "[{date}] ({count} interaksjoner):\n{summary}",
+        "en": "[{date}] ({count} interactions):\n{summary}",
+        "de": "[{date}] ({count} Interaktionen):\n{summary}",
+    },
+    "meet_mem_episodes_header": {
+        "nb": "Siste komprimerte episoder (LTM):",
+        "en": "Recent compressed episodes (LTM):",
+        "de": "Aktuelle komprimierte Episoden (LTM):",
+    },
+    "meet_mem_episode_item": {
+        "nb": "Episode {n} (temaer: {topics}):\n{narrative}",
+        "en": "Episode {n} (topics: {topics}):\n{narrative}",
+        "de": "Episode {n} (Themen: {topics}):\n{narrative}",
+    },
+    "meet_mem_topic_unknown": {
+        "nb": "ukjent",
+        "en": "unknown",
+        "de": "unbekannt",
+    },
+    "meet_mem_prev_meeting": {
+        "nb": "Gårsdagens utviklingsmøte (avslutning):\n{excerpt}",
+        "en": "Yesterday's dev meeting (closing):\n{excerpt}",
+        "de": "Gestriges Entwicklungsmeeting (Abschluss):\n{excerpt}",
+    },
+    "meet_changes_commits": {
+        "nb": "Siste git-commits (48t):\n{commits}",
+        "en": "Recent git commits (48h):\n{commits}",
+        "de": "Aktuelle git-Commits (48h):\n{commits}",
+    },
+    "meet_changes_pending": {
+        "nb": "Ventende GitHub-synk:\n{lines}",
+        "en": "Pending GitHub sync:\n{lines}",
+        "de": "Ausstehende GitHub-Synchronisierung:\n{lines}",
+    },
+    "meet_admin_comment_prefix": {
+        "nb": "Kommentar til møtet {date}:\n{text}",
+        "en": "Comment on meeting {date}:\n{text}",
+        "de": "Kommentar zum Meeting {date}:\n{text}",
+    },
+    "meet_cloud_offline": {
+        "nb": "Online (ekstern cloud-ekspert) er IKKE tilgjengelig i dette møtet. Styr diskusjonen uten bidrag fra Online.",
+        "en": "Online (external cloud expert) is NOT available in this meeting. Run the discussion without Online's input.",
+        "de": "Online (externer Cloud-Experte) ist in diesem Meeting NICHT verfügbar. Führe die Diskussion ohne Online-Beiträge.",
+    },
+    "meet_leder_sys_health": {
+        "nb": "**Systemstatus ved møtestart:**\n{block}",
+        "en": "**System status at meeting start:**\n{block}",
+        "de": "**Systemstatus zu Meetingbeginn:**\n{block}",
+    },
+    "meet_leder_sys_changes": {
+        "nb": "**Endringer siden forrige møte:**\n{block}",
+        "en": "**Changes since last meeting:**\n{block}",
+        "de": "**Änderungen seit dem letzten Meeting:**\n{block}",
+    },
+    "meet_leder_sys_prev": {
+        "nb": "**Tidligere møter – forslag som ble fremmet:**\n{block}",
+        "en": "**Previous meetings – proposals raised:**\n{block}",
+        "de": "**Frühere Meetings – eingebrachte Vorschläge:**\n{block}",
+    },
+    "meet_leder_sys_topic": {
+        "nb": "**Admin har foreslått tema for dette møtet:** {topic}\nPriorité dette temaet når du setter agenda og styrer diskusjonen.",
+        "en": "**Admin has proposed a topic for this meeting:** {topic}\nPrioritize this topic when setting the agenda and directing the discussion.",
+        "de": "**Admin hat ein Thema für dieses Meeting vorgeschlagen:** {topic}\nProiorisiere dieses Thema beim Festlegen der Agenda und der Diskussionsleitung.",
+    },
+    "meet_leder_sys_time": {
+        "nb": "Nåværende tidspunkt: {time}",
+        "en": "Current time: {time}",
+        "de": "Aktuelle Uhrzeit: {time}",
+    },
+    "meet_cloud_instruction_final": {
+        "nb": "Gi en avsluttende vurdering av forslagene. Hvilke er mest verdifulle? Er det noe de gikk glipp av? Maks 5 setninger.",
+        "en": "Give a closing assessment of the proposals. Which are most valuable? Is there anything they missed? Max 5 sentences.",
+        "de": "Gib eine abschließende Bewertung der Vorschläge. Welche sind am wertvollsten? Wurde etwas übersehen? Max. 5 Sätze.",
+    },
+    "meet_cloud_instruction_mid": {
+        "nb": "Gi ett konkret teknisk innspill – noe de har oversett eller en bedre løsning. Maks 3 setninger.",
+        "en": "Give one concrete technical input – something they've overlooked or a better solution. Max 3 sentences.",
+        "de": "Gib einen konkreten technischen Input – etwas, das sie übersehen haben, oder eine bessere Lösung. Max. 3 Sätze.",
+    },
+    "meet_cloud_system": {
+        "nb": "Du er en ekstern teknisk ekspert som kommenterer et utviklingsmøte mellom Kåre (hjemme-AI) og Mechanic (teknisk problemløser). {instruction} Vær direkte. Ikke presenter deg selv.",
+        "en": "You are an external technical expert commenting on a development meeting between Kåre (home AI) and Mechanic (technical problem-solver). {instruction} Be direct. Do not introduce yourself.",
+        "de": "Du bist ein externer technischer Experte, der ein Entwicklungsmeeting zwischen Kåre (Heim-KI) und Mechanic (technischer Problemlöser) kommentiert. {instruction} Sei direkt. Stelle dich nicht vor.",
+    },
+    "meet_cloud_user": {
+        "nb": "Møtet så langt:\n\n{conversation}\n\nDitt innspill:",
+        "en": "The meeting so far:\n\n{conversation}\n\nYour input:",
+        "de": "Das Meeting bisher:\n\n{conversation}\n\nDein Beitrag:",
+    },
+    "meet_cloud_no_response": {
+        "nb": "[Cloud svarte ikke]",
+        "en": "[Cloud did not respond]",
+        "de": "[Cloud hat nicht geantwortet]",
+    },
+    "meet_cloud_unavailable": {
+        "nb": "[Cloud utilgjengelig: {error}]",
+        "en": "[Cloud unavailable: {error}]",
+        "de": "[Cloud nicht verfügbar: {error}]",
+    },
+    "meet_report_title": {
+        "nb": "# Utviklingsmøte – {date}",
+        "en": "# Development Meeting – {date}",
+        "de": "# Entwicklungsmeeting – {date}",
+    },
+    "meet_report_participants": {
+        "nb": "## Deltakere",
+        "en": "## Participants",
+        "de": "## Teilnehmer",
+    },
+    "meet_report_online_offline": {
+        "nb": "- Online (utilgjengelig)",
+        "en": "- Online (unavailable)",
+        "de": "- Online (nicht verfügbar)",
+    },
+    "meet_report_findings": {
+        "nb": "## Undersøkelsesfunn",
+        "en": "## Investigation Findings",
+        "de": "## Untersuchungsergebnisse",
+    },
+    "meet_report_kare_findings": {
+        "nb": "### Kåres funn",
+        "en": "### Kåre's Findings",
+        "de": "### Kåres Befunde",
+    },
+    "meet_report_mechanic_findings": {
+        "nb": "### Mechanics funn",
+        "en": "### Mechanic's Findings",
+        "de": "### Mechanics Befunde",
+    },
+    "meet_report_proposals": {
+        "nb": "## Forslag til forbedringer",
+        "en": "## Improvement Proposals",
+        "de": "## Verbesserungsvorschläge",
+    },
+    "meet_report_conversation": {
+        "nb": "## Samtale",
+        "en": "## Conversation",
+        "de": "## Gespräch",
+    },
+    "meet_time_anchor": {
+        "nb": "NÅVÆRENDE TIDSPUNKT: {time}.\nFokuser KUN på hendelser fra de siste 24 timene. Ignorer feil og hendelser som er eldre enn det – de er ikke relevante for dette møtet.\n",
+        "en": "CURRENT TIME: {time}.\nFocus ONLY on events from the last 24 hours. Ignore errors and events older than that – they are not relevant to this meeting.\n",
+        "de": "AKTUELLE UHRZEIT: {time}.\nKonzentriere dich NUR auf Ereignisse der letzten 24 Stunden. Ignoriere ältere Fehler und Ereignisse – sie sind für dieses Meeting nicht relevant.\n",
+    },
+    "meet_admin_topic_anchor": {
+        "nb": "\nADMIN HAR FORESLÅTT TEMA FOR DETTE MØTET: {topic}\nDette skal prioriteres i undersøkelses- og diskusjonsfasen.\n",
+        "en": "\nADMIN HAS PROPOSED A TOPIC FOR THIS MEETING: {topic}\nThis must be prioritized in the investigation and discussion phases.\n",
+        "de": "\nADMIN HAT EIN THEMA FÜR DIESES MEETING VORGESCHLAGEN: {topic}\nDies muss in der Untersuchungs- und Diskussionsphase priorisiert werden.\n",
+    },
+    "meet_lang_respond": {
+        "nb": "Svar alltid på norsk.",
+        "en": "Always respond in English.",
+        "de": "Antworte immer auf Deutsch.",
+    },
+    "meet_leder_says": {
+        "nb": "Møteleder sier: {text}",
+        "en": "Meeting leader says: {text}",
+        "de": "Moderator sagt: {text}",
+    },
+    "meet_mechanic_says": {
+        "nb": "Mechanic sier:\n{text}",
+        "en": "Mechanic says:\n{text}",
+        "de": "Mechanic sagt:\n{text}",
+    },
+    "meet_online_says": {
+        "nb": "Online sier: {text}",
+        "en": "Online says: {text}",
+        "de": "Online sagt: {text}",
+    },
+    "meet_closing_mechanic": {
+        "nb": "Møtet er over. Gi en punktliste med alle dine konkrete forslag – ett per linje, hvert merket med 'FORSLAG: ...'. Inkluder kun forslag du faktisk har undersøkt og bevist.",
+        "en": "The meeting is over. Give a bullet-point list of all your concrete proposals – one per line, each marked 'FORSLAG: ...'. Include only proposals you have actually investigated and verified.",
+        "de": "Das Meeting ist vorbei. Gib eine Aufzählung aller deiner konkreten Vorschläge – einen pro Zeile, jeden mit 'FORSLAG: ...' gekennzeichnet. Füge nur Vorschläge ein, die du tatsächlich untersucht und belegt hast.",
+    },
+    "meet_closing_kare": {
+        "nb": "Møtet er over. Prioriter Mechanics forslag – hva er viktigst å ta videre til brukeren? Maks 5 setninger.",
+        "en": "The meeting is over. Prioritize Mechanic's proposals – what is most important to bring to the user? Max 5 sentences.",
+        "de": "Das Meeting ist vorbei. Priorisiere Mechanics Vorschläge – was ist am wichtigsten für den Nutzer? Max. 5 Sätze.",
+    },
+    "meet_phase_investigate": {
+        "nb": "--- UNDERSØKELSESFASE: UTVIKLINGSMØTE ---",
+        "en": "--- INVESTIGATION PHASE: DEVELOPMENT MEETING ---",
+        "de": "--- UNTERSUCHUNGSPHASE: ENTWICKLUNGSMEETING ---",
+    },
+    "meet_phase_discuss": {
+        "nb": "--- DISKUSJONSFASE: UTVIKLINGSMØTE ---",
+        "en": "--- DISCUSSION PHASE: DEVELOPMENT MEETING ---",
+        "de": "--- DISKUSSIONSPHASE: ENTWICKLUNGSMEETING ---",
+    },
+    "meet_kare_investigate_task": {
+        "nb": "Din oppgave: finn reelle problemer i systemet ved å søke i argus og minne.\nSe etter: feil, mønstre som gjentar seg, ting du ikke klarer å svare på, interaksjoner med dårlig utfall. Bruk verktøyene – ikke gjett.\nOppsummer funnene konkret og ærlig.",
+        "en": "Your task: find real problems in the system by searching argus and memory.\nLook for: errors, recurring patterns, things you cannot answer, interactions with poor outcomes. Use the tools – do not guess.\nSummarize findings concretely and honestly.",
+        "de": "Deine Aufgabe: Finde echte Probleme im System durch Suche in Argus und Gedächtnis.\nSuche nach: Fehlern, wiederkehrenden Mustern, Dingen, die du nicht beantworten kannst, Interaktionen mit schlechten Ergebnissen. Nutze die Werkzeuge – rate nicht.\nFasse die Befunde konkret und ehrlich zusammen.",
+    },
+    "meet_kare_discuss_task": {
+        "nb": "Du er i et teknisk møte med Mechanic. Evaluer forslagene kritisk fra ditt perspektiv.\nDu kjenner systemet fra innsiden – hva stemmer, hva mangler, hva er viktigst?\nVær direkte. {lang_respond} Maks 5 setninger per innlegg.",
+        "en": "You are in a technical meeting with Mechanic. Critically evaluate proposals from your perspective.\nYou know the system from the inside – what is correct, what is missing, what matters most?\nBe direct. {lang_respond} Max 5 sentences per message.",
+        "de": "Du bist in einem technischen Meeting mit Mechanic. Bewerte Vorschläge kritisch aus deiner Perspektive.\nDu kennst das System von innen – was stimmt, was fehlt, was ist am wichtigsten?\nSei direkt. {lang_respond} Max. 5 Sätze pro Beitrag.",
+    },
+    "meet_mechanic_investigate_task": {
+        "nb": "Din oppgave: kartlegg systemets nåværende tilstand med verktøyene dine.\nBruk søk_argus, les_logg, git_log, sjekk_tjenester og sjekk_ressurser.\nLet etter: feil i logger, ustabile tjenester, siste kodeendringer, ressurspress.\nBruk verktøyene – ikke gjett. Oppsummer funnene konkret.",
+        "en": "Your task: map the current state of the system using your tools.\nUse søk_argus, les_logg, git_log, sjekk_tjenester and sjekk_ressurser.\nLook for: errors in logs, unstable services, recent code changes, resource pressure.\nUse the tools – do not guess. Summarize findings concretely.",
+        "de": "Deine Aufgabe: Kartiere den aktuellen Systemzustand mit deinen Werkzeugen.\nVerwende søk_argus, les_logg, git_log, sjekk_tjenester und sjekk_ressurser.\nSuche nach: Fehlern in Logs, instabilen Diensten, aktuellen Code-Änderungen, Ressourcendruck.\nNutze die Werkzeuge – rate nicht. Fasse die Befunde konkret zusammen.",
+    },
+    "meet_mechanic_discuss_task": {
+        "nb": "Du er i teknisk møte med Kåre. Agenda er satt av Møteleder basert på reelle funn.\nBruk verktøyene dine hvis du trenger mer data. Merk forslag med 'FORSLAG: ...'.\nMaks 5 setninger per innlegg. {lang_respond}",
+        "en": "You are in a technical meeting with Kåre. The agenda is set by the meeting leader based on real findings.\nUse your tools if you need more data. Mark proposals with 'FORSLAG: ...'.\nMax 5 sentences per message. {lang_respond}",
+        "de": "Du bist in einem technischen Meeting mit Kåre. Die Agenda wird vom Moderator basierend auf echten Befunden festgelegt.\nNutze deine Werkzeuge, wenn du mehr Daten brauchst. Markiere Vorschläge mit 'FORSLAG: ...'.\nMax. 5 Sätze pro Beitrag. {lang_respond}",
+    },
+    "meet_kare_investigate_user": {
+        "nb": "Undersøk systemet nå. Bruk alle verktøyene dine for å finne reelle problemer og mønstre fra siste 24 timer. Start bredt: les logg-filer, søk i argus, sjekk minnet. Zoom inn på det viktigste. Bruk verktøyene – ikke gjett.",
+        "en": "Investigate the system now. Use all your tools to find real problems and patterns from the last 24 hours. Start broad: read log files, search argus, check memory. Zoom in on what matters most. Use the tools – do not guess.",
+        "de": "Untersuche jetzt das System. Verwende alle deine Werkzeuge, um echte Probleme und Muster der letzten 24 Stunden zu finden. Beginne breit: lese Log-Dateien, durchsuche Argus, prüfe das Gedächtnis. Zoome auf das Wichtigste. Nutze die Werkzeuge – rate nicht.",
+    },
+    "meet_kare_summarize_user": {
+        "nb": "Oppsummer funnene dine. Hva er de viktigste problemene?",
+        "en": "Summarize your findings. What are the most important issues?",
+        "de": "Fasse deine Befunde zusammen. Was sind die wichtigsten Probleme?",
+    },
+    "meet_mechanic_investigate_user": {
+        "nb": "Undersøk systemet. Bruk søk_argus, les_logg, git_log, sjekk_tjenester og sjekk_ressurser for å finne reelle problemer fra siste 24 timer. Start bredt – logger, tjenestestatus, siste kodeendringer. Kall også inspiser_system(action='trace_mønstre', antall=100, source='all') og inkluder i rapporten: antall traces per source (user/refl/meet), gjennomsnittlig latency, hyppigste tools, andel 9B-fallback per source, og traces med unormalt høy latency eller recovered=True (tomme svar). Oppsummer funnene konkret til slutt. Ikke gjett. Avslutt med hukommelse(action='skriv') for å lagre 1–2 viktige tekniske observasjoner.",
+        "en": "Investigate the system. Use søk_argus, les_logg, git_log, sjekk_tjenester and sjekk_ressurser to find real problems from the last 24 hours. Start broad – logs, service status, recent code changes. Also call inspiser_system(action='trace_mønstre', antall=100, source='all') and include in the report: trace count per source (user/refl/meet), average latency, most frequent tools, 9B-fallback share per source, and traces with abnormally high latency or recovered=True (empty responses). Summarize findings concretely at the end. Do not guess. Finish with hukommelse(action='skriv') to store 1–2 important technical observations.",
+        "de": "Untersuche das System. Verwende søk_argus, les_logg, git_log, sjekk_tjenester und sjekk_ressurser, um echte Probleme der letzten 24 Stunden zu finden. Beginne breit – Logs, Dienststatus, aktuelle Code-Änderungen. Rufe auch inspiser_system(action='trace_mønstre', antall=100, source='all') auf und füge dem Bericht hinzu: Trace-Anzahl pro Quelle, durchschnittliche Latenz, häufigste Tools, 9B-Fallback-Anteil pro Quelle, und Traces mit ungewöhnlich hoher Latenz oder recovered=True. Fasse die Befunde am Ende konkret zusammen. Rate nicht. Beende mit hukommelse(action='skriv') für 1–2 technische Beobachtungen.",
+    },
+    "meet_mechanic_kritiker_user": {
+        "nb": "Kåre har rapportert følgende fra sin undersøkelse:\n\n{kare_funn}\n\nStill 3–5 kritiske, konkrete spørsmål. Hva ble ikke sjekket? Hva er antatt, ikke bekreftet? Hva mangler tall? Gi ingen svar eller løsninger — bare spørsmål.",
+        "en": "Kåre has reported the following from his investigation:\n\n{kare_funn}\n\nAsk 3–5 critical, concrete questions. What was not checked? What is assumed, not confirmed? What lacks numbers? Give no answers or solutions — only questions.",
+        "de": "Kåre hat folgendes aus seiner Untersuchung berichtet:\n\n{kare_funn}\n\nStelle 3–5 kritische, konkrete Fragen. Was wurde nicht geprüft? Was ist angenommen, nicht bestätigt? Wo fehlen Zahlen? Gib keine Antworten oder Lösungen — nur Fragen.",
+    },
+    "meet_mechanic_turn_1": {
+        "nb": "Din tur – undersøk det Møteleder pekte på med verktøyene dine.",
+        "en": "Your turn – investigate what the meeting leader pointed to using your tools.",
+        "de": "Du bist dran – untersuche, was der Moderator mit deinen Werkzeugen aufgezeigt hat.",
+    },
+    "meet_mechanic_turn_n": {
+        "nb": "Din tur – grav dypere eller kom med konkrete forslag. Bruk verktøy ved behov.",
+        "en": "Your turn – dig deeper or come up with concrete proposals. Use tools as needed.",
+        "de": "Du bist dran – tiefer graben oder konkrete Vorschläge machen. Nutze Werkzeuge bei Bedarf.",
+    },
+    "meet_kare_evaluate": {
+        "nb": "Mechanic sier:\n{text}\n\nEvaluer dette fra ditt perspektiv.",
+        "en": "Mechanic says:\n{text}\n\nEvaluate this from your perspective.",
+        "de": "Mechanic sagt:\n{text}\n\nBewerte das aus deiner Perspektive.",
+    },
+    "meet_kare_admin_react": {
+        "nb": "Mechanic sier:\n{text}\n\nHva tenker du?",
+        "en": "Mechanic says:\n{text}\n\nWhat do you think?",
+        "de": "Mechanic sagt:\n{text}\n\nWas denkst du?",
+    },
+    "meet_mechanic_mem_header": {
+        "nb": "--- MECHANICS HUKOMMELSE ---",
+        "en": "--- MECHANIC'S MEMORY ---",
+        "de": "--- MECHANICS GEDÄCHTNIS ---",
+    },
+    "meet_mechanic_your_mem_header": {
+        "nb": "--- DIN HUKOMMELSE ---",
+        "en": "--- YOUR MEMORY ---",
+        "de": "--- DEIN GEDÄCHTNIS ---",
+    },
+    "meet_leder_agenda_user": {
+        "nb": "{context}Undersøkelsesfasen er ferdig. Her er funnene:\n\n**Kåres funn (interaksjoner og systemhendelser):**\n{kare_funn}\n\n**Mechanics funn (kode, logger, tjenester):**\n{mechanic_funn}\n\n{kritikk_block}Åpne gruppe {group} av møtet. Velg 1-2 konkrete temaer å fokusere på basert på funnene. Vær spesifikk: pek på filer, tjenester eller mønstre de skal gå dypere inn i. Be Mechanic starte undersøkelsen.",
+        "en": "{context}The investigation phase is complete. Here are the findings:\n\n**Kåre's findings (interactions and system events):**\n{kare_funn}\n\n**Mechanic's findings (code, logs, services):**\n{mechanic_funn}\n\n{kritikk_block}Open group {group} of the meeting. Choose 1-2 concrete topics to focus on based on the findings. Be specific: point to files, services, or patterns to dig deeper into. Ask Mechanic to start the investigation.",
+        "de": "{context}Die Untersuchungsphase ist abgeschlossen. Hier sind die Befunde:\n\n**Kåres Befunde (Interaktionen und Systemereignisse):**\n{kare_funn}\n\n**Mechanics Befunde (Code, Logs, Dienste):**\n{mechanic_funn}\n\n{kritikk_block}Eröffne Gruppe {group} des Meetings. Wähle 1-2 konkrete Themen basierend auf den Befunden. Sei spezifisch: Weise auf Dateien, Dienste oder Muster hin. Bitte Mechanic, die Untersuchung zu beginnen.",
+    },
+    "meet_leder_agenda_context": {
+        "nb": "Forrige gruppe oppsummert: {summary}\n\n",
+        "en": "Previous group summarized: {summary}\n\n",
+        "de": "Vorherige Gruppe zusammengefasst: {summary}\n\n",
+    },
+    "meet_leder_agenda_kritikk": {
+        "nb": "**Mechanics kritiske spørsmål til Kåres funn:**\n{text}\n\n",
+        "en": "**Mechanic's critical questions about Kåre's findings:**\n{text}\n\n",
+        "de": "**Mechanics kritische Fragen zu Kåres Befunden:**\n{text}\n\n",
+    },
+    "meet_leder_styr_user": {
+        "nb": "Runde {round_num} er ferdig. Siste del av diskusjonen:\n{conv_tail}\n\nEr de på rett spor? Styr dem: be om mer dybde, bytt fokus, eller stopp et sidespor. Maks 2 setninger. Gi klar retning for neste runde.",
+        "en": "Round {round_num} is done. Latest part of the discussion:\n{conv_tail}\n\nAre they on the right track? Direct them: ask for more depth, switch focus, or stop a tangent. Max 2 sentences. Give clear direction for the next round.",
+        "de": "Runde {round_num} ist vorbei. Letzter Teil der Diskussion:\n{conv_tail}\n\nSind sie auf dem richtigen Weg? Leite sie: fordere mehr Tiefe, wechsle den Fokus, oder stoppe ein Nebenthema. Max. 2 Sätze. Gib eine klare Richtung für die nächste Runde.",
+    },
+    "meet_leder_admin_input_user": {
+        "nb": "Undersøkelsesfasen er ferdig. Funnene er:\n\nKåre: {kare_funn}\n\nMechanic: {mechanic_funn}\n\nAdmin har sendt inn dette innspillet til møtet:\n\"{admin_input}\"\n\nÅpne møtet med å presentere admin sitt innspill. Koble det gjerne til funnene hvis relevant. Be Mechanic starte med sin vurdering. Maks 3 setninger.",
+        "en": "The investigation phase is complete. The findings are:\n\nKåre: {kare_funn}\n\nMechanic: {mechanic_funn}\n\nAdmin has submitted this input to the meeting:\n\"{admin_input}\"\n\nOpen the meeting by presenting the admin's input. Connect it to the findings if relevant. Ask Mechanic to start with their assessment. Max 3 sentences.",
+        "de": "Die Untersuchungsphase ist abgeschlossen. Die Befunde sind:\n\nKåre: {kare_funn}\n\nMechanic: {mechanic_funn}\n\nAdmin hat diesen Beitrag für das Meeting eingereicht:\n\"{admin_input}\"\n\nEröffne das Meeting mit dem Admin-Beitrag. Verknüpfe ihn wenn relevant mit den Befunden. Bitte Mechanic, mit seiner Einschätzung zu beginnen. Max. 3 Sätze.",
+    },
+    "meet_leder_vurder_user": {
+        "nb": "Gruppe {group} av {max_groups} er ferdig.\n\nSamtalen:\n{conv_tail}\n\nSvar KUN med: 'FORTSETT: <begrunnelse>' eller 'AVSLUTT: <begrunnelse>'.",
+        "en": "Group {group} of {max_groups} is done.\n\nThe conversation:\n{conv_tail}\n\nReply ONLY with: 'FORTSETT: <reason>' or 'AVSLUTT: <reason>'.",
+        "de": "Gruppe {group} von {max_groups} ist fertig.\n\nDas Gespräch:\n{conv_tail}\n\nAntworte NUR mit: 'FORTSETT: <Begründung>' oder 'AVSLUTT: <Begründung>'.",
+    },
 
     # ── Argus ─────────────────────────────────────────────────────────────────
     "argus_face_event": {
@@ -1730,6 +2075,46 @@ _T: dict = {
         "nb": "[Mechanic: modellen er opptatt (lock timeout 300s) — prøv igjen om litt]",
         "en": "[Mechanic: model is busy (lock timeout 300s) — try again in a moment]",
         "de": "[Mechanic: Modell ist beschäftigt (Lock-Timeout 300s) — versuche es gleich erneut]",
+    },
+    "mech_unknown_action": {
+        "nb": "[Ukjent action for {tool}: {action}]",
+        "en": "[Unknown action for {tool}: {action}]",
+        "de": "[Unbekannte Aktion für {tool}: {action}]",
+    },
+    "mech_argus_unavailable": {
+        "nb": "[Argus utilgjengelig: {error}]",
+        "en": "[Argus unavailable: {error}]",
+        "de": "[Argus nicht verfügbar: {error}]",
+    },
+    "mech_argus_results": {
+        "nb": "Argus: {count} treff — '{query}'\n",
+        "en": "Argus: {count} results — '{query}'\n",
+        "de": "Argus: {count} Treffer — '{query}'\n",
+    },
+    "mech_memory_saved": {
+        "nb": "[Lagret: {text}]",
+        "en": "[Saved: {text}]",
+        "de": "[Gespeichert: {text}]",
+    },
+    "mech_output_masked": {
+        "nb": "[Output maskert — {chars} tegn]",
+        "en": "[Output masked — {chars} chars]",
+        "de": "[Ausgabe maskiert — {chars} Zeichen]",
+    },
+    "mech_mechanic_unavailable": {
+        "nb": "[Mechanic utilgjengelig: {error}]",
+        "en": "[Mechanic unavailable: {error}]",
+        "de": "[Mechanic nicht verfügbar: {error}]",
+    },
+    "mech_no_response": {
+        "nb": "[Ingen respons]",
+        "en": "[No response]",
+        "de": "[Keine Antwort]",
+    },
+    "mech_loop_detected": {
+        "nb": "[Duplikat ignorert: {tool} ble allerede kalt med samme argumenter. Prøv et annet verktøy eller endre argumentene.]",
+        "en": "[Duplicate ignored: {tool} was already called with the same arguments. Try a different tool or change the arguments.]",
+        "de": "[Duplikat ignoriert: {tool} wurde bereits mit denselben Argumenten aufgerufen. Versuche ein anderes Werkzeug oder ändere die Argumente.]",
     },
 
     # ── executor_memory: STM history formatting ───────────────────────────────
@@ -2098,9 +2483,9 @@ _T: dict = {
         "de": "Welcher Lautsprecher/Node für TTS verwendet wird. Weglassen, um den Node der Anfrage zu verwenden. Beispiel: 'wohnzimmer_lautsprecher'. Nur bei action='set'.",
     },
     "tool_timer_ha_payload_desc": {
-        "nb": "HA-handlingen ved avfyring. Objekt med 'action' og 'entity_id'. Gyldige actions: turn_on, turn_off, toggle, set_level. Eksempel: {\"action\": \"turn_off\", \"entity_id\": \"light.verksted\"}. Kun ved action_type='ha_action'.",
-        "en": "The HA action to perform when the timer fires. Object with 'action' and 'entity_id'. Valid actions: turn_on, turn_off, toggle, set_level. Example: {\"action\": \"turn_off\", \"entity_id\": \"light.workshop\"}. Only for action_type='ha_action'.",
-        "de": "Die HA-Aktion beim Auslösen. Objekt mit 'action' und 'entity_id'. Gültige Aktionen: turn_on, turn_off, toggle, set_level. Beispiel: {\"action\": \"turn_off\", \"entity_id\": \"light.werkstatt\"}. Nur bei action_type='ha_action'.",
+        "nb": "HA-handlingen ved avfyring som JSON-streng. Felter: 'action' og 'entity_id'. Gyldige actions: turn_on, turn_off, toggle, set_level. Eksempel: '{\"action\": \"turn_off\", \"entity_id\": \"light.verksted\"}'. Kun ved action_type='ha_action'.",
+        "en": "The HA action to perform when the timer fires, as a JSON string. Fields: 'action' and 'entity_id'. Valid actions: turn_on, turn_off, toggle, set_level. Example: '{\"action\": \"turn_off\", \"entity_id\": \"light.workshop\"}'. Only for action_type='ha_action'.",
+        "de": "Die HA-Aktion beim Auslösen als JSON-Zeichenkette. Felder: 'action' und 'entity_id'. Gültige Aktionen: turn_on, turn_off, toggle, set_level. Beispiel: '{\"action\": \"turn_off\", \"entity_id\": \"light.werkstatt\"}'. Nur bei action_type='ha_action'.",
     },
     "tool_timer_for_user_id_desc": {
         "nb": "Sett timer for et barn (kun for foreldre med can_manage_child_timers). Oppgi bruker-ID til barnet. Kun ved action='set'.",
@@ -2572,9 +2957,9 @@ _T: dict = {
         "de": "'write'=hinzufügen. 'read'=anzeigen. 'delete'=entfernen (erfordert 'note_id'). 'clear'=leeren. 'done'=fertig (huske/kare). 'mark_bought'=gekauft (handle). 'clear_all'=gesamte Einkaufsliste leeren.",
     },
     "tool_notat_list_name_desc": {
-        "nb": "'arkitekt'=designnotater (standard). 'handle'=handleliste. 'huske'=huskeliste. 'kare'=Kåres notater.",
-        "en": "'arkitekt'=design notes (default). 'handle'=shopping list. 'huske'=reminder list. 'kare'=Kåre's notes.",
-        "de": "'arkitekt'=Designnotizen (Standard). 'handle'=Einkaufsliste. 'huske'=Erinnerungsliste. 'kare'=Kåres Notizen.",
+        "nb": "'architect'=designnotater (standard). 'shopping'=handleliste. 'remember'=huskeliste. 'kare'=Kåres notater.",
+        "en": "'architect'=design notes (default). 'shopping'=shopping list. 'remember'=reminder list. 'kare'=Kåre's notes.",
+        "de": "'architect'=Designnotizen (Standard). 'shopping'=Einkaufsliste. 'remember'=Erinnerungsliste. 'kare'=Kåres Notizen.",
     },
     "tool_notat_text_desc": {
         "nb": "Innholdet i notatet/varen. Kreves ved action='write'.",
@@ -2823,14 +3208,14 @@ _T: dict = {
         "de": "'snapshot','events','frigate','list','analyze','show_event'.",
     },
     "tool_kamera_scope_desc": {
-        "nb": "'ett' = ett kamera (krever 'camera'), 'alle' = alle parallelt. Kun ved action='snapshot'.",
-        "en": "'ett' = one camera (requires 'camera'), 'alle' = all in parallel. Only for action='snapshot'.",
-        "de": "'ett' = eine Kamera (erfordert 'camera'), 'alle' = alle parallel. Nur bei action='snapshot'.",
+        "nb": "'one' = ett kamera (krever 'camera'), 'all' = alle parallelt. Kun ved action='snapshot'.",
+        "en": "'one' = one camera (requires 'camera'), 'all' = all in parallel. Only for action='snapshot'.",
+        "de": "'one' = eine Kamera (erfordert 'camera'), 'all' = alle parallel. Nur bei action='snapshot'.",
     },
     "tool_kamera_camera_desc": {
-        "nb": "Kameranavn, f.eks. 'ringeklokke'. Ved snapshot(scope='ett') og action='frigate'.",
-        "en": "Camera name, e.g. 'ringeklokke'. For snapshot(scope='ett') and action='frigate'.",
-        "de": "Kameraname, z.B. 'ringeklokke'. Bei snapshot(scope='ett') und action='frigate'.",
+        "nb": "Kameranavn, f.eks. 'ringeklokke'. Ved snapshot(scope='one') og action='frigate'.",
+        "en": "Camera name, e.g. 'ringeklokke'. For snapshot(scope='one') and action='frigate'.",
+        "de": "Kameraname, z.B. 'ringeklokke'. Bei snapshot(scope='one') und action='frigate'.",
     },
     "tool_kamera_query_desc": {
         "nb": "Konkret spørsmål om bildet. Kun ved action='snapshot'.",
@@ -2904,9 +3289,9 @@ _T: dict = {
         "de": "Bild generieren oder bearbeiten. mode='generate': neu aus Textbeschreibung. mode='edit': vorhandenes bearbeiten (erfordert 'image_b64'). Detaillierten Prompt schreiben.",
     },
     "tool_kare_image_mode_desc": {
-        "nb": "'generate' = nytt bilde fra tekst. 'edit' = rediger eksisterende (krever 'image_b64').",
-        "en": "'generate' = new image from text. 'edit' = edit existing (requires 'image_b64').",
-        "de": "'generate' = neues Bild aus Text. 'edit' = vorhandenes bearbeiten (erfordert 'image_b64').",
+        "nb": "'generate' = nytt bilde fra tekst.",
+        "en": "'generate' = new image from text.",
+        "de": "'generate' = neues Bild aus Text.",
     },
     "tool_kare_image_prompt_desc": {
         "nb": "Detaljert beskrivelse av bildet eller hva som skal endres.",
@@ -2951,9 +3336,9 @@ _T: dict = {
         "de": "Falls gesetzt, zusammen mit 'mode' verwenden. Weglassen um Bilder aufzulisten.",
     },
     "tool_se_bilder_mode_desc": {
-        "nb": "'vis' = vis i chatten. 'analyser' = send til VLM for analyse.",
-        "en": "'vis' = show in chat. 'analyser' = send to VLM for analysis.",
-        "de": "'vis' = im Chat anzeigen. 'analyser' = zur Analyse an VLM senden.",
+        "nb": "'view' = vis i chatten. 'analyze' = send til VLM for analyse.",
+        "en": "'view' = show in chat. 'analyze' = send to VLM for analysis.",
+        "de": "'view' = im Chat anzeigen. 'analyze' = zur Analyse an VLM senden.",
     },
 
     # media
@@ -3316,5 +3701,120 @@ _T: dict = {
         "nb": "{count} forslag venter på godkjenning:",
         "en": "{count} proposals pending approval:",
         "de": "{count} Vorschläge warten auf Genehmigung:",
+    },
+    # --- household tool ---
+    "tool_household_desc": {
+        "nb": "Administrer husstandens hjemme/borte-tilstand. Bruk set_away når familien reiser, set_home når de er tilbake, get_status for å sjekke nåværende modus. Kun for admin-brukere.",
+        "en": "Manage household home/away state. Use set_away when the family leaves, set_home when back, get_status to check current mode. Admin users only.",
+        "de": "Verwalte den Heimstatus des Haushalts. set_away wenn die Familie reist, set_home bei Rückkehr, get_status für aktuellen Modus. Nur für Admins.",
+    },
+    "tool_household_action_desc": {
+        "nb": "set_away: sett bortreisemodus. set_home: sett hjemmemodus (manuell override). get_status: les nåværende tilstand.",
+        "en": "set_away: activate away mode. set_home: activate home mode (manual override). get_status: read current state.",
+        "de": "set_away: Abwesenheitsmodus aktivieren. set_home: Heimat-Modus aktivieren. get_status: aktuellen Status lesen.",
+    },
+    "tool_household_reason_desc": {
+        "nb": "Årsak til bortreise, f.eks. 'reiser til Oslo'. Valgfritt.",
+        "en": "Reason for leaving, e.g. 'travelling to Oslo'. Optional.",
+        "de": "Grund für die Abwesenheit, z.B. 'Reise nach Oslo'. Optional.",
+    },
+    "tool_household_return_desc": {
+        "nb": "Forventet returdato som ISO-dato (YYYY-MM-DD), f.eks. '2026-06-15'. Valgfritt.",
+        "en": "Expected return date as ISO date (YYYY-MM-DD), e.g. '2026-06-15'. Optional.",
+        "de": "Erwartetes Rückkehrdatum als ISO-Datum (YYYY-MM-DD), z.B. '2026-06-15'. Optional.",
+    },
+    "tool_household_set_away_ok": {
+        "nb": "Bortreisemodus aktivert. Trusselterskel justert. Forventet hjemkomst: {ret}.",
+        "en": "Away mode activated. Threat threshold adjusted. Expected return: {ret}.",
+        "de": "Abwesenheitsmodus aktiviert. Bedrohungsschwelle angepasst. Erwartete Rückkehr: {ret}.",
+    },
+    "tool_household_set_away_ok_no_date": {
+        "nb": "Bortreisemodus aktivert. Trusselterskel justert. Ingen returdato satt.",
+        "en": "Away mode activated. Threat threshold adjusted. No return date set.",
+        "de": "Abwesenheitsmodus aktiviert. Bedrohungsschwelle angepasst. Kein Rückkehrdatum gesetzt.",
+    },
+    "tool_household_set_home_ok": {
+        "nb": "Hjemmemodus aktivert. Normalt trusselterskel gjenopprettet.",
+        "en": "Home mode activated. Normal threat thresholds restored.",
+        "de": "Heimat-Modus aktiviert. Normale Bedrohungsschwellen wiederhergestellt.",
+    },
+    "tool_household_already_home": {
+        "nb": "Husstandsstatus er allerede: hjemme.",
+        "en": "Household status is already: home.",
+        "de": "Haushaltsstatus ist bereits: zuhause.",
+    },
+    "tool_household_status": {
+        "nb": "Husstandsstatus: {mode}. Sist oppdatert: {updated}.",
+        "en": "Household status: {mode}. Last updated: {updated}.",
+        "de": "Haushaltsstatus: {mode}. Zuletzt aktualisiert: {updated}.",
+    },
+
+    # ── notify ────────────────────────────────────────────────────────────────
+    "notify_frigate_away_person": {
+        "nb": "Bevegelse oppdaget av {camera} ({label}). Kamera: {camera}.",
+        "en": "Motion detected by {camera} ({label}). Camera: {camera}.",
+        "de": "Bewegung erkannt von {camera} ({label}). Kamera: {camera}.",
+    },
+    "notify_frigate_away_unknown": {
+        "nb": "Ukjent gjenstand oppdaget av {camera} om natten.",
+        "en": "Unknown object detected by {camera} at night.",
+        "de": "Unbekanntes Objekt von {camera} in der Nacht erkannt.",
+    },
+    "notify_timer_fired": {
+        "nb": "Timer ferdig: {label}.",
+        "en": "Timer fired: {label}.",
+        "de": "Timer abgelaufen: {label}.",
+    },
+
+    # ── role-age blocks (system prompt injection for child/teen) ─────────────
+    "llm_role_age_child": {
+        "nb": (
+            "# Brukernivå\n"
+            "Du snakker nå med et barn (7–12 år). "
+            "Bruk korte setninger og enkle ord. "
+            "Svar bør ikke være lengre enn 3–4 setninger. "
+            "Vær varm og tydelig. Unngå ironi og komplekse abstraksjoner."
+        ),
+        "en": (
+            "# User level\n"
+            "You are now speaking with a child (age 7–12). "
+            "Use short sentences and simple words. "
+            "Replies should be no longer than 3–4 sentences. "
+            "Be warm and clear. Avoid irony and complex abstractions."
+        ),
+        "de": (
+            "# Benutzerlevel\n"
+            "Du sprichst jetzt mit einem Kind (7–12 Jahre). "
+            "Verwende kurze Sätze und einfache Wörter. "
+            "Antworten sollten nicht länger als 3–4 Sätze sein. "
+            "Sei warm und klar. Vermeide Ironie und komplexe Abstraktionen."
+        ),
+    },
+    "llm_role_age_teen": {
+        "nb": (
+            "# Brukernivå\n"
+            "Du snakker nå med en tenåring (13–17 år). "
+            "Svar kan være 5–8 setninger. "
+            "Bruk naturlig språk — du kan bruke humor og enkle abstraksjoner."
+        ),
+        "en": (
+            "# User level\n"
+            "You are now speaking with a teenager (age 13–17). "
+            "Replies can be 5–8 sentences. "
+            "Use natural language — you may use humor and simple abstractions."
+        ),
+        "de": (
+            "# Benutzerlevel\n"
+            "Du sprichst jetzt mit einem Teenager (13–17 Jahre). "
+            "Antworten können 5–8 Sätze lang sein. "
+            "Verwende natürliche Sprache — Humor und einfache Abstraktionen sind erlaubt."
+        ),
+    },
+
+    # ── user_knowledge block (butler memory) ─────────────────────────────────
+    "llm_user_knowledge_header": {
+        "nb": "# Det jeg vet om deg",
+        "en": "# What I know about you",
+        "de": "# Was ich über dich weiß",
     },
 }

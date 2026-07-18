@@ -26,7 +26,7 @@ export function TabLlm() {
   const [memEmbData, setMemEmbData] = useState<MemoryEmbedData>({ enabled: false, model_dir: "" });
   const [innerVoicesData, setInnerVoicesData] = useState<InnerVoicesData>({
     jing: { provider: "openvino", model_path: "", interval_seconds: 180, max_tokens: 300 },
-    jang: { provider: "openvino", model_path: "", interval_seconds: 600, max_tokens: 2048, turns_back: 3, inner_thoughts_retention_hours: 24 },
+    jang: { provider: "openvino", model_path: "", interval_seconds: 600, max_tokens: 400, turns_back: 3, inner_thoughts_retention_hours: 24 },
     node_label: "Local",
     push_token: "",
   });

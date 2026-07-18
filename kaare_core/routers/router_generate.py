@@ -32,6 +32,7 @@ from kaare_core.config import get_tools_for_role as _get_tools_for_role, filter_
 from kaare_core.users import store as _user_store
 from kaare_core.llm_fallback import is_fallback_active
 from kaare_core.tools.i18n import get_lang as _get_lang, t as _t_i18n
+from kaare_core.context_builder import set_request_context as _set_request_context
 
 
 def _hhmm() -> str:
@@ -228,6 +229,7 @@ async def handle_generate(
 
     user_text = (prompt or "").strip()
     lang = _get_lang(user_id)
+    _set_request_context(source_node, network_context)
     if not user_text:
         return {"text": _t_i18n("gen_empty_message", lang)}
 
@@ -486,6 +488,8 @@ async def handle_generate(
     _user_rec = _user_store.get_user(user_id) if user_id != USER_GLOBAL else None
     _personality = (_user_rec or {}).get("personality", "standard") or "standard"
     _user_role = (_user_rec or {}).get("role", "admin")
+    if _user_role == "child" and _personality == "standard":
+        _personality = "barnevennlig"
     _tools = _get_tools_for_role(_user_role, user_id)
 
     _kare_cfg   = get_llm_config("default")
