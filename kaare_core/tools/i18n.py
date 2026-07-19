@@ -3610,6 +3610,11 @@ _T: dict = {
         "en": "[SYSTEM: You said you would set a timer or reminder, but you did not call the timer tool. Do it now: call timer with the correct action, time, and text. Tool call only — no explanatory text.]",
         "de": "[SYSTEM: Du hast gesagt, du würdest einen Timer oder eine Erinnerung setzen, aber du hast das timer-Werkzeug nicht aufgerufen. Tue es jetzt: rufe timer mit der richtigen Aktion, Zeit und Text auf. Nur Werkzeugaufruf — kein erklärender Text.]",
     },
+    "gen_promise_correction_household": {
+        "nb": "[SYSTEM: Du sa at du satte husstanden til borte- eller hjemme-modus, men du kalte ikke household-verktøyet. Gjør det nå: kall household med riktig action (set_away eller set_home) og de detaljene du nevnte. Kun tool-kall — ingen forklarende tekst.]",
+        "en": "[SYSTEM: You said you set the household to away or home mode, but you did not call the household tool. Do it now: call household with the correct action (set_away or set_home) and the details you mentioned. Tool call only — no explanatory text.]",
+        "de": "[SYSTEM: Du hast gesagt, du hättest den Haushalt auf Abwesend- oder Zuhause-Modus gesetzt, aber du hast das household-Werkzeug nicht aufgerufen. Tue es jetzt: rufe household mit der richtigen Aktion (set_away oder set_home) auf. Nur Werkzeugaufruf — kein erklärender Text.]",
+    },
     "gen_promise_correction_generic": {
         "nb": "[SYSTEM: Du lovet å utføre en handling med et verktøy, men kalte det ikke. Gjør det nå — kun tool-kall, ingen forklarende tekst.]",
         "en": "[SYSTEM: You promised to perform an action using a tool, but did not call it. Do it now — tool call only, no explanatory text.]",

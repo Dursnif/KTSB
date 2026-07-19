@@ -235,7 +235,7 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
         return await executor_camera.dispatch(name, arguments)
 
     if name in executor_household.HOUSEHOLD_TOOLS:
-        return await executor_household.dispatch(name, arguments, user_id=user_id)
+        return await executor_household.dispatch(name, arguments, user_id=arguments.get("_user_id", "global"))
 
     if name in ("get_weather", "hent_yr_varsel"):
         return await _fetch_weather(arguments.get("location"), lang=lang)

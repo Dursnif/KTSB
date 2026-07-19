@@ -140,6 +140,25 @@ _TOOL_PROMISES: list[tuple[set[str], str, re.Pattern]] = [
             re.IGNORECASE,
         ),
     ),
+    (
+        {"household"},
+        "gen_promise_correction_household",
+        re.compile(
+            # nb (covers both "jeg setter X" and V2 word order "setter jeg X")
+            r'\b(jeg\s+(setter|aktiverer|har\s+(satt|aktivert))|(setter|aktiverer|har\s+(satt|aktivert))\s+jeg)'
+            r'\s+(husstanden|huset|dere)\s+(til\s+)?["\']?(borte\S*|bortreise\S*|hjemme\S*)\b'
+            r'|\b(bortreisemodus|borte-?modus)\s+(er\s+)?(nå\s+)?(aktivert|satt|slått\s+på|skrudd\s+på)\b'
+            r'|\bhusstanden\s+er\s+(nå\s+)?satt\s+til\s+(borte|hjemme)\b'
+            # en
+            r"|\bI('ve|'ll|'m going to)\s+(set|activate|switch)\s+(the\s+)?(household|house)\s+(to\s+)?(away|home)\b"
+            r'|\baway\s+mode\s+is\s+(now\s+)?(activated|set|on)\b'
+            # de
+            r'|\bich\s+(setze|aktiviere)\s+den\s+(haushalt|abwesenheitsmodus)\b'
+            r'|\bhabe\s+den\s+haushalt\s+auf\s+(abwesend|zuhause)\s+gesetzt\b'
+            r'|\babwesenheitsmodus\s+ist\s+(jetzt\s+)?(aktiviert|eingeschaltet|gesetzt)\b',
+            re.IGNORECASE,
+        ),
+    ),
 ]
 
 
