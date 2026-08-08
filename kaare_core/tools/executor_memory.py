@@ -4,7 +4,7 @@ from pathlib import Path
 
 from kaare_core.crypto import unseal
 from kaare_core.memory.long_term import get_ltm, USER_GLOBAL
-from kaare_core.session_keys import get_session_key_sync
+from kaare_core.session_keys import resolve_key_sync
 from kaare_core.tools.i18n import t, get_lang
 from kaare_core.tools.think_cache import read_think_history, format_for_kare
 
@@ -26,12 +26,12 @@ MEMORY_TOOLS = {
 }
 
 
-def _load_stm_snapshot_data(path: Path, user_id: str) -> dict | str:
+def _load_stm_snapshot_data(path: Path, user_id: str, allow_system_key: bool = False) -> dict | str:
     """Load STM snapshot data from path (.json or .enc). Returns dict or error string."""
     enc_path = path.with_suffix(".enc")
     try:
         if enc_path.exists():
-            session_key = get_session_key_sync(user_id)
+            session_key = resolve_key_sync(user_id, allow_system_key=allow_system_key)
             if not session_key:
                 return f"[snapshot encrypted — not readable without active session for '{user_id}']"
             encrypted_blob = enc_path.read_text(encoding="utf-8")
@@ -41,8 +41,14 @@ def _load_stm_snapshot_data(path: Path, user_id: str) -> dict | str:
         return f"[read error: {e}]"
 
 
-def _get_stm_history(date: str | None = None, lang: str = "nb", user_id: str = "global") -> str:
-    """Return a formatted STM snapshot for the given date, or list available dates."""
+def _get_stm_history(date: str | None = None, lang: str = "nb", user_id: str = "global",
+                      allow_system_key: bool = False) -> str:
+    """Return a formatted STM snapshot for the given date, or list available dates.
+
+    allow_system_key=True (P87): set by dispatch() when the tool call carries
+    arguments["_allow_system_key"] — currently only kaare_dev_meeting.py's Kåre tool
+    loop sets that, for its own unattended tool calls during the nightly dev meeting.
+    """
     try:
         hist_dir = Path(
             yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8"))
@@ -69,7 +75,7 @@ def _get_stm_history(date: str | None = None, lang: str = "nb", user_id: str = "
     # 1. Old flat format: {date}.json
     flat_path = hist_dir / f"{date}.json"
     if flat_path.exists():
-        data = _load_stm_snapshot_data(flat_path, user_id)
+        data = _load_stm_snapshot_data(flat_path, user_id, allow_system_key=allow_system_key)
     else:
         # 2. New directory format: {date}/{user_id}.json or .enc
         date_dir = hist_dir / date
@@ -84,7 +90,7 @@ def _get_stm_history(date: str | None = None, lang: str = "nb", user_id: str = "
         for uid in uid_candidates:
             p = date_dir / f"{uid}.json"
             if p.exists() or (date_dir / f"{uid}.enc").exists():
-                data = _load_stm_snapshot_data(p, uid)
+                data = _load_stm_snapshot_data(p, uid, allow_system_key=allow_system_key)
                 break
 
     if data is None:
@@ -262,7 +268,8 @@ async def dispatch(name: str, arguments: dict) -> str:
                 lang=lang,
             )
         if action in ("fetch_stm", "hent_gammel_stm"):
-            return _get_stm_history(arguments.get("date"), lang=lang, user_id=arguments.get("_user_id", "global"))
+            return _get_stm_history(arguments.get("date"), lang=lang, user_id=arguments.get("_user_id", "global"),
+                                     allow_system_key=bool(arguments.get("_allow_system_key", False)))
         return f"Unknown action for memory: '{action}'. Valid: search, fetch_unverified, confirm, fetch_stm."
 
     if name in ("read_meeting", "les_møte"):
@@ -295,7 +302,8 @@ async def dispatch(name: str, arguments: dict) -> str:
         )
 
     if name == "hent_gammel_stm":
-        return _get_stm_history(arguments.get("date"), lang=lang, user_id=arguments.get("_user_id", "global"))
+        return _get_stm_history(arguments.get("date"), lang=lang, user_id=arguments.get("_user_id", "global"),
+                                 allow_system_key=bool(arguments.get("_allow_system_key", False)))
 
     if name in ("thought_history", "les_tankehistorikk"):
         entries = read_think_history(

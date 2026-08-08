@@ -50,7 +50,7 @@ from kaare_core.agents.mechanic.tools import (
 )
 from kaare_core.tools.executor import execute_tool as _kaare_execute_tool
 from kaare_core.tools.definitions import KAARE_TOOLS
-from adapters.llm_adapter import _parse_ollama_tool_calls, _normalise_messages_for_vllm
+from adapters.llm_adapter import call_llm_chat
 
 
 def _build_kare_dev_tools() -> list[dict]:
@@ -99,14 +99,6 @@ from kaare_core.config import get_service as _svc
 _default_cfg  = _llm("default")
 _cloud_base   = _llm("cloud")["base_url"]
 
-_KARE_PROVIDER = _default_cfg.get("provider", "ollama")   # "vllm" or "ollama"
-_KARE_BASE_URL = _default_cfg["base_url"]
-
-# URL per provider — everything read from llm.yaml, nothing hardcoded
-KARE_URL   = (_KARE_BASE_URL + "/v1/chat/completions") if _KARE_PROVIDER == "vllm" else (_KARE_BASE_URL + "/api/chat")
-LEDER_URL  = KARE_URL
-KARE_MODEL  = _cfg_model("kare")
-LEDER_MODEL = _cfg_model("kare")
 CLOUD_URL   = _cloud_base + "/chat/completions"
 CLOUD_MODEL = _cfg_model("cloud")
 
@@ -139,64 +131,6 @@ KARE_INVEST_TOKENS = int(_dev_cfg().get("kare_invest_tokens", 1000))
 
 _kare_opts    = _default_cfg["options"]
 _KARE_NUM_CTX = _kare_opts.get("num_ctx") or _kare_opts.get("max_tokens", 8192)
-
-
-def _kare_payload(
-    messages: list[dict],
-    max_tokens: int,
-    tools: list | None = None,
-    thinking: bool = True,
-    rid: str = "",
-) -> dict:
-    """Build LLM payload for Kåre/Møteleder, adapted to provider from llm.yaml.
-
-    thinking=False disables chain-of-thought for short coordination calls (møteleder).
-    """
-    if _KARE_PROVIDER == "vllm":
-        p: dict = {
-            "model": KARE_MODEL,
-            "messages": _normalise_messages_for_vllm(messages),
-            "stream": False,
-            "temperature": 0.4,
-            "max_tokens": max_tokens,
-        }
-        if not thinking:
-            p["chat_template_kwargs"] = {"enable_thinking": False}
-    else:
-        p = {
-            "model": KARE_MODEL,
-            "messages": messages,
-            "stream": False,
-            "think": False,
-            "options": {"temperature": 0.4, "num_ctx": _KARE_NUM_CTX, "num_predict": max_tokens},
-        }
-    if tools:  # Only add non-empty tool lists — empty list + tool_choice causes vLLM 400
-        p["tools"] = tools
-        if _KARE_PROVIDER == "vllm":
-            p["tool_choice"] = "auto"
-    effective_rid = rid or _CURRENT_MEET_RID
-    if effective_rid:
-        p["rid"] = effective_rid
-    return p
-
-
-def _parse_kare_resp(resp: dict) -> tuple[str, list]:
-    """Extract (content, tool_calls) from LLM response, handling vLLM and Ollama formats."""
-    if _KARE_PROVIDER == "vllm":
-        msg = resp.get("choices", [{}])[0].get("message", {})
-    else:
-        msg = resp.get("message", {})
-    content    = msg.get("content", "") or ""
-    tool_calls = msg.get("tool_calls") or []
-    # Fallback: model put tool calls in content as XML instead of structured tool_calls
-    if not tool_calls and "<tool_call>" in content:
-        parsed, content = _parse_ollama_tool_calls(content)
-        if parsed:
-            tool_calls = parsed
-    # vLLM reasoning-parser puts thinking in reasoning_content; use as fallback when content is empty
-    if not content and not tool_calls:
-        content = msg.get("reasoning_content", "") or ""
-    return content, tool_calls
 
 
 # ── Helper functions ──────────────────────────────────────────────────────────
@@ -268,7 +202,7 @@ def _get_memory_context(lang: str = "nb") -> str:
     parts = []
     try:
         from kaare_core.memory.long_term import load_recent_daily_summaries
-        entries = load_recent_daily_summaries(days=3)
+        entries = load_recent_daily_summaries(days=3, allow_system_key=True)
         if entries:
             lines = []
             for e in reversed(entries):
@@ -279,14 +213,21 @@ def _get_memory_context(lang: str = "nb") -> str:
 
     try:
         import sqlite3
+        from kaare_core.memory.long_term import _dec
         conn = sqlite3.connect("/kaare/state/memory/interactions.db")
         rows = conn.execute(
-            "SELECT narrative, topics FROM episodes ORDER BY id DESC LIMIT 5"
+            "SELECT narrative, topics, user_id FROM episodes ORDER BY id DESC LIMIT 5"
         ).fetchall()
         conn.close()
         if rows:
             lines = []
-            for i, (narrative, topics) in enumerate(reversed(rows), 1):
+            for i, (narrative, topics, ep_user_id) in enumerate(reversed(rows), 1):
+                uid = ep_user_id or "global"
+                # allow_system_key=True (P87): episodes are encrypted per-user as of Phase 6
+                # (kaare_nightjob.py::_save_episode) — this raw read must decrypt them the
+                # same way, or the dev meeting starts seeing raw ciphertext (Decision 5).
+                narrative = _dec(uid, narrative, allow_system_key=True)
+                topics = _dec(uid, topics, allow_system_key=True)
                 lines.append(t("meet_mem_episode_item", lang, n=i, topics=topics or t("meet_mem_topic_unknown", lang), narrative=narrative))
             parts.append(t("meet_mem_episodes_header", lang) + "\n" + "\n\n".join(lines))
     except Exception as e:
@@ -375,6 +316,22 @@ _KARE_MEETING_TOOLS = _build_kare_dev_tools()
 
 
 # ── Kåre calls (meeting – with tool support) ──────────────────────────────────
+async def _kare_call(
+    messages: list[dict],
+    max_tokens: int,
+    tools: list | None = None,
+    thinking: bool = True,
+    timeout: float = TIMEOUT_SECS,
+) -> dict:
+    """Shared call_llm_chat() wrapper for Kåre's "default" role, tagged with the
+    active meeting rid/source so it lands in llm_calls.log for Argus tracing."""
+    options = {"num_predict": max_tokens, "temperature": 0.4, "num_ctx": _KARE_NUM_CTX}
+    return await call_llm_chat(
+        "default", messages, tools=tools, options=options, timeout=timeout,
+        disable_thinking=not thinking, rid=_CURRENT_MEET_RID, source="meet",
+    )
+
+
 async def _kare_investigate(system_prompt: str, lang: str = "nb") -> str:
     """Kåre investigates with his tools and returns a summary of findings."""
     messages = [
@@ -383,23 +340,13 @@ async def _kare_investigate(system_prompt: str, lang: str = "nb") -> str:
     ]
 
     for _ in range(MAX_INVEST_ROUNDS):
-        try:
-            async with httpx.AsyncClient(timeout=TIMEOUT_SECS) as client:
-                r = await client.post(
-                    KARE_URL,
-                    json=_kare_payload(messages, KARE_INVEST_TOKENS, _KARE_MEETING_TOOLS),
-                    headers={"x-kaare-source": "dev_meeting"},
-                )
-                r.raise_for_status()
-                resp = r.json()
-        except httpx.HTTPStatusError as e:
-            log.error("Kåre investigate-kall feilet: %s\nBody: %s", e, e.response.text[:1000])
-            return t("meet_kare_unavailable", get_lang("global"), error=e)
-        except Exception as e:
-            log.error("Kåre investigate-kall feilet: %s", e)
-            return t("meet_kare_unavailable", get_lang("global"), error=e)
+        result = await _kare_call(messages, KARE_INVEST_TOKENS, _KARE_MEETING_TOOLS)
+        if not result.get("ok"):
+            log.error("Kåre investigate-kall feilet: %s", result.get("error"))
+            return t("meet_kare_unavailable", get_lang("global"), error=result.get("error"))
 
-        content, tool_calls = _parse_kare_resp(resp)
+        content    = result.get("text") or ""
+        tool_calls = result.get("tool_calls") or []
 
         if not tool_calls:
             stripped = _strip_think(content)
@@ -407,53 +354,36 @@ async def _kare_investigate(system_prompt: str, lang: str = "nb") -> str:
                 return stripped
             # Think-block used all tokens — retry without thinking
             log.warning("[Kåre investigate] Empty response (think used all tokens) — retry without thinking")
-            try:
-                async with httpx.AsyncClient(timeout=TIMEOUT_SECS) as client:
-                    r = await client.post(
-                        KARE_URL,
-                        json=_kare_payload(messages, KARE_INVEST_TOKENS, thinking=False),
-                        headers={"x-kaare-source": "dev_meeting"},
-                    )
-                    r.raise_for_status()
-                    content, _ = _parse_kare_resp(r.json())
-                    return _strip_think(content) or "[No findings]"
-            except Exception as e:
-                log.error("Kåre investigate retry failed: %s", e)
+            retry = await _kare_call(messages, KARE_INVEST_TOKENS, thinking=False)
+            if not retry.get("ok"):
+                log.error("Kåre investigate retry failed: %s", retry.get("error"))
                 return "[No findings]"
+            return _strip_think(retry.get("text") or "") or "[No findings]"
 
         messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
         for tc in tool_calls:
             fn   = tc.get("function", {})
             name = fn.get("name", "")
-            try:
-                raw = fn.get("arguments", {})
-                args = raw if isinstance(raw, dict) else (json.loads(raw) if raw else {})
-            except Exception:
+            args = fn.get("arguments") or {}
+            if not isinstance(args, dict):
                 args = {}
             log.info("[Kåre tool] %s(%s)", name, list(args.keys()))
             args["_user_id"] = "kare"
-            result = await _kare_dev_execute_tool(name, args)
-            if len(result) > 3000:
-                result = result[:3000] + "\n" + t("meet_truncated", get_lang("global"))
-            messages.append({"role": "tool", "content": result, "name": name})
+            # P87: dev meeting runs unattended, no live session — let memory tools use
+            # the system key. Note: "kare" isn't a real household user, so this only
+            # matters if a tool call ever carries a real per-user _user_id here.
+            args["_allow_system_key"] = True
+            result_text = await _kare_dev_execute_tool(name, args)
+            if len(result_text) > 3000:
+                result_text = result_text[:3000] + "\n" + t("meet_truncated", get_lang("global"))
+            messages.append({"role": "tool", "content": result_text, "name": name})
 
     # Force a summary after max rounds — always without thinking to avoid empty responses
     messages.append({"role": "user", "content": t("meet_kare_summarize_user", lang)})
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT_SECS) as client:
-            r = await client.post(
-                KARE_URL,
-                json=_kare_payload(messages, KARE_INVEST_TOKENS, thinking=False),
-                headers={"x-kaare-source": "dev_meeting"},
-            )
-            r.raise_for_status()
-            content, _ = _parse_kare_resp(r.json())
-            return _strip_think(content) or "[No findings]"
-    except httpx.HTTPStatusError as e:
-        log.error("Kåre investigate-oppsummering feilet: %s\nBody: %s", e, e.response.text[:1000])
-        return t("meet_kare_failed", get_lang("global"), error=e)
-    except Exception as e:
-        return t("meet_kare_failed", get_lang("global"), error=e)
+    final = await _kare_call(messages, KARE_INVEST_TOKENS, thinking=False)
+    if not final.get("ok"):
+        return t("meet_kare_failed", get_lang("global"), error=final.get("error"))
+    return _strip_think(final.get("text") or "") or "[No findings]"
 
 
 async def _ask_kare(messages: list[dict]) -> str:
@@ -461,23 +391,13 @@ async def _ask_kare(messages: list[dict]) -> str:
     current = list(_trim(messages, KARE_WINDOW))
 
     for _ in range(2):
-        try:
-            async with httpx.AsyncClient(timeout=TIMEOUT_SECS) as client:
-                r = await client.post(
-                    KARE_URL,
-                    json=_kare_payload(current, KARE_MAX_TOKENS, _KARE_MEETING_TOOLS),
-                    headers={"x-kaare-source": "dev_meeting"},
-                )
-                r.raise_for_status()
-                resp = r.json()
-        except httpx.HTTPStatusError as e:
-            log.error("Kåre diskusjon-kall feilet: %s\nBody: %s", e, e.response.text[:1000])
-            return t("meet_kare_unavailable", get_lang("global"), error=e)
-        except Exception as e:
-            log.error("Kåre diskusjon-kall feilet: %s", e)
-            return t("meet_kare_unavailable", get_lang("global"), error=e)
+        result = await _kare_call(current, KARE_MAX_TOKENS, _KARE_MEETING_TOOLS)
+        if not result.get("ok"):
+            log.error("Kåre diskusjon-kall feilet: %s", result.get("error"))
+            return t("meet_kare_unavailable", get_lang("global"), error=result.get("error"))
 
-        content, tool_calls = _parse_kare_resp(resp)
+        content    = result.get("text") or ""
+        tool_calls = result.get("tool_calls") or []
 
         if not tool_calls:
             stripped = _strip_think(content)
@@ -485,53 +405,36 @@ async def _ask_kare(messages: list[dict]) -> str:
                 return stripped
             # Think-block used all tokens — retry without thinking to get an actual response
             log.warning("[Kåre discuss] Empty response (think used all tokens) — retry without thinking")
-            try:
-                async with httpx.AsyncClient(timeout=TIMEOUT_SECS) as client:
-                    r = await client.post(
-                        KARE_URL,
-                        json=_kare_payload(current, KARE_MAX_TOKENS, thinking=False),
-                        headers={"x-kaare-source": "dev_meeting"},
-                    )
-                    r.raise_for_status()
-                    content, _ = _parse_kare_resp(r.json())
-                    return _strip_think(content) or "[No response]"
-            except Exception as e:
-                log.error("Kåre discuss retry failed: %s", e)
+            retry = await _kare_call(current, KARE_MAX_TOKENS, thinking=False)
+            if not retry.get("ok"):
+                log.error("Kåre discuss retry failed: %s", retry.get("error"))
                 return "[No response]"
+            return _strip_think(retry.get("text") or "") or "[No response]"
 
         current.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
         for tc in tool_calls:
             fn   = tc.get("function", {})
             name = fn.get("name", "")
-            try:
-                raw = fn.get("arguments", {})
-                args = raw if isinstance(raw, dict) else (json.loads(raw) if raw else {})
-            except Exception:
+            args = fn.get("arguments") or {}
+            if not isinstance(args, dict):
                 args = {}
             log.info("[Kåre discuss tool] %s(%s)", name, list(args.keys()))
             args["_user_id"] = "kare"
-            result = await _kare_dev_execute_tool(name, args)
-            if len(result) > 3000:
-                result = result[:3000] + "\n" + t("meet_truncated", get_lang("global"))
-            current.append({"role": "tool", "content": result, "name": name})
+            # P87: dev meeting runs unattended, no live session — let memory tools use
+            # the system key. Note: "kare" isn't a real household user, so this only
+            # matters if a tool call ever carries a real per-user _user_id here.
+            args["_allow_system_key"] = True
+            result_text = await _kare_dev_execute_tool(name, args)
+            if len(result_text) > 3000:
+                result_text = result_text[:3000] + "\n" + t("meet_truncated", get_lang("global"))
+            current.append({"role": "tool", "content": result_text, "name": name})
 
     # Force reply after max tool rounds — always without thinking to avoid empty responses
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT_SECS) as client:
-            r = await client.post(
-                KARE_URL,
-                json=_kare_payload(current, KARE_MAX_TOKENS, thinking=False),
-                headers={"x-kaare-source": "dev_meeting"},
-            )
-            r.raise_for_status()
-            content, _ = _parse_kare_resp(r.json())
-            return _strip_think(content) or "[No response]"
-    except httpx.HTTPStatusError as e:
-        log.error("Kåre discuss force-reply failed: %s\nBody: %s", e, e.response.text[:1000])
-        return t("meet_kare_unavailable", get_lang("global"), error=e)
-    except Exception as e:
-        log.error("Kåre discuss force-reply failed: %s", e)
-        return t("meet_kare_unavailable", get_lang("global"), error=e)
+    final = await _kare_call(current, KARE_MAX_TOKENS, thinking=False)
+    if not final.get("ok"):
+        log.error("Kåre discuss force-reply failed: %s", final.get("error"))
+        return t("meet_kare_unavailable", get_lang("global"), error=final.get("error"))
+    return _strip_think(final.get("text") or "") or "[No response]"
 
 
 # ── Mechanic ──────────────────────────────────────────────────────────────────
@@ -634,13 +537,19 @@ _ADMIN_COMMENT_TMPL: dict[str, str] = {
 
 
 def _get_admin_comment(lang: str = "nb") -> str:
-    """Return the admin comment for the most recent dev-meeting report, if any."""
+    """Return and clear the admin comment for the next dev-meeting report, if any.
+
+    A comment is meant to be surfaced exactly once (the next meeting after it was
+    written) — clearing the file after read prevents it from being re-injected into
+    every meeting indefinitely.
+    """
     comments_dir = Path("/kaare/state/meeting_comments/dev")
     try:
         files = sorted(comments_dir.glob("*.txt"), reverse=True)
         for f in files:
             text = f.read_text(encoding="utf-8").strip()
             if text:
+                f.write_text("", encoding="utf-8")
                 return t("meet_admin_comment_prefix", lang, date=f.stem, text=text)
     except Exception:
         pass
@@ -814,22 +723,19 @@ async def _execute_leder_tool(name: str, arguments: dict) -> str:
 async def _ask_leder(messages: list[dict], with_tools: bool = False) -> str:
     current_messages = list(messages)
     tools = _LEDER_TOOLS if with_tools else None
+    options = {"num_predict": KARE_MAX_TOKENS, "temperature": 0.4, "num_ctx": _KARE_NUM_CTX}
 
     for tool_round in range(4):
-        try:
-            async with httpx.AsyncClient(timeout=LEDER_TIMEOUT) as client:
-                r = await client.post(
-                    LEDER_URL,
-                    json=_kare_payload(current_messages, KARE_MAX_TOKENS, tools, thinking=False),
-                    headers={"x-kaare-source": "dev_meeting"},
-                )
-                r.raise_for_status()
-                resp = r.json()
-        except Exception as e:
-            log.error("Møteleder-kall feilet: %s", e)
-            return t("meet_leader_unavailable", get_lang("global"), error=e)
+        result = await call_llm_chat(
+            "default", current_messages, tools=tools, options=options, timeout=LEDER_TIMEOUT,
+            disable_thinking=True, rid=_CURRENT_MEET_RID, source="meet",
+        )
+        if not result.get("ok"):
+            log.error("Møteleder-kall feilet: %s", result.get("error"))
+            return t("meet_leader_unavailable", get_lang("global"), error=result.get("error"))
 
-        content, tool_calls = _parse_kare_resp(resp)
+        content    = result.get("text") or ""
+        tool_calls = result.get("tool_calls") or []
 
         if not tool_calls or not with_tools or tool_round >= 3:
             return _strip_think(content) or "[No response]"
@@ -838,13 +744,11 @@ async def _ask_leder(messages: list[dict], with_tools: bool = False) -> str:
         for tc in tool_calls:
             fn   = tc.get("function", {})
             name = fn.get("name", "")
-            try:
-                raw = fn.get("arguments", {})
-                args = raw if isinstance(raw, dict) else (json.loads(raw) if raw else {})
-            except Exception:
+            args = fn.get("arguments") or {}
+            if not isinstance(args, dict):
                 args = {}
-            result = await _execute_leder_tool(name, args)
-            current_messages.append({"role": "tool", "content": result, "name": name})
+            tool_result = await _execute_leder_tool(name, args)
+            current_messages.append({"role": "tool", "content": tool_result, "name": name})
 
     return "[No response]"
 
@@ -955,26 +859,18 @@ async def _ask_cloud(conversation: str, is_final: bool, lang: str = "nb") -> str
         t("meet_cloud_instruction_mid", lang)
     )
     system = t("meet_cloud_system", lang, instruction=instruction)
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT_SECS) as client:
-            r = await client.post(
-                CLOUD_URL,
-                json={
-                    "model": CLOUD_MODEL,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": t("meet_cloud_user", lang, conversation=conversation)},
-                    ],
-                    "temperature": 0.4,
-                    "max_tokens": 300,
-                },
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            )
-            r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"].strip() or t("meet_cloud_no_response", lang)
-    except Exception as e:
-        log.error("Cloud call failed: %s", e)
-        return t("meet_cloud_unavailable", lang, error=e)
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": t("meet_cloud_user", lang, conversation=conversation)},
+    ]
+    result = await call_llm_chat(
+        "cloud", messages, options={"temperature": 0.4, "max_tokens": 300},
+        timeout=TIMEOUT_SECS, rid=_CURRENT_MEET_RID, source="meet",
+    )
+    if not result.get("ok"):
+        log.error("Cloud call failed: %s", result.get("error"))
+        return t("meet_cloud_unavailable", lang, error=result.get("error"))
+    return (result.get("text") or "").strip() or t("meet_cloud_no_response", lang)
 
 
 # ── Report ────────────────────────────────────────────────────────────────────

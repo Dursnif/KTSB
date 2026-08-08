@@ -5,6 +5,8 @@ and returns [STILLE] or a short comment.
 """
 
 import asyncio
+import difflib
+import json
 import logging
 from pathlib import Path
 
@@ -13,7 +15,13 @@ import httpx
 from kaare_core.model_lock import lock_11445, LockTimeout
 from kaare_core.config import get_model as _cfg_model, get_llm_config as _llm, is_agent_tool_enabled
 from kaare_core.llm_fallback import is_fallback_active
-from kaare_core.users.profile_manager import get_display_name
+from kaare_core.users.profile_manager import (
+    get_display_name,
+    get_section_fields,
+    get_writable_sections,
+    load_profile,
+    vault_or_update_nested_field,
+)
 
 MISS_KARE_URL    = _llm("miss_kare")["base_url"] + "/api/chat"
 MISS_KARE_MODEL  = _cfg_model("miss_kare")
@@ -33,10 +41,12 @@ def _load_personality() -> str:
 def _load_portrait(user_id: str) -> str:
     if not user_id or user_id == "global":
         return ""
+    from kaare_core.crypto import read_user_text_file
     path = Path(f"/kaare/state/users/{user_id}/miss_kare_portrait.md")
-    if not path.exists():
-        return ""
-    return path.read_text(encoding="utf-8").strip()[:3000]
+    # allow_system_key=True (P87): Miss Kåre is explicitly named in the plan's Background
+    # as an entity that should always have access to a user's own data "under the hood" —
+    # her sideview evaluation runs on every response regardless of PIN-session state.
+    return read_user_text_file(path, user_id, allow_system_key=True).strip()[:3000]
 
 
 async def _ask_library(query: str, user_id: str = "global") -> str:
@@ -64,12 +74,12 @@ async def _ask_library(query: str, user_id: str = "global") -> str:
         return ""
 
 
-async def _llm_call(messages: list) -> str:
+async def _llm_call(messages: list, max_tokens: int = MAX_TOKENS) -> str:
     _cfg = _llm("miss_kare")
     payload = {
         "model": MISS_KARE_MODEL,
         "stream": _cfg.get("stream", False),
-        "options": {**_cfg.get("options", {}), "num_predict": MAX_TOKENS},
+        "options": {**_cfg.get("options", {}), "num_predict": max_tokens},
         "messages": messages,
     }
     if "think" in _cfg:
@@ -172,3 +182,139 @@ async def evaluate(
     except Exception as e:
         log.warning("[Miss Kare] evaluator failed: %s", e)
         return "[STILLE]"
+
+
+_NOVELTY_THRESHOLD = 0.75  # matches the kare_huske.json dedup threshold (P82)
+# Generous despite the tiny JSON output: abliterated Qwen3 models emit thinking tokens
+# even with /no_think (documented limitation, CLAUDE.md), and num_predict caps the total —
+# too small a budget truncates before any content is produced at all.
+_EXTRACT_MAX_TOKENS = 400
+
+
+def _is_near_duplicate(existing, value: str) -> bool:
+    """SAGE-style novelty gate: skip writes that just restate what's already known."""
+    if not existing:
+        return False
+    candidates = existing if isinstance(existing, list) else [existing]
+    return any(
+        difflib.SequenceMatcher(None, str(c).strip().lower(), value.strip().lower()).ratio()
+        >= _NOVELTY_THRESHOLD
+        for c in candidates
+    )
+
+
+async def _extract_fact_json(exchange_text: str, situation_hint: str) -> dict | None:
+    """
+    Shared low-level step: ask the 9B model for at most one {section, field, value}
+    biographical fact from a piece of text, validated against the real
+    profile_template.yaml schema. Returns None if nothing usable was found. Does not
+    write anything and does not novelty-gate — callers do that against their own user_id.
+
+    Respects the shared-model contention rules: skips cleanly (returns None) if the 9B
+    is currently standing in as Kåre's own fallback, same as evaluate() does.
+    """
+    if is_fallback_active():
+        log.info("[Miss Kare] extract: 9B fallback active, skipping to avoid contention")
+        return None
+
+    sections = get_writable_sections()
+    catalog = "\n".join(f"- {sec}: {', '.join(get_section_fields(sec))}" for sec in sections)
+    system = (
+        f"Du er Miss Kåre. {situation_hint}\n"
+        "Avgjør om teksten inneholder ETT konkret, biografisk faktum verdt å huske "
+        "(f.eks. bursdag, jobb, hobby, forhold, religion, bosted) — ikke stemning, "
+        "mening om Kåre, eller noe teknisk.\n\n"
+        "Du MÅ velge feltnavn fra denne listen — finn ikke på nye feltnavn:\n"
+        f"{catalog}\n\n"
+        "Svar KUN med JSON, ingen annen tekst:\n"
+        '{"section": "<seksjonsnavn fra listen>", "field": "<feltnavn fra listen>", "value": "<verdien>"}\n'
+        'Hvis ingenting konkret ble sagt, eller ingen felt passer: {"section": null}'
+    )
+    messages = [
+        {"role": "system", "content": f"/no_think\n{system}"},
+        {"role": "user", "content": exchange_text},
+    ]
+
+    try:
+        async with lock_11445("miss_kare_extract", max_wait=30):
+            raw = (await _llm_call(messages, max_tokens=_EXTRACT_MAX_TOKENS)).strip()
+    except LockTimeout:
+        log.info("[Miss Kare] extract: lock timeout, skipping")
+        return None
+    except Exception as e:
+        log.warning("[Miss Kare] extract: LLM call failed: %s", e)
+        return None
+
+    try:
+        start, end = raw.index("{"), raw.rindex("}") + 1
+        parsed = json.loads(raw[start:end])
+    except Exception:
+        log.info("[Miss Kare] extract: no parseable JSON in reply, skipping")
+        return None
+
+    section = parsed.get("section")
+    if not section:
+        return None
+    field = (parsed.get("field") or "").strip()
+    value = (parsed.get("value") or "").strip()
+    if section not in sections or field not in get_section_fields(section) or not value:
+        log.info("[Miss Kare] extract: invalid section/field '%s.%s', skipping", section, field)
+        return None
+    return {"section": section, "field": field, "value": value}
+
+
+def _write_fact_if_novel(user_id: str, section: str, field: str, value: str) -> None:
+    """Shared novelty-gated write — skips near-duplicates of what's already stored.
+
+    Uses vault_or_update_nested_field(), not a direct update, because this is called
+    from both a live path (Phase 4 — session key present) and an unattended nightly
+    path (Phase 5, reflection meeting — no session key, ever). A direct write would
+    silently fall through to save_profile()'s unencrypted-plaintext fallback for the
+    nightly case; the vault path keeps it encrypted (SealedBox, user's public key) until
+    the user's next login, same as every other agent-writes-while-offline path already
+    does for the flat-field case.
+    """
+    profile = load_profile(user_id)
+    current = (profile.get(section) or {}).get(field)
+    if _is_near_duplicate(current, value):
+        log.info("[Miss Kare] extract: '%s.%s' near-duplicate of existing value, skipping", section, field)
+        return
+    result = vault_or_update_nested_field(user_id, section, field, value)
+    log.info("[Miss Kare] extract: wrote %s.%s for %s (%s)", section, field, user_id, result)
+
+
+async def extract_and_store_fact(user_id: str, prior_question: str, user_reply: str) -> None:
+    """
+    Called when a user replies to Miss Kåre directly (addressed_directly=True) and she
+    had asked something the turn before. Extracts at most one concrete biographical fact
+    from the exchange and writes it into the user's structured profile
+    (profile_template.yaml sections), skipping near-duplicates of what's already stored.
+
+    Fire-and-forget by design — never raises, never blocks the user-facing response.
+    """
+    if not user_id or user_id == "global" or not prior_question or not user_reply.strip():
+        return
+    exchange_text = f"Du spurte: {prior_question}\nBrukeren svarte: {user_reply}"
+    fact = await _extract_fact_json(exchange_text, "Du stilte nettopp et spørsmål, og brukeren svarte.")
+    if fact:
+        _write_fact_if_novel(user_id, fact["section"], fact["field"], fact["value"])
+
+
+async def extract_facts_from_meeting(user_id: str, kare_closing: str) -> None:
+    """
+    Called after the nightly reflection meeting concludes. Extracts at most one concrete
+    biographical fact from Kåre's closing synthesis about the user and writes it into the
+    structured profile, same schema and novelty gate as the live path above. Replaces the
+    old pattern of writing ad-hoc `preferences`/`concerns`/`delights` fields that don't
+    exist in profile_template.yaml.
+
+    Fire-and-forget-safe by design — never raises.
+    """
+    if not user_id or user_id == "global" or not kare_closing.strip():
+        return
+    fact = await _extract_fact_json(
+        kare_closing.strip(),
+        "Dette er Kåres avsluttende oppsummering av kveldens refleksjonsmøte om brukeren.",
+    )
+    if fact:
+        _write_fact_if_novel(user_id, fact["section"], fact["field"], fact["value"])

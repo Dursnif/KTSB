@@ -66,7 +66,7 @@
     "tabs": {
       "generelt": "General",
       "ha": "Home Assistant",
-      "mqtt": "MQTT / VPN",
+      "mqtt": "MQTT/VPN",
       "llm": "LLM / Models",
       "refleksjon": "Reflection",
       "nettsok": "Web Search & Weather",
@@ -77,6 +77,11 @@
       "agenter": "Agent Settings",
       "forklaringer": "Explanations",
       "varsler": "Notifications"
+    },
+    "level": {
+      "basic": "Basic",
+      "expert": "Expert",
+      "toggle_hint": "Show advanced settings"
     },
     "generelt": {
       "location": {
@@ -145,7 +150,20 @@
         "log_url_hint": "Endpoint Kåre receives HA logs on",
         "timeout_label": "Timeout (seconds)",
         "allowed_label": "Allowed actions",
-        "allowed_hint": "Comma-separated list (turn_on, turn_off, …)"
+        "allowed_hint": "Actions Kåre is allowed to perform against Home Assistant. Kåre currently supports only this fixed set.",
+        "actions": {
+          "turn_on": "Turn on",
+          "turn_off": "Turn off",
+          "toggle": "Toggle on/off",
+          "set_level": "Set level (brightness/volume)",
+          "set_color_temp": "Set color temperature",
+          "set_color": "Set color",
+          "open": "Open",
+          "close": "Close",
+          "set_temperature": "Set temperature",
+          "get_temperature": "Read temperature",
+          "get_state": "Read state"
+        }
       }
     },
     "mqtt": {
@@ -205,6 +223,8 @@
       "ollama_params": "Ollama inference parameters",
       "vllm_params": "vLLM inference parameters",
       "vllm_docker_params": "vLLM Docker parameters — requires container restart to take effect",
+      "reason_freely_title": "Reason Freely tool",
+      "reason_freely_desc": "Kåre's own free-reasoning tool. Shares the vLLM instance and base URL with Kåre (main) above.",
       "gen_params": "Image generation parameters",
       "cloud_params": "Generation parameters",
       "ctx_locked_hint": "Locked — shared with {{shared}}. Change there to adjust.",
@@ -529,6 +549,22 @@
           "selected_desc": "Only conversations with the users you select below can shape the self-image.",
           "admin_only_label": "Admin only",
           "admin_only_desc": "The self-image is only shaped in conversations with admin users."
+        }
+      },
+      "automationreflex": {
+        "title": "Kåre's self-learned automation",
+        "description": "Kåre can propose its own automations based on habits it notices around the home (the write_reflex tool). Here you control who can approve or reject these proposals. Takes effect immediately.",
+        "who_approves": "Who can approve/reject automation proposals?",
+        "allowed_users_label": "Allowed users",
+        "no_users": "No regular users found.",
+        "admin_note": "The 'admin' system account is not shown here.",
+        "modes": {
+          "all_label": "All users",
+          "all_desc": "Any user with access to the write_reflex tool can approve or reject proposals.",
+          "selected_label": "Selected users",
+          "selected_desc": "Only the users you select below can approve or reject proposals.",
+          "admin_only_label": "Admin only",
+          "admin_only_desc": "Only admin users can approve or reject proposals."
         }
       }
     },
@@ -1147,7 +1183,9 @@
         "inspiser_system": "Inspect system",
         "ssh_kommando": "SSH command",
         "local_kommando": "Local command",
-        "restart_docker_container": "Restart Docker"
+        "restart_docker_container": "Restart Docker",
+        "household": "Home/away mode",
+        "write_reflex": "Approve automation proposals"
       }
     }
   },
@@ -1361,6 +1399,8 @@
     "send": "Send"
   },
   "reflections": {
+    "tab_reflection": "Reflection meeting — settings",
+    "tab_dev": "Dev meeting — settings",
     "reflection_tab": "Reflection meeting",
     "dev_tab": "Dev meeting",
     "reflection_tab_sub": "04:00 · Miss Kåre",
@@ -1593,7 +1633,9 @@
         "inspect_system": "Check services, logs and resource usage",
         "ssh_command": "Run commands on other machines on the network",
         "local_command": "Run commands directly on the AI PC",
-        "restart_docker_container": "Restart Docker containers"
+        "restart_docker_container": "Restart Docker containers",
+        "household": "Set home/away mode for the household",
+        "write_reflex": "Suggest, approve or reject Kåre's self-learned automations (who can actually approve/reject is governed separately under Settings → Kåre)"
       },
       "pin": "PIN is a numeric code that protects the account (minimum 6 digits). Used for login and to unlock private meeting minutes.",
       "voice_reg": "Voice registration lets Kåre recognise who is speaking. The user reads a few sentences and Kåre learns the voice profile.",
@@ -1688,6 +1730,14 @@
       "item_4": "Topic field — You can suggest a topic for Kåre to address in the next nightly meeting.",
       "item_5": "Miss Kåre portrait — Miss Kåre gradually builds a personal portrait of each user based on observations over time. The portrait is injected into meeting context for more personal analysis."
     },
+    "innst_basic_expert": {
+      "title": "Settings → Basic/Expert toggle",
+      "summary": "One switch controls what shows on every tab",
+      "body": "At the top right of the Settings page there's a toggle labeled \"Basic\"/\"Expert\". It gates advanced fields across all tabs at once — not just one.",
+      "item_1": "Basic (default) — Shows only what an everyday household user needs: model name, temperature, on/off switches, location, etc. Technical settings (provider, timeouts, raw prompt text) are hidden.",
+      "item_2": "Expert — Shows everything, including vLLM/Docker parameters, role governance, advanced thresholds, and the Agent Settings tab (which is completely hidden in Basic mode).",
+      "item_3": "The setting is remembered in the browser (localStorage) and only affects visibility — never which values are actually stored in the configs/ files."
+    },
     "innst_generelt": {
       "title": "Settings → General",
       "summary": "Location, time zone and language",
@@ -1701,7 +1751,8 @@
       "body": "Home Assistant (HA) is the brain of the smart home system. Kåre uses HA to control lights, heating and sensors.",
       "item_1": "HA URL — The address of Home Assistant on the local network (e.g. http://192.168.0.100:8123).",
       "item_2": "Token — A one-time key you create in HA under Profile → Long-lived access tokens. Kåre uses this to authenticate.",
-      "item_3": "Timeout — How long Kåre waits for a response from HA. Increase if the network is slow."
+      "item_3": "Timeout — How long Kåre waits for a response from HA. Increase if the network is slow.",
+      "item_4": "Allowed actions — Checkbox list of the 11 actions Kåre can perform against HA (turn on/off, set level, color, temperature, etc). Lives under Expert level."
     },
     "innst_mqtt": {
       "title": "Settings → MQTT / VPN",
@@ -1725,7 +1776,8 @@
       "item_2": "Embedding — Creates searchable memory. Used for semantic memory search.",
       "item_3": "Local vs. cloud — Local models are faster and private. Cloud is a safety net if something fails.",
       "item_4": "num_ctx — The context window. How much of the conversation the model remembers in one run.",
-      "item_5": "Piper (text-to-speech) — Kåre's voice. Three language sections (Norwegian/English/German) with different voice packs. Download, activate the desired voice and restart the service to apply it."
+      "item_5": "Piper (text-to-speech) — Kåre's voice. Three language sections (Norwegian/English/German) with different voice packs. Download, activate the desired voice and restart the service to apply it.",
+      "item_6": "Reason Freely tool — Kåre's own free-reasoning tool, shown nested inside the Kåre (main) card since it shares the same model. Lives under Expert level."
     },
     "innst_refleksjon": {
       "title": "Settings → Reflection",
@@ -1763,7 +1815,8 @@
       "item_6": "Standard — Full personality with humour, honesty and curiosity.",
       "item_7": "Complete — Uses all context: inner thoughts, self-image and world model.",
       "item_8": "Custom — You write Kåre's personality yourself.",
-      "item_9": "Who influences Kåre — Choose which users can shape Kåre's personality through conversations."
+      "item_9": "Who influences Kåre — Choose which users can shape Kåre's personality through conversations.",
+      "item_10": "Kåre's self-learned automation — Choose who can approve or reject automation proposals Kåre suggests based on habits it notices around the home."
     },
     "innst_integrasjoner": {
       "title": "Settings → Integrations",

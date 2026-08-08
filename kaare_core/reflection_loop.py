@@ -141,6 +141,7 @@ async def _run_jang_reflection() -> None:
                 tools=tools,
                 rid=f"rid-refl-{int(time.time()*1000)}",
                 user_id="kare",
+                source="jang",
             )
         except Exception as e:
             _log.warning("jang_reflection: ask_llm_with_tools failed: %s", e)

@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CheckCircle2, XCircle, Loader2, RotateCcw, ChevronDown, ChevronUp } from "lucide-react";
 import { apiPutEmbeddingBackend, apiRestartService } from "@/services/api";
-import { useSaveState, FieldRow, SaveFeedback } from "../shared";
+import { useSaveState, FieldRow, SaveFeedback, ExpertOnly } from "../shared";
 
 export type EmbServicesData = {
   device: string;
@@ -92,6 +92,7 @@ export function EmbeddingCard({ data, onSaved }: { data: EmbServicesData; onSave
       </CardHeader>
       {!collapsed && (
         <CardContent className="space-y-5 pt-0">
+        <ExpertOnly><>
           <div className="rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs text-blue-300/90">
             ℹ️ <strong>BAAI/bge-m3</strong> er konvertert til OpenVINO IR-format og lever lokalt på <code>/mnt/wiki/bge-m3-ov/</code>. Modellen brukes av NPU- og CPU-backend uten nettilgang.
           </div>
@@ -160,21 +161,24 @@ export function EmbeddingCard({ data, onSaved }: { data: EmbServicesData; onSave
           )}
 
           <div className="flex items-center gap-3 flex-wrap">
-            <Button onClick={save} disabled={ss.state === "saving"} size="sm">
-              {ss.state === "saving" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Lagre
-            </Button>
             <Button onClick={restart} disabled={restarting} size="sm" variant="outline">
               {restarting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
               Restart tjeneste
             </Button>
-            <SaveFeedback state={ss.state} />
             {restartOk === true  && <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Restartet</span>}
             {restartOk === false && <span className="text-xs text-red-400 flex items-center gap-1"><XCircle className="h-3 w-3" /> Feil ved restart</span>}
           </div>
           <p className="text-xs text-muted-foreground">
             Restart er nødvendig for at endringer skal tre i kraft.
           </p>
+        </></ExpertOnly>
+          <div className="flex items-center gap-3 flex-wrap">
+            <Button onClick={save} disabled={ss.state === "saving"} size="sm">
+              {ss.state === "saving" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Lagre
+            </Button>
+            <SaveFeedback state={ss.state} />
+          </div>
         </CardContent>
       )}
     </Card>

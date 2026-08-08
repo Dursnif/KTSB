@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChevronDown, ChevronUp, Copy, RefreshCw } from "lucide-react";
 import { apiPutInnerVoices, type InnerVoicesData } from "@/services/api";
-import { SaveFeedback, useSaveState } from "../shared";
+import { SaveFeedback, useSaveState, ExpertOnly } from "../shared";
 
 const PROVIDERS = ["openvino", "mlx", "cpu", "remote"] as const;
 
@@ -32,26 +32,29 @@ function VoiceRow({
     <div className="space-y-2 rounded-md border border-border/50 p-3">
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-sm font-semibold w-20">{name}</span>
-        <div className="flex items-center gap-2">
-          <Label className="text-xs text-muted-foreground shrink-0">{t("settings.llm.inner_voices.provider")}</Label>
-          <Select value={provider} onValueChange={v => { if (v) onProviderChange(v); }}>
-            <SelectTrigger className="w-36 h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PROVIDERS.map(p => (
-                <SelectItem key={p} value={p} className="text-xs">
-                  {t(`settings.llm.inner_voices.providers.${p}`)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <ExpertOnly>
+          <div className="flex items-center gap-2">
+            <Label className="text-xs text-muted-foreground shrink-0">{t("settings.llm.inner_voices.provider")}</Label>
+            <Select value={provider} onValueChange={v => { if (v) onProviderChange(v); }}>
+              <SelectTrigger className="w-36 h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PROVIDERS.map(p => (
+                  <SelectItem key={p} value={p} className="text-xs">
+                    {t(`settings.llm.inner_voices.providers.${p}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </ExpertOnly>
         <span className="text-xs text-muted-foreground ml-auto">
           {t("settings.llm.inner_voices.interval")}: {intervalSeconds}s
         </span>
       </div>
       {provider !== "remote" && (
+        <ExpertOnly>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">{t("settings.llm.inner_voices.model_path")}</Label>
           <Input
@@ -64,6 +67,7 @@ function VoiceRow({
             {t("settings.llm.inner_voices.model_path_hint")}
           </p>
         </div>
+        </ExpertOnly>
       )}
     </div>
   );
@@ -180,6 +184,7 @@ export function InnerVoicesCard({ data, onSaved }: { data: InnerVoicesData; onSa
           </div>
 
           {hasRemote && (
+            <ExpertOnly>
             <div className="space-y-2 rounded-md border border-violet-500/30 bg-violet-500/5 p-3">
               <p className="text-xs font-medium text-violet-300">
                 {t("settings.llm.inner_voices.remote_section_title")}
@@ -219,6 +224,7 @@ export function InnerVoicesCard({ data, onSaved }: { data: InnerVoicesData; onSa
                 </div>
               </div>
             </div>
+            </ExpertOnly>
           )}
 
           <div className="flex items-center gap-3 pt-1">

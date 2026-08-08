@@ -268,9 +268,9 @@ _T: dict = {
         "de": "vis_hendelse erfordert 'event_id'. Verwende action='analyze', um verfügbare event_ids zu sehen.",
     },
     "cam_snapshot_not_found": {
-        "nb": "Ingen lagret snapshot funnet for event_id '{event_id}'. Bildet er kanskje for gammelt eller lagring er deaktivert.",
-        "en": "No stored snapshot found for event_id '{event_id}'. The image may be too old or storage is disabled.",
-        "de": "Kein gespeicherter Snapshot für event_id '{event_id}' gefunden. Das Bild ist möglicherweise zu alt oder die Speicherung ist deaktiviert.",
+        "nb": "Fant ikke bilde for event_id '{event_id}' — verken i lokal cache eller live fra Frigate. Hendelsen er kanskje for gammel eller utløpt.",
+        "en": "No image found for event_id '{event_id}' — neither in local cache nor live from Frigate. The event may be too old or expired.",
+        "de": "Kein Bild für event_id '{event_id}' gefunden — weder im lokalen Cache noch live von Frigate. Das Ereignis ist möglicherweise zu alt oder abgelaufen.",
     },
     "cam_snapshot_read_error": {
         "nb": "Kunne ikke lese snapshot: {error}",
@@ -837,9 +837,9 @@ _T: dict = {
 
     # ── trace_reader / self-monitoring ──────────────────────────────────────
     "rid_note": {
-        "nb": "[System: Din nåværende request-ID er **{rid}**. Bruk inspiser_system(action='fetch_trace', rid='{rid}') for å inspisere din egen trace.]",
-        "en": "[System: Your current request ID is **{rid}**. Use inspiser_system(action='fetch_trace', rid='{rid}') to inspect your own trace.]",
-        "de": "[System: Deine aktuelle Request-ID ist **{rid}**. Verwende inspiser_system(action='fetch_trace', rid='{rid}') um deine eigene Trace zu inspizieren.]",
+        "nb": "[System: Din nåværende request-ID er **{rid}**. Bruk inspect_system(action='fetch_trace', rid='{rid}') for å inspisere en tidligere tur. Merk: inspiserer du DENNE pågående turen (samme rid), vil traceen være ufullstendig siden turen ikke er ferdig ennå.]",
+        "en": "[System: Your current request ID is **{rid}**. Use inspect_system(action='fetch_trace', rid='{rid}') to inspect a past turn. Note: inspecting THIS in-progress turn (same rid) returns an incomplete trace, since the turn hasn't finished yet.]",
+        "de": "[System: Deine aktuelle Request-ID ist **{rid}**. Verwende inspect_system(action='fetch_trace', rid='{rid}') um eine vergangene Runde zu inspizieren. Hinweis: Inspizierst du DIESE laufende Runde (gleiche rid), ist die Trace unvollständig, da die Runde noch nicht abgeschlossen ist.]",
     },
     "inspiser_system_hent_trace_mangler_rid": {
         "nb": "Mangler 'rid'. Bruk din nåværende request-ID (tilgjengelig i konteksten din).",
@@ -1479,6 +1479,26 @@ _T: dict = {
         "en": "My reminder list cleared ({count} item(s) deleted).",
         "de": "Meine Erinnerungsliste geleert ({count} Punkt(e) gelöscht).",
     },
+    "list_kare_refreshed": {
+        "nb": "Nesten-duplikat funnet — datostemplet på nytt i stedet for å legge til på nytt: {text} [{id}]",
+        "en": "Near-duplicate found — refreshed the date instead of adding a new entry: {text} [{id}]",
+        "de": "Fast-Duplikat gefunden — Datum aktualisiert statt neuen Eintrag hinzuzufügen: {text} [{id}]",
+    },
+    "list_kare_pinned": {
+        "nb": "Pinnet øverst: {text}",
+        "en": "Pinned to top: {text}",
+        "de": "Oben angeheftet: {text}",
+    },
+    "list_kare_unpinned": {
+        "nb": "Løsnet fra topp: {text}",
+        "en": "Unpinned: {text}",
+        "de": "Losgelöst: {text}",
+    },
+    "list_kare_injection_capped": {
+        "nb": "[Huskeliste kappet — {shown} av {total} oppføringer vist. Full liste: notat(action='read', list_name='kare')]",
+        "en": "[Reminder list truncated — {shown} of {total} entries shown. Full list: notat(action='read', list_name='kare')]",
+        "de": "[Erinnerungsliste gekürzt — {shown} von {total} Einträgen angezeigt. Vollständige Liste: notat(action='read', list_name='kare')]",
+    },
     "list_item_not_found": {
         "nb": "Fant ikke vare med id '{id}'.",
         "en": "Item with id '{id}' not found.",
@@ -1923,9 +1943,9 @@ _T: dict = {
         "de": "Fasse deine Befunde zusammen. Was sind die wichtigsten Probleme?",
     },
     "meet_mechanic_investigate_user": {
-        "nb": "Undersøk systemet. Bruk søk_argus, les_logg, git_log, sjekk_tjenester og sjekk_ressurser for å finne reelle problemer fra siste 24 timer. Start bredt – logger, tjenestestatus, siste kodeendringer. Kall også inspiser_system(action='trace_mønstre', antall=100, source='all') og inkluder i rapporten: antall traces per source (user/refl/meet), gjennomsnittlig latency, hyppigste tools, andel 9B-fallback per source, og traces med unormalt høy latency eller recovered=True (tomme svar). Oppsummer funnene konkret til slutt. Ikke gjett. Avslutt med hukommelse(action='skriv') for å lagre 1–2 viktige tekniske observasjoner.",
-        "en": "Investigate the system. Use søk_argus, les_logg, git_log, sjekk_tjenester and sjekk_ressurser to find real problems from the last 24 hours. Start broad – logs, service status, recent code changes. Also call inspiser_system(action='trace_mønstre', antall=100, source='all') and include in the report: trace count per source (user/refl/meet), average latency, most frequent tools, 9B-fallback share per source, and traces with abnormally high latency or recovered=True (empty responses). Summarize findings concretely at the end. Do not guess. Finish with hukommelse(action='skriv') to store 1–2 important technical observations.",
-        "de": "Untersuche das System. Verwende søk_argus, les_logg, git_log, sjekk_tjenester und sjekk_ressurser, um echte Probleme der letzten 24 Stunden zu finden. Beginne breit – Logs, Dienststatus, aktuelle Code-Änderungen. Rufe auch inspiser_system(action='trace_mønstre', antall=100, source='all') auf und füge dem Bericht hinzu: Trace-Anzahl pro Quelle, durchschnittliche Latenz, häufigste Tools, 9B-Fallback-Anteil pro Quelle, und Traces mit ungewöhnlich hoher Latenz oder recovered=True. Fasse die Befunde am Ende konkret zusammen. Rate nicht. Beende mit hukommelse(action='skriv') für 1–2 technische Beobachtungen.",
+        "nb": "Undersøk systemet. Bruk search_argus og inspect_system (actions: log, services, resources, git_log) for å finne reelle problemer fra siste 24 timer. Start bredt – logger, tjenestestatus, siste kodeendringer. Kall også inspect_system(action='trace_patterns', count=100, source='all') og inkluder i rapporten: antall traces per source (user/refl/meet), gjennomsnittlig latency, hyppigste tools, andel 9B-fallback per source, og traces med unormalt høy latency eller recovered=True (tomme svar). Oppsummer funnene konkret til slutt. Ikke gjett. Avslutt med note(action='write', list_name='kare') for å lagre 1–2 viktige tekniske observasjoner.",
+        "en": "Investigate the system. Use search_argus and inspect_system (actions: log, services, resources, git_log) to find real problems from the last 24 hours. Start broad – logs, service status, recent code changes. Also call inspect_system(action='trace_patterns', count=100, source='all') and include in the report: trace count per source (user/refl/meet), average latency, most frequent tools, 9B-fallback share per source, and traces with abnormally high latency or recovered=True (empty responses). Summarize findings concretely at the end. Do not guess. Finish with note(action='write', list_name='kare') to store 1–2 important technical observations.",
+        "de": "Untersuche das System. Verwende search_argus und inspect_system (actions: log, services, resources, git_log), um echte Probleme der letzten 24 Stunden zu finden. Beginne breit – Logs, Dienststatus, aktuelle Code-Änderungen. Rufe auch inspect_system(action='trace_patterns', count=100, source='all') auf und füge dem Bericht hinzu: Trace-Anzahl pro Quelle, durchschnittliche Latenz, häufigste Tools, 9B-Fallback-Anteil pro Quelle, und Traces mit ungewöhnlich hoher Latenz oder recovered=True. Fasse die Befunde am Ende konkret zusammen. Rate nicht. Beende mit note(action='write', list_name='kare') für 1–2 technische Beobachtungen.",
     },
     "meet_mechanic_kritiker_user": {
         "nb": "Kåre har rapportert følgende fra sin undersøkelse:\n\n{kare_funn}\n\nStill 3–5 kritiske, konkrete spørsmål. Hva ble ikke sjekket? Hva er antatt, ikke bekreftet? Hva mangler tall? Gi ingen svar eller løsninger — bare spørsmål.",
@@ -2894,9 +2914,9 @@ _T: dict = {
         "de": "Neue Beobachtung über den Nutzer. Ein bis drei Sätze. Nur bei action='update'.",
     },
     "tool_brukerprofil_section_desc": {
-        "nb": "Seksjonsnavnet i profile.yaml, f.eks. 'prompt_top'. Kun ved action='set_field'.",
-        "en": "Section name in profile.yaml, e.g. 'prompt_top'. Only for action='set_field'.",
-        "de": "Abschnittsname in profile.yaml, z.B. 'prompt_top'. Nur bei action='set_field'.",
+        "nb": "Seksjonsnavnet i profile.yaml. 19 seksjoner utover prompt_top dekker biografiske fakta (identity, relationships_and_family, interests_and_hobbies, values_beliefs_politics, work_and_education m.fl.) — bruk action='read' for full liste. Kun ved action='set_field'.",
+        "en": "Section name in profile.yaml. 19 sections beyond prompt_top cover biographical facts (identity, relationships_and_family, interests_and_hobbies, values_beliefs_politics, work_and_education, etc.) — use action='read' for the full list. Only for action='set_field'.",
+        "de": "Abschnittsname in profile.yaml. 19 Abschnitte neben prompt_top decken biografische Fakten ab (identity, relationships_and_family, interests_and_hobbies, values_beliefs_politics, work_and_education, usw.) — nutze action='read' für die vollständige Liste. Nur bei action='set_field'.",
     },
     "tool_brukerprofil_field_desc": {
         "nb": "Feltnavnet. Kun ved action='set_field' og 'update_house'.",
@@ -2932,7 +2952,10 @@ _T: dict = {
             "liste='arkitekt': arkitekt/designnotater. "
             "liste='handle': felles handleliste. "
             "liste='huske': brukerens huskeliste. "
-            "liste='kare': Kåres egne oppfølgingspunkter."
+            "liste='kare': Kåres egne oppfølgingspunkter — MERK: kun toppen (pinnede først, "
+            "deretter kronologisk, opp til et tegn-tak) injiseres automatisk i hver systemprompt. "
+            "Bruk action='pin'/'unpin' (krever note_id) for å styre hva som alltid vises. "
+            "Bruk action='read' for å lese hele listen, inkl. det som ikke er injisert."
         ),
         "en": (
             "Four separate lists + Kåre's notes. "
@@ -2940,7 +2963,10 @@ _T: dict = {
             "list_name='arkitekt': architect/design notes. "
             "list_name='handle': shared shopping list. "
             "list_name='huske': user's reminder list. "
-            "list_name='kare': Kåre's own follow-up items."
+            "list_name='kare': Kåre's own follow-up items — NOTE: only the top slice (pinned "
+            "first, then chronological, up to a char cap) is auto-injected into every system "
+            "prompt. Use action='pin'/'unpin' (requires note_id) to control what always shows. "
+            "Use action='read' to read the full list, including what isn't injected."
         ),
         "de": (
             "Vier separate Listen + Kåres Notizen. "
@@ -2948,13 +2974,17 @@ _T: dict = {
             "list_name='arkitekt': Architektur-/Designnotizen. "
             "list_name='handle': gemeinsame Einkaufsliste. "
             "list_name='huske': Erinnerungsliste des Nutzers. "
-            "list_name='kare': Kåres eigene Nachverfolgungspunkte."
+            "list_name='kare': Kåres eigene Nachverfolgungspunkte — HINWEIS: nur der obere "
+            "Ausschnitt (angeheftete zuerst, dann chronologisch, bis zu einem Zeichenlimit) wird "
+            "automatisch in jeden System-Prompt eingefügt. Mit action='pin'/'unpin' (erfordert "
+            "note_id) steuerst du, was immer sichtbar ist. Mit action='read' liest du die "
+            "vollständige Liste, auch was nicht eingefügt wird."
         ),
     },
     "tool_notat_action_desc": {
-        "nb": "'write'=legg til. 'read'=vis. 'delete'=fjern (krever 'note_id'). 'clear'=tøm. 'done'=ferdig (huske/kare). 'mark_bought'=kjøpt (handle). 'clear_all'=tøm hele handlelisten.",
-        "en": "'write'=add. 'read'=show. 'delete'=remove (requires 'note_id'). 'clear'=clear. 'done'=done (huske/kare). 'mark_bought'=bought (handle). 'clear_all'=clear entire shopping list.",
-        "de": "'write'=hinzufügen. 'read'=anzeigen. 'delete'=entfernen (erfordert 'note_id'). 'clear'=leeren. 'done'=fertig (huske/kare). 'mark_bought'=gekauft (handle). 'clear_all'=gesamte Einkaufsliste leeren.",
+        "nb": "'write'=legg til. 'read'=vis. 'delete'=fjern (krever 'note_id'). 'clear'=tøm. 'done'=ferdig (huske/kare). 'mark_bought'=kjøpt (handle). 'clear_all'=tøm hele handlelisten. 'pin'=fest øverst, vises alltid i den auto-injiserte toppen (kun kare, krever 'note_id'). 'unpin'=løsne igjen (kun kare, krever 'note_id').",
+        "en": "'write'=add. 'read'=show. 'delete'=remove (requires 'note_id'). 'clear'=clear. 'done'=done (huske/kare). 'mark_bought'=bought (handle). 'clear_all'=clear entire shopping list. 'pin'=pin to top, always shown in the auto-injected slice (kare only, requires 'note_id'). 'unpin'=undo pin (kare only, requires 'note_id').",
+        "de": "'write'=hinzufügen. 'read'=anzeigen. 'delete'=entfernen (erfordert 'note_id'). 'clear'=leeren. 'done'=fertig (huske/kare). 'mark_bought'=gekauft (handle). 'clear_all'=gesamte Einkaufsliste leeren. 'pin'=oben anheften, immer im automatisch eingefügten Ausschnitt sichtbar (nur kare, erfordert 'note_id'). 'unpin'=Anheftung aufheben (nur kare, erfordert 'note_id').",
     },
     "tool_notat_list_name_desc": {
         "nb": "'architect'=designnotater (standard). 'shopping'=handleliste. 'remember'=huskeliste. 'kare'=Kåres notater.",
@@ -2995,6 +3025,21 @@ _T: dict = {
         "nb": "Kun huske: om Kåre skal minne om dette ved neste innlogging.",
         "en": "Only huske: whether Kåre should remind about this at next login.",
         "de": "Nur huske: ob Kåre beim nächsten Login daran erinnern soll.",
+    },
+    "tool_notat_search_desc": {
+        "nb": "Kun list_name='kare' + action='read': fritekst-substreng-søk mot tekst og kontekst, for å finne noe utenfor den auto-injiserte toppen uten å dumpe hele listen.",
+        "en": "Only list_name='kare' + action='read': free-text substring search against text and context, to find something beyond the auto-injected top slice without dumping the whole list.",
+        "de": "Nur list_name='kare' + action='read': Freitext-Teilstring-Suche in Text und Kontext, um etwas außerhalb des automatisch eingefügten oberen Ausschnitts zu finden, ohne die gesamte Liste auszugeben.",
+    },
+    "tool_notat_date_from_desc": {
+        "nb": "Kun list_name='kare' + action='read': vis kun punkter fra og med denne datoen (YYYY-MM-DD).",
+        "en": "Only list_name='kare' + action='read': show only items from this date onward (YYYY-MM-DD).",
+        "de": "Nur list_name='kare' + action='read': nur Punkte ab diesem Datum anzeigen (YYYY-MM-DD).",
+    },
+    "tool_notat_date_to_desc": {
+        "nb": "Kun list_name='kare' + action='read': vis kun punkter til og med denne datoen (YYYY-MM-DD).",
+        "en": "Only list_name='kare' + action='read': show only items up to this date (YYYY-MM-DD).",
+        "de": "Nur list_name='kare' + action='read': nur Punkte bis zu diesem Datum anzeigen (YYYY-MM-DD).",
     },
 
     # reason_freely
@@ -3676,6 +3721,11 @@ _T: dict = {
         "nb": "Kunne ikke lese hukommelse: {error}",
         "en": "Could not read memory: {error}",
         "de": "Konnte Speicher nicht lesen: {error}",
+    },
+    "reflex_not_allowed": {
+        "nb": "Du har ikke tillatelse til å godkjenne eller avvise Kåres automasjon-forslag. Be en admin om tilgang under Innstillinger → Kåre.",
+        "en": "You don't have permission to approve or reject Kåre's automation proposals. Ask an admin for access under Settings → Kåre.",
+        "de": "Du hast keine Berechtigung, Kåres Automatisierungsvorschläge zu genehmigen oder abzulehnen. Bitte einen Admin um Zugriff unter Einstellungen → Kåre.",
     },
     "reflex_proposal_not_found": {
         "nb": "Fant ikke forslag med ID '{pid}'.",

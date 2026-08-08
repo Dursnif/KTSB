@@ -22,6 +22,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from adapters.llm_adapter import ask_llm, ask_llm_cloud, ask_llm_with_tools, ask_vlm
 from kaare_core.tools.i18n import t, get_lang
 from kaare_core.agents.miss_kare.evaluator import evaluate as _miss_kare_evaluate
+from kaare_core.agents.miss_kare.evaluator import extract_and_store_fact as _miss_kare_extract
 from kaare_core.agents.miss_kare.stm import MissKareSTM
 from kaare_core.audit import audit_log as _audit
 from kaare_core.config import get_model, get_service, reload_capability_services, get_settings as _get_settings
@@ -247,6 +248,17 @@ async def _shutdown():
 async def _startup():
     from kaare_core.tools.timer_service import restore_timers, start_action_queue_worker
     from kaare_core.agents.mechanic.job_store import start_background_tasks as _start_job_store
+    from kaare_core.config import validate_tool_permissions_consistency, verify_always_included_survives
+    from kaare_core.crypto import ensure_system_master_key
+    import logging as _tool_check_logging
+    ensure_system_master_key()
+    _startup_tool_mismatches = validate_tool_permissions_consistency() + verify_always_included_survives("adult")
+    if _startup_tool_mismatches:
+        _tool_check_logging.getLogger("kaare_api").critical(
+            "Startup tool_permissions consistency check FAILED: %s", _startup_tool_mismatches
+        )
+    else:
+        _tool_check_logging.getLogger("kaare_api").info("Startup tool_permissions consistency check: OK")
     restore_timers()
     await start_action_queue_worker()
     _start_job_store()
@@ -289,7 +301,10 @@ def _restore_stm() -> None:
             migrated = app_state.STM_REGISTRY.migrate_legacy_snapshot(old_path, new_dir)
             if migrated:
                 logger.info("STM: migrated legacy snapshot to per-user files in %s", new_dir)
-        app_state.STM_REGISTRY.load_snapshots(new_dir)
+        # allow_system_key=True: this runs at process startup, before any user has
+        # a live PIN session — without it, every .enc snapshot would come back empty
+        # on every kaare.service restart (P87, closes the 2026-08-01 STM-loss incident).
+        app_state.STM_REGISTRY.load_snapshots(new_dir, allow_system_key=True)
         counts = app_state.STM_REGISTRY.snapshot_counts()
         logger.info("STM snapshots restored: %s", counts)
     except Exception as e:
@@ -299,7 +314,9 @@ def _restore_stm() -> None:
         from kaare_core.users.store import list_users
         all_user_ids = [u["username"] for u in list_users()] + ["global"]
         for uid in all_user_ids:
-            summary = load_latest_daily_summary(user_id=uid)
+            # allow_system_key=True: same restart-recovery reasoning as the STM
+            # snapshot load above — no live session exists at API startup.
+            summary = load_latest_daily_summary(user_id=uid, allow_system_key=True)
             if summary:
                 app_state.STM_REGISTRY.get(uid).set_daily_summary(summary)
                 logger.info("STM daily summary loaded for %s (%d chars)", uid, len(summary))
@@ -870,11 +887,25 @@ async def generate(request: PromptRequest, http: Request):
     async def _run_miss_kare(u_msg: str, k_reply: str, uid: str, addressed: bool):
         print(f"[MISS KÅRE] evaluator starter rid={rid} addressed={addressed}")
         try:
+            # If the user is answering something Miss Kåre asked last turn, capture the
+            # prior question before we overwrite it with this turn's comment below.
+            prior_question = None
+            if addressed:
+                prior = _miss_kare_stm.get_non_silent(uid, n=1)
+                if prior:
+                    prior_question = prior[-1].miss_kare_comment
+
             comment = await _miss_kare_evaluate(u_msg, k_reply, uid, addressed_directly=addressed)
             print(f"[MISS KÅRE] evaluator ferdig rid={rid} silent={comment == '[STILLE]'}")
             _miss_kare_stm.add(uid, u_msg, k_reply, comment)
             if comment != "[STILLE]":
                 _miss_kare_latest[uid] = comment    # frontend poller dette
+
+            if prior_question:
+                try:
+                    await _miss_kare_extract(uid, prior_question, u_msg)
+                except Exception as e:
+                    print(f"[MISS KÅRE] fakta-ekstraksjon krasjet: {e}")
         except Exception as e:
             print(f"[MISS KÅRE] evaluator krasjet: {e}")
 

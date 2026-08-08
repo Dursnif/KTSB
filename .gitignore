@@ -39,6 +39,7 @@ __pycache__/
 *.pyo
 *.pyd
 *.egg-info/
+.pytest_cache/
 
 # Frontend build output (rebuilt in CI)
 frontend/node_modules/
@@ -68,10 +69,8 @@ models/
 .claude/
 claude_memory
 
-# Vaktmester runtime state (recreated at runtime)
-vaktmester_report.json
-vaktmester_state.json
-vaktmester_delta.json
+# Argus runtime state (recreated at runtime)
+argus_inbox/
 vaktmester_inbox/
 
 # npm logs
@@ -108,6 +107,10 @@ CURRENT.md
 
 # Personal deploy scripts (contain local hostnames and user paths)
 scripts/deploy_inner_voices_ainuc.sh
+
+# NAS backup scripts — personal infra, not a KTSB product feature
+scripts/backup_to_nas.sh
+scripts/backup_claude_to_nas.sh
 
 # System directories owned by kaare user
 .ssh/

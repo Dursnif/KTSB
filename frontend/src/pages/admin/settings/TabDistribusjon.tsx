@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { apiGetCapabilities, apiPutCapabilities, type CapabilitiesConfig, type ServiceEntry } from "@/services/api";
-import { useSaveState, SaveFeedback } from "./shared";
+import { useSaveState, SaveFeedback, ExpertOnly } from "./shared";
 
 const DISTRIBUTION_PRESETS: { id: string; emoji: string; services: string[] }[] = [
   {
@@ -98,6 +98,7 @@ export default function TabDistribusjon() {
             ))}
           </div>
 
+          <ExpertOnly><>
           <Separator className="my-4" />
 
           <p className="text-sm font-medium mb-3">{t("settings.distribusjon.profile.domains_label")}</p>
@@ -153,6 +154,7 @@ export default function TabDistribusjon() {
               )}
             </>
           )}
+          </></ExpertOnly>
 
           <div className="flex items-center gap-3 mt-4">
             <Button onClick={save} disabled={ss.state === "saving"}>

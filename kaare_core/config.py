@@ -1,5 +1,7 @@
+import json
 import logging
 import yaml
+from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -32,6 +34,15 @@ def _load_tool_permissions() -> None:
         _TOOL_PERMISSIONS = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     except Exception:
         _TOOL_PERMISSIONS = {}
+    # Runs on every load — process startup (call moved to end of this file, after
+    # get_tools_for_role() is defined) and every hot-reload (save_tool_permissions(),
+    # reload_config()). Never let a check failure break config loading itself.
+    try:
+        mismatches = validate_tool_permissions_consistency() + verify_always_included_survives("adult")
+        if mismatches:
+            _report_tool_consistency_alert(mismatches)
+    except Exception:
+        _log.exception("_load_tool_permissions: consistency check failed")
 
 
 def _load_capability_services() -> None:
@@ -41,10 +52,6 @@ def _load_capability_services() -> None:
         _CAPABILITY_SERVICES = data.get("services", {})
     except Exception:
         _CAPABILITY_SERVICES = {}
-
-
-_load_tool_permissions()
-_load_capability_services()
 
 
 def reload_capability_services() -> None:
@@ -242,6 +249,33 @@ def filter_tools_by_model(tools: list, size_b: float) -> list:
     return result
 
 
+def filter_tools_by_tier_ceiling(tools: list, max_tier: float) -> list:
+    """
+    Restrict tools to those at or below a given capability tier ceiling.
+
+    Unlike filter_tools_by_model(), there is no "under 9B = zero tools" cutoff —
+    this is for the fallback model's own degraded-mode token budget (num_ctx: 8192
+    on port 11445), not a capability check. always_included tools always pass.
+    """
+    from kaare_core.tools.definitions import TOOL_MODEL_TIERS
+    always_names: set[str] = set(_TOOL_PERMISSIONS.get("always_included", []))
+    result = []
+    removed = []
+    for tool in tools:
+        name: str = tool["function"]["name"]
+        if name in always_names:
+            result.append(tool)
+            continue
+        min_size = TOOL_MODEL_TIERS.get(name, 0.0)
+        if min_size <= max_tier:
+            result.append(tool)
+        else:
+            removed.append(name)
+    if removed:
+        _log.info("filter_tools_by_tier_ceiling: removed %s (max_tier=%.1f)", removed, max_tier)
+    return result
+
+
 def get_tools_for_role(role: str, user_id: str = "") -> list:
     """
     Return the filtered tool list for the given user role and language.
@@ -305,3 +339,110 @@ def get_tools_for_role(role: str, user_id: str = "") -> list:
                 break
 
     return result
+
+
+def _report_tool_consistency_alert(mismatches: list[str]) -> None:
+    """
+    Write a CRITICAL-severity JSON line to route_decisions.log so Argus picks it up
+    on its next poll and surfaces it on the admin dashboard.
+
+    Cannot import kaare_api._route_log() here — kaare_api.py imports FROM
+    kaare_core.config, so the reverse import would be circular. Writes the same JSON
+    shape directly instead (same "known file, known shape" idiom _route_log() uses).
+    """
+    _log.critical("tool_permissions consistency check failed: %s", mismatches)
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "source": "kaare",
+        "subsystem": "routing",
+        "stage": "tool_consistency_mismatch",
+        "error": True,
+        "mismatches": mismatches,
+    }
+    try:
+        with open("/kaare/logs/route_decisions.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        _log.exception("_report_tool_consistency_alert: failed to write route_decisions.log")
+
+
+def validate_tool_permissions_consistency() -> list[str]:
+    """
+    Compare tool names defined in kaare_core.tools.definitions against every name
+    referenced in tool_permissions.yaml's always_included and role lists.
+
+    Returns a list of human-readable mismatch descriptions; empty list means fully
+    consistent. Flags only config → dead-definition drift (a role list or
+    always_included still names a tool that no longer exists in definitions.py — a
+    stale rename, the exact P83 symptom that made Kåre lose its always_included
+    tools). Deliberately does NOT flag the reverse direction (a tool defined but never
+    referenced in any role list): most of those are intentionally admin-only, reachable
+    only through the "admin: [all]" bypass and never meant to appear in a role list at
+    all (e.g. ssh_command, restart_docker_container) — firing CRITICAL on all of those
+    every single reload would be permanent noise, not a signal, and would train the
+    admin to ignore this alert channel. (Confirmed empirically 2026-08-01: this
+    direction produced 10 hits against the live config, only 2 of which — write_reflex,
+    household — were real gaps, per the Decisions section.)
+
+    agent_tools: is deliberately excluded from the comparison — those keys belong to
+    Mechanic's own separate internal tool registry (utforsk, inspiser, hukommelse, ...),
+    not this namespace. Confirmed empirically 2026-08-01: comparing them against
+    definitions.py produced 8 false "orphaned config" hits.
+    """
+    from kaare_core.tools.definitions import get_tools
+
+    try:
+        defined_names = {t["function"]["name"] for t in get_tools("nb")}
+    except Exception:
+        _log.critical("validate_tool_permissions_consistency: failed to load tool definitions")
+        return ["failed to load kaare_core.tools.definitions.get_tools()"]
+
+    always_names: set[str] = set(_TOOL_PERMISSIONS.get("always_included", []))
+    roles_cfg: dict = _TOOL_PERMISSIONS.get("roles", {})
+    referenced_names: set[str] = set(always_names)
+    for role_list in roles_cfg.values():
+        for name in role_list:
+            # "all" = admin bypass keyword, "library_online" = upgrade flag, not a tool
+            if name not in ("all", "library_online"):
+                referenced_names.add(name)
+
+    orphaned_config = sorted(referenced_names - defined_names)
+    if orphaned_config:
+        return [
+            f"tool_permissions.yaml references tools not defined in definitions.py: {orphaned_config}"
+        ]
+    return []
+
+
+def verify_always_included_survives(role: str = "adult") -> list[str]:
+    """
+    Confirm every configured always_included tool actually survives
+    get_tools_for_role() filtering for a real, non-bypass role.
+
+    Tests against "adult" by design, not "admin" — admin skips the role filter
+    entirely via the "all" shortcut and could never catch a bug in the filter path
+    itself. Catches the exact bug shape that caused Kåre to report having no tools
+    active: an always_included name silently dropped due to a
+    definitions.py/tool_permissions.yaml mismatch.
+    """
+    always_names: set[str] = set(_TOOL_PERMISSIONS.get("always_included", []))
+    if not always_names:
+        return []
+    try:
+        result_names = {t["function"]["name"] for t in get_tools_for_role(role)}
+    except Exception:
+        _log.critical("verify_always_included_survives: get_tools_for_role(%r) raised", role)
+        return [f"get_tools_for_role({role!r}) raised an exception"]
+
+    missing = sorted(always_names - result_names)
+    if missing:
+        return [f"always_included tools missing from get_tools_for_role({role!r}): {missing}"]
+    return []
+
+
+# Runs consistency checks once at first import (process startup) — the calls to
+# _load_tool_permissions() must sit here, after get_tools_for_role() and the two
+# validators above are all defined. Calling it at its old position near the top of
+# this file (before get_tools_for_role() existed) would raise NameError on import.
+_load_tool_permissions()
+_load_capability_services()

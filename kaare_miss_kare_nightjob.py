@@ -21,6 +21,7 @@ sys.path.insert(0, "/kaare")
 from kaare_core.model_lock import lock_11445, LockTimeout
 from kaare_core.users.store import list_users
 from kaare_core.users.profile_manager import get_display_name
+from kaare_core.memory.long_term import _dec
 from adapters.llm_adapter import call_llm_chat
 
 _DB_PATH = Path("/kaare/state/memory/interactions.db")
@@ -46,7 +47,19 @@ def _get_conn() -> sqlite3.Connection:
 
 
 def _fetch_today_interactions(user_id: str) -> list[dict]:
-    """Return all interactions for user_id in the last 24 hours."""
+    """Return all interactions for user_id in the last 24 hours.
+
+    prompt/response may be ENC:-prefixed ciphertext (encrypted at rest, session-key-only).
+    This job runs unattended at night, so _dec() is called with allow_system_key=True
+    (P87) rather than requiring a live PIN session — this is the fix for the confirmed
+    2026-08-01 incident where this job could only ever see "[kryptert]" placeholders and
+    wrote a portrait/narrative based on zero real signal. If the system key still can't
+    resolve for some reason (e.g. a user who has never logged in even once), _dec() falls
+    back to the literal placeholder "[kryptert]" rather than returning ciphertext.
+    Interactions where BOTH fields end up as that placeholder carry zero signal and are
+    dropped; a real prompt or response for a given row is kept even if its counterpart
+    is encrypted.
+    """
     since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(timespec="seconds")
     conn = _get_conn()
     try:
@@ -59,9 +72,22 @@ def _fetch_today_interactions(user_id: str) -> list[dict]:
             (user_id, since),
         )
         cols = [c[0] for c in cur.description]
-        return [dict(zip(cols, r)) for r in cur.fetchall()]
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
     finally:
         conn.close()
+
+    usable = []
+    dropped = 0
+    for row in rows:
+        row["prompt"] = _dec(user_id, row["prompt"], allow_system_key=True)
+        row["response"] = _dec(user_id, row["response"], allow_system_key=True)
+        if row["prompt"] == "[kryptert]" and row["response"] == "[kryptert]":
+            dropped += 1
+            continue
+        usable.append(row)
+    if dropped:
+        log.info("Dropped %d fully-encrypted interaction(s) for %s (no session key).", dropped, user_id)
+    return usable
 
 
 # ── LLM prompt ────────────────────────────────────────────────────────────────
@@ -86,25 +112,38 @@ def _build_prompt(name: str, today: str, interactions: list[dict]) -> str:
 
 
 # ── Portrait file management ──────────────────────────────────────────────────
+# P87: previously always plaintext (Path.write_text directly) — no encryption path
+# existed for this file at all, unlike observations.md/.enc. Now goes through the
+# same encrypted-text helper, with allow_system_key=True since this job is always
+# unattended (see _process_user call sites below).
 
-def _append_observations(user_id: str, text: str) -> None:
+def _append_observations(user_id: str, text: str, allow_system_key: bool = False) -> None:
     """Append only valid dated observation lines to the portrait file."""
+    from kaare_core.crypto import read_user_text_file, write_user_text_file
     path = _portrait_path(user_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        for line in text.strip().splitlines():
-            line = line.strip()
-            if re.match(r"^- \[\d{4}-\d{2}-\d{2}\]", line):
-                f.write(line + "\n")
+    new_lines = [
+        line.strip() for line in text.strip().splitlines()
+        if re.match(r"^- \[\d{4}-\d{2}-\d{2}\]", line.strip())
+    ]
+    if not new_lines:
+        return
+    existing = read_user_text_file(path, user_id, allow_system_key=allow_system_key)
+    if existing and not existing.endswith("\n"):
+        existing += "\n"
+    combined = existing + "\n".join(new_lines) + "\n"
+    write_user_text_file(path, combined, user_id, allow_system_key=allow_system_key)
 
 
-def _trim_portrait(user_id: str) -> None:
+def _trim_portrait(user_id: str, allow_system_key: bool = False) -> None:
     """Remove entries older than _OBS_MAX_DAYS. Identical logic to _trim_observations()."""
+    from kaare_core.crypto import read_user_text_file, write_user_text_file
     path = _portrait_path(user_id)
-    if not path.exists():
+    content = read_user_text_file(path, user_id, allow_system_key=allow_system_key)
+    if not content:
         return
     cutoff = (datetime.now() - timedelta(days=_OBS_MAX_DAYS)).strftime("%Y-%m-%d")
-    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = content.splitlines()
     kept = []
     for line in lines:
         m = re.match(r"^- \[(\d{4}-\d{2}-\d{2})\]", line)
@@ -113,22 +152,21 @@ def _trim_portrait(user_id: str) -> None:
                 kept.append(line)
         elif line.strip():
             kept.append(line)
-    path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    write_user_text_file(path, "\n".join(kept) + "\n", user_id, allow_system_key=allow_system_key)
 
 
-def _cap_portrait(user_id: str) -> None:
+def _cap_portrait(user_id: str, allow_system_key: bool = False) -> None:
     """Keep only the most recent entries — identical logic to _cap_personality_self()."""
+    from kaare_core.crypto import read_user_text_file, write_user_text_file
     path = _portrait_path(user_id)
-    if not path.exists():
-        return
-    text = path.read_text(encoding="utf-8")
-    if len(text) <= _PORTRAIT_CAP:
+    text = read_user_text_file(path, user_id, allow_system_key=allow_system_key)
+    if not text or len(text) <= _PORTRAIT_CAP:
         return
     truncated = text[-_PORTRAIT_CAP:]
     nl = truncated.find("\n")
     if nl > 0:
         truncated = truncated[nl + 1:]
-    path.write_text("[… eldre observasjoner ikke vist]\n" + truncated, encoding="utf-8")
+    write_user_text_file(path, "[… eldre observasjoner ikke vist]\n" + truncated, user_id, allow_system_key=allow_system_key)
 
 
 # ── Per-user processing ───────────────────────────────────────────────────────
@@ -164,9 +202,9 @@ async def _process_user(user_id: str) -> None:
         log.info("LLM returned empty response for %s — skipping.", user_id)
         return
 
-    _append_observations(user_id, observations)
-    _trim_portrait(user_id)
-    _cap_portrait(user_id)
+    _append_observations(user_id, observations, allow_system_key=True)
+    _trim_portrait(user_id, allow_system_key=True)
+    _cap_portrait(user_id, allow_system_key=True)
     log.info("Portrait updated for %s.", user_id)
 
 

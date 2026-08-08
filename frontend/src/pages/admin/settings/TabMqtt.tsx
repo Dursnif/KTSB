@@ -3,9 +3,10 @@ import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { apiGetServices, apiPutMqtt, apiGetVpnSettings, apiPutVpnSettings } from "@/services/api";
-import { useSaveState, FieldRow, SaveFeedback, TestButton } from "./shared";
+import { useSaveState, FieldRow, SaveFeedback, TestButton, ExpertOnly } from "./shared";
 
 export default function TabMqtt() {
   const { t } = useTranslation();
@@ -85,6 +86,7 @@ export default function TabMqtt() {
             <FieldRow label={t("settings.mqtt.card.port_label")} hint={t("settings.mqtt.card.port_hint")}>
               <Input type="number" value={port} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPort(e.target.value)} className="w-28" />
             </FieldRow>
+            <ExpertOnly><>
             <FieldRow label={t("settings.mqtt.card.username_label")} hint={t("settings.mqtt.card.username_hint")}>
               <Input value={username} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUsername(e.target.value)} placeholder="mqtt_user" />
             </FieldRow>
@@ -103,13 +105,7 @@ export default function TabMqtt() {
             </FieldRow>
             <FieldRow label={t("settings.mqtt.card.tls_label")} hint={t("settings.mqtt.card.tls_hint")}>
               <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="mqtt-tls"
-                  checked={tlsEnabled}
-                  onChange={e => setTlsEnabled(e.target.checked)}
-                  className="h-4 w-4 accent-primary cursor-pointer"
-                />
+                <Switch checked={tlsEnabled} onCheckedChange={setTlsEnabled} id="mqtt-tls" />
                 <label htmlFor="mqtt-tls" className="text-sm cursor-pointer select-none">{t("settings.mqtt.card.tls_enable")}</label>
               </div>
             </FieldRow>
@@ -122,6 +118,7 @@ export default function TabMqtt() {
             <FieldRow label={t("settings.mqtt.card.reconnect_label")} hint={t("settings.mqtt.card.reconnect_hint")}>
               <Input type="number" value={reconnectInterval} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setReconnectInterval(e.target.value)} className="w-28" />
             </FieldRow>
+            </></ExpertOnly>
           </div>
           <div className="flex items-center gap-3 mt-4">
             <Button onClick={saveMqtt} disabled={ssMqtt.state === "saving"}>

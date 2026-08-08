@@ -240,6 +240,7 @@ export default function TabForklaringer() {
     "kare_image", "view_images", "media", "note", "announce", "reason_freely",
     "memory", "camera", "search_argus", "read_meeting", "mechanic",
     "explore_code", "inspect_system", "ssh_command", "local_command", "restart_docker_container",
+    "household", "write_reflex",
   ];
 
   return (
@@ -391,13 +392,18 @@ export default function TabForklaringer() {
       <div style={{ marginBottom: 28 }}>
         <GroupHeader label={t("forklaringer.group_settings")} color={GROUP_COLORS.settings} />
 
+        {sec("innst_basic_expert", GROUP_COLORS.settings, <>
+          <Body text={t("forklaringer.innst_basic_expert.body")} />
+          <Items items={items("innst_basic_expert", 3)} />
+        </>)}
+
         {sec("innst_generelt", TAB_COLORS.generelt, <>
           <Items items={items("innst_generelt", 3)} />
         </>)}
 
         {sec("innst_ha", TAB_COLORS.ha, <>
           <Body text={t("forklaringer.innst_ha.body")} />
-          <Items items={items("innst_ha", 3)} />
+          <Items items={items("innst_ha", 4)} />
         </>)}
 
         {sec("innst_mqtt", TAB_COLORS.mqtt, <>
@@ -416,7 +422,7 @@ export default function TabForklaringer() {
             { label: "Sky",         desc: t("forklaringer.innst_llm.role_sky"),       color: TAB_COLORS.kare },
           ]} />
           <SubHeading text="Andre begreper:" />
-          <Items items={items("innst_llm", 5)} />
+          <Items items={items("innst_llm", 6)} />
         </>)}
 
         {sec("innst_refleksjon", TAB_COLORS.refleksjon, <>
@@ -432,7 +438,7 @@ export default function TabForklaringer() {
         </>)}
 
         {sec("innst_kare", TAB_COLORS.kare, <>
-          <Items items={items("innst_kare", 9)} />
+          <Items items={items("innst_kare", 10)} />
         </>)}
 
         {sec("innst_integrasjoner", TAB_COLORS.integrasjoner, <>

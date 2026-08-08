@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { CheckCircle2, XCircle, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import { apiPutMemoryEmbedBackend } from "@/services/api";
-import { useSaveState } from "../shared";
+import { useSaveState, ExpertOnly } from "../shared";
 
 export type MemoryEmbedData = { enabled: boolean; model_dir: string };
 
@@ -51,6 +51,7 @@ export function MemoryEmbedCard({ data, onSaved }: { data: MemoryEmbedData; onSa
       </CardHeader>
       {!collapsed && (
         <CardContent className="space-y-5 pt-0">
+          <ExpertOnly><>
           <div className="rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs text-blue-300/90">
             384-dim embedding for semantisk minnesøk. Bruker <strong>paraphrase-multilingual-MiniLM-L12-v2</strong> (ONNX).
             Modellen må ligge lokalt — plasser <code>model.onnx</code> og <code>tokenizer.json</code> i mappen under.
@@ -64,6 +65,7 @@ export function MemoryEmbedCard({ data, onSaved }: { data: MemoryEmbedData; onSa
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm font-mono"
             />
           </div>
+          </></ExpertOnly>
           <div className="flex items-center gap-3">
             <Button size="sm" onClick={save} disabled={ss.state === "saving"}>
               {ss.state === "saving" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
@@ -72,9 +74,11 @@ export function MemoryEmbedCard({ data, onSaved }: { data: MemoryEmbedData; onSa
             {ss.state === "saved"  && <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Lagret</span>}
             {ss.state === "error"  && <span className="text-xs text-red-400 flex items-center gap-1"><XCircle className="h-3 w-3" /> Feil</span>}
           </div>
+          <ExpertOnly>
           <p className="text-xs text-muted-foreground">
             Tjenesten starter automatisk når den aktiveres og modellfilene finnes i mappen.
           </p>
+          </ExpertOnly>
         </CardContent>
       )}
     </Card>

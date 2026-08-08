@@ -15,7 +15,8 @@ import {
   type WarmupStatus, type ContainerInfo, type GpuInfo,
 } from "@/services/api";
 import { PROVIDER_OPTIONS, LLM_ROLE_LABELS } from "./llm-constants";
-import { useSaveState, FieldRow, SaveFeedback, TestButton, MaskedInput } from "../shared";
+import { useSaveState, FieldRow, SaveFeedback, TestButton, MaskedInput, ExpertOnly } from "../shared";
+import { ReasonFreelyCard } from "./ReasonFreelyCard";
 
 const THINK_OPTIONS = [
   { value: "__unset__", labelKey: "settings.llm.think_unset" },
@@ -230,6 +231,17 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
   const setDockerOpt = (k: keyof VllmDockerConfig, v: unknown) =>
     setLocal(p => ({ ...p, vllm_docker: { ...(p.vllm_docker ?? {}), [k]: v } }));
 
+  // Temperature is the one advanced-inference field shown in Basic mode — kept
+  // outside the per-provider param blocks below (which are all Expert-only).
+  const temperatureValue: number | "" = isLocal
+    ? local.options?.temperature ?? ""
+    : ((local as Record<string, unknown>).temperature as number) ?? "";
+  const setTemperature = (v: number) => {
+    if (isLocal) setOpt("temperature", v);
+    else setLocal(p => ({ ...p, temperature: v }));
+  };
+  const temperatureFieldKey = isOllama ? "ollama_fields" : isVllm ? "vllm_fields" : "cloud_fields";
+
   const restartDocker = async () => {
     setDockerRestarting(true);
     setDockerStatus("idle");
@@ -398,6 +410,17 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
             />
           </FieldRow>
 
+          <FieldRow label={t(`settings.llm.${temperatureFieldKey}.temperature.label`)} hint={t(`settings.llm.${temperatureFieldKey}.temperature.hint`)}>
+            <input
+              type="number"
+              value={temperatureValue}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTemperature(Number(e.target.value))}
+              className="flex h-9 w-32 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm font-mono"
+              step="0.01"
+            />
+          </FieldRow>
+
+          <ExpertOnly><>
           <FieldRow label={t("settings.llm.provider_label")} hint={t("settings.llm.provider_hint")}>
             <Select value={local.provider} onValueChange={(v: string | null) => { if (v) setLocal(p => ({ ...p, provider: v as LlmRoleConfig["provider"] })); }}>
               <SelectTrigger className="w-64">
@@ -524,12 +547,14 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
               </div>
             </FieldRow>
           )}
+          </></ExpertOnly>
 
+          <ExpertOnly><>
           {isOllama && (
             <>
               <Separator className="my-1" />
               <p className="text-xs text-muted-foreground py-2">{t("settings.llm.ollama_params")}</p>
-              {(["num_ctx", "num_predict", "temperature", "presence_penalty", "top_k", "top_p"] as const).map((k) => {
+              {(["num_ctx", "num_predict", "presence_penalty", "top_k", "top_p"] as const).map((k) => {
                 const fieldKey = `settings.llm.ollama_fields.${k}`;
                 if (k === "num_ctx" && numCtxLocked && sharedWithRole) {
                   const sharedVal = allConfigs[sharedWithRole]?.options?.num_ctx;
@@ -573,7 +598,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
 
               <Separator className="my-1" />
               <p className="text-xs text-muted-foreground py-2">{t("settings.llm.vllm_params")}</p>
-              {(["max_tokens", "temperature", "top_p", "presence_penalty", "frequency_penalty"] as const).map((k) => {
+              {(["max_tokens", "top_p", "presence_penalty", "frequency_penalty"] as const).map((k) => {
                 const step = k === "max_tokens" ? "1" : "0.01";
                 return (
                   <FieldRow key={k} label={t(`settings.llm.vllm_fields.${k}.label`)} hint={t(`settings.llm.vllm_fields.${k}.hint`)}>
@@ -642,7 +667,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
             <>
               <Separator className="my-1" />
               <p className="text-xs text-muted-foreground py-2">{t("settings.llm.cloud_params")}</p>
-              {(["temperature", "top_p", "max_tokens"] as const).map((k) => (
+              {(["top_p", "max_tokens"] as const).map((k) => (
                 <FieldRow key={k} label={t(`settings.llm.cloud_fields.${k}.label`)} hint={t(`settings.llm.cloud_fields.${k}.hint`)}>
                   <input
                     type="number"
@@ -655,11 +680,20 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
               ))}
             </>
           )}
+          </></ExpertOnly>
         </div>
+
+        {/* ── Reason Freely Tool — nested, not a top-level role card ────── */}
+        {role === "default" && (
+          <ExpertOnly>
+            <Separator className="my-3" />
+            <ReasonFreelyCard config={allConfigs["reason_freely"]} />
+          </ExpertOnly>
+        )}
 
         {/* ── Administrer modell ─────────────────────────────────────────── */}
         {isLocal && (
-          <>
+          <ExpertOnly><>
             <Separator className="my-3" />
             <div className="flex items-center justify-between py-1">
               <div>
@@ -858,7 +892,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
                 )}
               </div>
             )}
-          </>
+          </></ExpertOnly>
         )}
 
         <div className="flex flex-col gap-1 mt-4">
@@ -869,7 +903,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
             </Button>
             <SaveFeedback state={ss.state} />
             {isVllm && (
-              <>
+              <ExpertOnly><>
                 <Button
                   variant="outline"
                   onClick={restartDocker}
@@ -883,7 +917,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
                 </Button>
                 {dockerStatus === "ok" && <span className="flex items-center gap-1 text-sm text-green-500"><CheckCircle2 className="h-4 w-4" /> {t("common.container_restarted")}</span>}
                 {dockerStatus === "error" && <span className="flex items-center gap-1 text-sm text-destructive"><XCircle className="h-4 w-4" /> {t("common.restart_failed")}</span>}
-              </>
+              </></ExpertOnly>
             )}
           </div>
           {warmup.status === "waiting" && (
@@ -917,7 +951,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
             </span>
           )}
           {isOllama && allowDockerControl && (
-            <div className="flex items-center gap-2 mt-1">
+            <ExpertOnly><div className="flex items-center gap-2 mt-1">
               <Button
                 variant="outline"
                 size="sm"
@@ -934,7 +968,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
               {!containerName && <span className="text-xs text-muted-foreground">{t("settings.llm.container_name_required")}</span>}
               {ollamaRestartStatus === "ok" && <span className="flex items-center gap-1 text-xs text-green-500"><CheckCircle2 className="h-3 w-3" />{t("common.container_restarted")}</span>}
               {ollamaRestartStatus === "error" && <span className="flex items-center gap-1 text-xs text-destructive"><XCircle className="h-3 w-3" />{t("common.restart_failed")}</span>}
-            </div>
+            </div></ExpertOnly>
           )}
         </div>
       </CardContent>}

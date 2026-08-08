@@ -328,6 +328,10 @@ def make_message(ev: dict, source: str) -> str:
         return t("argus_motion_event", get_lang("global"), label=lbl, cam=cam, pct=pct)
 
     # route_decisions.log (source == "kaare")
+    if stage == "tool_consistency_mismatch":
+        mismatches = ev.get("mismatches", [])
+        preview = "; ".join(str(m) for m in mismatches)[:200]
+        return f"KRITISK: verktøy-konfigurasjon i utakt — {preview}"
     if stage == "ha_handled_done":
         return f"HA: {ev.get('action','?')} {ev.get('entity_id','?')}"
     if stage == "ha_gateway_return":
@@ -397,7 +401,11 @@ def _flush_face_session(name: str, session: dict) -> None:
     lang       = get_lang("global")
     label_type = t("argus_label_person" if session["label"] == "person" else "argus_label_vehicle", lang)
     cam_word   = t("argus_cam_word_s" if n_cams == 1 else "argus_cam_word_p", lang, n=n_cams)
-    line       = t("argus_face_session", lang, time=time_str, label=label_type, name=name, cam_word=cam_word, cams=cam_strs, pct=pct) + "\n"
+    line       = t("argus_face_session", lang, time=time_str, label=label_type, name=name, cam_word=cam_word, cams=cam_strs, pct=pct)
+    best_event_id = session.get("best_event_id", "")
+    if best_event_id:
+        line += f" [event_id: {best_event_id}]"
+    line += "\n"
 
     try:
         FACE_EVENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -416,11 +424,12 @@ def process_face_event(ev: dict) -> None:
     if not name:
         return
 
-    camera = ev.get("camera", "?")
-    score  = float(ev.get("sub_label_score") or ev.get("score") or 0)
-    label  = ev.get("label", "person")
-    ts_raw = ev.get("ts", "")
-    dt     = parse_iso(str(ts_raw)) if ts_raw else datetime.now(timezone.utc)
+    camera   = ev.get("camera", "?")
+    score    = float(ev.get("sub_label_score") or ev.get("score") or 0)
+    label    = ev.get("label", "person")
+    ts_raw   = ev.get("ts", "")
+    event_id = ev.get("event_id", "")
+    dt       = parse_iso(str(ts_raw)) if ts_raw else datetime.now(timezone.utc)
 
     session = _face_sessions.get(name)
     if session is not None:
@@ -431,7 +440,9 @@ def process_face_event(ev: dict) -> None:
             if camera not in session["cameras"]:
                 session["cameras"].append(camera)
             session["count"] += 1
-            session["max_score"] = max(session["max_score"], score)
+            if score >= session["max_score"]:
+                session["max_score"] = score
+                session["best_event_id"] = event_id
             return
         # Gap exceeded — flush old, fall through to start new
         _flush_face_session(name, session)
@@ -444,6 +455,7 @@ def process_face_event(ev: dict) -> None:
         "cameras":  [camera],
         "count":    1,
         "max_score": score,
+        "best_event_id": event_id,
     }
 
 

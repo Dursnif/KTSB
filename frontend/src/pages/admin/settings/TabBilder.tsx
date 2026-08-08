@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { apiGetImageSettings, apiPutImageSettings, apiGetImageStats, type ImageSettings, type ImageUserStats } from "@/services/api";
-import { useSaveState, SaveFeedback, FieldRow } from "./shared";
+import { useSaveState, SaveFeedback, FieldRow, ExpertOnly } from "./shared";
 import Cameras from "../Cameras";
 
 export default function TabBilder() {
@@ -37,6 +37,7 @@ export default function TabBilder() {
           <CardDescription>{t("settings.bilder.storage.description")}</CardDescription>
         </CardHeader>
         <CardContent>
+          <ExpertOnly><>
           <div className="divide-y divide-border">
             <FieldRow label={t("settings.bilder.storage.count_label")} hint={t("settings.bilder.storage.count_hint")}>
               <Input
@@ -66,6 +67,7 @@ export default function TabBilder() {
             </Button>
             <SaveFeedback state={ss.state} />
           </div>
+          </></ExpertOnly>
         </CardContent>
       </Card>
 

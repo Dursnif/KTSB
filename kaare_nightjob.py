@@ -31,7 +31,7 @@ sys.path.insert(0, "/kaare")
 from qdrant_client import QdrantClient
 from qdrant_client.models import FieldCondition, Filter, PointIdsList
 from kaare_core.config import get_service as _svc, get_qdrant_api_key as _qdrant_key
-from kaare_core.memory.long_term import _ENC_PREFIX
+from kaare_core.memory.long_term import _ENC_PREFIX, _dec, _enc
 from kaare_core.memory.semantic_memory import ensure_collection, index_episode
 from adapters.llm_adapter import call_llm_chat as _llm_chat
 from kaare_core.normalcy import compute_baseline as _compute_baseline
@@ -76,6 +76,22 @@ def _last_episode_to_id(conn: sqlite3.Connection) -> int:
     return row[0] or 0
 
 
+def _decrypt_rows(rows: list[dict]) -> list[dict]:
+    """Decrypt prompt/response in-place using the system key (P87).
+
+    This job runs unattended at 03:00 — no live session ever exists here. Before this
+    fix, raw ciphertext (or, worse, the un-checked case in _build_stm_summary_prompt)
+    was fed straight into the LLM compression prompt, producing the confabulated
+    narrative summaries described in P87's Background. allow_system_key=True is safe
+    here: it can only decrypt a row's *own* user_id, never another user's data.
+    """
+    for row in rows:
+        uid = row.get("user_id", "global")
+        row["prompt"] = _dec(uid, row.get("prompt") or "", allow_system_key=True)
+        row["response"] = _dec(uid, row.get("response") or "", allow_system_key=True)
+    return rows
+
+
 def _fetch_unprocessed(conn: sqlite3.Connection, after_id: int, limit: int) -> list[dict]:
     """Henter interaksjoner som ikke er komprimert ennå."""
     cur = conn.execute(
@@ -86,7 +102,7 @@ def _fetch_unprocessed(conn: sqlite3.Connection, after_id: int, limit: int) -> l
            LIMIT ?""",
         (after_id, limit),
     )
-    return [dict(row) for row in cur.fetchall()]
+    return _decrypt_rows([dict(row) for row in cur.fetchall()])
 
 
 def _dominant_user(interactions: list[dict]) -> str:
@@ -105,13 +121,19 @@ def _save_episode(
     topics: str,
     confidence: float,
     user_id: str = "global",
+    allow_system_key: bool = False,
 ) -> int:
+    """Insert a compressed episode. narrative/topics are encrypted at rest for personal
+    users (P87 Phase 6 — was plaintext-by-omission before this; _enc() no-ops for
+    user_id='global'). allow_system_key=True: this job always runs unattended."""
+    stored_narrative = _enc(user_id, narrative, allow_system_key=allow_system_key)
+    stored_topics = _enc(user_id, topics, allow_system_key=allow_system_key)
     cur = conn.execute(
         """INSERT INTO episodes (ts_created, user_id, from_id, to_id, interaction_count, narrative, topics, confidence)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            user_id, from_id, to_id, count, narrative, topics, confidence,
+            user_id, from_id, to_id, count, stored_narrative, stored_topics, confidence,
         ),
     )
     conn.commit()
@@ -138,6 +160,8 @@ def _build_compression_prompt(interactions: list[dict]) -> str:
     ]
     for ix in interactions:
         ts     = ix["ts"][:16].replace("T", " ")
+        # Rows are decrypted upstream (_decrypt_rows, P87) — a lingering ENC: prefix here
+        # means the system key genuinely couldn't resolve, so this still degrades safely.
         raw_p  = ix["prompt"] or ""
         raw_r  = ix["response"] or ""
         prompt = ("[kryptert]" if raw_p.startswith(_ENC_PREFIX) else raw_p[:120]).replace("\n", " ")
@@ -229,6 +253,8 @@ async def compress_daily_stm(conn: sqlite3.Connection) -> None:
     for r in rows:
         ix = dict(zip(fields, r))
         by_user[ix["user_id"]].append(ix)
+    for uid, interactions in by_user.items():
+        _decrypt_rows(interactions)
 
     for uid, interactions in by_user.items():
         existing = conn.execute(
@@ -253,7 +279,7 @@ async def compress_daily_stm(conn: sqlite3.Connection) -> None:
         if not summary:
             log.warning("LLM returned empty STM daily summary for %s — skipping.", uid)
             continue
-        save_daily_summary(today, summary, len(interactions), user_id=uid)
+        save_daily_summary(today, summary, len(interactions), user_id=uid, allow_system_key=True)
         log.info("STM daily summary saved for %s/%s: %s…", today, uid, summary[:80])
 
 
@@ -484,7 +510,8 @@ async def run_nightjob() -> None:
         # Confidence: gjennomsnitt av interaksjonenes confidence
         avg_conf   = sum(ix.get("confidence", 0.5) for ix in batch) / count
         batch_user = _dominant_user(batch)
-        ep_id = _save_episode(conn, from_id, to_id, count, narrative, topics, round(avg_conf, 3), user_id=batch_user)
+        ep_id = _save_episode(conn, from_id, to_id, count, narrative, topics, round(avg_conf, 3),
+                              user_id=batch_user, allow_system_key=True)
 
         log.info("Episode %d lagret (conf=%.2f, topics: %s)", ep_id, avg_conf, topics or "ingen")
         log.info("Narrativ: %s", narrative[:200])

@@ -96,6 +96,8 @@ const TOOL_ROWS: { key: string; indent?: boolean }[] = [
   { key: "ssh_command" },
   { key: "local_command" },
   { key: "restart_docker_container" },
+  { key: "household" },
+  { key: "write_reflex" },
 ];
 
 const PERM_ROLES: Role[] = ["child", "teen", "young_adult", "adult", "admin"];

@@ -12,11 +12,17 @@ Design:
   - Agents can write to a user's vault using only the public key (SealedBox)
   - The private key lives in RAM only during an active session (session_keys.py)
   - System accounts ("admin") never get a keypair
+  - P87: a second copy of each user's private key is encrypted with a per-machine
+    system master key (/kaare/state/system_master.key), so Kåre's own background
+    jobs (reflection meeting, nightjob, STM restart-recovery) can decrypt a user's
+    data without a live PIN session. Never used for interactive/GUI-facing reads
+    — see session_keys.py::resolve_key_sync().
 """
 
 import base64
 import json
 import os
+from pathlib import Path
 
 from argon2 import PasswordHasher
 from argon2.low_level import Type, hash_secret_raw
@@ -34,6 +40,31 @@ _ARGON2_HASH_LEN = 32
 _ARGON2_SALT_LEN = 16
 
 _mnemo = Mnemonic("english")
+
+# --- System master key (P87 — unattended background access to per-user data) ---
+_SYSTEM_MASTER_KEY_PATH = Path("/kaare/state/system_master.key")
+_system_master_key_cache: bytes | None = None
+
+
+def ensure_system_master_key() -> bytes:
+    """Load the per-machine system master key, generating it on first run.
+
+    Rotation was explicitly rejected (P87 Decision 1) — a stolen NAS backup carries
+    key and data together regardless of rotation cadence, so the only real defense
+    is keeping this file off the backup (see scripts/backup_to_nas.sh exclude).
+    Cached in-process since the key never changes after creation.
+    """
+    global _system_master_key_cache
+    if _system_master_key_cache is not None:
+        return _system_master_key_cache
+    if not _SYSTEM_MASTER_KEY_PATH.exists():
+        _SYSTEM_MASTER_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = _SYSTEM_MASTER_KEY_PATH.with_suffix(".tmp")
+        tmp_path.write_bytes(os.urandom(32))
+        tmp_path.chmod(0o600)
+        os.replace(tmp_path, _SYSTEM_MASTER_KEY_PATH)
+    _system_master_key_cache = _SYSTEM_MASTER_KEY_PATH.read_bytes()
+    return _system_master_key_cache
 
 
 def generate_keypair() -> tuple[bytes, bytes]:
@@ -146,6 +177,47 @@ def seed_phrase_to_private_key(words: str, original_salt: bytes, original_public
         return None
     except Exception:
         return None
+
+
+def write_user_text_file(path_base: Path, text: str, user_id: str, allow_system_key: bool = False) -> None:
+    """Write text to path_base.enc (encrypted) if a key is available, else path_base.md (plaintext).
+
+    Mirrors the observations.md/.enc dual-file pattern already used elsewhere in KTSB
+    (profile_manager.py's _write_obs_text). Shared here (P87) so per-user state files
+    written by unattended background jobs (e.g. miss_kare_portrait.md) don't each
+    reimplement the same encrypt-or-fallback dance.
+    """
+    from kaare_core.session_keys import resolve_key_sync
+    enc_path = path_base.with_suffix(".enc")
+    md_path = path_base.with_suffix(".md")
+    key = resolve_key_sync(user_id, allow_system_key=allow_system_key)
+    if key:
+        enc_path.write_text(encrypt_text(text, key), encoding="utf-8")
+        if md_path.exists():
+            md_path.unlink()
+        return
+    md_path.write_text(text, encoding="utf-8")
+
+
+def read_user_text_file(path_base: Path, user_id: str, allow_system_key: bool = False) -> str:
+    """Read text written by write_user_text_file(). Returns "" if encrypted and no key resolves."""
+    enc_path = path_base.with_suffix(".enc")
+    md_path = path_base.with_suffix(".md")
+    if enc_path.exists():
+        from kaare_core.session_keys import resolve_key_sync
+        key = resolve_key_sync(user_id, allow_system_key=allow_system_key)
+        if not key:
+            return ""
+        try:
+            return decrypt_text(enc_path.read_text(encoding="utf-8"), key)
+        except Exception:
+            return ""
+    if md_path.exists():
+        try:
+            return md_path.read_text(encoding="utf-8")
+        except Exception:
+            return ""
+    return ""
 
 
 def private_key_to_seed_phrase(private_key_bytes: bytes) -> str:

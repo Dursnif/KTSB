@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { apiGetNotifications, apiPutNotifications } from "@/services/api";
-import { useSaveState, SaveFeedback } from "./shared";
+import { useSaveState, SaveFeedback, ExpertOnly } from "./shared";
 
 export default function TabVarsler() {
   const { t } = useTranslation();
@@ -70,8 +70,8 @@ export default function TabVarsler() {
       {/* Master toggle */}
       <Card>
         <CardHeader>
-          <CardTitle>{t("settings.varsler.master.title")}</CardTitle>
-          <CardDescription>{t("settings.varsler.master.description")}</CardDescription>
+          <CardTitle>{t("system.varsler.master.title")}</CardTitle>
+          <CardDescription>{t("system.varsler.master.description")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-3">
@@ -81,7 +81,7 @@ export default function TabVarsler() {
               id="notif-enabled"
             />
             <Label htmlFor="notif-enabled" className="cursor-pointer">
-              {t("settings.varsler.master.toggle")}
+              {t("system.varsler.master.toggle")}
             </Label>
           </div>
         </CardContent>
@@ -90,29 +90,30 @@ export default function TabVarsler() {
       {/* Push entity */}
       <Card style={{ opacity: enabled ? 1 : 0.5, pointerEvents: enabled ? "auto" : "none" }}>
         <CardHeader>
-          <CardTitle>{t("settings.varsler.push.title")}</CardTitle>
-          <CardDescription>{t("settings.varsler.push.description")}</CardDescription>
+          <CardTitle>{t("system.varsler.push.title")}</CardTitle>
+          <CardDescription>{t("system.varsler.push.description")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
-          <Label>{t("settings.varsler.push.entity_label")}</Label>
+          <Label>{t("system.varsler.push.entity_label")}</Label>
           <Input
             value={haEntity}
             onChange={e => setHaEntity(e.target.value)}
             placeholder="notify.mobile_app_..."
           />
-          <p className="text-xs text-muted-foreground">{t("settings.varsler.push.entity_hint")}</p>
+          <p className="text-xs text-muted-foreground">{t("system.varsler.push.entity_hint")}</p>
         </CardContent>
       </Card>
 
       {/* Normalcy thresholds */}
+      <ExpertOnly>
       <Card style={{ opacity: enabled ? 1 : 0.5, pointerEvents: enabled ? "auto" : "none" }}>
         <CardHeader>
-          <CardTitle>{t("settings.varsler.normalcy.title")}</CardTitle>
-          <CardDescription>{t("settings.varsler.normalcy.description")}</CardDescription>
+          <CardTitle>{t("system.varsler.normalcy.title")}</CardTitle>
+          <CardDescription>{t("system.varsler.normalcy.description")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label>{t("settings.varsler.normalcy.min_score_label")}</Label>
+            <Label>{t("system.varsler.normalcy.min_score_label")}</Label>
             <Input
               type="number"
               min={0}
@@ -123,7 +124,7 @@ export default function TabVarsler() {
             />
           </div>
           <div className="space-y-2">
-            <Label>{t("settings.varsler.normalcy.min_confidence_label")}</Label>
+            <Label>{t("system.varsler.normalcy.min_confidence_label")}</Label>
             <Input
               type="number"
               min={0}
@@ -135,21 +136,24 @@ export default function TabVarsler() {
           </div>
         </CardContent>
       </Card>
+      </ExpertOnly>
 
       {/* Camera filter */}
+      <ExpertOnly>
       <Card style={{ opacity: enabled ? 1 : 0.5, pointerEvents: enabled ? "auto" : "none" }}>
         <CardHeader>
-          <CardTitle>{t("settings.varsler.normalcy.cameras_label")}</CardTitle>
+          <CardTitle>{t("system.varsler.normalcy.cameras_label")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           <Input
             value={cameras}
             onChange={e => setCameras(e.target.value)}
-            placeholder={t("settings.varsler.normalcy.cameras_hint")}
+            placeholder={t("system.varsler.normalcy.cameras_hint")}
           />
-          <p className="text-xs text-muted-foreground">{t("settings.varsler.normalcy.cameras_hint")}</p>
+          <p className="text-xs text-muted-foreground">{t("system.varsler.normalcy.cameras_hint")}</p>
         </CardContent>
       </Card>
+      </ExpertOnly>
 
       {/* Actions */}
       <div className="flex items-center gap-4">
@@ -160,7 +164,7 @@ export default function TabVarsler() {
         </Button>
         <SaveFeedback state={ss.state} />
         <Button variant="outline" onClick={() => navigate("/admin/security")}>
-          {t("settings.varsler.events_link")}
+          {t("system.varsler.events_link")}
         </Button>
       </div>
 

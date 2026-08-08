@@ -1,5 +1,9 @@
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { SettingsLevelProvider, useSettingsLevel } from "@/contexts/SettingsLevelContext";
 import TabGenerelt from "./settings/TabGenerelt";
 import TabHomeAssistant from "./settings/TabHomeAssistant";
 import TabMqtt from "./settings/TabMqtt";
@@ -14,16 +18,40 @@ import TabAgenter from "./settings/TabAgenter";
 import TabVarsler from "./settings/TabVarsler";
 import TabForklaringer from "./settings/TabForklaringer";
 
-export default function Settings() {
+function SettingsLevelToggle() {
   const { t } = useTranslation();
+  const { level, toggle } = useSettingsLevel();
+  return (
+    <div className="flex items-center gap-2" title={t("settings.level.toggle_hint")}>
+      <Label htmlFor="settings-level-toggle" className="text-sm text-muted-foreground cursor-pointer" onClick={toggle}>
+        {level === "expert" ? t("settings.level.expert") : t("settings.level.basic")}
+      </Label>
+      <Switch id="settings-level-toggle" checked={level === "expert"} onCheckedChange={toggle} />
+    </div>
+  );
+}
+
+function SettingsInner() {
+  const { t } = useTranslation();
+  const { level } = useSettingsLevel();
+  const [tab, setTab] = useState("generelt");
   const dot = (color: string) => (
     <span style={{ width: 7, height: 7, borderRadius: "50%", background: color, display: "inline-block", marginRight: 5, flexShrink: 0 }} />
   );
 
+  // Agent-instillinger is 100% Expert content (raw tool names, prompt-style role
+  // editors) — the tab itself disappears in Basic mode rather than showing empty.
+  useEffect(() => {
+    if (level === "basic" && tab === "agenter") setTab("generelt");
+  }, [level, tab]);
+
   return (
     <div>
-      <h1 style={{ color: "#fff", fontSize: 22, fontWeight: 700, margin: "0 0 28px" }}>{t("settings.title")}</h1>
-      <Tabs defaultValue="generelt" className="w-full">
+      <div className="flex items-center justify-between mb-7">
+        <h1 style={{ color: "#fff", fontSize: 22, fontWeight: 700, margin: 0 }}>{t("settings.title")}</h1>
+        <SettingsLevelToggle />
+      </div>
+      <Tabs value={tab} onValueChange={(v) => { if (v) setTab(v); }} className="w-full">
         {/* Scrollable on mobile so tabs stay on one row instead of wrapping over content */}
         <div className="w-full overflow-x-auto mb-6 pb-1">
           <TabsList className="flex-nowrap h-auto gap-1">
@@ -37,7 +65,9 @@ export default function Settings() {
             <TabsTrigger value="kare"           className="gap-1 whitespace-nowrap">{dot("#b8c6db")}{t("settings.tabs.kare")}</TabsTrigger>
             <TabsTrigger value="integrasjoner" className="gap-1 whitespace-nowrap">{dot("#55efc4")}{t("settings.tabs.integrasjoner")}</TabsTrigger>
             <TabsTrigger value="distribusjon"  className="gap-1 whitespace-nowrap">{dot("#fdcb6e")}{t("settings.tabs.distribusjon")}</TabsTrigger>
-            <TabsTrigger value="agenter"       className="gap-1 whitespace-nowrap">{dot("#74b9ff")}{t("settings.tabs.agenter")}</TabsTrigger>
+            {level === "expert" && (
+              <TabsTrigger value="agenter"     className="gap-1 whitespace-nowrap">{dot("#74b9ff")}{t("settings.tabs.agenter")}</TabsTrigger>
+            )}
             <TabsTrigger value="varsler"       className="gap-1 whitespace-nowrap">{dot("#e84393")}{t("settings.tabs.varsler")}</TabsTrigger>
             <TabsTrigger value="forklaringer"  className="gap-1 whitespace-nowrap">{dot("#c0c0c0")}{t("settings.tabs.forklaringer")}</TabsTrigger>
           </TabsList>
@@ -53,10 +83,20 @@ export default function Settings() {
         <TabsContent value="kare">          <div data-tab="kare"><TabKareInnstillinger /></div></TabsContent>
         <TabsContent value="integrasjoner"> <div data-tab="integrasjoner"><TabIntegrasjoner /></div></TabsContent>
         <TabsContent value="distribusjon">  <div data-tab="distribusjon"><TabDistribusjon /></div></TabsContent>
-        <TabsContent value="agenter">       <div data-tab="agenter"><TabAgenter /></div></TabsContent>
+        {level === "expert" && (
+          <TabsContent value="agenter">     <div data-tab="agenter"><TabAgenter /></div></TabsContent>
+        )}
         <TabsContent value="varsler">       <div data-tab="varsler"><TabVarsler /></div></TabsContent>
         <TabsContent value="forklaringer">  <div data-tab="forklaringer"><TabForklaringer /></div></TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+export default function Settings() {
+  return (
+    <SettingsLevelProvider>
+      <SettingsInner />
+    </SettingsLevelProvider>
   );
 }

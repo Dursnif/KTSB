@@ -534,7 +534,8 @@ async def handle_generate(
 
         try:
             result = await ask_llm_with_tools(
-                messages=messages, tools=_tools, rid=rid, personality=_personality, user_id=user_id
+                messages=messages, tools=_tools, rid=rid, personality=_personality, user_id=user_id,
+                source=source or "user",
             )
         except Exception as _llm_exc:
             print(f"[ROUTER] LLM call failed (round {round_num + 1}): {_llm_exc}")
@@ -686,7 +687,8 @@ async def handle_generate(
         })
         try:
             _final = await ask_llm_with_tools(
-                messages=messages, tools=[], rid=rid, personality=_personality, user_id=user_id
+                messages=messages, tools=[], rid=rid, personality=_personality, user_id=user_id,
+                source=source or "user",
             )
             text_out = (_final.get("text") or "").strip()
         except Exception as e:

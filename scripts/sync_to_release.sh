@@ -114,7 +114,6 @@ rsync -av --delete \
   --exclude='configs/*.save' \
   --exclude='configs/*.save.*' \
   --exclude='configs/kare_ha_bridgealiases.yaml.txt' \
-  --exclude='configs/prism/' \
   --exclude='docs/' \
   "$SOURCE/" "$RELEASE_DIR/"
 

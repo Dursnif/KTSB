@@ -10,7 +10,7 @@ import {
   apiGetDevMeetingSettings, apiPutDevMeetingSettings,
   type ReflectionConfig, type ReflectionMeetingSettings, type DevMeetingSettings,
 } from "@/services/api";
-import { useSaveState, FieldRow, SaveFeedback } from "./shared";
+import { useSaveState, FieldRow, SaveFeedback, ExpertOnly } from "./shared";
 
 export default function TabRefleksjon() {
   const { t } = useTranslation();
@@ -126,6 +126,7 @@ export default function TabRefleksjon() {
           <CardDescription>{t("reflections.settings_title")}</CardDescription>
         </CardHeader>
         <CardContent>
+          <ExpertOnly><>
           {loadingRef || !refMtg
             ? <div className="text-muted-foreground text-sm">{t("common.loading")}</div>
             : (
@@ -186,6 +187,7 @@ export default function TabRefleksjon() {
               <SaveFeedback state={ssRef.state} />
             </div>
           )}
+          </></ExpertOnly>
         </CardContent>
       </Card>
 
@@ -196,6 +198,7 @@ export default function TabRefleksjon() {
           <CardDescription>{t("reflections.settings_title")}</CardDescription>
         </CardHeader>
         <CardContent>
+          <ExpertOnly><>
           {loadingDev || !devMtg
             ? <div className="text-muted-foreground text-sm">{t("common.loading")}</div>
             : (
@@ -261,6 +264,7 @@ export default function TabRefleksjon() {
               <SaveFeedback state={ssDev.state} />
             </div>
           )}
+          </></ExpertOnly>
         </CardContent>
       </Card>
 

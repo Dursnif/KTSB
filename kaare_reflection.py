@@ -61,13 +61,13 @@ from kaare_core.model_lock import lock_11445
 from kaare_core.users.profile_manager import (
     load_profile,
     add_observation,
-    update_profile_field,
     get_recent_observations,
     write_vault_entry,
 )
 from kaare_core import session_keys as _session_keys
 from kaare_core.config import get_service as _svc
-from kaare_core.memory.long_term import load_recent_daily_summaries
+from kaare_core.memory.long_term import load_recent_daily_summaries, _dec
+from kaare_core.agents.miss_kare.evaluator import extract_facts_from_meeting
 from kaare_core.tools.household_state import read_household_state
 from kaare_core.tools.i18n import t, get_lang
 from kaare_core.users import store as _store
@@ -180,10 +180,9 @@ def _load_miss_kare_meeting_pers() -> str:
 
 def _load_miss_kare_portrait(user_id: str) -> str:
     """Load Miss Kåre's accumulated observations about this user (portrait file)."""
+    from kaare_core.crypto import read_user_text_file
     path = Path(f"/kaare/state/users/{user_id}/miss_kare_portrait.md")
-    if not path.exists():
-        return ""
-    return path.read_text(encoding="utf-8").strip()[:3000]
+    return read_user_text_file(path, user_id, allow_system_key=True).strip()[:3000]
 
 
 def _load_user_knowledge(user_id: str) -> str:
@@ -195,11 +194,15 @@ def _load_user_knowledge(user_id: str) -> str:
 
 
 def _get_admin_comment_r() -> str:
-    """Return the most recent admin comment for the reflection meeting, if any.
+    """Return and clear the most recent admin comment for the reflection meeting, if any.
 
     Admin comments live at state/meeting_comments/reflection/YYYY-MM-DD.txt
     (no username subdirectory — admin-scoped).
     User comments (per-user) are in state/meeting_comments/reflection/{username}/YYYY-MM-DD.txt.
+
+    A comment is meant to be surfaced exactly once (the next meeting after it was
+    written) — clearing the file after read prevents it from being re-injected into
+    every meeting indefinitely.
     """
     comments_dir = Path("/kaare/state/meeting_comments/reflection")
     try:
@@ -210,6 +213,7 @@ def _get_admin_comment_r() -> str:
         for f in files:
             text = f.read_text(encoding="utf-8").strip()
             if text:
+                f.write_text("", encoding="utf-8")
                 return text
     except Exception:
         pass
@@ -258,7 +262,16 @@ KARE_BEHAVIOR = _load("/kaare/configs/personality_behavior.md")
 
 # ── User context ──────────────────────────────────────────────────────────────
 def _get_recent_interactions(n: int = 5, user_id: str | None = None) -> str:
-    """Fetch the last N compressed episodes from LTM (SQLite)."""
+    """Fetch the last N compressed episodes from LTM (SQLite).
+
+    narrative may be ENC:-prefixed ciphertext (episodes are unencrypted today by omission —
+    see P87 Phase 6 — but this call already passes allow_system_key=True so it keeps working
+    once that lands). The reflection meeting runs unattended at night, so _dec() uses the
+    system key rather than a live session key; if that ever fails to resolve (e.g. a user who
+    has never logged in even once), it falls back to "[kryptert]" rather than handing
+    ciphertext to the LLM. Episodes that decrypt to that placeholder carry zero signal and are
+    dropped rather than shown as a fake "interaction."
+    """
     try:
         conn = sqlite3.connect("/kaare/state/memory/interactions.db")
         if user_id:
@@ -275,9 +288,16 @@ def _get_recent_interactions(n: int = 5, user_id: str | None = None) -> str:
         if not rows:
             return "No recorded interactions."
         lines = []
-        for i, (narrative, topics) in enumerate(reversed(rows), 1):
-            lines.append(f"Interaction {i} (topics: {topics or 'unknown'}):\n{narrative}")
-        return "\n\n".join(lines)
+        dropped = 0
+        for narrative, topics in reversed(rows):
+            narrative = _dec(user_id or "global", narrative, allow_system_key=True)
+            if narrative == "[kryptert]":
+                dropped += 1
+                continue
+            lines.append(f"Interaction {len(lines) + 1} (topics: {topics or 'unknown'}):\n{narrative}")
+        if dropped:
+            log.info("Dropped %d encrypted episode(s) for %s (no session key).", dropped, user_id or "global")
+        return "\n\n".join(lines) if lines else "No recorded interactions."
     except Exception as e:
         log.warning("Could not fetch interactions: %s", e)
         return "Interactions unavailable."
@@ -286,7 +306,7 @@ def _get_recent_interactions(n: int = 5, user_id: str | None = None) -> str:
 def _get_stm_daily_summaries(days: int = 3) -> str:
     """Fetch the last N daily STM summaries — compressed snapshots of recent days."""
     try:
-        entries = load_recent_daily_summaries(days=days)
+        entries = load_recent_daily_summaries(days=days, allow_system_key=True)
         if not entries:
             return ""
         lines = []
@@ -300,9 +320,12 @@ def _get_stm_daily_summaries(days: int = 3) -> str:
 
 def _get_user_context(user_id: str) -> tuple[str, str, str, str]:
     """Returns (profile_text, observations_14d, recent_episodes, stm_daily_summaries)."""
-    profile = load_profile(user_id)
+    # allow_system_key=True (P87): without it, load_profile() silently drops the entire
+    # private_encrypted section for every offline user — which is the normal case at
+    # 04:00 — so the meeting only ever saw household_visible fields.
+    profile = load_profile(user_id, allow_system_key=True)
     profile_text = yaml.dump(profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
-    observations_text = get_recent_observations(user_id, days=14)
+    observations_text = get_recent_observations(user_id, days=14, allow_system_key=True)
     interactions_text = _get_recent_interactions(n=5, user_id=user_id)
     stm_text = _get_stm_daily_summaries(days=3)
     return profile_text, observations_text, interactions_text, stm_text
@@ -388,12 +411,12 @@ _LEDER_TOOLS = [
 async def _execute_leder_tool(name: str, arguments: dict) -> str:
     try:
         if name in ("read_user_profile", "les_brukerprofil"):
-            profile = load_profile(_active_user_id)
+            profile = load_profile(_active_user_id, allow_system_key=True)
             return f"User profile:\n{yaml.dump(profile, allow_unicode=True, default_flow_style=False)}"
 
         elif name == "hent_bruker_aktivitet":
             interactions = _get_recent_interactions(n=10, user_id=_active_user_id)
-            observations = get_recent_observations(_active_user_id, days=7)
+            observations = get_recent_observations(_active_user_id, days=7, allow_system_key=True)
             stm_summaries = _get_stm_daily_summaries(days=3)
             stm_section = f"\n\nDaily STM summaries (last 3 days):\n{stm_summaries}" if stm_summaries else ""
             return (
@@ -512,13 +535,19 @@ def _get_prev_reflection_summaries(user_id: str, n: int = 3) -> str:
 
 
 def _get_user_comment(user_id: str) -> str:
-    """Return the most recent user comment on a reflection meeting, if any."""
+    """Return and clear the most recent user comment on a reflection meeting, if any.
+
+    A comment is meant to be surfaced exactly once (the next meeting after it was
+    written) — clearing the file after read prevents it from being re-injected into
+    every meeting indefinitely.
+    """
     comments_dir = Path("/kaare/state/meeting_comments/reflection") / user_id
     try:
         files = sorted(comments_dir.glob("*.txt"), reverse=True)
         for f in files:
             text = f.read_text(encoding="utf-8").strip()
             if text:
+                f.write_text("", encoding="utf-8")
                 return f"Brukerens kommentar til møtet {f.stem}:\n{text}"
     except Exception:
         pass
@@ -809,6 +838,28 @@ async def _leder_vurder(conversation: str, group: int, max_groups: int, leder_sy
     return fortsett, svar
 
 
+async def _leder_vurder_closing(conversation_tail: str, closing_round: int) -> bool:
+    """Meeting leader checks whether the free closing round is still adding anything
+    new, or just repeating earlier points. Returns should_continue."""
+    messages = [
+        {"role": "system", "content": _build_leder_system()},
+        {"role": "user", "content": (
+            f"Fri avslutningsrunde {closing_round} er ferdig.\n\n"
+            f"Siste del av samtalen:\n{conversation_tail[-2000:]}\n\n"
+            "Gjentar dere bare det som allerede er sagt tidligere i møtet, uten noe nytt? "
+            "Svar KUN med én linje: 'FORTSETT' eller 'AVSLUTT: <kort begrunnelse>'."
+        )},
+    ]
+    svar = await _ask_leder(messages, with_tools=False)
+    log.info("[meeting leader closing check %d] %s", closing_round, svar[:100])
+
+    if svar.startswith(_LEDER_FAIL):
+        log.warning("Meeting leader unavailable during closing check — continuing automatically")
+        return True
+
+    return svar.upper().startswith("FORTSETT")
+
+
 # ── Save meeting insights to user profile ─────────────────────────────────────
 
 def _user_is_online(user_id: str) -> bool:
@@ -824,57 +875,38 @@ def _vault_or_write_observation(user_id: str, text: str) -> None:
         add_observation(user_id, text)  # fallback: plaintext if no public key yet
 
 
-def _vault_or_update_profile(user_id: str, field: str, value: Any, reason: str) -> None:
-    """Update profile field, or vault it if user is offline."""
-    if _user_is_online(user_id):
-        update_profile_field(user_id, field, value, reason)
-    elif not write_vault_entry(user_id, {"type": "profile_field", "field": field, "value": value, "reason": reason}):
-        update_profile_field(user_id, field, value, reason)  # fallback
+async def _save_meeting_insights(user_id: str, kare_closing: str) -> None:
+    """
+    Parse Kåre's closing statement, write the narrative observation line, and route any
+    concrete biographical fact into the real profile_template.yaml schema.
 
-
-def _save_meeting_insights(user_id: str, kare_closing: str) -> None:
-    """Parse Kåre's closing statement and save insights to user profile."""
+    Previously also wrote LIKER/BEKYMRING/GLEDE into ad-hoc `preferences`/`concerns`/
+    `delights` profile fields that don't exist in the schema — replaced (P86 Phase 5)
+    with extract_facts_from_meeting(), which targets the same 19-section schema and
+    novelty gate used by Miss Kåre's live fact-capture (P86 Phase 4), so the meeting
+    stops restating the same soft-preference bullets night after night without ever
+    adding anything structured.
+    """
     try:
         obs_match      = re.search(r"OBSERVASJON:\s*(.+?)(?=LIKER:|BEKYMRING:|GLEDE:|$)",      kare_closing, re.DOTALL | re.IGNORECASE)
         liker_match    = re.search(r"LIKER:\s*(.+?)(?=OBSERVASJON:|BEKYMRING:|GLEDE:|$)",       kare_closing, re.DOTALL | re.IGNORECASE)
         bekymring_match = re.search(r"BEKYMRING:\s*(.+?)(?=OBSERVASJON:|LIKER:|GLEDE:|$)",     kare_closing, re.DOTALL | re.IGNORECASE)
         glede_match    = re.search(r"GLEDE:\s*(.+?)(?=OBSERVASJON:|LIKER:|BEKYMRING:|$)",      kare_closing, re.DOTALL | re.IGNORECASE)
 
-        date_str = datetime.now().strftime("%Y-%m-%d")
         obs_lines = []
-
         if obs_match:
             obs_lines.append(obs_match.group(1).strip())
-
-        if liker_match:
-            liker_text = liker_match.group(1).strip()
-            if liker_text.lower() not in ("ingenting nytt", "ingenting", "ingen"):
-                obs_lines.append(f"Likes: {liker_text}")
-                profile = load_profile(user_id)
-                prefs = profile.get("preferences", {})
-                prefs[f"observed_{date_str}"] = liker_text
-                _vault_or_update_profile(user_id, "preferences", prefs, "From reflection meeting")
-
-        if bekymring_match:
-            bekymring_text = bekymring_match.group(1).strip()
-            if bekymring_text.lower() not in ("ingen", "ingenting"):
-                obs_lines.append(f"Concern: {bekymring_text}")
-                profile = load_profile(user_id)
-                concerns = profile.get("concerns", [])
-                concerns.append({"date": date_str, "text": bekymring_text})
-                _vault_or_update_profile(user_id, "concerns", concerns[-10:], "From reflection meeting")
-
-        if glede_match:
-            glede_text = glede_match.group(1).strip()
-            if glede_text.lower() not in ("ingen", "ingenting"):
-                obs_lines.append(f"Delight: {glede_text}")
-                profile = load_profile(user_id)
-                delights = profile.get("delights", [])
-                delights.append({"date": date_str, "text": glede_text})
-                _vault_or_update_profile(user_id, "delights", delights[-20:], "From reflection meeting")
+        if liker_match and liker_match.group(1).strip().lower() not in ("ingenting nytt", "ingenting", "ingen"):
+            obs_lines.append(f"Likes: {liker_match.group(1).strip()}")
+        if bekymring_match and bekymring_match.group(1).strip().lower() not in ("ingen", "ingenting"):
+            obs_lines.append(f"Concern: {bekymring_match.group(1).strip()}")
+        if glede_match and glede_match.group(1).strip().lower() not in ("ingen", "ingenting"):
+            obs_lines.append(f"Delight: {glede_match.group(1).strip()}")
 
         observation_text = "\n".join(obs_lines) if obs_lines else f"Meeting held.\n{kare_closing[:300]}"
         _vault_or_write_observation(user_id, observation_text)
+
+        await extract_facts_from_meeting(user_id, kare_closing)
         log.info("Meeting insights saved to profile for %s", user_id)
 
     except Exception as e:
@@ -1203,6 +1235,13 @@ async def main(user_id: str | None = None) -> None:
             log.info("No one had more to say — ending free rounds after round %d", closing_round)
             break
 
+        if closing_round < 4:
+            conv_tail = "\n\n".join(f"{a}: {txt}" for a, txt in exchanges[-4:])
+            should_continue = await _leder_vurder_closing(conv_tail, closing_round)
+            if not should_continue:
+                log.info("Meeting leader ended free rounds early after round %d — repetition", closing_round)
+                break
+
     # ── Kåre's closing — saved to user profile ────────────────────────────────
     log.info("--- Kåre closing statement ---")
     kare_messages.append({"role": "user", "content": (
@@ -1217,7 +1256,7 @@ async def main(user_id: str | None = None) -> None:
     log.info("[Kåre closing] %s", kare_closing[:120])
 
     _write_reflection(user_id, date_str, exchanges)
-    _save_meeting_insights(user_id, kare_closing)
+    await _save_meeting_insights(user_id, kare_closing)
     await _update_user_knowledge(user_id, exchanges, user_knowledge, leder_system=leder_system)
     log.info("=== Reflection meeting done — %d local rounds ===", global_round)
     _rid_ctx_refl.reset(_refl_token)

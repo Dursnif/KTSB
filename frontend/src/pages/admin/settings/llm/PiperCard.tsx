@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, XCircle, Loader2, RotateCcw, ChevronDown, ChevronUp, Download } from "lucide-react";
 import { apiGetPiperModels, apiPostPiperDownload, apiGetPiperDownloadStatus, apiPutPiperActivate, apiRestartService, type PiperPreset } from "@/services/api";
+import { ExpertOnly } from "../shared";
 
 const LANG_LABELS: Record<string, string> = { nb: "Norsk (nb)", en: "English (en)", de: "Deutsch (de)" };
 const LANG_ORDER = ["nb", "en", "de"];
@@ -184,6 +185,7 @@ export function PiperCard({ onSaved }: { onSaved: () => void }) {
           })}
 
           {/* Footer */}
+          <ExpertOnly><>
           <div className="flex items-center gap-3 flex-wrap">
             <Button onClick={restart} disabled={restarting} size="sm" variant="outline">
               {restarting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
@@ -195,6 +197,7 @@ export function PiperCard({ onSaved }: { onSaved: () => void }) {
           <p className="text-xs text-muted-foreground">
             Aktivering av ny modell krever restart for at Kåre tar den i bruk.
           </p>
+          </></ExpertOnly>
         </CardContent>
       )}
     </Card>

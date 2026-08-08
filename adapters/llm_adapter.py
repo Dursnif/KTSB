@@ -69,7 +69,7 @@ try:
 except Exception:
     _CAPABILITY_MAP: dict = {}
 
-from kaare_core.config import get_model as _get_model, get_local_tz as _get_local_tz, get_tool_permissions as _get_tool_permissions
+from kaare_core.config import get_model as _get_model, get_local_tz as _get_local_tz, get_tool_permissions as _get_tool_permissions, filter_tools_by_tier_ceiling as _filter_tools_by_tier_ceiling
 from kaare_core.tools.i18n import t, get_lang
 
 # -------------------------------------------------
@@ -155,6 +155,7 @@ _LOKASJON_BLOKK = ""
 _ASSISTANT_NAME_BLOKK = ""
 _LANGUAGE_BLOKK = ""
 _LOCAL_TZ: ZoneInfo = ZoneInfo("UTC")
+_KARE_REMINDERS_MAX_CHARS = 2000  # fail-closed default if settings.yaml is missing/invalid
 
 _KARE_LANGUAGE_MAP = {
     "nb": "Svar alltid på norsk.",
@@ -201,6 +202,7 @@ try:
         _PERSONALITY_CORE = _load_text("/kaare/configs/personality_core_custom.md") or _get_personality_core(_lang, "standard")
     else:
         _PERSONALITY_CORE = _get_personality_core(_lang, _PERSONALITY_MODE)
+    _KARE_REMINDERS_MAX_CHARS = int(_settings.get("kare_reminders", {}).get("injection_max_chars", 2000))
 except Exception:
     pass
 
@@ -230,11 +232,11 @@ def _time_block(lang: str = "nb") -> str:
     return t("llm_time_header", lang) + "\n" + t("llm_time_now", lang, day=day_name, date=date_str, time=time_str)
 
 
-def _load_kare_reminders() -> str:
-    """Kompakt injeksjon av Kåres huskeliste. Tom streng hvis listen er tom."""
+def _load_kare_reminders(lang: str = "nb") -> str:
+    """Kompakt, kappet injeksjon av Kåres huskeliste. Tom streng hvis listen er tom."""
     try:
         from kaare_core.tools.lister import kare_les_for_injeksjon
-        return kare_les_for_injeksjon()
+        return kare_les_for_injeksjon(max_chars=_KARE_REMINDERS_MAX_CHARS, lang=lang)
     except Exception:
         return ""
 
@@ -441,7 +443,7 @@ def _build_system(base: str, personality: str = "standard", user_id: str = "") -
     profile_top = _load_user_profile_top(user_id)
     user_obs = _load_user_obs(user_id, lang)
     user_knowledge = _load_user_knowledge(user_id, lang)
-    kare_reminders = _load_kare_reminders()
+    kare_reminders = _load_kare_reminders(lang)
     current_user = _current_user_block(user_id, lang)
     role_age = _build_role_age_block(_get_user_role(user_id), lang)
     from kaare_core.tools.household_state import household_mode_block as _household_mode_block
@@ -711,6 +713,41 @@ def _normalise_messages_for_vllm(messages: List[Dict[str, Any]]) -> List[Dict[st
             normalised.append(msg)
 
     return normalised
+
+
+def _denormalise_messages_for_ollama(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Convert OpenAI/vLLM-style tool-call messages back to Ollama format.
+
+    Inverse of _normalise_messages_for_vllm(). _call_vllm_chat() returns an
+    OpenAI-shaped assistant message (tool_calls[].id/.type, arguments as a
+    JSON string) that gets appended directly to Kåre's shared conversation
+    history. If the 9B fallback later replays that same history, Ollama's
+    /api/chat rejects tool_calls[].function.arguments as a string — it
+    expects an object — so the whole fallback attempt fails with a 400.
+    """
+    denormalised = []
+    for msg in messages:
+        tcs = msg.get("tool_calls")
+        if tcs and msg.get("role") == "assistant":
+            fixed_tcs = []
+            for tc in tcs:
+                fn = tc.get("function", {})
+                args = fn.get("arguments", {})
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        args = {}
+                fixed_tcs.append({"function": {"name": fn.get("name", ""), "arguments": args}})
+            denormalised.append({
+                "role": "assistant",
+                "content": msg.get("content") or "",
+                "tool_calls": fixed_tcs,
+            })
+        else:
+            denormalised.append(msg)
+    return denormalised
 
 
 _model_size_cache: dict[str, float] = {}
@@ -1100,6 +1137,7 @@ async def ask_llm_with_tools(
     rid: str = "",
     personality: str = "standard",
     user_id: str = "",
+    source: str = "user",
 ) -> Dict[str, Any]:
     """
     Tool-calling via Ollama /api/chat.
@@ -1233,7 +1271,7 @@ async def ask_llm_with_tools(
                     _f.write(json.dumps({
                         "ts":          datetime.now(timezone.utc).isoformat(),
                         "rid":         rid,
-                        "source":      "user",
+                        "source":      source,
                         "instance":    instance,
                         "latency_ms":  elapsed_ms,
                         "has_tools":   bool(tool_calls),
@@ -1283,13 +1321,26 @@ async def ask_llm_with_tools(
         fb_system   = _build_system_fallback()
         # Use the original conversation history with the stripped fallback system prompt
         fb_messages = ([{"role": "system", "content": fb_system}] + messages) if fb_system else messages
+        # Any assistant tool-call message produced by a prior vLLM round is still in
+        # OpenAI format (JSON-string arguments, id/type fields) — Ollama rejects that.
+        fb_messages = _denormalise_messages_for_ollama(fb_messages)
+
+        # Fallback tool budget: the 9B model shares the tool list built for the 27B
+        # main model, but num_ctx: 8192 can't hold all 29 tools (10,011 tokens alone).
+        # Fail-closed: missing/invalid config -> most restrictive ceiling (tier 0 only).
+        try:
+            fb_tool_ceiling = float(cfg_fb.get("max_tool_tier"))
+        except (TypeError, ValueError):
+            logger.warning("ask_llm_with_tools: fallback max_tool_tier missing/invalid — defaulting to 0.0 (fail-closed)")
+            fb_tool_ceiling = 0.0
+        tools_fb = _filter_tools_by_tier_ceiling(tools, fb_tool_ceiling)
 
         try:
             async with lock_11445("kare_fallback"):
                 payload_fb: dict = {
                     "model":    fb_model,
                     "messages": fb_messages,
-                    "tools":    tools,
+                    "tools":    tools_fb,
                     "stream":   cfg_fb.get("stream", False),
                     "options":  _clean_ollama_options(fb_options),
                     "think":    cfg_fb.get("think", False),
@@ -1385,6 +1436,59 @@ async def _call_cloud_brief(prompt: str) -> Dict[str, Any]:
         "ok": bool(text),
         "text": text.strip(),
         "meta": {"role": "cloud_llm", "model": payload["model"]},
+    }
+
+
+async def _call_huggingface_chat(
+    *,
+    role: str,
+    base_url: str,
+    model: str,
+    messages: List[Dict[str, Any]],
+    api_key_env: str = "CLOUD_API_KEY",
+    options: Dict[str, Any] | None = None,
+    timeout: float | None = None,
+) -> Dict[str, Any]:
+    """
+    OpenAI-compatible /chat/completions call for the HuggingFace router (cloud role).
+
+    Text-only — no tool-calling support, matching current cloud usage (external
+    commentary, never a tool-using participant). Returns the same shape as
+    _call_vllm_chat so callers can treat all providers uniformly.
+    """
+    env = _load_env_file("/kaare/configs/nvidia.env")
+    api_key = env.get(api_key_env) or env.get("CLOUD_API_KEY") or env.get("NVIDIA_API_KEY", "")
+    if not api_key:
+        return {"ok": False, "error": "no_api_key", "text": "", "tool_calls": None}
+
+    payload: dict = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+    }
+    if options:
+        for key in ("temperature", "max_tokens", "top_p"):
+            if key in options:
+                payload[key] = options[key]
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(
+            f"{base_url}/chat/completions",
+            json=payload,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        )
+        if r.status_code >= 400:
+            logger.warning("_call_huggingface_chat %s: %s", r.status_code, r.text[:500])
+        r.raise_for_status()
+        data = r.json()
+
+    text = _extract_text(data).strip()
+    return {
+        "ok":         bool(text),
+        "text":       text,
+        "tool_calls": None,
+        "message":    {"role": "assistant", "content": text},
+        "meta":       {"role": role, "model": model, "base_url": base_url},
     }
 
 
@@ -1537,6 +1641,29 @@ async def call_llm_chat(
             return result
         except Exception as exc:
             logger.warning("call_llm_chat(%s) vLLM feilet: %s", role, exc)
+            return {"ok": False, "error": str(exc), "text": "", "tool_calls": None}
+
+    if provider == "huggingface":
+        try:
+            result = await _call_huggingface_chat(
+                role=role,
+                base_url=base_url,
+                model=model,
+                messages=messages,
+                api_key_env=cfg.get("api_key_env", "CLOUD_API_KEY"),
+                options=_opts,
+                timeout=_timeout,
+            )
+            elapsed_ms = int((time.perf_counter() - _t0) * 1000)
+            _log_llm_call_bg(
+                rid=effective_rid, source=effective_source, role=role, model=model,
+                latency_ms=elapsed_ms,
+                has_tools=False, has_think=False,
+                has_images=False, recovered=False, ok=result.get("ok", False),
+            )
+            return result
+        except Exception as exc:
+            logger.warning("call_llm_chat(%s) huggingface feilet: %s", role, exc)
             return {"ok": False, "error": str(exc), "text": "", "tool_calls": None}
 
     # Ollama /api/chat

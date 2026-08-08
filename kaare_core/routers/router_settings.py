@@ -37,7 +37,7 @@ _MEETING_ROLE_MK_CUSTOM = Path("/kaare/configs/meeting_role_miss_kare_custom.md"
 _PS_AGENT_DIR = Path("/kaare/kaare_core/agents/mechanic")
 _MK_AGENT_DIR = Path("/kaare/kaare_core/agents/miss_kare")
 
-_EDITABLE_LLM_ROLES   = {"default", "miss_kare", "mechanic", "library", "fallback", "cloud", "image_edit"}
+_EDITABLE_LLM_ROLES   = {"default", "miss_kare", "mechanic", "library", "fallback", "cloud", "image_edit", "reason_freely"}
 _AGENT_TOGGLEABLE     = {"miss_kare", "mechanic", "library", "fallback", "cloud", "image_edit"}
 _OLLAMA_OPTION_KEYS   = {"num_ctx", "num_predict", "temperature", "presence_penalty", "top_k", "top_p"}
 _CLOUD_OPTION_KEYS    = {"temperature", "top_p", "max_tokens"}
@@ -117,7 +117,7 @@ async def _run_vllm_restart(role: str, container: str, vllm_cfg: dict) -> None:
 
         # 3. Build the new docker run command
         gpu_id = vllm_cfg.get("gpu_id", 0)
-        docker_run = ["docker", "run", "-d", "--name", container, "--gpus", f"device={gpu_id}"]
+        docker_run = ["docker", "run", "-d", "--name", container, "--restart", "unless-stopped", "--gpus", f"device={gpu_id}"]
         for bind in (host_cfg.get("Binds") or []):
             docker_run.extend(["-v", bind])
         for cport, bindings in (host_cfg.get("PortBindings") or {}).items():
@@ -1554,6 +1554,7 @@ async def api_get_kare_settings(_u=Depends(_require_admin)):
     except Exception:
         data = {}
     ps = data.get("personality_self", {})
+    ar = data.get("automation_reflex", {})
     custom_text = (
         _PERSONALITY_CORE_CUSTOM_PATH.read_text(encoding="utf-8")
         if _PERSONALITY_CORE_CUSTOM_PATH.exists()
@@ -1569,6 +1570,10 @@ async def api_get_kare_settings(_u=Depends(_require_admin)):
             "contributors": ps.get("contributors", "all"),
             "allowed_users": ps.get("allowed_users", []),
         },
+        "automation_reflex": {
+            "contributors": ar.get("contributors", "admin_only"),
+            "allowed_users": ar.get("allowed_users", []),
+        },
     }
 
 
@@ -1583,6 +1588,16 @@ async def api_put_kare_settings(payload: dict, _u=Depends(_require_admin)):
             raise HTTPException(400, f"contributors must be one of: {_VALID_CONTRIBUTOR_MODES}")
         allowed = ps.get("allowed_users", [])
         if not isinstance(allowed, list):
+            raise HTTPException(400, "allowed_users must be a list")
+    ar = payload.get("automation_reflex")
+    reflex_contributor_mode = None
+    reflex_allowed: list = []
+    if ar is not None:
+        reflex_contributor_mode = ar.get("contributors")
+        if reflex_contributor_mode and reflex_contributor_mode not in _VALID_CONTRIBUTOR_MODES:
+            raise HTTPException(400, f"contributors must be one of: {_VALID_CONTRIBUTOR_MODES}")
+        reflex_allowed = ar.get("allowed_users", [])
+        if not isinstance(reflex_allowed, list):
             raise HTTPException(400, "allowed_users must be a list")
     personality_mode = payload.get("personality_mode")
     if personality_mode and personality_mode not in _VALID_PERSONALITY_MODES:
@@ -1600,6 +1615,11 @@ async def api_put_kare_settings(payload: dict, _u=Depends(_require_admin)):
             if contributor_mode:
                 data["personality_self"]["contributors"] = contributor_mode
             data["personality_self"]["allowed_users"] = allowed
+        if ar is not None:
+            data.setdefault("automation_reflex", {})
+            if reflex_contributor_mode:
+                data["automation_reflex"]["contributors"] = reflex_contributor_mode
+            data["automation_reflex"]["allowed_users"] = reflex_allowed
         _SETTINGS_PATH.write_text(
             yaml.dump(data, allow_unicode=True, default_flow_style=False),
             encoding="utf-8",

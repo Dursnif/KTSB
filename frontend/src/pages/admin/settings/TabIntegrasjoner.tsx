@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { apiGetServices, apiPutFrigate, apiPutPlex, apiGetPlexToken, apiPutPlexToken } from "@/services/api";
-import { useSaveState, FieldRow, SaveFeedback, TestButton, MaskedInput } from "./shared";
+import { useSaveState, FieldRow, SaveFeedback, TestButton, MaskedInput, ExpertOnly } from "./shared";
 
 export default function TabIntegrasjoner() {
   const { t } = useTranslation();
@@ -91,12 +91,14 @@ export default function TabIntegrasjoner() {
                 <TestButton url={frigateUrl} />
               </div>
             </FieldRow>
+            <ExpertOnly><>
             <FieldRow label={t("settings.integrasjoner.frigate.timeout_label")} hint={t("settings.integrasjoner.frigate.timeout_hint")}>
               <Input type="number" value={frigateTimeout} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFrigateTimeout(e.target.value)} className="w-24" />
             </FieldRow>
             <FieldRow label={t("settings.integrasjoner.frigate.snap_label")} hint={t("settings.integrasjoner.frigate.snap_hint")}>
               <Input type="number" value={frigateSnap} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFrigateSnap(e.target.value)} className="w-24" />
             </FieldRow>
+            </></ExpertOnly>
           </div>
           <div className="flex items-center gap-3 mt-4">
             <Button onClick={saveFrigate} disabled={ssFrigate.state === "saving"}>
@@ -126,9 +128,11 @@ export default function TabIntegrasjoner() {
                 <TestButton url={plexUrl} />
               </div>
             </FieldRow>
+            <ExpertOnly>
             <FieldRow label={t("settings.integrasjoner.plex.timeout_label")} hint={t("settings.integrasjoner.plex.timeout_hint")}>
               <Input type="number" value={plexTimeout} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPlexTimeout(e.target.value)} className="w-24" />
             </FieldRow>
+            </ExpertOnly>
           </div>
           <div className="flex items-center gap-3 mt-4">
             <Button onClick={savePlex} disabled={ssPlex.state === "saving"}>

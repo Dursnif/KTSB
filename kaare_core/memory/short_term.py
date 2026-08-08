@@ -29,7 +29,7 @@ from threading import RLock
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
 from kaare_core.crypto import seal, unseal
-from kaare_core.session_keys import get_session_key_sync
+from kaare_core.session_keys import resolve_key_sync
 from kaare_core.users.store import get_public_key_b64
 
 
@@ -490,11 +490,14 @@ class ShortTermMemory:
         except Exception:
             return False
 
-    def load_snapshot(self, path: str) -> bool:
+    def load_snapshot(self, path: str, allow_system_key: bool = False) -> bool:
         """Last STM frå disk. Returnerer True ved suksess, False viss fila ikkje finst.
 
         Checks for an encrypted .enc variant first. If found but no session key is
-        available (server restart, user not yet logged in), returns False — empty STM.
+        available (server restart, user not yet logged in), returns False — empty STM,
+        unless allow_system_key=True (P87 — restart-recovery calls this with the system
+        key so a user's dialog history survives a kaare.service restart without them
+        needing to be logged in at that moment).
         Falls back to plain .json for global/system users or pre-encryption files.
         """
         try:
@@ -502,7 +505,7 @@ class ShortTermMemory:
             enc_path = p.with_suffix(".enc")
 
             if enc_path.exists():
-                private_key = get_session_key_sync(self._user_id)
+                private_key = resolve_key_sync(self._user_id, allow_system_key=allow_system_key)
                 if private_key is None:
                     return False
                 encrypted_blob = enc_path.read_text(encoding="utf-8")
@@ -556,7 +559,7 @@ class STMRegistry:
         for uid, stm in users_copy.items():
             stm.save_snapshot(str(p / f"{uid}.json"))
 
-    def load_snapshots(self, directory: str) -> None:
+    def load_snapshots(self, directory: str, allow_system_key: bool = False) -> None:
         p = Path(directory)
         if not p.exists():
             return
@@ -570,7 +573,7 @@ class STMRegistry:
             with self._lock:
                 if uid not in self._users:
                     self._users[uid] = ShortTermMemory(user_id=uid, **self._kwargs)
-            self._users[uid].load_snapshot(str(p / f"{uid}.json"))
+            self._users[uid].load_snapshot(str(p / f"{uid}.json"), allow_system_key=allow_system_key)
 
     def migrate_legacy_snapshot(self, old_path: str, new_dir: str) -> bool:
         """Read old stm_snapshot.json and split into per-user files."""

@@ -31,7 +31,7 @@ Skriv output slik:
 [MENNESKER] <1-2 linjer, eller utelat hele linjen>
 [ANDRE] <1-2 linjer, eller utelat hele linjen>
 [STM] <1-2 linjer, eller utelat hele linjen>
-[VAKTMESTER] <1-2 linjer, eller utelat hele linjen>
+[ARGUS] <1-2 linjer, eller utelat hele linjen>
 Skriv på norsk. Ingen forklaringer — kun de destillerte linjene."""
 
 

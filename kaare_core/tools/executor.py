@@ -21,7 +21,7 @@ from kaare_core.tools.notisblokk import skriv_notat, les_notater, slett_notat, t
 from kaare_core.tools.lister import (
     handle_legg_til, handle_les, handle_merk_kjøpt, handle_slett, handle_tøm_kjøpte, handle_tøm,
     huske_husk, huske_les, huske_ferdig, huske_slett, huske_tøm,
-    kare_husk, kare_les, kare_ferdig, kare_tøm,
+    kare_husk, kare_les, kare_ferdig, kare_tøm, kare_flytt_til_topp, kare_fjern_pin,
 )
 from kaare_core.tools.timer_service import set_timer, cancel_timer, list_timers, ack_timer
 from kaare_core.tools import (
@@ -205,14 +205,23 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
                 return kare_husk(
                     tekst=(arguments.get("text") or arguments.get("tekst") or ""),
                     kontekst=(arguments.get("context") or arguments.get("kontekst") or ""),
+                    lang=lang,
                 )
             if action == "read":
-                return kare_les()
+                return kare_les(
+                    søkeord=(arguments.get("search") or ""),
+                    fra_dato=(arguments.get("date_from") or ""),
+                    til_dato=(arguments.get("date_to") or ""),
+                )
             if action in ("done", "delete"):
                 return kare_ferdig((arguments.get("note_id") or arguments.get("notat_id") or ""))
             if action == "clear":
-                return kare_tøm()
-            return f"Unknown action for kare-liste: '{action}'. Valid: write, read, done, delete, clear."
+                return kare_tøm(lang=lang)
+            if action == "pin":
+                return kare_flytt_til_topp((arguments.get("note_id") or arguments.get("notat_id") or ""), lang=lang)
+            if action == "unpin":
+                return kare_fjern_pin((arguments.get("note_id") or arguments.get("notat_id") or ""), lang=lang)
+            return f"Unknown action for kare-liste: '{action}'. Valid: write, read, done, delete, clear, pin, unpin."
 
         if action == "write":
             return skriv_notat(

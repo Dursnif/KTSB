@@ -997,6 +997,10 @@ export type KareSettings = {
     contributors: ContributorMode;
     allowed_users: string[];
   };
+  automation_reflex: {
+    contributors: ContributorMode;
+    allowed_users: string[];
+  };
 };
 
 export async function apiGetKareSettings(): Promise<KareSettings> {
@@ -1004,7 +1008,7 @@ export async function apiGetKareSettings(): Promise<KareSettings> {
   return data;
 }
 
-export async function apiPutKareSettings(payload: Partial<KareSettings> & { personality_self?: KareSettings["personality_self"] } & { personality_core_custom?: string }) {
+export async function apiPutKareSettings(payload: Partial<KareSettings> & { personality_self?: KareSettings["personality_self"] } & { automation_reflex?: KareSettings["automation_reflex"] } & { personality_core_custom?: string }) {
   const { data } = await api.put("/api/settings/kare", payload);
   return data as { ok: boolean };
 }

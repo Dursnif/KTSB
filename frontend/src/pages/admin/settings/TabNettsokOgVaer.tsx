@@ -12,7 +12,7 @@ import {
   apiGetSecrets, apiPutSecret, apiGetTrustedSources, apiPutTrustedSources,
   type WeatherProvider, type WeatherConfig, type WebsearchConfig, type TrustedSources,
 } from "@/services/api";
-import { useSaveState, FieldRow, SaveFeedback, MaskedInput } from "./shared";
+import { useSaveState, FieldRow, SaveFeedback, MaskedInput, ExpertOnly } from "./shared";
 
 const WEATHER_PROVIDERS: { value: WeatherProvider; label: string; needsKey: boolean; keyField?: "owm" | "wapi" | "pirate" }[] = [
   { value: "met.no",         label: "met.no (gratis, norsk, ingen nøkkel)",            needsKey: false },
@@ -207,6 +207,7 @@ export default function TabNettsokOgVaer() {
         </CardHeader>
         <CardContent>
           <div className="divide-y divide-border">
+            <ExpertOnly><>
             <FieldRow label={t("settings.nettsok.weather.provider_label")} hint={t("settings.nettsok.weather.provider_hint")}>
               <Select value={provider} onValueChange={(v: string | null) => { if (v) setProvider(v as WeatherProvider); }}>
                 <SelectTrigger className="w-80">
@@ -268,37 +269,50 @@ export default function TabNettsokOgVaer() {
                 <p className="text-xs text-amber-400">{t("settings.nettsok.weather.needs_key_warning")}</p>
               </div>
             )}
+            </></ExpertOnly>
 
-            <FieldRow label={t("settings.nettsok.weather.feels_like_label")} hint={t("settings.nettsok.weather.feels_like_hint")}>
-              <Switch checked={showFeelsLike} onCheckedChange={setShowFeelsLike} />
-            </FieldRow>
+            <div className="py-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3">
+                <FieldRow label={t("settings.nettsok.weather.feels_like_label")} hint={t("settings.nettsok.weather.feels_like_hint")}>
+                  <Switch checked={showFeelsLike} onCheckedChange={setShowFeelsLike} />
+                </FieldRow>
 
-            {provider === "open-meteo" && (
-              <FieldRow label={t("settings.nettsok.weather.uv_label")} hint={t("settings.nettsok.weather.uv_hint")}>
-                <Switch checked={showUvIndex} onCheckedChange={setShowUvIndex} />
-              </FieldRow>
-            )}
+                {provider === "open-meteo" && (
+                  <FieldRow label={t("settings.nettsok.weather.uv_label")} hint={t("settings.nettsok.weather.uv_hint")}>
+                    <Switch checked={showUvIndex} onCheckedChange={setShowUvIndex} />
+                  </FieldRow>
+                )}
 
-            <FieldRow label={t("settings.nettsok.weather.sun_label")} hint={t("settings.nettsok.weather.sun_hint")}>
-              <Switch checked={showSunTimes} onCheckedChange={setShowSunTimes} />
-            </FieldRow>
+                <FieldRow label={t("settings.nettsok.weather.sun_label")} hint={t("settings.nettsok.weather.sun_hint")}>
+                  <Switch checked={showSunTimes} onCheckedChange={setShowSunTimes} />
+                </FieldRow>
 
-            {provider === "met.no" && (
-              <FieldRow label={t("settings.nettsok.weather.alerts_label")} hint={t("settings.nettsok.weather.alerts_hint")}>
-                <Switch checked={showAlerts} onCheckedChange={setShowAlerts} />
-              </FieldRow>
-            )}
+                {provider === "met.no" && (
+                  <FieldRow label={t("settings.nettsok.weather.alerts_label")} hint={t("settings.nettsok.weather.alerts_hint")}>
+                    <Switch checked={showAlerts} onCheckedChange={setShowAlerts} />
+                  </FieldRow>
+                )}
 
-            <FieldRow label={t("settings.nettsok.weather.air_quality_label")} hint={t("settings.nettsok.weather.air_quality_hint")}>
-              <Switch checked={showAirQuality} onCheckedChange={setShowAirQuality} />
-            </FieldRow>
+                <FieldRow label={t("settings.nettsok.weather.air_quality_label")} hint={t("settings.nettsok.weather.air_quality_hint")}>
+                  <Switch checked={showAirQuality} onCheckedChange={setShowAirQuality} />
+                </FieldRow>
 
-            <FieldRow label={t("settings.nettsok.weather.tides_label")} hint={t("settings.nettsok.weather.tides_hint")}>
-              <Switch checked={showTides} onCheckedChange={setShowTides} />
-            </FieldRow>
+                <FieldRow label={t("settings.nettsok.weather.tides_label")} hint={t("settings.nettsok.weather.tides_hint")}>
+                  <Switch checked={showTides} onCheckedChange={setShowTides} />
+                </FieldRow>
+
+                <FieldRow label={t("settings.nettsok.weather.camera_weather_label")} hint={t("settings.nettsok.weather.camera_weather_hint")}>
+                  <Switch checked={useCameraForWeather} onCheckedChange={setUseCameraForWeather} />
+                </FieldRow>
+
+                <FieldRow label={t("settings.nettsok.weather.ha_sensors_label")} hint={t("settings.nettsok.weather.ha_sensors_hint")}>
+                  <Switch checked={useHaSensors} onCheckedChange={setUseHaSensors} />
+                </FieldRow>
+              </div>
+            </div>
 
             {showTides && (
-              <>
+              <ExpertOnly><>
                 <FieldRow label={t("settings.nettsok.weather.tide_provider_label")} hint={t("settings.nettsok.weather.tide_provider_hint")}>
                   <Select value={tideProvider} onValueChange={(v: string | null) => { if (v) setTideProvider(v); }}>
                     <SelectTrigger className="w-52">
@@ -321,14 +335,11 @@ export default function TabNettsokOgVaer() {
                     <MaskedInput value={stormglassKey} onChange={setStormglassKey} placeholder={weather?.stormglass_key_set ? "••• (oppdater)" : "Lim inn nøkkel"} />
                   </FieldRow>
                 )}
-              </>
+              </></ExpertOnly>
             )}
 
-            <FieldRow label={t("settings.nettsok.weather.camera_weather_label")} hint={t("settings.nettsok.weather.camera_weather_hint")}>
-              <Switch checked={useCameraForWeather} onCheckedChange={setUseCameraForWeather} />
-            </FieldRow>
-
             {useCameraForWeather && (
+              <ExpertOnly>
               <FieldRow label={t("settings.nettsok.weather.camera_name_label")} hint={t("settings.nettsok.weather.camera_name_hint")}>
                 <Input
                   value={weatherCamera}
@@ -337,87 +348,88 @@ export default function TabNettsokOgVaer() {
                   className="w-64 font-mono text-sm"
                 />
               </FieldRow>
+              </ExpertOnly>
             )}
 
-            <FieldRow label={t("settings.nettsok.weather.ha_sensors_label")} hint={t("settings.nettsok.weather.ha_sensors_hint")}>
-              <Switch checked={useHaSensors} onCheckedChange={setUseHaSensors} />
-            </FieldRow>
-
             {useHaSensors && (
-              <>
-                <FieldRow label={t("settings.nettsok.weather.ha_temp_label")} hint={t("settings.nettsok.weather.ha_temp_hint")}>
-                  <Input
-                    value={haTempEntity}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaTempEntity(e.target.value)}
-                    placeholder="sensor.outdoor_temperature"
-                    className="w-80 font-mono text-sm"
-                  />
-                </FieldRow>
-                <FieldRow label={t("settings.nettsok.weather.ha_wind_label")} hint={t("settings.nettsok.weather.ha_wind_hint")}>
-                  <Input
-                    value={haWindEntity}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaWindEntity(e.target.value)}
-                    placeholder="sensor.outdoor_wind_speed"
-                    className="w-80 font-mono text-sm"
-                  />
-                </FieldRow>
-                <FieldRow label={t("settings.nettsok.weather.ha_wind_gust_label")} hint={t("settings.nettsok.weather.ha_wind_gust_hint")}>
-                  <Input
-                    value={haWindGustEntity}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaWindGustEntity(e.target.value)}
-                    placeholder="sensor.outdoor_wind_gust"
-                    className="w-80 font-mono text-sm"
-                  />
-                </FieldRow>
-                <FieldRow label={t("settings.nettsok.weather.ha_wind_dir_label")} hint={t("settings.nettsok.weather.ha_wind_dir_hint")}>
-                  <Input
-                    value={haWindDirEntity}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaWindDirEntity(e.target.value)}
-                    placeholder="sensor.outdoor_wind_direction"
-                    className="w-80 font-mono text-sm"
-                  />
-                </FieldRow>
-                <FieldRow label={t("settings.nettsok.weather.ha_precip_label")} hint={t("settings.nettsok.weather.ha_precip_hint")}>
-                  <Input
-                    value={haPrecipEntity}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaPrecipEntity(e.target.value)}
-                    placeholder="sensor.outdoor_precipitation"
-                    className="w-80 font-mono text-sm"
-                  />
-                </FieldRow>
-                <FieldRow label={t("settings.nettsok.weather.ha_precip_last_hour_label")} hint={t("settings.nettsok.weather.ha_precip_last_hour_hint")}>
-                  <Input
-                    value={haPrecipLastHourEntity}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaPrecipLastHourEntity(e.target.value)}
-                    placeholder="sensor.outdoor_precipitation_last_hour"
-                    className="w-80 font-mono text-sm"
-                  />
-                </FieldRow>
-                <FieldRow label={t("settings.nettsok.weather.ha_precip_today_label")} hint={t("settings.nettsok.weather.ha_precip_today_hint")}>
-                  <Input
-                    value={haPrecipTodayEntity}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaPrecipTodayEntity(e.target.value)}
-                    placeholder="sensor.outdoor_precipitation_today"
-                    className="w-80 font-mono text-sm"
-                  />
-                </FieldRow>
-                <FieldRow label={t("settings.nettsok.weather.ha_humidity_label")} hint={t("settings.nettsok.weather.ha_humidity_hint")}>
-                  <Input
-                    value={haHumidityEntity}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaHumidityEntity(e.target.value)}
-                    placeholder="sensor.outdoor_humidity"
-                    className="w-80 font-mono text-sm"
-                  />
-                </FieldRow>
-                <FieldRow label={t("settings.nettsok.weather.ha_pressure_label")} hint={t("settings.nettsok.weather.ha_pressure_hint")}>
-                  <Input
-                    value={haPressureEntity}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaPressureEntity(e.target.value)}
-                    placeholder="sensor.outdoor_pressure"
-                    className="w-80 font-mono text-sm"
-                  />
-                </FieldRow>
-              </>
+              <ExpertOnly>
+              <div className="py-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
+                  <FieldRow label={t("settings.nettsok.weather.ha_temp_label")} hint={t("settings.nettsok.weather.ha_temp_hint")}>
+                    <Input
+                      value={haTempEntity}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaTempEntity(e.target.value)}
+                      placeholder="sensor.outdoor_temperature"
+                      className="w-full font-mono text-sm"
+                    />
+                  </FieldRow>
+                  <FieldRow label={t("settings.nettsok.weather.ha_wind_label")} hint={t("settings.nettsok.weather.ha_wind_hint")}>
+                    <Input
+                      value={haWindEntity}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaWindEntity(e.target.value)}
+                      placeholder="sensor.outdoor_wind_speed"
+                      className="w-full font-mono text-sm"
+                    />
+                  </FieldRow>
+                  <FieldRow label={t("settings.nettsok.weather.ha_wind_gust_label")} hint={t("settings.nettsok.weather.ha_wind_gust_hint")}>
+                    <Input
+                      value={haWindGustEntity}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaWindGustEntity(e.target.value)}
+                      placeholder="sensor.outdoor_wind_gust"
+                      className="w-full font-mono text-sm"
+                    />
+                  </FieldRow>
+                  <FieldRow label={t("settings.nettsok.weather.ha_wind_dir_label")} hint={t("settings.nettsok.weather.ha_wind_dir_hint")}>
+                    <Input
+                      value={haWindDirEntity}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaWindDirEntity(e.target.value)}
+                      placeholder="sensor.outdoor_wind_direction"
+                      className="w-full font-mono text-sm"
+                    />
+                  </FieldRow>
+                  <FieldRow label={t("settings.nettsok.weather.ha_precip_label")} hint={t("settings.nettsok.weather.ha_precip_hint")}>
+                    <Input
+                      value={haPrecipEntity}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaPrecipEntity(e.target.value)}
+                      placeholder="sensor.outdoor_precipitation"
+                      className="w-full font-mono text-sm"
+                    />
+                  </FieldRow>
+                  <FieldRow label={t("settings.nettsok.weather.ha_precip_last_hour_label")} hint={t("settings.nettsok.weather.ha_precip_last_hour_hint")}>
+                    <Input
+                      value={haPrecipLastHourEntity}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaPrecipLastHourEntity(e.target.value)}
+                      placeholder="sensor.outdoor_precipitation_last_hour"
+                      className="w-full font-mono text-sm"
+                    />
+                  </FieldRow>
+                  <FieldRow label={t("settings.nettsok.weather.ha_precip_today_label")} hint={t("settings.nettsok.weather.ha_precip_today_hint")}>
+                    <Input
+                      value={haPrecipTodayEntity}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaPrecipTodayEntity(e.target.value)}
+                      placeholder="sensor.outdoor_precipitation_today"
+                      className="w-full font-mono text-sm"
+                    />
+                  </FieldRow>
+                  <FieldRow label={t("settings.nettsok.weather.ha_humidity_label")} hint={t("settings.nettsok.weather.ha_humidity_hint")}>
+                    <Input
+                      value={haHumidityEntity}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaHumidityEntity(e.target.value)}
+                      placeholder="sensor.outdoor_humidity"
+                      className="w-full font-mono text-sm"
+                    />
+                  </FieldRow>
+                  <FieldRow label={t("settings.nettsok.weather.ha_pressure_label")} hint={t("settings.nettsok.weather.ha_pressure_hint")}>
+                    <Input
+                      value={haPressureEntity}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHaPressureEntity(e.target.value)}
+                      placeholder="sensor.outdoor_pressure"
+                      className="w-full font-mono text-sm"
+                    />
+                  </FieldRow>
+                </div>
+              </div>
+              </ExpertOnly>
             )}
           </div>
 
@@ -438,6 +450,7 @@ export default function TabNettsokOgVaer() {
           <CardDescription>{t("settings.nettsok.websearch.description")}</CardDescription>
         </CardHeader>
         <CardContent>
+          <ExpertOnly><>
           <div className="divide-y divide-border">
             <FieldRow label={t("settings.nettsok.websearch.provider_label")} hint={t("settings.nettsok.websearch.provider_hint")}>
               <Select value={wsLocal.provider} onValueChange={(v: string | null) => { if (v) setWsLocal(p => ({ ...p, provider: v })); }}>
@@ -527,6 +540,7 @@ export default function TabNettsokOgVaer() {
             <SaveFeedback state={ssWs.state} />
             <p className="text-xs text-muted-foreground ml-2">{t("settings.nettsok.websearch.hot_reload_hint")}</p>
           </div>
+          </></ExpertOnly>
         </CardContent>
       </Card>
 

@@ -12,7 +12,7 @@ import {
   type LlmRoleConfig,
 } from "@/services/api";
 import { PROVIDER_OPTIONS, LLM_ROLE_LABELS } from "./llm-constants";
-import { useSaveState, FieldRow, SaveFeedback, TestButton, MaskedInput } from "../shared";
+import { useSaveState, FieldRow, SaveFeedback, TestButton, MaskedInput, ExpertOnly } from "../shared";
 
 export function ImageRoleCard({ role, config, onSaved }: { role: string; config: LlmRoleConfig; onSaved: () => void }) {
   const { t } = useTranslation();
@@ -109,6 +109,14 @@ export function ImageRoleCard({ role, config, onSaved }: { role: string; config:
             />
           </FieldRow>
 
+          <FieldRow
+            label={t("settings.llm.api_key_label")}
+            hint={config.api_key_set ? t("settings.llm.api_key_set_hint", { masked: config.api_key_masked }) : t("settings.llm.api_key_unset_hint")}
+          >
+            <MaskedInput value={apiKey} onChange={setApiKey} placeholder={config.api_key_set ? "••• (oppdater)" : "Lim inn nøkkel"} />
+          </FieldRow>
+
+          <ExpertOnly><>
           <FieldRow label={t("settings.llm.provider_label")} hint={t("settings.llm.image_provider_hint")}>
             <Select value={local.provider} onValueChange={(v: string | null) => { if (v) setLocal(p => ({ ...p, provider: v as LlmRoleConfig["provider"] })); }}>
               <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
@@ -129,13 +137,6 @@ export function ImageRoleCard({ role, config, onSaved }: { role: string; config:
               />
               <TestButton url={local.base_url} />
             </div>
-          </FieldRow>
-
-          <FieldRow
-            label={t("settings.llm.api_key_label")}
-            hint={config.api_key_set ? t("settings.llm.api_key_set_hint", { masked: config.api_key_masked }) : t("settings.llm.api_key_unset_hint")}
-          >
-            <MaskedInput value={apiKey} onChange={setApiKey} placeholder={config.api_key_set ? "••• (oppdater)" : "Lim inn nøkkel"} />
           </FieldRow>
 
           <FieldRow label={t("settings.llm.timeout_label")} hint={t("settings.llm.image_timeout_hint")}>
@@ -179,6 +180,7 @@ export function ImageRoleCard({ role, config, onSaved }: { role: string; config:
               </SelectContent>
             </Select>
           </FieldRow>
+          </></ExpertOnly>
         </div>
 
         <div className="flex items-center gap-3 mt-4">

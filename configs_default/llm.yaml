@@ -39,6 +39,7 @@ fallback:
   base_url: http://ollama:11434
   enabled: false
   keep_warm: false
+  max_tool_tier: 0.0
   model_role: miss_kare
   options:
     num_ctx: 8192

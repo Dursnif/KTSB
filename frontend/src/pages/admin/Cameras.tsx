@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ExpertOnly } from "./settings/shared";
 
 type AnalysisEntry = {
   ts: string;
@@ -221,7 +222,7 @@ export default function Cameras() {
       </div>
 
       {/* Storage settings */}
-      <div style={{
+      <ExpertOnly><div style={{
         background: "#111", border: "1px solid #222", borderRadius: 10,
         padding: "16px 20px", marginBottom: 20,
       }}>
@@ -285,16 +286,16 @@ export default function Cameras() {
             <StorageBar label={t("cameras.storage_log")} usedMb={usageLog} limitMb={logMb} />
           </div>
         </div>
-      </div>
+      </div></ExpertOnly>
 
       {/* Away mode settings */}
-      <AwayModePanel awayMode={awayMode} onChange={setAwayMode} />
+      <ExpertOnly><AwayModePanel awayMode={awayMode} onChange={setAwayMode} /></ExpertOnly>
 
       {/* Analysis log panel */}
-      <AnalysisPanel />
+      <ExpertOnly><AnalysisPanel /></ExpertOnly>
 
       {/* Camera cards — 2-column grid */}
-      <div style={{
+      <ExpertOnly><div style={{
         display: "grid",
         gridTemplateColumns: "repeat(2, 1fr)",
         gap: 14,
@@ -313,7 +314,7 @@ export default function Cameras() {
             onSave={() => saveCamera(cam)}
           />
         ))}
-      </div>
+      </div></ExpertOnly>
     </div>
   );
 }
@@ -762,7 +763,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
       onClick={() => onChange(!value)}
       style={{
         width: 44, height: 24, borderRadius: 12, border: "none",
-        background: value ? "#6366f1" : "#333",
+        background: value ? "#16a34a" : "#333",
         position: "relative", cursor: "pointer", flexShrink: 0,
         transition: "background 0.2s",
       }}

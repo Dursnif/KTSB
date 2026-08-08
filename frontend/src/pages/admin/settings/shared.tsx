@@ -5,6 +5,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiTestConnection } from "@/services/api";
 import { useTranslation } from "react-i18next";
+import { useSettingsLevel } from "@/contexts/SettingsLevelContext";
+
+/** Renders children only when the page-level Basic/Expert toggle is set to "expert". */
+export function ExpertOnly({ children }: { children: React.ReactNode }) {
+  const { level } = useSettingsLevel();
+  if (level !== "expert") return null;
+  return <>{children}</>;
+}
 
 export type SaveState = "idle" | "saving" | "saved" | "error";
 

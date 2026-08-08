@@ -46,8 +46,8 @@ def _is_allowed_self_contributor(user_id: str) -> bool:
         if mode == "all":
             return True
         if mode == "admin_only":
-            from kaare_core.users.store import _user_store
-            u = _user_store.get_user(user_id)
+            from kaare_core.users.store import get_user
+            u = get_user(user_id)
             return bool(u and u.get("role") == "admin")
         if mode == "selected":
             return user_id in ps.get("allowed_users", [])

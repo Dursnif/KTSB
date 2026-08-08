@@ -66,7 +66,7 @@
     "tabs": {
       "generelt": "Allgemein",
       "ha": "Home Assistant",
-      "mqtt": "MQTT / VPN",
+      "mqtt": "MQTT/VPN",
       "llm": "LLM / Modelle",
       "refleksjon": "Reflexion",
       "nettsok": "Websuche & Wetter",
@@ -77,6 +77,11 @@
       "agenter": "Agenten-Einstellungen",
       "forklaringer": "Erklärungen",
       "varsler": "Benachrichtigungen"
+    },
+    "level": {
+      "basic": "Einfach",
+      "expert": "Experte",
+      "toggle_hint": "Erweiterte Einstellungen anzeigen"
     },
     "generelt": {
       "location": {
@@ -145,7 +150,20 @@
         "log_url_hint": "Endpunkt, auf dem Kåre HA-Logs empfängt",
         "timeout_label": "Timeout (Sekunden)",
         "allowed_label": "Erlaubte Aktionen",
-        "allowed_hint": "Kommagetrennte Liste (turn_on, turn_off, …)"
+        "allowed_hint": "Aktionen, die Kåre gegenüber Home Assistant ausführen darf. Kåre unterstützt derzeit nur diesen festen Satz.",
+        "actions": {
+          "turn_on": "Einschalten",
+          "turn_off": "Ausschalten",
+          "toggle": "Umschalten",
+          "set_level": "Stufe einstellen (Helligkeit/Lautstärke)",
+          "set_color_temp": "Farbtemperatur einstellen",
+          "set_color": "Farbe einstellen",
+          "open": "Öffnen",
+          "close": "Schließen",
+          "set_temperature": "Temperatur einstellen",
+          "get_temperature": "Temperatur lesen",
+          "get_state": "Status lesen"
+        }
       }
     },
     "mqtt": {
@@ -205,6 +223,8 @@
       "ollama_params": "Ollama Inferenz-Parameter",
       "vllm_params": "vLLM Inferenz-Parameter",
       "vllm_docker_params": "vLLM Docker-Parameter — erfordern Container-Neustart zum Aktivieren",
+      "reason_freely_title": "Reason-Freely-Werkzeug",
+      "reason_freely_desc": "Kåres eigenes Werkzeug für freies Denken. Teilt die vLLM-Instanz und Basis-URL mit Kåre (Haupt) oben.",
       "gen_params": "Bildgenerierungs-Parameter",
       "cloud_params": "Generierungs-Parameter",
       "ctx_locked_hint": "Gesperrt — geteilt mit {{shared}}. Dort ändern zum Anpassen.",
@@ -529,6 +549,22 @@
           "selected_desc": "Nur Gespräche mit den unten ausgewählten Benutzern können das Selbstbild prägen.",
           "admin_only_label": "Nur Admin",
           "admin_only_desc": "Das Selbstbild wird nur in Gesprächen mit Admin-Benutzern geprägt."
+        }
+      },
+      "automationreflex": {
+        "title": "Kåres selbstgelernte Automatisierung",
+        "description": "Kåre kann eigene Automatisierungen basierend auf Gewohnheiten vorschlagen, die es im Haushalt bemerkt (write_reflex-Werkzeug). Hier steuern Sie, wer diese Vorschläge genehmigen oder ablehnen kann. Gilt sofort.",
+        "who_approves": "Wer kann Automatisierungsvorschläge genehmigen/ablehnen?",
+        "allowed_users_label": "Erlaubte Benutzer",
+        "no_users": "Keine regulären Benutzer gefunden.",
+        "admin_note": "Das Systemkonto «admin» wird hier nicht angezeigt.",
+        "modes": {
+          "all_label": "Alle Benutzer",
+          "all_desc": "Jeder Benutzer mit Zugriff auf das write_reflex-Werkzeug kann Vorschläge genehmigen oder ablehnen.",
+          "selected_label": "Ausgewählte Benutzer",
+          "selected_desc": "Nur die unten ausgewählten Benutzer können Vorschläge genehmigen oder ablehnen.",
+          "admin_only_label": "Nur Admin",
+          "admin_only_desc": "Nur Admin-Benutzer können Vorschläge genehmigen oder ablehnen."
         }
       }
     },
@@ -1147,7 +1183,9 @@
         "inspiser_system": "System inspizieren",
         "ssh_kommando": "SSH-Befehl",
         "local_kommando": "Lokaler Befehl",
-        "restart_docker_container": "Docker neu starten"
+        "restart_docker_container": "Docker neu starten",
+        "household": "Zuhause/Abwesend-Modus",
+        "write_reflex": "Automatisierungsvorschläge genehmigen"
       }
     }
   },
@@ -1361,6 +1399,8 @@
     "send": "Senden"
   },
   "reflections": {
+    "tab_reflection": "Reflexionssitzung — Einstellungen",
+    "tab_dev": "Entwicklungssitzung — Einstellungen",
     "reflection_tab": "Reflexionssitzung",
     "dev_tab": "Entwicklungssitzung",
     "reflection_tab_sub": "04:00 · Miss Kåre",
@@ -1593,7 +1633,9 @@
         "inspect_system": "Dienste, Protokolle und Ressourcennutzung prüfen",
         "ssh_command": "Befehle auf anderen Maschinen im Netzwerk ausführen",
         "local_command": "Befehle direkt auf dem KI-PC ausführen",
-        "restart_docker_container": "Docker-Container neu starten"
+        "restart_docker_container": "Docker-Container neu starten",
+        "household": "Zuhause/Abwesend-Modus für den Haushalt festlegen",
+        "write_reflex": "Kåres selbstgelernte Automatisierungen vorschlagen, genehmigen oder ablehnen (wer tatsächlich genehmigen/ablehnen kann, wird separat unter Einstellungen → Kåre geregelt)"
       },
       "pin": "Die PIN ist ein numerischer Code, der das Konto schützt (mindestens 6 Ziffern). Wird bei der Anmeldung und zum Entsperren privater Protokolle verwendet.",
       "voice_reg": "Die Sprachregistrierung ermöglicht es Kåre, zu erkennen, wer spricht. Der Benutzer liest einige Sätze vor und Kåre lernt das Stimmprofil.",
@@ -1688,6 +1730,14 @@
       "item_4": "Themenfeld — Sie können ein Thema vorschlagen, das Kåre beim nächsten Nachtgespräch behandelt.",
       "item_5": "Miss Kåre-Porträt — Miss Kåre erstellt schrittweise ein persönliches Porträt jedes Benutzers auf Basis von Beobachtungen. Das Porträt wird in den Besprechungskontext eingebettet für persönlichere Analyse."
     },
+    "innst_basic_expert": {
+      "title": "Einstellungen → Einfach/Experte-Schalter",
+      "summary": "Ein Schalter steuert, was auf allen Tabs angezeigt wird",
+      "body": "Oben rechts auf der Einstellungen-Seite befindet sich ein Schalter mit der Aufschrift „Einfach“/„Experte“. Er blendet erweiterte Felder auf allen Tabs gleichzeitig aus — nicht nur auf einem.",
+      "item_1": "Einfach (Standard) — Zeigt nur, was ein normaler Haushaltsnutzer braucht: Modellname, Temperatur, Ein/Aus-Schalter, Standort usw. Technische Einstellungen (Provider, Timeouts, Roh-Prompt-Text) sind ausgeblendet.",
+      "item_2": "Experte — Zeigt alles, einschließlich vLLM/Docker-Parameter, Rollensteuerung, erweiterte Schwellenwerte und den Agenten-Einstellungen-Tab (der im Einfach-Modus vollständig ausgeblendet ist).",
+      "item_3": "Die Einstellung wird im Browser gespeichert (localStorage) und betrifft nur die Anzeige — niemals, welche Werte tatsächlich in den configs/-Dateien gespeichert sind."
+    },
     "innst_generelt": {
       "title": "Einstellungen → Allgemein",
       "summary": "Standort, Zeitzone und Sprache",
@@ -1701,7 +1751,8 @@
       "body": "Home Assistant (HA) ist das Gehirn des Smart-Home-Systems. Kåre verwendet HA zur Steuerung von Lichtern, Heizung und Sensoren.",
       "item_1": "HA-URL — Die Adresse von Home Assistant im lokalen Netzwerk (z.B. http://192.168.0.100:8123).",
       "item_2": "Token — Ein Einmalschlüssel, den Sie in HA unter Profil → Langlebige Zugriffstoken erstellen. Kåre verwendet ihn zur Authentifizierung.",
-      "item_3": "Timeout — Wie lange Kåre auf eine Antwort von HA wartet. Erhöhen wenn das Netzwerk langsam ist."
+      "item_3": "Timeout — Wie lange Kåre auf eine Antwort von HA wartet. Erhöhen wenn das Netzwerk langsam ist.",
+      "item_4": "Erlaubte Aktionen — Checkbox-Liste der 11 Aktionen, die Kåre gegenüber HA ausführen kann (Ein-/Ausschalten, Stufe, Farbe, Temperatur usw). Liegt unter Experte-Stufe."
     },
     "innst_mqtt": {
       "title": "Einstellungen → MQTT / VPN",
@@ -1725,7 +1776,8 @@
       "item_2": "Embedding — Erstellt durchsuchbares Gedächtnis. Wird für semantische Gedächtnissuche verwendet.",
       "item_3": "Lokal vs. Cloud — Lokale Modelle sind schneller und privat. Cloud ist ein Sicherheitsnetz bei Fehlern.",
       "item_4": "num_ctx — Das Kontextfenster. Wie viel des Gesprächs das Modell in einem Durchlauf verarbeitet.",
-      "item_5": "Piper (Text-zu-Sprache) — Kåres Stimme. Drei Sprachsektionen (Norwegisch/Englisch/Deutsch) mit verschiedenen Stimmpaketen. Herunterladen, gewünschte Stimme aktivieren und Dienst neu starten."
+      "item_5": "Piper (Text-zu-Sprache) — Kåres Stimme. Drei Sprachsektionen (Norwegisch/Englisch/Deutsch) mit verschiedenen Stimmpaketen. Herunterladen, gewünschte Stimme aktivieren und Dienst neu starten.",
+      "item_6": "Reason-Freely-Werkzeug — Kåres eigenes Werkzeug für freies Denken, wird verschachtelt im Kåre (Haupt)-Karte angezeigt, da es dasselbe Modell teilt. Liegt unter Experte-Stufe."
     },
     "innst_refleksjon": {
       "title": "Einstellungen → Reflexion",
@@ -1763,7 +1815,8 @@
       "item_6": "Standard — Volle Persönlichkeit mit Humor, Ehrlichkeit und Neugier.",
       "item_7": "Vollständig — Verwendet den gesamten Kontext: innere Gedanken, Selbstbild und Weltmodell.",
       "item_8": "Benutzerdefiniert — Sie schreiben Kåres Persönlichkeit selbst.",
-      "item_9": "Wer beeinflusst Kåre — Wählen Sie, welche Benutzer Kåres Persönlichkeit durch Gespräche prägen können."
+      "item_9": "Wer beeinflusst Kåre — Wählen Sie, welche Benutzer Kåres Persönlichkeit durch Gespräche prägen können.",
+      "item_10": "Kåres selbstgelernte Automatisierung — Wählen Sie, wer Automatisierungsvorschläge genehmigen oder ablehnen kann, die Kåre basierend auf im Haushalt bemerkten Gewohnheiten vorschlägt."
     },
     "innst_integrasjoner": {
       "title": "Einstellungen → Integrationen",

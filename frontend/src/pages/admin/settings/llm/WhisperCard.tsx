@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CheckCircle2, XCircle, Loader2, RotateCcw, ChevronDown, ChevronUp } from "lucide-react";
 import { apiPutVoiceBackend, apiRestartService } from "@/services/api";
-import { useSaveState, FieldRow, SaveFeedback } from "../shared";
+import { useSaveState, FieldRow, SaveFeedback, ExpertOnly } from "../shared";
 
 export type VoiceServicesData = {
   stt_backend: string;
@@ -113,6 +113,7 @@ export function WhisperCard({ data, onSaved }: { data: VoiceServicesData; onSave
       </CardHeader>
       {!collapsed && (
         <CardContent className="space-y-5 pt-0">
+          <ExpertOnly>
           <FieldRow label="Backend" hint="faster_whisper fungerer på alle plattformer (CPU/GPU). openvino krever Intel Arc GPU og OpenVINO GenAI — brukes med NbAiLab/nb-whisper-large.">
             <Select value={backend} onValueChange={v => { if (v) setBackend(v); }}>
               <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
@@ -122,9 +123,11 @@ export function WhisperCard({ data, onSaved }: { data: VoiceServicesData; onSave
               </SelectContent>
             </Select>
           </FieldRow>
+          </ExpertOnly>
 
           {isOpenvino ? (
             <>
+              <ExpertOnly>
               <FieldRow label="Modellmappe (OpenVINO IR)" hint="Sti til ferdig konvertert OpenVINO IR-modell. Inneholder openvino_encoder_model.xml, openvino_decoder_model.xml osv.">
                 <input
                   value={modelDir}
@@ -133,6 +136,7 @@ export function WhisperCard({ data, onSaved }: { data: VoiceServicesData; onSave
                   className="flex h-9 w-80 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
                 />
               </FieldRow>
+              </ExpertOnly>
               <div className="rounded-md border border-white/10 divide-y divide-white/5 text-sm">
                 {WHISPER_OV_PRESETS.map(p => (
                   <button
@@ -185,6 +189,7 @@ export function WhisperCard({ data, onSaved }: { data: VoiceServicesData; onSave
               <p className="text-xs text-muted-foreground">
                 <strong>Norsk-optimalisert (NbAiLab):</strong> Bruk <code>NbAiLab/nb-whisper-large</code> med OpenVINO-backend (konvertert modell finnes allerede lokalt). For faster-whisper må den konverteres: <code className="bg-white/5 px-1 rounded">ct2-transformers-converter --model NbAiLab/nb-whisper-large --output_dir /sti/til/modell</code>
               </p>
+              <ExpertOnly>
               <FieldRow label="Beregningstype" hint="int8 anbefales for de fleste. float16/int8_float16 krever GPU. float32 fungerer på CPU uten spesial-maskinvare.">
                 <Select value={computeType} onValueChange={v => { if (v) setComputeType(v); }}>
                   <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
@@ -195,6 +200,7 @@ export function WhisperCard({ data, onSaved }: { data: VoiceServicesData; onSave
                   </SelectContent>
                 </Select>
               </FieldRow>
+              </ExpertOnly>
             </>
           )}
 
@@ -214,17 +220,21 @@ export function WhisperCard({ data, onSaved }: { data: VoiceServicesData; onSave
               {ss.state === "saving" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Lagre
             </Button>
-            <Button onClick={restart} disabled={restarting} size="sm" variant="outline">
-              {restarting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
-              Restart tjeneste
-            </Button>
             <SaveFeedback state={ss.state} />
-            {restartOk === true  && <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Restartet</span>}
-            {restartOk === false && <span className="text-xs text-red-400 flex items-center gap-1"><XCircle className="h-3 w-3" /> Feil ved restart</span>}
+            <ExpertOnly><>
+              <Button onClick={restart} disabled={restarting} size="sm" variant="outline">
+                {restarting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+                Restart tjeneste
+              </Button>
+              {restartOk === true  && <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Restartet</span>}
+              {restartOk === false && <span className="text-xs text-red-400 flex items-center gap-1"><XCircle className="h-3 w-3" /> Feil ved restart</span>}
+            </></ExpertOnly>
           </div>
+          <ExpertOnly>
           <p className="text-xs text-muted-foreground">
             Restart er nødvendig for at endringer skal tre i kraft.
           </p>
+          </ExpertOnly>
         </CardContent>
       )}
     </Card>

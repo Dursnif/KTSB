@@ -66,10 +66,10 @@
     "tabs": {
       "generelt": "Generelt",
       "ha": "Home Assistant",
-      "mqtt": "MQTT / VPN",
+      "mqtt": "MQTT/VPN",
       "llm": "LLM/Modeller",
       "refleksjon": "Refleksjon",
-      "nettsok": "Nettsøk og vær",
+      "nettsok": "Nettsøk/Vær",
       "bilder": "Bilder/Kamera",
       "kare": "Assistent-innstillinger",
       "integrasjoner": "Integrasjoner",
@@ -77,6 +77,11 @@
       "agenter": "Agent-instillinger",
       "forklaringer": "Forklaringer",
       "varsler": "Varsler"
+    },
+    "level": {
+      "basic": "Enkel",
+      "expert": "Ekspert",
+      "toggle_hint": "Vis avanserte innstillinger"
     },
     "generelt": {
       "location": {
@@ -145,7 +150,20 @@
         "log_url_hint": "Endepunkt Kåre mottar HA-logger på",
         "timeout_label": "Timeout (sekunder)",
         "allowed_label": "Tillatte handlinger",
-        "allowed_hint": "Kommaseparert liste (turn_on, turn_off, …)"
+        "allowed_hint": "Handlinger Kåre får lov til å utføre mot Home Assistant. Kåre støtter i dag kun dette faste settet.",
+        "actions": {
+          "turn_on": "Slå på",
+          "turn_off": "Slå av",
+          "toggle": "Veksle av/på",
+          "set_level": "Sett nivå (lysstyrke/volum)",
+          "set_color_temp": "Sett fargetemperatur",
+          "set_color": "Sett farge",
+          "open": "Åpne",
+          "close": "Lukk",
+          "set_temperature": "Sett temperatur",
+          "get_temperature": "Les temperatur",
+          "get_state": "Les status"
+        }
       }
     },
     "mqtt": {
@@ -205,6 +223,8 @@
       "ollama_params": "Ollama inference-parametere",
       "vllm_params": "vLLM inference-parametere",
       "vllm_docker_params": "vLLM Docker-parametere — krever omstart av containeren for å tre i kraft",
+      "reason_freely_title": "Reason Freely-verktøy",
+      "reason_freely_desc": "Kåres eget verktøy for fri resonnering. Deler vLLM-instans og base-URL med Kåre (hoved) over.",
       "gen_params": "Bildegenererings-parametere",
       "cloud_params": "Genererings-parametere",
       "ctx_locked_hint": "Låst — deles med {{shared}}. Endre der for å justere.",
@@ -529,6 +549,22 @@
           "selected_desc": "Kun samtaler med brukerne du velger under kan forme selvbildet.",
           "admin_only_label": "Kun admin",
           "admin_only_desc": "Selvbildet formes kun i samtaler med admin-brukere."
+        }
+      },
+      "automationreflex": {
+        "title": "Kåres selvlærte automasjon",
+        "description": "Kåre kan foreslå egne automasjoner ut fra vaner den ser i hjemmet (write_reflex-verktøyet). Her styrer du hvem som kan godkjenne eller avvise disse forslagene. Endringen trer i kraft umiddelbart.",
+        "who_approves": "Hvem kan godkjenne/avvise automasjon-forslag?",
+        "allowed_users_label": "Tillatte brukere",
+        "no_users": "Ingen vanlige brukere funnet.",
+        "admin_note": "Systemkontoen «admin» vises ikke her.",
+        "modes": {
+          "all_label": "Alle brukere",
+          "all_desc": "Enhver bruker med tilgang til write_reflex-verktøyet kan godkjenne eller avvise forslag.",
+          "selected_label": "Valgte brukere",
+          "selected_desc": "Kun brukerne du velger under kan godkjenne eller avvise forslag.",
+          "admin_only_label": "Kun admin",
+          "admin_only_desc": "Kun admin-brukere kan godkjenne eller avvise forslag."
         }
       }
     },
@@ -1147,7 +1183,9 @@
         "inspiser_system": "Inspiser system",
         "ssh_kommando": "SSH-kommando",
         "local_kommando": "Lokal kommando",
-        "restart_docker_container": "Restart Docker"
+        "restart_docker_container": "Restart Docker",
+        "household": "Hjemme/borte-modus",
+        "write_reflex": "Godkjenn automasjon-forslag"
       }
     }
   },
@@ -1361,6 +1399,8 @@
     "send": "Send"
   },
   "reflections": {
+    "tab_reflection": "Refleksjonsmøte — innstillinger",
+    "tab_dev": "Utviklingsmøte — innstillinger",
     "reflection_tab": "Refleksjonsmøte",
     "dev_tab": "Utviklingsmøte",
     "reflection_tab_sub": "04:00 · Miss Kåre",
@@ -1593,7 +1633,9 @@
         "inspect_system": "Sjekk tjenester, logger og ressursbruk",
         "ssh_command": "Kjør kommandoer på andre maskiner i nettverket",
         "local_command": "Kjør kommandoer direkte på AI-PC-en",
-        "restart_docker_container": "Start Docker-containere på nytt"
+        "restart_docker_container": "Start Docker-containere på nytt",
+        "household": "Sett hjemme/borte-modus for husstanden",
+        "write_reflex": "Foreslå, godkjenne eller avvise Kåres selvlærte automasjoner (hvem som faktisk kan godkjenne/avvise styres separat under Innstillinger → Kåre)"
       },
       "pin": "PIN er en tallkode som beskytter kontoen (minimum 6 siffer). Brukes ved innlogging og for å låse opp private møtereferater.",
       "voice_reg": "Stemmeregistrering lar Kåre gjenkjenne hvem som snakker. Brukeren leser inn noen setninger og Kåre lærer stemmeprofilen.",
@@ -1688,6 +1730,14 @@
       "item_4": "Tema-felt — Du kan foreslå et tema Kåre tar opp i neste nattmøte.",
       "item_5": "Miss Kåre-portrett — Miss Kåre bygger gradvis et psykologisk portrett av hver bruker basert på observasjoner over tid. Portretten injiseres i møtekonteksten for mer personlig analyse."
     },
+    "innst_basic_expert": {
+      "title": "Innstillinger → Enkel/Ekspert-bryter",
+      "summary": "Én bryter styrer hva som vises på alle fanene",
+      "body": "Øverst til høyre på Innstillinger-siden finner du en bryter merket «Enkel»/«Ekspert». Den gater avanserte felt på tvers av alle fanene samtidig — ikke bare på én.",
+      "item_1": "Enkel (standard) — Viser kun felt en vanlig husstandsbruker trenger: modellnavn, temperatur, på/av-brytere, lokasjon osv. Tekniske innstillinger (provider, timeouts, rå prompt-tekst) er skjult.",
+      "item_2": "Ekspert — Viser alt, inkludert vLLM/Docker-parametere, rollestyring, avanserte terskler og Agent-instillinger-fanen (som er helt skjult i Enkel-modus).",
+      "item_3": "Innstillingen huskes i nettleseren (localStorage) og påvirker kun visning — aldri hvilke verdier som faktisk er lagret i configs/-filene."
+    },
     "innst_generelt": {
       "title": "Innstillinger → Generelt",
       "summary": "Lokasjon, tidssone og språk",
@@ -1701,7 +1751,8 @@
       "body": "Home Assistant (HA) er hjernen i smarthjem-systemet. Kåre bruker HA til å styre lys, varme og sensorer.",
       "item_1": "HA-URL — Adressen til Home Assistant på lokalnettverket (f.eks. http://192.168.0.100:8123).",
       "item_2": "Token — En engangsnøkkel du lager i HA under Profil → Langtidstoken. Kåre bruker denne for å autentisere seg.",
-      "item_3": "Timeout — Hvor lenge Kåre venter på svar fra HA. Øk denne hvis nettverket er tregt."
+      "item_3": "Timeout — Hvor lenge Kåre venter på svar fra HA. Øk denne hvis nettverket er tregt.",
+      "item_4": "Tillatte handlinger — Avkrysningsliste over de 11 handlingene Kåre kan utføre mot HA (slå på/av, sett nivå, farge, temperatur osv). Ligger under Ekspert-nivå."
     },
     "innst_mqtt": {
       "title": "Innstillinger → MQTT / VPN",
@@ -1725,7 +1776,8 @@
       "item_2": "Embedding — Lager søkbart minne. Brukes til semantisk hukommelsessøk.",
       "item_3": "Lokal vs. sky — Lokale modeller er raskere og private. Sky er et sikkerhetsnet ved feil.",
       "item_4": "num_ctx — Kontekstvinduet. Hvor mye av samtalen modellen husker i én kjøring.",
-      "item_5": "Piper (tekst-til-tale) — Kåres stemme. Tre språkseksjoner (norsk/engelsk/tysk) med ulike stemmepakker. Last ned, aktiver ønsket stemme og restart tjeneste for å ta den i bruk."
+      "item_5": "Piper (tekst-til-tale) — Kåres stemme. Tre språkseksjoner (norsk/engelsk/tysk) med ulike stemmepakker. Last ned, aktiver ønsket stemme og restart tjeneste for å ta den i bruk.",
+      "item_6": "Reason Freely-verktøy — Kåres eget verktøy for fri resonnering, vises nøstet inni Kåre (hoved)-kortet siden det deler samme modell. Ligger under Ekspert-nivå."
     },
     "innst_refleksjon": {
       "title": "Innstillinger → Refleksjon",
@@ -1763,7 +1815,8 @@
       "item_6": "Standard — Full personlighet med humor, ærlighet og nysgjerrighet.",
       "item_7": "Komplett — Bruker all kontekst: indre tanker, selvbilde og verdensmodell.",
       "item_8": "Egendefinert — Du skriver Kåres personlighet selv.",
-      "item_9": "Hvem påvirker Kåre — Velg hvilke brukere som kan forme Kåres personlighet gjennom samtaler."
+      "item_9": "Hvem påvirker Kåre — Velg hvilke brukere som kan forme Kåres personlighet gjennom samtaler.",
+      "item_10": "Kåres selvlærte automasjon — Velg hvem som kan godkjenne eller avvise automasjon-forslag Kåre selv foreslår ut fra vaner den ser i hjemmet."
     },
     "innst_integrasjoner": {
       "title": "Innstillinger → Integrasjoner",

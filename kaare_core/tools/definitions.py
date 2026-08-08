@@ -627,7 +627,7 @@ def _notat_tool(lang: str) -> dict:
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["write", "read", "delete", "clear", "done", "mark_bought", "clear_all"],
+                        "enum": ["write", "read", "delete", "clear", "done", "mark_bought", "clear_all", "pin", "unpin"],
                         "description": _t("tool_notat_action_desc", lang),
                     },
                     "list_name": {
@@ -662,6 +662,18 @@ def _notat_tool(lang: str) -> dict:
                     "remind_on_login": {
                         "type": "boolean",
                         "description": _t("tool_notat_remind_on_login_desc", lang),
+                    },
+                    "search": {
+                        "type": "string",
+                        "description": _t("tool_notat_search_desc", lang),
+                    },
+                    "date_from": {
+                        "type": "string",
+                        "description": _t("tool_notat_date_from_desc", lang),
+                    },
+                    "date_to": {
+                        "type": "string",
+                        "description": _t("tool_notat_date_to_desc", lang),
                     },
                 },
                 "required": ["action"],

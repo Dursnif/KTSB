@@ -38,6 +38,27 @@ def _get_threshold() -> int:
         return 10
 
 
+def _is_allowed_reflex_contributor(user_id: str) -> bool:
+    """Same contributor-mode gate as executor_personality._is_allowed_self_contributor(),
+    scoped to approving/rejecting Kåre's self-learned automation reflexes instead of
+    shaping her self-image. Fail-open on config error, matching the sibling gate."""
+    try:
+        s = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
+        ar = s.get("automation_reflex", {})
+        mode = ar.get("contributors", "admin_only")
+        if mode == "all":
+            return True
+        if mode == "admin_only":
+            from kaare_core.users.store import get_user
+            u = get_user(user_id)
+            return bool(u and u.get("role") == "admin")
+        if mode == "selected":
+            return user_id in ar.get("allowed_users", [])
+        return True
+    except Exception:
+        return True
+
+
 def _load_proposals() -> list:
     if not _PROPOSALS_PATH.exists():
         return []
@@ -258,15 +279,20 @@ def _list_proposals(lang: str) -> str:
 
 
 async def dispatch(name: str, arguments: Dict) -> str:
-    lang = get_lang(arguments.get("_user_id", "global"))
+    user_id = arguments.get("_user_id", "global")
+    lang = get_lang(user_id)
 
     if name in ("write_reflex", "skriv_reflex"):
         action = arguments.get("action", "")
         if action == "suggest":
-            return _suggest(lang, arguments.get("_user_id", "global"))
+            return _suggest(lang, user_id)
         if action == "confirm":
+            if not _is_allowed_reflex_contributor(user_id):
+                return t("reflex_not_allowed", lang)
             return _confirm(arguments.get("proposal_id", ""), lang)
         if action == "reject":
+            if not _is_allowed_reflex_contributor(user_id):
+                return t("reflex_not_allowed", lang)
             return _reject(arguments.get("proposal_id", ""), lang)
         if action == "list":
             return _list_proposals(lang)

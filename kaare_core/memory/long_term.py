@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Optional
 
 from kaare_core.crypto import encrypt_text, decrypt_text
-from kaare_core.session_keys import get_session_key_sync
+from kaare_core.session_keys import resolve_key_sync, get_session_key_sync
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +32,16 @@ USER_GLOBAL = "global"
 _ENC_PREFIX = "ENC:"
 
 
-def _enc(user_id: str, text: str) -> str:
-    """Encrypt text for LTM storage using session key. Returns ENC:<blob> if key available, else plaintext."""
+def _enc(user_id: str, text: str, allow_system_key: bool = False) -> str:
+    """Encrypt text for LTM storage using session key. Returns ENC:<blob> if key available, else plaintext.
+
+    allow_system_key=True (P87): confirmed background callers only — see
+    session_keys.py::resolve_key_sync() for the interactive/GUI-facing restriction.
+    """
     if not text or user_id == USER_GLOBAL:
         return text
     try:
-        key = get_session_key_sync(user_id)
+        key = resolve_key_sync(user_id, allow_system_key=allow_system_key)
         if key is None:
             return text
         return _ENC_PREFIX + encrypt_text(text, key)
@@ -45,12 +49,16 @@ def _enc(user_id: str, text: str) -> str:
         return text
 
 
-def _dec(user_id: str, text: str) -> str:
-    """Decrypt ENC:-prefixed LTM text using session key. Returns [kryptert] if no session, plaintext if not encrypted."""
+def _dec(user_id: str, text: str, allow_system_key: bool = False) -> str:
+    """Decrypt ENC:-prefixed LTM text using session key. Returns [kryptert] if no session, plaintext if not encrypted.
+
+    allow_system_key=True (P87): confirmed background callers only — see
+    session_keys.py::resolve_key_sync() for the interactive/GUI-facing restriction.
+    """
     if not text or not text.startswith(_ENC_PREFIX):
         return text
     try:
-        key = get_session_key_sync(user_id)
+        key = resolve_key_sync(user_id, allow_system_key=allow_system_key)
         if key is None:
             return "[kryptert]"
         return decrypt_text(text[len(_ENC_PREFIX):], key)
@@ -857,14 +865,15 @@ def get_ltm() -> LongTermMemory:
 # STM daily summary – standalone helpers (used by nightjob + api startup)
 # ---------------------------------------------------------------------------
 
-def save_daily_summary(date: str, summary: str, interaction_count: int, user_id: str = USER_GLOBAL) -> None:
-    """Save a daily STM summary. Called by the nightjob at 03:00."""
+def save_daily_summary(date: str, summary: str, interaction_count: int, user_id: str = USER_GLOBAL,
+                        allow_system_key: bool = False) -> None:
+    """Save a daily STM summary. Called by the nightjob at 03:00 (unattended — pass allow_system_key=True)."""
     conn = _get_conn()
     try:
         conn.execute(
             """INSERT OR REPLACE INTO stm_daily_summary (date, user_id, summary, interaction_count, ts_created)
                VALUES (?, ?, ?, ?, ?)""",
-            (date, user_id, _enc(user_id, summary), interaction_count,
+            (date, user_id, _enc(user_id, summary, allow_system_key=allow_system_key), interaction_count,
              datetime.now(timezone.utc).isoformat(timespec="seconds")),
         )
         conn.commit()
@@ -874,15 +883,18 @@ def save_daily_summary(date: str, summary: str, interaction_count: int, user_id:
         conn.close()
 
 
-def load_latest_daily_summary(user_id: str = USER_GLOBAL) -> str:
-    """Return the most recent STM daily summary for a user, or empty string."""
+def load_latest_daily_summary(user_id: str = USER_GLOBAL, allow_system_key: bool = False) -> str:
+    """Return the most recent STM daily summary for a user, or empty string.
+
+    allow_system_key=True: for the API-startup restore path (unattended, no live session).
+    """
     conn = _get_conn()
     try:
         row = conn.execute(
             "SELECT summary FROM stm_daily_summary WHERE user_id = ? ORDER BY date DESC LIMIT 1",
             (user_id,),
         ).fetchone()
-        return _dec(user_id, row[0]) if row else ""
+        return _dec(user_id, row[0], allow_system_key=allow_system_key) if row else ""
     except Exception as e:
         logger.warning("load_latest_daily_summary failed: %s", e)
         return ""
@@ -890,7 +902,7 @@ def load_latest_daily_summary(user_id: str = USER_GLOBAL) -> str:
         conn.close()
 
 
-def load_recent_daily_summaries(days: int = 3) -> list[dict]:
+def load_recent_daily_summaries(days: int = 3, allow_system_key: bool = False) -> list[dict]:
     """Return the last N daily summaries as list of {date, summary, interaction_count}."""
     conn = _get_conn()
     try:
@@ -900,7 +912,7 @@ def load_recent_daily_summaries(days: int = 3) -> list[dict]:
                ORDER BY date DESC LIMIT ?""",
             (days,),
         ).fetchall()
-        return [{"date": r[0], "summary": _dec(r[1], r[2]), "count": r[3]} for r in rows]
+        return [{"date": r[0], "summary": _dec(r[1], r[2], allow_system_key=allow_system_key), "count": r[3]} for r in rows]
     except Exception as e:
         logger.warning("load_recent_daily_summaries failed: %s", e)
         return []

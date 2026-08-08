@@ -62,6 +62,7 @@ roles:
   - reason_freely
   - memory
   - camera
+  - household
   admin:
   - all
 agent_tools:

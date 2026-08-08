@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { CheckCircle2, XCircle, Loader2, RotateCcw } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, RotateCcw, ChevronDown, ChevronUp } from "lucide-react";
 import { apiGetVramOverview, apiPutDockerControl, type DockerControlSettings, type VramEntry } from "@/services/api";
+import { ExpertOnly } from "../shared";
 
 export function LlmInfraCard({ dockerControl, onDockerControlChange }: {
   dockerControl: DockerControlSettings;
@@ -16,6 +17,7 @@ export function LlmInfraCard({ dockerControl, onDockerControlChange }: {
   const [vramEntries, setVramEntries] = useState<VramEntry[]>([]);
   const [vramLoading, setVramLoading] = useState(false);
   const [toggling, setToggling] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
 
   const loadVram = async () => {
     setVramLoading(true);
@@ -46,10 +48,19 @@ export function LlmInfraCard({ dockerControl, onDockerControlChange }: {
 
   return (
     <Card className="border-border bg-card">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">{t("settings.llm.infra_card_title")}</CardTitle>
+      <CardHeader className="flex flex-row items-center justify-between py-3">
+        <CardTitle
+          className="text-base cursor-pointer select-none"
+          onClick={() => setCollapsed(v => !v)}
+        >
+          {t("settings.llm.infra_card_title")}
+        </CardTitle>
+        {collapsed
+          ? <ChevronDown className="h-4 w-4 text-muted-foreground cursor-pointer" onClick={() => setCollapsed(false)} />
+          : <ChevronUp   className="h-4 w-4 text-muted-foreground cursor-pointer" onClick={() => setCollapsed(true)}  />
+        }
       </CardHeader>
-      <CardContent className="space-y-4">
+      {!collapsed && <ExpertOnly><CardContent className="space-y-4">
         {/* Docker control toggle */}
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
@@ -110,7 +121,7 @@ export function LlmInfraCard({ dockerControl, onDockerControlChange }: {
             </div>
           )}
         </div>
-      </CardContent>
+      </CardContent></ExpertOnly>}
     </Card>
   );
 }

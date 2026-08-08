@@ -6,7 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 import { apiGetServices, apiPutHa, apiGetHaToken, apiPutHaToken, apiGetHaBridge, apiPutHaBridge } from "@/services/api";
-import { useSaveState, FieldRow, SaveFeedback, TestButton, MaskedInput } from "./shared";
+import { useSaveState, FieldRow, SaveFeedback, TestButton, MaskedInput, ExpertOnly } from "./shared";
+
+const HA_ALLOWED_ACTIONS = [
+  "turn_on", "turn_off", "toggle", "set_level", "set_color_temp", "set_color",
+  "open", "close", "set_temperature", "get_temperature", "get_state",
+] as const;
 
 export default function TabHomeAssistant() {
   const { t } = useTranslation();
@@ -78,9 +83,11 @@ export default function TabHomeAssistant() {
                 <TestButton url={haUrl} />
               </div>
             </FieldRow>
+            <ExpertOnly>
             <FieldRow label={t("settings.ha.gateway.timeout_label")} hint={t("settings.ha.gateway.timeout_hint")}>
               <Input type="number" value={haTimeout} onChange={(e: React.ChangeEvent<HTMLInputElement>) =>setHaTimeout(e.target.value)} className="w-24" />
             </FieldRow>
+            </ExpertOnly>
           </div>
           <div className="flex items-center gap-3 mt-4">
             <Button onClick={saveGateway} disabled={ssGateway.state === "saving"}>
@@ -93,6 +100,7 @@ export default function TabHomeAssistant() {
       </Card>
 
       {/* HA Gateway — avansert */}
+      <ExpertOnly>
       <Card>
         <CardHeader>
           <CardTitle>{t("settings.ha.advanced.title")}</CardTitle>
@@ -107,7 +115,22 @@ export default function TabHomeAssistant() {
               <Input type="number" value={bridgeTimeout} onChange={(e: React.ChangeEvent<HTMLInputElement>) =>setBridgeTimeout(e.target.value)} className="w-24" />
             </FieldRow>
             <FieldRow label={t("settings.ha.advanced.allowed_label")} hint={t("settings.ha.advanced.allowed_hint")}>
-              <Input value={bridgeActions} onChange={(e: React.ChangeEvent<HTMLInputElement>) =>setBridgeActions(e.target.value)} className="font-mono text-xs" />
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2">
+                {HA_ALLOWED_ACTIONS.map(action => {
+                  const selected = bridgeActions.split(",").map(a => a.trim()).filter(Boolean);
+                  const checked = selected.includes(action);
+                  const toggle = () => {
+                    const next = checked ? selected.filter(a => a !== action) : [...selected, action];
+                    setBridgeActions(next.join(","));
+                  };
+                  return (
+                    <label key={action} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="checkbox" checked={checked} onChange={toggle} className="h-4 w-4" />
+                      <span>{t(`settings.ha.advanced.actions.${action}`)}</span>
+                    </label>
+                  );
+                })}
+              </div>
             </FieldRow>
           </div>
           <div className="flex items-center gap-3 mt-4">
@@ -119,6 +142,7 @@ export default function TabHomeAssistant() {
           </div>
         </CardContent>
       </Card>
+      </ExpertOnly>
 
       {/* HA Token */}
       <Card>

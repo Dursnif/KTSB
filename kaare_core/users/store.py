@@ -82,6 +82,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE users ADD COLUMN encrypted_private_key TEXT")
     if "argon2_salt" not in existing:
         conn.execute("ALTER TABLE users ADD COLUMN argon2_salt TEXT")
+    if "system_encrypted_private_key" not in existing:
+        conn.execute("ALTER TABLE users ADD COLUMN system_encrypted_private_key TEXT")
     # Parent system (P64)
     if "is_parent" not in existing:
         conn.execute("ALTER TABLE users ADD COLUMN is_parent INTEGER NOT NULL DEFAULT 0")
@@ -392,6 +394,33 @@ def get_public_key_b64(username: str) -> Optional[str]:
 def has_keypair(username: str) -> bool:
     """True if the user has a crypto keypair stored."""
     return get_keypair_data(username) is not None
+
+
+def store_system_encrypted_key(username: str, encrypted_blob: str) -> bool:
+    """Store the user's private key encrypted with the system master key (P87)."""
+    conn = _get_conn()
+    try:
+        conn.execute(
+            "UPDATE users SET system_encrypted_private_key=? WHERE username=?",
+            (encrypted_blob, username),
+        )
+        conn.commit()
+        return conn.execute("SELECT changes()").fetchone()[0] > 0
+    finally:
+        conn.close()
+
+
+def get_system_encrypted_key(username: str) -> Optional[str]:
+    """Return the system-encrypted private key blob for a user, or None if not yet backfilled."""
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT system_encrypted_private_key FROM users WHERE username=?",
+            (username,),
+        ).fetchone()
+        return row["system_encrypted_private_key"] if row else None
+    finally:
+        conn.close()
 
 
 def delete_user(username: str) -> bool:

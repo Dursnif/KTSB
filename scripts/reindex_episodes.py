@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from kaare_core.memory.semantic_memory import ensure_collection, index_episode
+from kaare_core.memory.long_term import _dec
 
 DB_PATH = Path("/kaare/state/memory/interactions.db")
 
@@ -37,6 +38,11 @@ async def main() -> None:
     for row in rows:
         ep_id, ts, user_id, from_id, to_id, count, narrative, topics = row
         user_id = user_id or "global"
+        # allow_system_key=True (P87): episodes are encrypted per-user as of Phase 6.
+        # Without this, a re-run of this script would read ciphertext here and hand it
+        # to index_episode(), which would SealedBox-encrypt already-encrypted garbage.
+        narrative = _dec(user_id, narrative or "", allow_system_key=True)
+        topics = _dec(user_id, topics or "", allow_system_key=True)
         success = await index_episode(
             episode_id=ep_id,
             narrative=narrative or "",

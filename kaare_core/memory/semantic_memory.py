@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 from kaare_core.config import get_service as _svc, is_embedding_enabled as _emb_enabled, get_qdrant_api_key as _qdrant_key
 from kaare_core.crypto import seal, unseal
-from kaare_core.session_keys import get_session_key_sync
+from kaare_core.session_keys import resolve_key_sync
 from kaare_core.users.store import get_public_key_b64
 import kaare_core.memory.semantic_memory_file as _smf
 
@@ -42,12 +42,16 @@ def _enc_narrative(narrative: str, user_id: str) -> str:
         return narrative
 
 
-def _dec_narrative(narrative: str, user_id: str) -> str:
-    """Decrypt narrative if prefixed with ENC:. Falls back to plaintext on any failure."""
+def _dec_narrative(narrative: str, user_id: str, allow_system_key: bool = False) -> str:
+    """Decrypt narrative (or topics, same ENC: format) if prefixed with ENC:. Falls back to plaintext on any failure.
+
+    allow_system_key=True (P87): confirmed background callers only — see
+    session_keys.py::resolve_key_sync() for the interactive/GUI-facing restriction.
+    """
     if not narrative.startswith(_ENC_PREFIX):
         return narrative
     try:
-        private_key = get_session_key_sync(user_id)
+        private_key = resolve_key_sync(user_id, allow_system_key=allow_system_key)
         if not private_key:
             return "[kryptert]"
         return unseal(narrative[len(_ENC_PREFIX):], private_key)
@@ -113,6 +117,7 @@ async def index_episode(
         return False
 
     stored_narrative = narrative if user_id == "global" else _enc_narrative(narrative, user_id)
+    stored_topics = topics if user_id == "global" else _enc_narrative(topics, user_id)
     try:
         client = _get_client(write=True)
         client.upsert(
@@ -122,7 +127,7 @@ async def index_episode(
                 vector=vector,
                 payload={
                     "narrative": stored_narrative,
-                    "topics": topics,
+                    "topics": stored_topics,
                     "ts": ts,
                     "from_id": from_id,
                     "to_id": to_id,
@@ -171,7 +176,7 @@ async def search_memory(query: str, limit: int = 3, user_id: str = "global") -> 
             {
                 "score": round(r.score, 3),
                 "narrative": _dec_narrative(r.payload.get("narrative", ""), r.payload.get("user_id", "global")),
-                "topics": r.payload.get("topics", ""),
+                "topics": _dec_narrative(r.payload.get("topics", ""), r.payload.get("user_id", "global")),
                 "ts": r.payload.get("ts", ""),
                 "episode_id": r.id,
                 "user_id": r.payload.get("user_id", "global"),

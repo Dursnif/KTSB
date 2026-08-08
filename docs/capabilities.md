@@ -212,8 +212,8 @@ and a per-user portrait maintained by Miss Kåre.
 
 ### Short-Term Memory (STM)
 
-Held in RAM, global with per-user filtering. Stores the last 40 conversation turns plus
-tool call results. Auto-saved to disk every 5 seconds as a snapshot, and again on
+Held in RAM, fully isolated per user (`STMRegistry` — one instance per user, not a shared
+store with filtering). Stores the last 40 conversation turns plus tool call results. Auto-saved to disk every 5 seconds as a snapshot, and again on
 controlled shutdown so no in-progress conversation is lost on a service restart.
 
 The STM is injected into the LLM context at the start of every request — this is how Kåre
@@ -244,12 +244,17 @@ Requires the `medium` or `full` service profile.
 
 ### User Profile
 
-Each user has a YAML profile (`state/users/{user_id}/profile.yaml`) with structured
-sections: preferred communication style, interests, health context, family dynamics,
-concerns, things that delight them.
+Each user has a YAML profile (`state/users/{user_id}/profile.yaml`) validated against a
+shared 19-section fact schema (`configs/profile_template.yaml`) — communication style,
+interests, health context, family dynamics, and more. Writes are schema-checked, not
+free-form, so fields stay consistent across users and over time.
 
-Kåre reads and writes the profile via the `brukerprofil` tool. The nightly reflection
-meeting produces new observations that are written to the profile automatically.
+Kåre reads and writes the profile via the `brukerprofil` tool (the `curiosity` action asks
+a targeted follow-up on a specific schema field). Miss Kåre also asks follow-up questions
+during live conversation, captures facts against the same schema, and applies a novelty
+gate so repeated or trivial answers aren't re-recorded. The nightly reflection meeting
+writes new observations through the same schema and novelty gate — not ad-hoc fields — so
+data captured live and data captured at night stay in the same shape.
 
 ### Self-Image
 
@@ -361,13 +366,15 @@ Miss Kåre's evaluation context on every real-time response.
 A structured multi-agent meeting focused on understanding each user better. Runs once per
 active non-admin user, under a meeting lock that prevents Jang from interfering.
 
-**Participants:** Kåre + Miss Kåre + Meeting Leader + a user-configured cloud LLM (external perspective)
+**Participants:** Kåre + Miss Kåre + Meeting Leader (no cloud participant — cloud only
+appears in the separate developer meeting below, about KTSB's own codebase, not household
+data)
 
 **Input context:** user profile, Miss Kåre portrait, 14 days of observations, last LTM
 episodes, last daily summaries, admin-submitted topic (if any), the user's own submitted
 topic and comment (if any)
 
-**Structure:** proposal round → agenda → two groups of rounds → cloud check-in → closing
+**Structure:** proposal round → agenda → two groups of rounds → closing
 
 **Output per user:**
 - `state/memory/reflections/{user_id}/{date}.md` — full meeting transcript
@@ -408,7 +415,7 @@ Four named lists, each with its own behaviour:
 | List | Purpose | Special actions |
 |------|---------|-----------------|
 | `handle` | Shopping list | `mark_bought`, quantity, unit |
-| `huske` | Reminders | `remind_on_login` — mentioned next time you open the chat |
+| `huske` | Reminders | `remind_on_login` — mentioned next time you open the chat; entries can be pinned (never evicted), the injected block is capped at 2000 characters with a visible "X of Y shown" marker, near-duplicate entries are merged on write, and the list has a hard 100-entry cap (FIFO, pinned entries excluded) |
 | `kare` | Kåre's own notes | Internal use by Kåre |
 | `arkitekt` | Project / design notes | General purpose |
 
@@ -654,17 +661,23 @@ manual YAML editing required after the initial install.
 
 ### Settings areas
 
+A global Basic/Expert switch in the page header (persisted in the browser, not synced to
+server config) hides advanced fields — vLLM Docker parameters, role sharing, normalcy
+thresholds, per-camera filters, and the entire Agents tab (hidden outright in Basic mode,
+not just its contents) — across all 13 areas at once. It only changes what's displayed;
+the underlying config values are unaffected either way.
+
 | Area | What you configure |
 |------|-------------------|
 | General | Location, timezone, GUI language, assistant language |
-| Home Assistant | HA gateway URL and timeout; long-lived access token; advanced log bridge settings (log URL, timeout, allowed action filter) |
+| Home Assistant | HA gateway URL and timeout; long-lived access token; allowed actions as a checkbox list (11 actions: turn on/off, set level, color, temperature, etc.) instead of free text; advanced log bridge settings (log URL, timeout, allowed action filter) |
 | MQTT / VPN | MQTT broker: host, port, credentials, TLS, topic prefix, client ID, reconnect interval; WireGuard VPN: DuckDNS hostname, WireGuard port |
-| LLM / Models | **Infrastructure:** Docker socket control, running container table. **Per agent role** (Kåre, Miss Kåre, Mechanic, Miss Library, fallback, cloud, image): provider (Ollama / vLLM / OpenVINO / cloud), base URL, model selection with installed-model dropdown (pull / delete), thinking mode, keep-warm toggle, model sharing (share_with), GPU assignment, vLLM Docker parameters (gpu_memory_utilization, kv_cache_dtype, max_model_len), Docker restart. **Whisper STT:** enable/disable, backend (faster-whisper or OpenVINO), model preset (large-v3 / turbo / medium / small), compute type, language. **Piper TTS:** one voice model per language, download and activate presets per language. **BGE-M3 embedding:** device (NPU/CPU), model selection, model path. **Semantic memory embedding (MiniLM):** enable/disable, model path |
+| LLM / Models | **Infrastructure:** Docker socket control, running container table. **Per agent role** (Kåre, Miss Kåre, Mechanic, Miss Library, fallback, cloud, image, reason_freely): provider (Ollama / vLLM / OpenVINO / cloud), base URL, model selection with installed-model dropdown (pull / delete), thinking mode, keep-warm toggle, model sharing (share_with), GPU assignment, vLLM Docker parameters (gpu_memory_utilization, kv_cache_dtype, max_model_len), Docker restart. **Whisper STT:** enable/disable, backend (faster-whisper or OpenVINO), model preset (large-v3 / turbo / medium / small), compute type, language. **Piper TTS:** one voice model per language, download and activate presets per language. **BGE-M3 embedding:** device (NPU/CPU), model selection, model path. **Semantic memory embedding (MiniLM):** enable/disable, model path |
 | Reflection | Meeting schedule (enable/disable); token limits per participant; Meeting Leader preset for both reflection (standard / analytical / challenging / custom) and developer meeting (standard / strict / exploratory / custom) |
 | Web & Weather | Weather provider + feature toggles (feels-like, UV, sun times, alerts, air quality, tides, camera weather); 9 HA sensor entity fields; web search provider + fallback provider (DDG / Brave / SearXNG); Brave API key and locale; trusted-sources list (categories + domains, add/remove) |
 | Images | Frigate URL, snapshot and analysis log retention; per-camera analysis config (object types, confidence thresholds, announce on detection), detection log with thumbnails; away-mode escalation (nighttime window, minimum confidence, unknown-object-at-night toggle) |
 | Notifications | Master enable toggle; push notification target (Home Assistant `notify` entity); anomaly-alert thresholds (minimum deviation score, minimum baseline confidence); per-camera filter; link to the Security event feed |
-| Assistant Settings | Personality mode (6 levels: minimal / lightweight / standard / full / complete / custom with editable text); assistant name; hotword; self-image contributor control (all users / selected users / admin only) |
+| Assistant Settings | Personality mode (6 levels: minimal / lightweight / standard / full / complete / custom with editable text); assistant name; hotword; self-image contributor control (all users / selected users / admin only); self-learned automation approval control — who can confirm or reject automation suggestions Kåre proposes from observed household habits |
 | Integrations | Frigate URL, timeout, enable/disable; Plex URL and token |
 | Distribution | Three preset profiles (full / medium / lightweight) with one-click apply; per-domain enable/disable toggles (Home Assistant, Frigate, weather, time etc.); per-service enable/disable toggles (embedding, agents, voice, Jing, Jang) with availability badges |
 | Agents | Per-agent tool toggles (Mechanic: code exploration, system inspection, web search, Argus search, shell, memory; Miss Kåre: consult Miss Library; Miss Library: consult Miss Library toggle); Mechanic role for developer meetings (investigator / critic / analyst / custom); Miss Kåre role for reflection meetings (empathic / analytical / challenging / custom) |
@@ -723,8 +736,20 @@ Tools are filtered based on the active model size. Models under 9B receive no to
 | 9 | 9B+ | mechanic, utforsk_kode, inspiser_system, ssh_kommando, local_kommando, restart_docker_container, søk_i_argus, reason_freely, skriv_reflex |
 | always | any | selvbilde, verden, brukerprofil, les_indre_tanker, les_tankehistorikk |
 
+The 9B fallback (see section 15) applies a separate, tighter ceiling on top of this table
+(`max_tool_tier` in `llm.yaml`) — its 8192-token context can't hold the full tool schema
+plus a real conversation, so it additionally drops tier-9 tools rather than only relying on
+the size-based filter above.
+
+A consistency validator runs on every config load and service startup: it checks that
+`tool_permissions.yaml` and `definitions.py` agree on tool names, and specifically that
+every `always`-tier tool survives for every role. A silent mismatch here (e.g. a tool
+renamed in one file but not the other) would otherwise make the LLM's tool list quietly
+shrink without any error — the validator fails loudly (CRITICAL log + Argus alert) instead
+of failing silently.
+
 **Key files:** `kaare_core/tools/definitions.py`, `kaare_core/tools/executor.py`,
-`kaare_core/tools/executor_*.py`
+`kaare_core/tools/executor_*.py`, `kaare_core/config.py`
 
 ### Self-monitoring via RID traces
 
@@ -769,7 +794,9 @@ configuration. Roles can share a provider via the `share_with` setting.
 
 Fallback waterfall: primary provider → cloud (if configured and a conversational call) →
 Ollama fallback on the Miss Kåre instance. Tool-calling requests skip the cloud step and
-fall back directly to the local Ollama instance. The fallback shares the same lock as
+fall back directly to the local Ollama instance. Tool schemas sent to the fallback are
+additionally filtered by `max_tool_tier` (see section 14) so its smaller context window
+isn't exhausted by tool definitions before the conversation itself. The fallback shares the same lock as
 Miss Kåre and Mechanic — if either is active when the fallback is needed, Kåre queues
 and waits. If the cloud endpoint is unreachable (e.g. no credit left on the key), the
 nightly meetings detect it at the start and skip the cloud participant for that run
@@ -850,7 +877,11 @@ Each personal user account has a per-user X25519 keypair (PyNaCl / libsodium):
 - `admin` system accounts never get a keypair — the admin role is for system management only, not personal data
 - If a session outlives a service restart, the encrypted snapshot on disk cannot be decrypted with the (now-gone) in-RAM key; the API detects this and signals the frontend to re-authenticate rather than silently showing stale or empty history
 
-**Vault file system:** agents that need to write to a user's profile while the user is offline (e.g. the nightly reflection meeting) use SealedBox encryption with the user's public key. The result is written as a `vault_*.bin` file. On next login, the vault files are decrypted with the private key, applied, and deleted. This means personal observations from nightly meetings are unreadable without the user's PIN — even to the admin.
+**Vault file system:** agents that need to write to a user's profile while the user is offline (e.g. the nightly reflection meeting) use SealedBox encryption with the user's public key. The result is written as a `vault_*.bin` file. On next login, the vault files are decrypted with the private key, applied, and deleted.
+
+**System key (background agent access):** each user also has a second private key encrypted under a system master key (`state/system_master.key`, excluded from backups) instead of the user's PIN. This lets background jobs — nightly reflection, nightly memory compression, STM restart-recovery — read and write a user's own encrypted data without a live PIN session, via an explicit `allow_system_key` opt-in at each call site (never a blanket fallback). The interactive `needs_unlock` GUI gate and PIN-based login are unaffected — they still require a live session.
+
+This means encryption's real guarantee is **theft protection** (a stolen disk or NAS backup is unusable without a PIN or recovery seed phrase) and **no casual or automatic access** (admin does not see another user's data by accident or by default). It does not mean the data is cryptographically inaccessible to the admin — with code access, decrypting any user's data via the system key is a deliberate action, not a default one, but it is not prevented at the cryptography layer.
 
 **Household-visible fields:** a small, hardcoded subset of profile fields (`name`, pronouns, basic preferences) is stored unencrypted in a separate `household_visible` section. This is what Kåre injects into the system prompt — it never includes conversation history or observations.
 

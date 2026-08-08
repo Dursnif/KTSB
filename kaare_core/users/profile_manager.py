@@ -56,22 +56,26 @@ def _user_dir(user_id: str) -> Path:
     return d
 
 
-def _get_session_key(user_id: str) -> "bytes | None":
-    """Return the user's in-RAM private key, or None if no active session."""
+def _get_session_key(user_id: str, allow_system_key: bool = False) -> "bytes | None":
+    """Return the user's private key: live session first, then system key if allow_system_key (P87).
+
+    Confirmed background callers only — see session_keys.py::resolve_key_sync() for
+    the interactive/GUI-facing restriction.
+    """
     try:
         from kaare_core import session_keys
-        return session_keys.get_session_key_sync(user_id)
+        return session_keys.resolve_key_sync(user_id, allow_system_key=allow_system_key)
     except Exception:
         return None
 
 
-def _read_obs_text(user_id: str) -> str:
+def _read_obs_text(user_id: str, allow_system_key: bool = False) -> str:
     """Read observations content — from .enc (decrypted) or .md (plaintext)."""
     user_dir = _user_dir(user_id)
     enc_path = user_dir / "observations.enc"
     plain_path = user_dir / "observations.md"
     if enc_path.exists():
-        private_key = _get_session_key(user_id)
+        private_key = _get_session_key(user_id, allow_system_key=allow_system_key)
         if not private_key:
             return ""
         try:
@@ -88,12 +92,18 @@ def _read_obs_text(user_id: str) -> str:
     return ""
 
 
-def _write_obs_text(user_id: str, content: str) -> None:
-    """Write observations — encrypted (.enc) if session key available, else plaintext (.md)."""
+def _write_obs_text(user_id: str, content: str, allow_system_key: bool = False) -> None:
+    """Write observations — encrypted (.enc) if a key is available, else plaintext (.md).
+
+    allow_system_key=True (P87): closes the plaintext-fallback landmine for any future
+    unattended caller that writes directly instead of going through the vault mechanism
+    (see _vault_or_write_observation in kaare_reflection.py, which is preferred and
+    needs no session/system key at all since SealedBox only needs the public key).
+    """
     user_dir = _user_dir(user_id)
     enc_path = user_dir / "observations.enc"
     plain_path = user_dir / "observations.md"
-    private_key = _get_session_key(user_id)
+    private_key = _get_session_key(user_id, allow_system_key=allow_system_key)
     if private_key and user_id not in SYSTEM_ACCOUNTS:
         try:
             from kaare_core.crypto import encrypt_text
@@ -207,7 +217,40 @@ def get_display_name(user_id: str) -> str:
     return (profile.get("meta") or {}).get("display_name") or user_id
 
 
-def load_profile(user_id: str) -> dict:
+def get_section_fields(section: str) -> list[str]:
+    """Return the template-defined field names for a section, or [] if the section
+    itself isn't a valid dict-shaped template section. Used to stop LLM-driven writes
+    from inventing new field names outside the schema (schema drift)."""
+    template = _empty_profile("_schema_probe")
+    sec = template.get(section)
+    return list(sec.keys()) if isinstance(sec, dict) else []
+
+
+def get_writable_sections() -> list[str]:
+    """Return the section names Kåre/Miss Kåre can target with set_field — every
+    dict-shaped template section except household_visible and meta, which have their
+    own dedicated write paths. Derived live from profile_template.yaml, not hardcoded,
+    so it can never drift out of sync with the schema."""
+    template = _empty_profile("_schema_probe")
+    return [
+        k for k, v in template.items()
+        if isinstance(v, dict) and k not in ("household_visible", "meta")
+    ]
+
+
+def _fill_missing_sections(profile: dict, user_id: str) -> dict:
+    """Ensure every template-defined section is present (as its empty skeleton) so a
+    single action='read' reveals the full schema, even for sections this user has
+    never had written to. Only fills missing top-level section keys — never touches
+    a section that already has content."""
+    template = _empty_profile(user_id)
+    for key, val in template.items():
+        if key not in profile and isinstance(val, dict):
+            profile[key] = val
+    return profile
+
+
+def load_profile(user_id: str, allow_system_key: bool = False) -> dict:
     path = _user_dir(user_id) / "profile.yaml"
     if not path.exists():
         return _empty_profile(user_id)
@@ -216,29 +259,29 @@ def load_profile(user_id: str) -> dict:
         if not isinstance(data, dict):
             return _empty_profile(user_id)
         if "private_encrypted" in data:
-            private_key = _get_session_key(user_id)
+            private_key = _get_session_key(user_id, allow_system_key=allow_system_key)
             if private_key:
                 try:
                     from kaare_core.crypto import decrypt_dict
                     private_data = decrypt_dict(data["private_encrypted"], private_key)
                     merged = {k: v for k, v in data.items() if k != "private_encrypted"}
                     merged.update(private_data)
-                    return merged
+                    return _fill_missing_sections(merged, user_id)
                 except Exception as e:
                     logger.warning(f"[PROFILE] decrypt failed for {user_id}: {e}")
             # No session or decrypt failed — return without private data
             return {k: v for k, v in data.items() if k != "private_encrypted"}
-        return data
+        return _fill_missing_sections(data, user_id)
     except Exception:
         return _empty_profile(user_id)
 
 
-def save_profile(user_id: str, profile: dict) -> None:
+def save_profile(user_id: str, profile: dict, allow_system_key: bool = False) -> None:
     profile["updated"] = datetime.now().strftime("%Y-%m-%d")
     path = _user_dir(user_id) / "profile.yaml"
     private_key = None
     if user_id not in SYSTEM_ACCOUNTS:
-        private_key = _get_session_key(user_id)
+        private_key = _get_session_key(user_id, allow_system_key=allow_system_key)
     if private_key:
         plaintext: dict = {}
         private_data: dict = {}
@@ -291,13 +334,13 @@ def update_profile_field(user_id: str, field: str, value: Any, reason: str) -> N
     save_profile(user_id, profile)
 
 
-def add_observation(user_id: str, text: str) -> None:
+def add_observation(user_id: str, text: str, allow_system_key: bool = False) -> None:
     """Legg til en dagsbasert observasjon, trim etterpå. Kryptert hvis sesjonsnøkkel tilgjengelig."""
     date_str = datetime.now().strftime("%Y-%m-%d")
     entry = f"\n## {date_str}\n{text.strip()}\n"
-    content = _read_obs_text(user_id) + entry
-    _write_obs_text(user_id, content)
-    _trim_observations(user_id)
+    content = _read_obs_text(user_id, allow_system_key=allow_system_key) + entry
+    _write_obs_text(user_id, content, allow_system_key=allow_system_key)
+    _trim_observations(user_id, allow_system_key=allow_system_key)
 
 
 def update_nested_profile_field(user_id: str, section: str, field: str, value: str) -> str:
@@ -305,11 +348,21 @@ def update_nested_profile_field(user_id: str, section: str, field: str, value: s
     Write a specific section.field in profile.yaml.
     If the current field is a list, appends value as a new item.
     If the current field is null/string, replaces it.
+
+    Existing users' stored profiles only contain the sections that have actually been
+    written to before (e.g. just prompt_top) — the other 18 template sections
+    (identity, relationships_and_family, interests_and_hobbies, ...) are defined in
+    profile_template.yaml but were never materialized for them. A section that is valid
+    per the template but missing from this user's profile is auto-vivified as an empty
+    dict rather than rejected — otherwise the schema is visible but unwritable.
     """
     profile = load_profile(user_id)
     sec = profile.get(section)
     if not isinstance(sec, dict):
-        return f"Unknown section: '{section}'"
+        template = _empty_profile(user_id)
+        if not isinstance(template.get(section), dict):
+            return f"Unknown section: '{section}'"
+        sec = {}
     current = sec.get(field)
     if isinstance(current, list):
         if value.strip():
@@ -321,6 +374,28 @@ def update_nested_profile_field(user_id: str, section: str, field: str, value: s
         profile["meta"]["last_updated"] = datetime.now().strftime("%Y-%m-%d")
     save_profile(user_id, profile)
     return "OK"
+
+
+def vault_or_update_nested_field(user_id: str, section: str, field: str, value: str) -> str:
+    """
+    Write a nested profile field (see update_nested_profile_field), but vault it
+    (SealedBox-encrypted with the user's public key, no session needed) instead of
+    writing directly when the user has no active session right now.
+
+    Matters because save_profile() falls back to writing the ENTIRE profile as
+    plaintext when no session key is available — correct for interactive use (a session
+    always exists then) but wrong for unattended callers like the nightly reflection
+    meeting, which never has one. Mirrors the existing flat-field pattern
+    (kaare_reflection.py::_vault_or_update_profile) for the nested case.
+    """
+    if _get_session_key(user_id) is not None:
+        return update_nested_profile_field(user_id, section, field, value)
+    payload = {"type": "profile_field_nested", "section": section, "field": field, "value": value}
+    if write_vault_entry(user_id, payload):
+        return "Vaulted (encrypted, applied on next login)"
+    # No public key yet (user never migrated to encryption) — same fallback
+    # _vault_or_update_profile uses for the flat case.
+    return update_nested_profile_field(user_id, section, field, value)
 
 
 def read_profile_yaml_as_text(user_id: str) -> str:
@@ -341,9 +416,9 @@ def read_profile_yaml_as_text(user_id: str) -> str:
     return "\n".join(lines) if lines else t("prof_no_data", get_lang(user_id))
 
 
-def get_recent_observations(user_id: str, days: int = 14) -> str:
+def get_recent_observations(user_id: str, days: int = 14, allow_system_key: bool = False) -> str:
     """Returner observasjoner fra siste N dager (kryptert eller klartekst)."""
-    content = _read_obs_text(user_id)
+    content = _read_obs_text(user_id, allow_system_key=allow_system_key)
     if not content:
         return t("prof_no_observations", get_lang(user_id))
     cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -357,9 +432,14 @@ def get_recent_observations(user_id: str, days: int = 14) -> str:
     return "\n".join(result).strip() if result else t("prof_no_observations", get_lang(user_id))
 
 
-def _trim_observations(user_id: str) -> None:
-    """Fjern observasjoner eldre enn OBS_MAX_DAYS."""
-    content = _read_obs_text(user_id)
+def _trim_observations(user_id: str, allow_system_key: bool = False) -> None:
+    """Fjern observasjoner eldre enn OBS_MAX_DAYS.
+
+    allow_system_key must match whatever add_observation() was just called with —
+    otherwise this would read back "" (no key to decrypt the .enc file it just wrote)
+    and overwrite the fresh observation with a blank one (P87 — caught during Phase 5).
+    """
+    content = _read_obs_text(user_id, allow_system_key=allow_system_key)
     if not content:
         return
     cutoff = (datetime.now() - timedelta(days=OBS_MAX_DAYS)).strftime("%Y-%m-%d")
@@ -370,7 +450,7 @@ def _trim_observations(user_id: str) -> None:
             include = line[3:].strip()[:10] >= cutoff
         if include:
             result.append(line)
-    _write_obs_text(user_id, "\n".join(result) + "\n")
+    _write_obs_text(user_id, "\n".join(result) + "\n", allow_system_key=allow_system_key)
 
 
 def delete_observation_fragment(user_id: str, fragment: str) -> tuple[bool, int]:
@@ -548,6 +628,13 @@ def _apply_vault_payload(user_id: str, payload: dict) -> None:
             payload["field"],
             payload["value"],
             payload.get("reason", "Fra vault"),
+        )
+    elif ptype == "profile_field_nested":
+        update_nested_profile_field(
+            user_id,
+            payload["section"],
+            payload["field"],
+            payload["value"],
         )
     else:
         logger.warning(f"[VAULT] unknown payload type '{ptype}' for {user_id}")

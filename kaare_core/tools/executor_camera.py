@@ -198,7 +198,9 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
             conf = ev.get("top_score") or ev.get("score") or ev.get("confidence") or 0
             face = ev.get("_face_name") or ev.get("sub_label") or ""
             face_str = f" — ansikt: {face}" if face else ""
-            lines.append(f"[{ts_str}] {cam}: {lbl} ({int(float(conf)*100)}%){face_str}")
+            eid = ev.get("id", "")
+            eid_str = f" [event_id: {eid}]" if eid else ""
+            lines.append(f"[{ts_str}] {cam}: {lbl} ({int(float(conf)*100)}%){face_str}{eid_str}")
         return "\n".join(lines)
 
     if action == "list":
@@ -239,15 +241,58 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
         event_id = arguments.get("event_id", "").strip()
         if not event_id:
             return t("cam_event_id_required", lang)
-        snap_path = Path("/kaare/state/frigate_snapshots") / f"{event_id}.jpg"
-        if not snap_path.exists():
-            return t("cam_snapshot_not_found", lang, event_id=event_id)
-        try:
-            img_bytes = snap_path.read_bytes()
-            img_b64 = base64.b64encode(img_bytes).decode()
-        except Exception as e:
-            return t("cam_snapshot_read_error", lang, error=e)
 
+        snap_path = Path("/kaare/state/frigate_snapshots") / f"{event_id}.jpg"
+        img_bytes: bytes | None = None
+
+        if snap_path.exists():
+            try:
+                img_bytes = snap_path.read_bytes()
+            except Exception as e:
+                return t("cam_snapshot_read_error", lang, error=e)
+        else:
+            # Local cache miss — the event may predate the cache, or its
+            # camera/label combo was never gated `analyze: true` in
+            # frigate_cameras.yaml. Fetch live from Frigate's REST API
+            # instead of giving up. Same fetch + 404-retry-once pattern as
+            # frigate_responder.analyze_event().
+            from adapters.frigate_adapter import fetch_event_snapshot
+            try:
+                img_bytes = await asyncio.wait_for(fetch_event_snapshot(event_id), timeout=10)
+            except Exception as e:
+                if "404" in str(e):
+                    await asyncio.sleep(1.5)
+                    try:
+                        img_bytes = await asyncio.wait_for(fetch_event_snapshot(event_id), timeout=10)
+                    except Exception as e2:
+                        logger.warning("[vis_hendelse] REST fallback retry failed for %s: %s", event_id, e2)
+                else:
+                    logger.warning("[vis_hendelse] REST fallback failed for %s: %s", event_id, e)
+
+            if not img_bytes:
+                return t("cam_snapshot_not_found", lang, event_id=event_id)
+
+            # Cache locally for next time, respecting the same size cap the
+            # automatic-analysis write path already enforces.
+            try:
+                from kaare_core.domain.frigate_responder import (
+                    _save_snapshot as _fr_save_snapshot,
+                    _cleanup_snapshots as _fr_cleanup_snapshots,
+                    _cfg as _fr_cfg,
+                )
+                _fr_save_snapshot(event_id, base64.b64encode(img_bytes).decode())
+                snap_max = _fr_cfg().get("storage", {}).get("snapshots_max_mb", 500)
+                _fr_cleanup_snapshots(snap_max)
+            except Exception as e:
+                logger.warning("[vis_hendelse] local cache write failed for %s: %s", event_id, e)
+
+        img_b64 = base64.b64encode(img_bytes).decode()
+
+        # Always route through image_store → /api/image/{id}. Never fall back to
+        # /api/frigate_snapshot/{event_id} as the chat-facing URL — neither
+        # Home.tsx's image regex nor router_generate.py's safety-net regex
+        # recognize that URL shape, so it would render as dead text, not a
+        # picture (confirmed via full-codebase sweep, see plan Research).
         _img_url = ""
         try:
             from kaare_core.image_store import save_image as _save_image
@@ -257,8 +302,6 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
         except Exception as _e:
             logger.warning("[vis_hendelse] save_image feilet for %s (user=%s): %s",
                            event_id, arguments.get("_user_id"), _e)
-        if not _img_url:
-            _img_url = f"/api/frigate_snapshot/{event_id}"
 
         stored_analysis = ""
         try:
@@ -370,7 +413,9 @@ async def _compat_hent_frigate_hendelser(arguments: Dict, lang: str = "nb") -> s
         conf = ev.get("top_score") or ev.get("score") or ev.get("confidence") or 0
         face = ev.get("_face_name") or ev.get("sub_label") or ""
         face_str = f" — ansikt: {face}" if face else ""
-        lines.append(f"[{ts_str}] {cam}: {lbl} ({int(float(conf)*100)}%){face_str}")
+        eid = ev.get("id", "")
+        eid_str = f" [event_id: {eid}]" if eid else ""
+        lines.append(f"[{ts_str}] {cam}: {lbl} ({int(float(conf)*100)}%){face_str}{eid_str}")
     return "\n".join(lines)
 
 

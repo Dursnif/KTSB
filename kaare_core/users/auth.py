@@ -25,10 +25,14 @@ import yaml
 from fastapi import Header, HTTPException, Query, status
 from typing import Optional
 
-from kaare_core.users.store import get_user_with_hash, verify_pin, get_keypair_data, store_keypair, has_keypair
+from kaare_core.users.store import (
+    get_user_with_hash, verify_pin, get_keypair_data, store_keypair, has_keypair,
+    store_system_encrypted_key, get_system_encrypted_key,
+)
 from kaare_core.crypto import (
     generate_keypair, generate_salt, derive_key_from_pin,
     encrypt_private_key, decrypt_private_key, private_key_to_seed_phrase,
+    ensure_system_master_key,
 )
 from kaare_core import session_keys as _session_keys
 
@@ -106,9 +110,22 @@ def setup_keypair(username: str, pin: str) -> Optional[str]:
     public_key_b64 = base64.b64encode(public_key_bytes).decode()
     argon2_salt_b64 = base64.b64encode(salt).decode()
     store_keypair(username, public_key_b64, encrypted_pk, argon2_salt_b64)
+    _store_system_key_copy(username, private_key_bytes)
     seed_phrase = private_key_to_seed_phrase(private_key_bytes)
     logger.info(f"[AUTH] keypair generated and stored for {username}")
     return seed_phrase
+
+
+def _store_system_key_copy(username: str, private_key_bytes: bytes) -> None:
+    """Store a second copy of the private key encrypted with the system master key (P87).
+
+    Lets Kåre's own background jobs (reflection meeting, dev meeting, nightjob,
+    STM restart-recovery) decrypt this user's data without a live PIN session —
+    see session_keys.py::resolve_key_sync(). Never used for interactive reads.
+    """
+    master_key = ensure_system_master_key()
+    system_blob = encrypt_private_key(private_key_bytes, master_key)
+    store_system_encrypted_key(username, system_blob)
 
 
 def _restore_stm_from_history(username: str, stm) -> None:
@@ -160,6 +177,12 @@ async def unlock_session(username: str, pin: str, expires_at: float) -> bool:
         derived_key = derive_key_from_pin(pin, salt)
         private_key = decrypt_private_key(kp["encrypted_private_key"], derived_key)
         await _session_keys.store_session_key(username, private_key, expires_at)
+        # P87 lazy backfill: users created before the system key existed have a
+        # keypair but no system_encrypted_private_key column value yet. Populate
+        # it now that we have the decrypted private key in hand from a real PIN login.
+        if get_system_encrypted_key(username) is None:
+            _store_system_key_copy(username, private_key)
+            logger.info(f"[AUTH] system key backfilled for {username}")
         # Reload encrypted STM snapshot now that session key is in RAM
         try:
             from kaare_core.app_state import STM_REGISTRY

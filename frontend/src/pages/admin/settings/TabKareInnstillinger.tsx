@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { apiGetKareSettings, apiPutKareSettings, type ContributorMode, type PersonalityMode } from "@/services/api";
 import { BASE, token } from "./constants";
-import { useSaveState, FieldRow, SaveFeedback, RadioOption } from "./shared";
+import { useSaveState, FieldRow, SaveFeedback, RadioOption, ExpertOnly } from "./shared";
 
 type UserEntry = { username: string; display_name: string; role: string };
 
@@ -21,10 +21,13 @@ export default function TabKareInnstillinger() {
   const [defaultPersonality, setDefaultPersonality] = useState("");
   const [mode, setMode] = useState<ContributorMode>("selected");
   const [allowedUsers, setAllowedUsers] = useState<string[]>([]);
+  const [reflexMode, setReflexMode] = useState<ContributorMode>("admin_only");
+  const [reflexAllowedUsers, setReflexAllowedUsers] = useState<string[]>([]);
   const [allUsers, setAllUsers] = useState<UserEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const ssPersonality = useSaveState();
   const ssSelfimage   = useSaveState();
+  const ssReflex      = useSaveState();
 
   useEffect(() => {
     Promise.all([
@@ -38,12 +41,20 @@ export default function TabKareInnstillinger() {
       setDefaultPersonality(kare.personality_core_default ?? "");
       setMode(kare.personality_self.contributors);
       setAllowedUsers(kare.personality_self.allowed_users);
+      setReflexMode(kare.automation_reflex.contributors);
+      setReflexAllowedUsers(kare.automation_reflex.allowed_users);
       setAllUsers((usersRes.data as UserEntry[]).filter(u => u.username !== "admin"));
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   const toggleUser = (username: string) => {
     setAllowedUsers(prev =>
+      prev.includes(username) ? prev.filter(u => u !== username) : [...prev, username]
+    );
+  };
+
+  const toggleReflexUser = (username: string) => {
+    setReflexAllowedUsers(prev =>
       prev.includes(username) ? prev.filter(u => u !== username) : [...prev, username]
     );
   };
@@ -69,6 +80,16 @@ export default function TabKareInnstillinger() {
       });
       ssSelfimage.saved();
     } catch { ssSelfimage.error(); }
+  };
+
+  const saveReflex = async () => {
+    ssReflex.saving();
+    try {
+      await apiPutKareSettings({
+        automation_reflex: { contributors: reflexMode, allowed_users: reflexAllowedUsers },
+      });
+      ssReflex.saved();
+    } catch { ssReflex.error(); }
   };
 
   if (loading) return <div className="text-muted-foreground text-sm">{t("common.loading")}</div>;
@@ -159,7 +180,8 @@ export default function TabKareInnstillinger() {
         </CardContent>
       </Card>
 
-      <Card>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+      <Card className="h-full">
         <CardHeader>
           <CardTitle>{t("settings.kare.selfimage.title")}</CardTitle>
           <CardDescription>{t("settings.kare.selfimage.description")}</CardDescription>
@@ -173,6 +195,7 @@ export default function TabKareInnstillinger() {
               <Input value={hotword} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHotword(e.target.value)} placeholder="Kåre" className="w-48" />
             </FieldRow>
           </div>
+          <ExpertOnly><>
           <div className="mb-2">
             <Label className="text-sm font-medium">{t("settings.kare.selfimage.who_shapes")}</Label>
           </div>
@@ -235,6 +258,7 @@ export default function TabKareInnstillinger() {
               <p className="text-xs text-muted-foreground mt-2">{t("settings.kare.selfimage.admin_note")}</p>
             </div>
           )}
+          </></ExpertOnly>
 
           <div className="flex items-center gap-3">
             <Button onClick={saveSelfimage} disabled={ssSelfimage.state === "saving"}>
@@ -245,6 +269,88 @@ export default function TabKareInnstillinger() {
           </div>
         </CardContent>
       </Card>
+
+      <Card className="h-full">
+        <CardHeader>
+          <CardTitle>{t("settings.kare.automationreflex.title")}</CardTitle>
+          <CardDescription>{t("settings.kare.automationreflex.description")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ExpertOnly><>
+          <div className="mb-2">
+            <Label className="text-sm font-medium">{t("settings.kare.automationreflex.who_approves")}</Label>
+          </div>
+          <div className="divide-y divide-border mb-5">
+            <RadioOption
+              value="all"
+              current={reflexMode}
+              onChange={(v) => setReflexMode(v as ContributorMode)}
+              label={t("settings.kare.automationreflex.modes.all_label")}
+              description={t("settings.kare.automationreflex.modes.all_desc")}
+            />
+            <RadioOption
+              value="selected"
+              current={reflexMode}
+              onChange={(v) => setReflexMode(v as ContributorMode)}
+              label={t("settings.kare.automationreflex.modes.selected_label")}
+              description={t("settings.kare.automationreflex.modes.selected_desc")}
+            />
+            <RadioOption
+              value="admin_only"
+              current={reflexMode}
+              onChange={(v) => setReflexMode(v as ContributorMode)}
+              label={t("settings.kare.automationreflex.modes.admin_only_label")}
+              description={t("settings.kare.automationreflex.modes.admin_only_desc")}
+            />
+          </div>
+
+          {reflexMode === "selected" && (
+            <div className="mb-5">
+              <Label className="text-sm font-medium mb-2 block">{t("settings.kare.automationreflex.allowed_users_label")}</Label>
+              {allUsers.length === 0 && (
+                <p className="text-xs text-muted-foreground">{t("settings.kare.automationreflex.no_users")}</p>
+              )}
+              <div className="flex flex-wrap gap-2 mt-1">
+                {allUsers.map(u => {
+                  const checked = reflexAllowedUsers.includes(u.username);
+                  return (
+                    <button
+                      key={u.username}
+                      type="button"
+                      onClick={() => toggleReflexUser(u.username)}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm transition-colors ${
+                        checked
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground hover:border-muted-foreground"
+                      }`}
+                    >
+                      <span className={`w-3.5 h-3.5 rounded flex-shrink-0 border flex items-center justify-center transition-colors ${checked ? "bg-primary border-primary" : "border-muted-foreground"}`}>
+                        {checked && (
+                          <svg viewBox="0 0 12 12" className="w-2.5 h-2.5 fill-white">
+                            <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </span>
+                      {u.display_name || u.username}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">{t("settings.kare.automationreflex.admin_note")}</p>
+            </div>
+          )}
+          </></ExpertOnly>
+
+          <div className="flex items-center gap-3">
+            <Button onClick={saveReflex} disabled={ssReflex.state === "saving"}>
+              {ssReflex.state === "saving" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {t("common.save")}
+            </Button>
+            <SaveFeedback state={ssReflex.state} />
+          </div>
+        </CardContent>
+      </Card>
+      </div>
     </div>
   );
 }

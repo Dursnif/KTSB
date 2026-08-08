@@ -12,6 +12,9 @@ import logging
 import time
 from dataclasses import dataclass, field
 
+from kaare_core import crypto as _crypto
+from kaare_core.users import store as _store
+
 logger = logging.getLogger(__name__)
 
 
@@ -54,6 +57,41 @@ def get_session_key_sync(user_id: str) -> bytes | None:
         _sessions.pop(user_id, None)
         return None
     return entry.private_key
+
+
+def get_system_key_sync(user_id: str) -> bytes | None:
+    """Decrypt a user's private key with the system master key (P87 — unattended access).
+
+    Returns None if the user has no system-encrypted key stored yet (pre-P87 user,
+    backfilled on next PIN login — see users/auth.py::unlock_session) or on decrypt
+    failure. Never call this for interactive/GUI-facing reads — use resolve_key_sync()
+    with allow_system_key=True only from confirmed background callers.
+    """
+    blob = _store.get_system_encrypted_key(user_id)
+    if not blob:
+        return None
+    master_key = _crypto.ensure_system_master_key()
+    try:
+        return _crypto.decrypt_private_key(blob, master_key)
+    except Exception:
+        logger.warning(f"[SESSION_KEYS] system key decrypt failed for {user_id}")
+        return None
+
+
+def resolve_key_sync(user_id: str, allow_system_key: bool = False) -> bytes | None:
+    """Live session key first; system key only if the caller explicitly opts in.
+
+    Background jobs (reflection meeting, dev meeting, nightjob, STM restart-recovery)
+    pass allow_system_key=True at their own call sites. Interactive/GUI-facing paths
+    (e.g. kaare_api.py's needs_unlock flag, PIN-change re-encryption) must never pass
+    True — see P87 Invariants.
+    """
+    key = get_session_key_sync(user_id)
+    if key is not None:
+        return key
+    if allow_system_key:
+        return get_system_key_sync(user_id)
+    return None
 
 
 async def revoke_session_key(user_id: str) -> None:

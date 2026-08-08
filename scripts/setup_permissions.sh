@@ -23,7 +23,6 @@ SERVICES=(
   kaare-warmup.service
   kaare-night-sequence.service
   kaare_intent_server.service
-  kaare-vaktmester.service
 )
 
 for svc in "${SERVICES[@]}"; do
@@ -62,6 +61,7 @@ find /kaare -type d \
   -not -path "*/node_modules/*" \
   -not -path "*/.git/*" \
   -not -path "*/venv/*" \
+  -not -path "*/.ssh/*" \
   -exec chmod g+s {} +
 
 echo "  setgid applied"
@@ -88,6 +88,7 @@ find /kaare -type d \
   -not -path "*/node_modules/*" \
   -not -path "*/.git/*" \
   -not -path "*/venv/*" \
+  -not -path "*/.ssh/*" \
   -exec chmod 775 {} +
 
 # Regular files
@@ -95,7 +96,19 @@ find /kaare -type f \
   -not -path "*/node_modules/*" \
   -not -path "*/.git/*" \
   -not -path "*/venv/*" \
+  -not -path "*/.ssh/*" \
   -exec chmod 664 {} +
+
+# SSH config directory needs strict, non-group-writable permissions —
+# OpenSSH refuses to use a config/key file writable by anyone but the owner,
+# and the kaare group has multiple members (kaare, stian).
+if [ -d /kaare/.ssh ]; then
+  chmod 700 /kaare/.ssh
+  find /kaare/.ssh -name "id_*" -not -name "*.pub" -exec chmod 600 {} +
+  [ -f /kaare/.ssh/config ] && chmod 600 /kaare/.ssh/config
+  find /kaare/.ssh -name "*.pub" -o -name "known_hosts" | xargs -r chmod 644
+  echo "  /kaare/.ssh locked down (700/600)"
+fi
 
 # Shell scripts
 find /kaare -name "*.sh" \
