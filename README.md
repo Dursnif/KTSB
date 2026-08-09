@@ -8,25 +8,29 @@
 
 **The AI layer your smart home is missing.**
 
-> Frigate watches your cameras. Home Assistant controls your devices. KTSB is the intelligence that ties them together — running entirely on your own hardware, with no cloud required.
-
 ---
 
 ## Why does this exist?
 
-If you run a smart home with Home Assistant and Frigate, you have probably noticed something: adding AI to the mix destroys the machine it runs on.
+Most local AI projects are built by developers, for developers. They require you to live in the terminal, copy-paste cryptic commands, and edit complex config files just to get a basic feature working. If you don't know how to code, setting up a private, local AI agent network feels impossible.
 
-It makes sense when you think about it. Home Assistant is an I/O powerhouse — juggling hundreds of sensors, automations, and integrations all day. Frigate is doing real-time video processing for every camera on your property. Neither of them has spare capacity for a large language model. No matter how powerful the hardware you buy, cramming all three onto one machine is a death sentence.
+**KTSB was built to change that.**
 
-**KTSB is the third piece.** It runs on its own dedicated machine — even a mid-range mini PC works — connects to your existing Home Assistant and Frigate installs, and handles everything AI-related:
+The creator of KTSB didn't know how to code either — still doesn't, and has never written a single line of it. The entire project was built over 12 months using ChatGPT copy-paste between terminal and chat, and later, Claude Code directly in the terminal. It was born out of pure frustration with how uncomfortable, difficult, and text-heavy the local AI landscape is for regular people — and the conviction that architecture, decisions, and years of frustration are still ownership, even without a single commit written by hand.
+
+KTSB is built for **the average user**, not the terminal-comfortable developer: full access to the most advanced AI agent features spoken about today — completely free for private use, entirely local, and managed 100% through a beautiful, intuitive web GUI.
+
+No terminal required after the initial setup. No configuration files to edit manually.
+
+KTSB fits seamlessly alongside your existing **Home Assistant** and **Frigate** setup, running on its own dedicated machine and connecting to both over the network — each system keeps doing what it already does best.
+
+And because it's yours, you decide how deep you go: tune the personality, prompts, and model choices yourself, or just use the ready-built defaults and start talking.
 
 - Understanding what you say in natural language
 - Controlling your smart home through Home Assistant
 - Analysing camera footage through Frigate
 - Answering questions, setting timers, searching the web
 - Remembering your preferences and conversations over time
-
-Each system stays focused on what it does best.
 
 ![KTSB Dashboard](docs/dashboard.jpg)
 
@@ -82,6 +86,8 @@ Kåre runs via **Docker**, which means it works on Linux, Windows, and macOS wit
 **No GPU?** Kåre still works fully. Connect a cloud LLM provider (like OpenAI) in Settings, or run small models on CPU — slower but functional.
 
 **No Home Assistant or Frigate?** That is fine too. Kåre works as a standalone AI assistant and you can add integrations whenever you are ready.
+
+**Already running Home Assistant or Frigate?** KTSB's own code is lightweight — it is the LLM behind it that is demanding. Running KTSB on the same machine as Home Assistant or Frigate can cause KTSB to introduce delays on those systems instead of the other way around. A separate machine, even a modest one, keeps everything responsive.
 
 ---
 
