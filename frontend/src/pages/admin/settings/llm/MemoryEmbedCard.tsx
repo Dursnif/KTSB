@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +12,7 @@ import { useSaveState, ExpertOnly } from "../shared";
 export type MemoryEmbedData = { enabled: boolean; model_dir: string };
 
 export function MemoryEmbedCard({ data, onSaved }: { data: MemoryEmbedData; onSaved: () => void }) {
+  const { t } = useTranslation();
   const [collapsed, setCollapsed] = useState(true);
   const [enabled, setEnabled]     = useState(data.enabled);
   const [modelDir, setModelDir]   = useState(data.model_dir);
@@ -32,9 +34,9 @@ export function MemoryEmbedCard({ data, onSaved }: { data: MemoryEmbedData; onSa
           className="flex items-center gap-3 cursor-pointer select-none flex-1"
           onClick={() => setCollapsed(v => !v)}
         >
-          <CardTitle className="text-base">Semantisk minne (MiniLM)</CardTitle>
+          <CardTitle className="text-base">{t("settings.llm.memembed_title")}</CardTitle>
           <Badge variant="outline" className="text-xs font-mono">port 11500</Badge>
-          <span className="text-xs text-muted-foreground">{enabled ? "aktiv" : "deaktivert"}</span>
+          <span className="text-xs text-muted-foreground">{enabled ? t("common.enabled") : t("common.disabled")}</span>
         </div>
         <div className="flex items-center gap-3">
           <Switch
@@ -53,11 +55,11 @@ export function MemoryEmbedCard({ data, onSaved }: { data: MemoryEmbedData; onSa
         <CardContent className="space-y-5 pt-0">
           <ExpertOnly><>
           <div className="rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs text-blue-300/90">
-            384-dim embedding for semantisk minnesøk. Bruker <strong>paraphrase-multilingual-MiniLM-L12-v2</strong> (ONNX).
-            Modellen må ligge lokalt — plasser <code>model.onnx</code> og <code>tokenizer.json</code> i mappen under.
+            {t("settings.llm.memembed_intro", { model: "paraphrase-multilingual-MiniLM-L12-v2" })}{" "}
+            {t("settings.llm.memembed_files")} <code>model.onnx</code>, <code>tokenizer.json</code>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Modellmappe</Label>
+            <Label className="text-xs text-muted-foreground">{t("settings.llm.memembed_model_dir_label")}</Label>
             <input
               value={modelDir}
               onChange={e => setModelDir(e.target.value)}
@@ -69,14 +71,14 @@ export function MemoryEmbedCard({ data, onSaved }: { data: MemoryEmbedData; onSa
           <div className="flex items-center gap-3">
             <Button size="sm" onClick={save} disabled={ss.state === "saving"}>
               {ss.state === "saving" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-              Lagre
+              {t("common.save")}
             </Button>
-            {ss.state === "saved"  && <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Lagret</span>}
-            {ss.state === "error"  && <span className="text-xs text-red-400 flex items-center gap-1"><XCircle className="h-3 w-3" /> Feil</span>}
+            {ss.state === "saved"  && <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> {t("common.saved")}</span>}
+            {ss.state === "error"  && <span className="text-xs text-red-400 flex items-center gap-1"><XCircle className="h-3 w-3" /> {t("common.error")}</span>}
           </div>
           <ExpertOnly>
           <p className="text-xs text-muted-foreground">
-            Tjenesten starter automatisk når den aktiveres og modellfilene finnes i mappen.
+            {t("settings.llm.memembed_autostart_hint")}
           </p>
           </ExpertOnly>
         </CardContent>

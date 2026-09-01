@@ -159,19 +159,24 @@ def _restore_stm_from_history(username: str, stm) -> None:
         logger.warning(f"[AUTH] STM history restore failed for {username}: {e}")
 
 
-async def unlock_session(username: str, pin: str, expires_at: float) -> bool:
+async def unlock_session(username: str, pin: str, expires_at: float) -> tuple[bool, Optional[str]]:
     """Decrypt private key with PIN and store in RAM for this session.
-    Returns True on success, False if no keypair or wrong PIN.
+    Returns (success, new_seed_phrase). new_seed_phrase is only non-None when a keypair was
+    just generated for this user right here (first login for a pre-existing account created
+    before crypto deploy) — the caller must surface it to the user immediately, same as at
+    account creation, since it is never shown again (P95 Phase 4 — previously this phrase was
+    silently discarded, leaving the user with no recovery path at all).
     Also processes any pending vault files written while the user was offline."""
     if username in SYSTEM_ACCOUNTS:
-        return False
+        return False, None
     kp = get_keypair_data(username)
+    new_seed_phrase = None
     if not kp:
         # First login after crypto deploy — generate keypair for pre-existing user
-        setup_keypair(username, pin)
+        new_seed_phrase = setup_keypair(username, pin)
         kp = get_keypair_data(username)
         if not kp:
-            return False
+            return False, None
     try:
         salt = base64.b64decode(kp["argon2_salt"])
         derived_key = derive_key_from_pin(pin, salt)
@@ -219,10 +224,10 @@ async def unlock_session(username: str, pin: str, expires_at: float) -> bool:
             threading.Thread(target=migrate_user_ltm, args=(username,), daemon=True).start()
         except Exception as le:
             logger.warning(f"[AUTH] LTM migration trigger error for {username}: {le}")
-        return True
+        return True, new_seed_phrase
     except Exception as e:
         logger.warning(f"[AUTH] failed to unlock session key for {username}: {e}")
-        return False
+        return False, None
 
 
 async def end_session(username: str) -> None:

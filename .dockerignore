@@ -37,6 +37,7 @@ models/
 .git/
 .gitignore
 .github/
+.ssh/
 CLAUDE.md
 CURRENT.md
 

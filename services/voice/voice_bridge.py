@@ -25,7 +25,7 @@ import soundfile as sf
 import yaml
 from kaare_core.voice.registry import VoiceProviderRegistry
 from kaare_core.voice.wyoming_server import WyomingServer
-from kaare_core.tools.i18n import t, get_lang
+from kaare_core.tools.i18n import t, get_lang, get_speech_lang
 from fastapi import FastAPI, BackgroundTasks, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -72,7 +72,7 @@ STT_FW_MODEL   = _voice_svc["stt"].get("faster_whisper_model", "large-v3")
 STT_FW_COMPUTE = _voice_svc["stt"].get("faster_whisper_compute_type", "int8")
 VENV_PYTHON    = Path(_voice_svc["venv_python"])
 PIPER_BIN      = VENV_PYTHON  # called with -m piper.__main__
-MAX_RECORD_SEC = 8
+MAX_RECORD_SEC = cfg["stt"]["max_record_seconds"]
 SILENCE_SEC    = cfg["stt"]["silence_threshold_seconds"]
 SILENCE_AMP    = cfg["stt"]["silence_amplitude_threshold"]
 
@@ -457,10 +457,10 @@ def _wav_duration_seconds(wav_path: Path) -> float:
         return 5.0
 
 
-def record_audio() -> np.ndarray:
+def record_audio(rid: str = "") -> np.ndarray:
     """
     Ta opp fra mikrofon (device 4, 44100Hz stereo).
-    Stopper ved 1.5s stillhet eller maks 8s.
+    Stopper ved SILENCE_SEC stillhet eller maks MAX_RECORD_SEC.
     Returnerer mono 16kHz float32-array.
     """
     import sounddevice as sd
@@ -470,6 +470,11 @@ def record_audio() -> np.ndarray:
 
     frames = []
     silent_chunks = 0
+    amp_min: float | None = None
+    amp_max: float | None = None
+    amp_sum = 0.0
+    n_chunks = 0
+    stopped_by = "max_duration"
 
     log.info("Starter opptak …")
     with sd.InputStream(device=MIC_DEVICE, samplerate=MIC_RATE,
@@ -479,14 +484,28 @@ def record_audio() -> np.ndarray:
             data, _ = stream.read(chunk)
             frames.append(data)
             # Bruk venstre kanal for amplitudemåling
-            amplitude = np.abs(data[:, 0]).mean()
+            amplitude = float(np.abs(data[:, 0]).mean())
+            amp_min = amplitude if amp_min is None else min(amp_min, amplitude)
+            amp_max = amplitude if amp_max is None else max(amp_max, amplitude)
+            amp_sum += amplitude
+            n_chunks += 1
             if amplitude < SILENCE_AMP:
                 silent_chunks += 1
                 if silent_chunks >= silence_chunks_needed:
+                    stopped_by = "silence"
                     log.info("Stillhet detektert, stopper opptak.")
                     break
             else:
                 silent_chunks = 0
+
+    _route_log_voice(
+        rid, "stt_record_stats",
+        stopped_by=stopped_by,
+        silence_threshold=SILENCE_AMP,
+        amp_min=round(amp_min, 4) if amp_min is not None else None,
+        amp_max=round(amp_max, 4) if amp_max is not None else None,
+        amp_mean=round(amp_sum / n_chunks, 4) if n_chunks else None,
+    )
 
     if not frames:
         return np.array([], dtype=np.float32)
@@ -505,14 +524,34 @@ def record_audio() -> np.ndarray:
 
 
 
-_HALLUCINATIONS = {"takk for at du så på.", "takk for titten.", "takk for meg."}
+_HALLUCINATIONS = {
+    # Norwegian
+    "takk for at du så på.", "takk for titten.", "takk for meg.",
+    # English
+    "thank you for watching.", "thanks for watching!", "thanks for watching.",
+    "please subscribe.", "see you next time.", "bye.",
+    # German
+    "vielen dank fürs zuschauen.", "bis zum nächsten mal.",
+    "untertitelung aufgrund der amara.org-community",
+}
+
+
+# kare_language's 16 GUI-selectable values are already valid Whisper language codes except
+# "nb" (Bokmål) — Whisper only knows the generic "no" for Norwegian.
+_WHISPER_LANG_MAP = {"nb": "no"}
+
+
+def _stt_language() -> str:
+    """Resolve the Whisper STT language code from kare_language (P101), uncollapsed."""
+    code = get_speech_lang()
+    return _WHISPER_LANG_MAP.get(code, code)
 
 
 def _transcribe_openvino(audio: np.ndarray) -> str:
     import openvino_genai
     config = openvino_genai.WhisperGenerationConfig(str(STT_MODEL_DIR / "generation_config.json"))
     config.task = "transcribe"
-    config.language = "<|no|>"
+    config.language = f"<|{_stt_language()}|>"
     config.num_beams = 1
     result = _stt_model.generate(np.ascontiguousarray(audio.flatten(), dtype=np.float32), config)
     return result.texts[0].strip() if result.texts else ""
@@ -521,7 +560,7 @@ def _transcribe_openvino(audio: np.ndarray) -> str:
 def _transcribe_faster_whisper(audio: np.ndarray) -> str:
     segments, _ = _stt_model.transcribe(
         audio.flatten().astype(np.float32),
-        language="no",
+        language=_stt_language(),
         beam_size=1,
         vad_filter=True,
     )
@@ -616,9 +655,11 @@ async def run_pipeline(node_id: str, room: str = "", default_user: str = "") -> 
         await loop.run_in_executor(None, play_wav, WAKE_ACK_WAV)
     else:
         await loop.run_in_executor(None, speak, "Ja?")
+    _route_log_voice(rid, "stt_ack_done", elapsed_ms=int((time.time() - t0) * 1000))
 
     # 2. Ta opp brukerens stemme
-    audio = await loop.run_in_executor(None, record_audio)
+    audio = await loop.run_in_executor(None, record_audio, rid)
+    _route_log_voice(rid, "stt_record_done", elapsed_ms=int((time.time() - t0) * 1000))
 
     if audio.size < TARGET_RATE * 0.3:
         log.warning("For lite lyd fra %s, avbryter.", node_id)
@@ -626,6 +667,7 @@ async def run_pipeline(node_id: str, room: str = "", default_user: str = "") -> 
 
     # 2b. AGC: normaliser lydnivå for Whisper
     audio = await loop.run_in_executor(None, _agc, audio)
+    _route_log_voice(rid, "stt_agc_done", elapsed_ms=int((time.time() - t0) * 1000))
 
     # 2c. Speaker identification (non-blocking, feiler stille)
     speaker_id: str | None = None
@@ -683,7 +725,7 @@ async def run_pipeline(node_id: str, room: str = "", default_user: str = "") -> 
     _route_log_voice(rid, "stt_kaare_done", total_ms=int((time.time() - t0) * 1000))
 
     # 5. TTS → WAV → avspilling
-    wav_path = await loop.run_in_executor(None, generate_speech_wav, answer)
+    wav_path = await loop.run_in_executor(None, generate_speech_wav, answer, get_speech_lang())
     playback_mode = cfg.get("bridge", {}).get("playback_mode", "local")
     if playback_mode == "esp32":
         await play_on_esp32(wav_path, node_id)
@@ -899,7 +941,7 @@ def _resolve_targets(target: str) -> list[str]:
             return ["local"]
         return [nid]
 
-    # Substring fallback — "patrick" matches "soverom_patrick"
+    # Substring fallback — "alex" matches "soverom_alex"
     substring_nodes = [
         nid for nid, ncfg in _nodes.items()
         if ncfg.get("enabled", True)
@@ -1087,7 +1129,7 @@ async def tts_file_endpoint(request: TtsFileRequest, background_tasks: Backgroun
 
     loop = asyncio.get_running_loop()
     try:
-        wav_path = await loop.run_in_executor(None, generate_speech_wav, request.text)
+        wav_path = await loop.run_in_executor(None, generate_speech_wav, request.text, get_speech_lang())
     except Exception as exc:
         log.error("TTS generation failed: %s", exc)
         raise HTTPException(status_code=500, detail="TTS generation failed")

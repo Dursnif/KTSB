@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from kaare_core.config import get_service as _svc, get_settings as _get_settings
-from kaare_core.tools.i18n import t, get_lang
+from kaare_core.tools.i18n import t, get_lang, get_speech_lang
 from kaare_core.users.profile_manager import get_profile_flag as _get_profile_flag
 from kaare_core.users.store import get_user as _get_user
 
@@ -225,7 +225,7 @@ async def _deliver_tts(timer_info: Dict[str, Any]) -> None:
         # target_node overstyrer source_node; fallback til "local" (aplay på AI-PC)
         target = timer_info.get("target_node") or timer_info.get("source_node") or "local"
         user_id = timer_info.get("user_id", "global")
-        lang = get_lang(user_id)
+        lang = get_speech_lang(user_id)
         voice_url = _svc("internal", "voice_bridge")
         async with httpx.AsyncClient(timeout=30.0) as client:
             r = await client.post(f"{voice_url}/speak", json={"text": tts_text, "target": target, "lang": lang})
@@ -451,7 +451,7 @@ async def _fire(timer_id: str, timer_info: Dict[str, Any]):
                 from kaare_core.app_state import get_stm
                 message = timer_info.get("tts_text") or timer_info.get("prompt", "")
                 fire_local = datetime.now().strftime("%H:%M")
-                stm_text = f"[Timer avfyrt {fire_local} | rid: {rid}] Kåre leverte: «{message[:120]}»"
+                stm_text = t("timer_stm_fired", get_lang(user_id), time=fire_local, rid=rid, message=message[:120])
                 get_stm(user_id).add_dialog(role="system", text=stm_text, user_id=user_id)
                 _log("timer_stm_written", rid=rid, timer_id=timer_id, user_id=user_id)
             except Exception as e:

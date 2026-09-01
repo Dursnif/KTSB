@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import shutil
 import subprocess
 import uuid as _uuid
@@ -10,6 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 import kaare_core.app_state as app_state
 from kaare_core.users.auth import require_auth as _require_auth, require_admin as _require_admin
 from kaare_core.config import get_model, reload_capability_services
+from kaare_core.tools.i18n import get_lang as _get_lang
 
 router = APIRouter()
 
@@ -42,7 +44,7 @@ _AGENT_TOGGLEABLE     = {"miss_kare", "mechanic", "library", "fallback", "cloud"
 _OLLAMA_OPTION_KEYS   = {"num_ctx", "num_predict", "temperature", "presence_penalty", "top_k", "top_p"}
 _CLOUD_OPTION_KEYS    = {"temperature", "top_p", "max_tokens"}
 _IMAGE_OPTION_KEYS    = {"num_inference_steps", "guidance_scale", "true_cfg_scale", "response_format", "enabled"}
-_VLLM_OPTION_KEYS     = {"max_tokens", "temperature", "top_p", "presence_penalty", "frequency_penalty"}
+_VLLM_OPTION_KEYS     = {"max_tokens", "temperature", "top_p", "presence_penalty", "frequency_penalty", "top_k", "min_p"}
 _VLLM_DOCKER_KEYS     = {"max_model_len", "kv_cache_dtype", "gpu_memory_utilization", "max_num_seqs", "gpu_id"}
 _OLLAMA_ENV_KEYS      = {"num_threads", "num_parallel", "max_loaded_models", "flash_attention", "kv_cache_type"}
 
@@ -301,11 +303,16 @@ def _get_personality_default(lang: str) -> str:
     return _PERSONALITY_CORE_STANDARD_PATH.read_text(encoding="utf-8") if _PERSONALITY_CORE_STANDARD_PATH.exists() else ""
 
 
-def _ps_preset_file(role: str) -> Path:
-    if role == "undersøker":
-        return _PS_AGENT_DIR / "personlighet_undersøker.md"
-    if role in ("kritiker", "analytiker"):
+def _ps_preset_file(role: str, lang: str = "nb") -> Path:
+    suffix = "" if lang == "nb" else f"_{lang}"
+    if role in ("undersøker", "kritiker", "analytiker"):
+        path = _PS_AGENT_DIR / f"personlighet_{role}{suffix}.md"
+        if path.exists():
+            return path
         return _PS_AGENT_DIR / f"personlighet_{role}.md"
+    path = _PS_AGENT_DIR / f"personlighet{suffix}.md"
+    if path.exists():
+        return path
     return _PS_AGENT_DIR / "personlighet.md"
 
 
@@ -889,7 +896,6 @@ def api_get_services(_u=Depends(_require_auth)):
             "stt_backend":          voice_stt.get("backend", "openvino"),
             "faster_whisper_model": voice_stt.get("faster_whisper_model", "large-v3"),
             "compute_type":         voice_stt.get("faster_whisper_compute_type", "int8"),
-            "language":             voice_stt.get("language", "no"),
             "stt_enabled":          voice_stt.get("enabled", True),
             "model_dir":            voice_stt.get("model_dir", ""),
         },
@@ -1041,19 +1047,16 @@ async def api_put_services_memory_embed(payload: dict, _u=Depends(_require_admin
 
 @router.put("/api/settings/services/voice")
 async def api_put_services_voice(payload: dict, _u=Depends(_require_admin)):
-    allowed = {"stt_backend", "faster_whisper_model", "compute_type", "language", "stt_enabled", "model_dir"}
+    allowed = {"stt_backend", "faster_whisper_model", "compute_type", "stt_enabled", "model_dir"}
     unknown = set(payload) - allowed
     if unknown:
         raise HTTPException(400, f"Unknown field in payload: {unknown}")
     valid_backends = {"openvino", "faster_whisper"}
     valid_compute_types = {"int8", "float16", "float32", "int8_float16"}
-    valid_languages = {"no", "nn", "en", "de", "fr", "es", "zh", "auto"}
     if "stt_backend" in payload and payload["stt_backend"] not in valid_backends:
         raise HTTPException(400, f"stt_backend must be one of: {valid_backends}")
     if "compute_type" in payload and payload["compute_type"] not in valid_compute_types:
         raise HTTPException(400, f"compute_type must be one of: {valid_compute_types}")
-    if "language" in payload and payload["language"] not in valid_languages:
-        raise HTTPException(400, f"language must be one of: {valid_languages}")
     data = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
     stt = data.setdefault("voice", {}).setdefault("stt", {})
     if "stt_backend" in payload:
@@ -1062,8 +1065,6 @@ async def api_put_services_voice(payload: dict, _u=Depends(_require_admin)):
         stt["faster_whisper_model"] = str(payload["faster_whisper_model"])
     if "compute_type" in payload:
         stt["faster_whisper_compute_type"] = payload["compute_type"]
-    if "language" in payload:
-        stt["language"] = payload["language"]
     if "stt_enabled" in payload:
         stt["enabled"] = bool(payload["stt_enabled"])
     if "model_dir" in payload:
@@ -1948,7 +1949,7 @@ async def api_get_meeting_roles(_u=Depends(_require_admin)):
     mk_role = mr.get("miss_kare", "empatisk")
     ps_custom = _MEETING_ROLE_PS_CUSTOM.read_text(encoding="utf-8") if _MEETING_ROLE_PS_CUSTOM.exists() else ""
     mk_custom = _MEETING_ROLE_MK_CUSTOM.read_text(encoding="utf-8") if _MEETING_ROLE_MK_CUSTOM.exists() else ""
-    ps_def_file = _ps_preset_file(ps_role if ps_role != "egendefinert" else "undersøker")
+    ps_def_file = _ps_preset_file(ps_role if ps_role != "egendefinert" else "undersøker", lang=_get_lang())
     mk_def_file = _mk_preset_file(mk_role if mk_role != "egendefinert" else "empatisk")
     ps_default = ps_def_file.read_text(encoding="utf-8") if ps_def_file.exists() else ""
     mk_default = mk_def_file.read_text(encoding="utf-8") if mk_def_file.exists() else ""
@@ -2032,6 +2033,14 @@ _JING_THOUGHTS_PATH  = Path("/kaare/state/jing_thoughts.txt")
 _INNER_THOUGHTS_PATH = Path("/kaare/state/inner_thoughts.txt")
 _VALID_PROVIDERS = {"openvino", "mlx", "cpu", "remote"}
 
+# docker-compose.yml hardcodes PROVIDER=openvino as the build-arg for both
+# kaare-jing and kaare-jang — only openvino-genai/optimum-intel are ever
+# actually installed in the built image. Picking cpu/mlx in Docker mode
+# crash-loops the container (missing torch/transformers or mlx_lm) with no
+# GUI-visible error. "remote" needs no local provider at all, always safe.
+_IN_DOCKER = os.path.exists("/.dockerenv")
+_DOCKER_SAFE_PROVIDERS = {"openvino", "remote"}
+
 
 @router.get("/api/settings/inner-voices")
 async def api_get_inner_voices(_u=Depends(_require_admin)):
@@ -2078,6 +2087,14 @@ async def api_put_inner_voices(payload: dict, _u=Depends(_require_admin)):
         if prov_key in payload:
             if payload[prov_key] not in _VALID_PROVIDERS:
                 raise HTTPException(400, f"{prov_key} must be one of: {_VALID_PROVIDERS}")
+            if _IN_DOCKER and payload[prov_key] not in _DOCKER_SAFE_PROVIDERS:
+                raise HTTPException(
+                    400,
+                    f"{prov_key}='{payload[prov_key]}' is not available in this Docker image "
+                    f"(only built with openvino support) — the {name} container would "
+                    f"crash-loop on restart. Rebuild the image with a different PROVIDER "
+                    f"build-arg first if you need cpu/mlx, or use 'remote'/'openvino'.",
+                )
             sub["provider"] = payload[prov_key]
         if f"{name}_model_path" in payload:
             sub["model_path"] = str(payload[f"{name}_model_path"])

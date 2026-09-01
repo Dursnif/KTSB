@@ -46,9 +46,15 @@ fi
 echo "  RAM:  ${RAM_GB} GB"
 
 # ── GPU detection ─────────────────────────────────────────────────────────────
+# GPU_TYPE/GPU_NAME/GPU_VRAM_GB select the *primary* GPU used for Ollama's passthrough
+# config below (NVIDIA > AMD > Intel priority — Ollama only uses one accelerator backend).
+# GPU_JSON_ENTRIES is the full list of all detected GPUs written to state/hardware.json —
+# an Intel iGPU is always included there since it commonly coexists with a discrete
+# NVIDIA/AMD card and must not be hidden just because a discrete GPU was already found.
 GPU_TYPE="none"
 GPU_NAME=""
 GPU_VRAM_GB=""
+GPU_JSON_ENTRIES=()
 
 # NVIDIA
 if command -v nvidia-smi &>/dev/null; then
@@ -59,6 +65,11 @@ if command -v nvidia-smi &>/dev/null; then
     VRAM_MB=$(echo "$NVIDIA_OUT" | head -1 | cut -d, -f2 | xargs)
     GPU_VRAM_GB=$(echo "scale=1; $VRAM_MB / 1024" | bc 2>/dev/null || echo "?")
     echo "  GPU:  NVIDIA $GPU_NAME (${GPU_VRAM_GB} GB VRAM)"
+    while IFS=, read -r N V; do
+      N=$(echo "$N" | xargs); V=$(echo "$V" | xargs)
+      VG=$(echo "scale=1; $V / 1024" | bc 2>/dev/null || echo null)
+      GPU_JSON_ENTRIES+=("{\"type\": \"nvidia\", \"id\": ${#GPU_JSON_ENTRIES[@]}, \"name\": \"$N\", \"vram_gb\": $VG}")
+    done <<< "$NVIDIA_OUT"
   fi
 fi
 
@@ -69,18 +80,35 @@ if [[ "$GPU_TYPE" == "none" ]] && command -v rocm-smi &>/dev/null; then
     GPU_TYPE="amd"
     GPU_NAME=$(echo "$ROCM_OUT" | grep -i "card" | head -1 | awk '{print $NF}')
     echo "  GPU:  AMD $GPU_NAME"
+    GPU_JSON_ENTRIES+=("{\"type\": \"amd\", \"id\": ${#GPU_JSON_ENTRIES[@]}, \"name\": \"$GPU_NAME\", \"vram_gb\": null}")
   fi
 fi
 
-# Intel Arc / iGPU
-if [[ "$GPU_TYPE" == "none" ]] && [[ -d /sys/class/drm ]]; then
-  for uevent in /sys/class/drm/*/device/uevent; do
-    if [[ -f "$uevent" ]] && grep -qi "intel\|i915" "$uevent" 2>/dev/null; then
-      GPU_TYPE="intel"
-      GPU_NAME="Intel GPU"
-      echo "  GPU:  Intel GPU detected"
-      break
+# Intel iGPU / Arc — always checked, regardless of a discrete GPU already being found
+if [[ -d /sys/class/drm ]]; then
+  for card in /sys/class/drm/card[0-9]*; do
+    VENDOR_FILE="$card/device/vendor"
+    [[ -f "$VENDOR_FILE" ]] || continue
+    VENDOR=$(cat "$VENDOR_FILE" 2>/dev/null)
+    [[ "$VENDOR" == "0x8086" ]] || continue
+    PCI_ADDR=$(basename "$(readlink -f "$card/device")")
+    BUS="${PCI_ADDR#*:}"; BUS="${BUS%%:*}"
+    if [[ "$BUS" == "00" ]]; then
+      INTEL_GPU_TYPE="intel-igpu"; INTEL_GPU_NAME="Intel iGPU"
+    else
+      INTEL_GPU_TYPE="intel-arc"; INTEL_GPU_NAME="Intel Arc GPU"
     fi
+    if command -v lspci &>/dev/null; then
+      LSPCI_NAME=$(lspci -mm -s "$PCI_ADDR" 2>/dev/null | awk -F'"' '{print $8}')
+      [[ -n "$LSPCI_NAME" ]] && INTEL_GPU_NAME="$LSPCI_NAME"
+    fi
+    echo "  GPU:  $INTEL_GPU_NAME ($INTEL_GPU_TYPE)"
+    GPU_JSON_ENTRIES+=("{\"type\": \"$INTEL_GPU_TYPE\", \"id\": ${#GPU_JSON_ENTRIES[@]}, \"name\": \"$INTEL_GPU_NAME\", \"vram_gb\": null}")
+    if [[ "$GPU_TYPE" == "none" ]]; then
+      GPU_TYPE="intel"
+      GPU_NAME="$INTEL_GPU_NAME"
+    fi
+    break  # only one Intel GPU typically present
   done
 fi
 
@@ -121,13 +149,7 @@ cat > "$HW_FILE" <<EOF
     "cores": $CPU_CORES
   },
   "ram_gb": $RAM_GB,
-  "gpus": $(
-    if [[ "$GPU_TYPE" != "none" ]]; then
-      echo "[{\"type\": \"$GPU_TYPE\", \"id\": 0, \"name\": \"$GPU_NAME\", \"vram_gb\": $(echo $GPU_VRAM_GB | grep -oP '[\d.]+' || echo 'null')}]"
-    else
-      echo "[]"
-    fi
-  ),
+  "gpus": [$(IFS=,; echo "${GPU_JSON_ENTRIES[*]:-}")],
   "npu": { "detected": $NPU_DETECTED }
 }
 EOF

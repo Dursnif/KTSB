@@ -426,13 +426,42 @@ export default function Users() {
 
 // ── Create ────────────────────────────────────────────────────────────────────
 
-function SeedModal({ seed, onClose }: { seed: string; onClose: () => void }) {
+export function SeedModal({ seed, onClose }: { seed: string; onClose: () => void }) {
   const { t } = useTranslation();
   const [confirmed, setConfirmed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
+
+  const fallbackCopy = (): boolean => {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = seed;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  };
 
   const copy = () => {
-    navigator.clipboard.writeText(seed).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+    navigator.clipboard.writeText(seed).then(
+      () => { setCopied(true); setCopyFailed(false); setTimeout(() => setCopied(false), 2000); },
+      () => {
+        // Clipboard API can reject silently (insecure context, denied permission,
+        // focus-loss quirk right as the button is clicked) — fall back before giving up.
+        if (fallbackCopy()) {
+          setCopied(true); setCopyFailed(false); setTimeout(() => setCopied(false), 2000);
+        } else {
+          setCopyFailed(true); setTimeout(() => setCopyFailed(false), 4000);
+        }
+      }
+    );
   };
 
   return (
@@ -443,9 +472,12 @@ function SeedModal({ seed, onClose }: { seed: string; onClose: () => void }) {
         <div style={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 8, padding: "14px 16px", fontFamily: "monospace", fontSize: 15, color: "#e0e0e0", letterSpacing: 0.5, lineHeight: 1.8, marginBottom: 12 }}>
           {seed}
         </div>
-        <button onClick={copy} style={{ padding: "7px 16px", borderRadius: 8, border: "1px solid #444", background: "#1e1e1e", color: copied ? "#4caf50" : "#aaa", fontSize: 13, cursor: "pointer", marginBottom: 18 }}>
-          {copied ? t("seed.copied") : t("seed.copy")}
+        <button onClick={copy} style={{ padding: "7px 16px", borderRadius: 8, border: "1px solid #444", background: "#1e1e1e", color: copied ? "#4caf50" : copyFailed ? "#e57373" : "#aaa", fontSize: 13, cursor: "pointer", marginBottom: copyFailed ? 6 : 18 }}>
+          {copied ? t("seed.copied") : copyFailed ? t("seed.copy_failed") : t("seed.copy")}
         </button>
+        {copyFailed && (
+          <div style={{ color: "#e57373", fontSize: 12, marginBottom: 12 }}>{t("seed.copy_failed_hint")}</div>
+        )}
         <label style={{ display: "flex", alignItems: "flex-start", gap: 10, color: "#888", fontSize: 13, cursor: "pointer", marginBottom: 18 }}>
           <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} style={{ marginTop: 2, flexShrink: 0 }} />
           {t("seed.confirm_label")}
@@ -1047,9 +1079,9 @@ function VoiceModal({ user, onDone, onError, error }: { user: KaareUser; onDone:
           <li>{t("users.voice_modal.instruction_3")}</li>
         </ol>
         <div style={{ marginTop: 10, color: "#666", fontSize: 12, fontStyle: "italic", lineHeight: 1.7 }}>
-          "Hei Kåre, kan du slå på lyset i stua?"<br />
-          "Hva er temperaturen ute akkurat nå?"<br />
-          "Sett på litt musikk, jeg vil ha noe rolig."
+          "{t("users.voice_modal.example_phrase_1")}"<br />
+          "{t("users.voice_modal.example_phrase_2")}"<br />
+          "{t("users.voice_modal.example_phrase_3")}"
         </div>
       </div>
 

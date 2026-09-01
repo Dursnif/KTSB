@@ -87,7 +87,7 @@ export default function TabIntegrasjoner() {
             </FieldRow>
             <FieldRow label={t("settings.integrasjoner.frigate.url_label")} hint={t("settings.integrasjoner.frigate.url_hint")}>
               <div className="flex gap-2">
-                <Input value={frigateUrl} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFrigateUrl(e.target.value)} placeholder="http://192.168.0.100:5000" />
+                <Input value={frigateUrl} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFrigateUrl(e.target.value)} placeholder="http://192.168.0.x:5000" />
                 <TestButton url={frigateUrl} />
               </div>
             </FieldRow>
@@ -124,7 +124,7 @@ export default function TabIntegrasjoner() {
           <div className="divide-y divide-border">
             <FieldRow label={t("settings.integrasjoner.plex.url_label")} hint={t("settings.integrasjoner.plex.url_hint")}>
               <div className="flex gap-2">
-                <Input value={plexUrl} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPlexUrl(e.target.value)} placeholder="http://192.168.0.156:32400" />
+                <Input value={plexUrl} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPlexUrl(e.target.value)} placeholder="http://192.168.0.x:32400" />
                 <TestButton url={plexUrl} />
               </div>
             </FieldRow>

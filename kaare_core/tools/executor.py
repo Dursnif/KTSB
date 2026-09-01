@@ -323,7 +323,7 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             if mode in ("analyze", "analyser"):
                 b64 = _b64.b64encode(path.read_bytes()).decode()
                 return f"[VISION:{b64}]"
-            return f"Bildet er klart. Inkluder denne URL-en ordrett i svaret ditt: /api/image/{image_id}"
+            return t("exec_image_url_ready", lang, image_id=image_id)
 
         imgs = list_images(uid, folder, limit)
         if not imgs:

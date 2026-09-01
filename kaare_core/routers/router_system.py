@@ -3,6 +3,7 @@ import io
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -22,7 +23,11 @@ import kaare_core.app_state as app_state
 from kaare_core.audit import read_recent as _audit_read
 from kaare_core.config import get_model, get_service
 from kaare_core.users.auth import require_admin as _require_admin, require_auth as _require_auth
-from kaare_core.normalcy import get_recent_anomalies as _get_anomalies, add_correction as _add_correction
+from kaare_core.normalcy import (
+    get_recent_anomalies as _get_anomalies,
+    add_correction as _add_correction,
+    delete_correction as _delete_correction,
+)
 
 router = APIRouter()
 
@@ -44,6 +49,66 @@ _RESTARTABLE_SERVICES = {
 }
 
 _IN_DOCKER = os.path.exists("/.dockerenv")
+
+# Maps _RESTARTABLE_SERVICES keys to the actual docker-compose service names
+# (docker-compose.yml). Container *names* depend on the compose project
+# name, which is whatever directory the user cloned into — matching on the
+# com.docker.compose.service label instead is robust regardless of that.
+_DOCKER_COMPOSE_SERVICE = {
+    "kaare":          "kaare-api",
+    "gateway":        "kaare-ha-gateway",
+    "semantic_embed": "kaare-semantic-embed",
+    "embedding":      "kaare-embedding",
+    "argus":          "kaare-argus",
+    "voice":          "kaare-voice",
+    "frontend":       "kaare-frontend",
+    "ha-log-bridge":  "kaare-ha-log-bridge",
+}
+
+_docker_http_client: httpx.Client | None = None
+
+
+def _docker_socket_client() -> httpx.Client:
+    """Lazy singleton talking to the Docker Engine API over the mounted
+    docker.sock. Plain REST over a Unix socket — deliberately not the
+    `docker` SDK, which isn't a dependency of this project and would need
+    an image rebuild to add for what's really just two simple calls."""
+    global _docker_http_client
+    if _docker_http_client is None:
+        _docker_http_client = httpx.Client(
+            transport=httpx.HTTPTransport(uds="/var/run/docker.sock"),
+            base_url="http://docker",
+            timeout=10.0,
+        )
+    return _docker_http_client
+
+
+def _docker_find_container(compose_service: str) -> dict | None:
+    """The container's Docker API JSON for a compose service, matched via
+    its com.docker.compose.service label, or None if it was never created
+    (e.g. gated behind a COMPOSE_PROFILES that isn't active)."""
+    r = _docker_socket_client().get("/containers/json", params={
+        "all": "true",
+        "filters": json.dumps({"label": [f"com.docker.compose.service={compose_service}"]}),
+    })
+    r.raise_for_status()
+    containers = r.json()
+    return containers[0] if containers else None
+
+
+def _docker_service_state(service_key: str) -> tuple[str, str | None]:
+    """(state, reason) for a _RESTARTABLE_SERVICES key in Docker mode.
+    state is one of: running | stopped | not_created | unavailable."""
+    compose_service = _DOCKER_COMPOSE_SERVICE.get(service_key)
+    if not compose_service:
+        return "unavailable", f"No Docker mapping for '{service_key}'"
+    try:
+        container = _docker_find_container(compose_service)
+    except Exception as e:
+        return "unavailable", f"Docker socket unreachable: {e}"
+    if container is None:
+        return "not_created", None
+    return ("running" if container.get("State") == "running" else "stopped"), None
 
 
 @router.get("/api/health_check")
@@ -745,21 +810,47 @@ async def api_get_hardware(refresh: bool = False, _u=Depends(_require_auth)):
         except Exception:
             pass
 
-    # Intel GPU (check DRM subsystem)
-    if not result["gpus"]:
-        try:
-            dri_path = "/sys/class/drm"
-            if os.path.exists(dri_path):
-                for entry in os.listdir(dri_path):
-                    uevent_path = f"{dri_path}/{entry}/device/uevent"
-                    if os.path.exists(uevent_path):
-                        with open(uevent_path) as f:
-                            content = f.read()
-                        if "intel" in content.lower() or "i915" in content.lower():
-                            result["gpus"].append({"type": "intel", "id": 0, "name": "Intel GPU", "vram_gb": None})
-                            break
-        except Exception:
-            pass
+    # Intel GPU (iGPU or discrete Arc, via DRM subsystem). Always runs — an Intel iGPU
+    # commonly coexists with a discrete NVIDIA/AMD card, so it must not be gated on
+    # result["gpus"] being empty like the NVIDIA/AMD checks above.
+    try:
+        dri_path = "/sys/class/drm"
+        if os.path.exists(dri_path):
+            seen_pci = set()
+            for entry in sorted(os.listdir(dri_path)):
+                if not re.fullmatch(r"card\d+", entry):
+                    continue
+                device_link = f"{dri_path}/{entry}/device"
+                vendor_path = f"{device_link}/vendor"
+                if not os.path.exists(vendor_path):
+                    continue
+                with open(vendor_path) as f:
+                    vendor = f.read().strip()
+                if vendor != "0x8086":  # Intel PCI vendor ID
+                    continue
+                pci_addr = os.path.basename(os.path.realpath(device_link))
+                if pci_addr in seen_pci:
+                    continue
+                seen_pci.add(pci_addr)
+
+                # Bus "00" is the platform bus the CPU sits on -> integrated GPU.
+                # Any other bus is a discrete card (e.g. Intel Arc).
+                bus = pci_addr.split(":")[1] if pci_addr.count(":") >= 1 else "00"
+                is_integrated = bus == "00"
+                gpu_type = "intel-igpu" if is_integrated else "intel-arc"
+                name = "Intel iGPU" if is_integrated else "Intel Arc GPU"
+                try:
+                    r = subprocess.run(["lspci", "-mm", "-s", pci_addr], capture_output=True, text=True, timeout=5)
+                    if r.returncode == 0 and r.stdout.strip():
+                        fields = shlex.split(r.stdout.strip())
+                        if len(fields) >= 4:
+                            name = f"{fields[3]} (iGPU)" if is_integrated else fields[3]
+                except Exception:
+                    pass
+
+                result["gpus"].append({"type": gpu_type, "id": len(result["gpus"]), "name": name, "vram_gb": None})
+    except Exception:
+        pass
 
     # Intel NPU
     try:
@@ -794,7 +885,26 @@ async def api_restart_service(service_key: str, background_tasks: BackgroundTask
                 os.kill(os.getpid(), signal.SIGTERM)
             background_tasks.add_task(_docker_self_restart)
             return {"ok": True, "unit": unit, "docker": True}
-        return {"ok": False, "docker": True, "error": f"In Docker: restart '{service_key}' with 'docker compose restart {service_key}'"}
+
+        compose_service = _DOCKER_COMPOSE_SERVICE.get(service_key)
+        if not compose_service:
+            return {"ok": False, "docker": True, "error": f"No Docker mapping for '{service_key}'"}
+        try:
+            container = _docker_find_container(compose_service)
+            if container is None:
+                return {"ok": False, "docker": True,
+                         "error": f"Container for '{compose_service}' doesn't exist — not part of the active distribution profile?"}
+            # Docker waits up to t=10s for a graceful stop before force-killing,
+            # and the HTTP call doesn't return until the whole restart (stop +
+            # start) completes — needs headroom above the client's default
+            # timeout, not just the stop grace period itself.
+            r = _docker_socket_client().post(
+                f"/containers/{container['Id']}/restart", params={"t": 10}, timeout=30.0,
+            )
+            r.raise_for_status()
+            return {"ok": True, "unit": unit, "docker": True}
+        except Exception as e:
+            return {"ok": False, "docker": True, "error": f"Docker restart failed: {e}"}
 
     # Bare-metal / systemd path
     if service_key == "kaare":
@@ -1018,9 +1128,14 @@ async def api_admin_services(_u=Depends(_require_auth)):
     """Return list of restartable services with current status."""
     statuses = {}
     if _IN_DOCKER:
-        # In Docker each service is a separate container — can't use systemctl.
+        # In Docker each service is a separate container — can't use systemctl,
+        # check real container state over the docker.sock instead.
         for key, unit in _RESTARTABLE_SERVICES.items():
-            statuses[key] = {"unit": unit, "active": True, "docker": True}
+            state, reason = _docker_service_state(key)
+            statuses[key] = {
+                "unit": unit, "active": state == "running", "docker": True,
+                "state": state, "reason": reason,
+            }
         return statuses
 
     for key, unit in _RESTARTABLE_SERVICES.items():
@@ -1110,6 +1225,12 @@ class _CorrectionBody(BaseModel):
     comment:     str = ""
 
 
+class _CorrectionKeyBody(BaseModel):
+    source_key:  str
+    hour_bucket: str
+    weekday:     str
+
+
 @router.get("/api/normalcy/events")
 async def api_normalcy_events(
     days: int = 7,
@@ -1150,6 +1271,16 @@ async def api_normalcy_correct(body: _CorrectionBody, u=Depends(_require_admin))
             body.verdict, body.comment, by=username,
         )
         return {"ok": True}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@router.delete("/api/normalcy/correct")
+async def api_normalcy_uncorrect(body: _CorrectionKeyBody, u=Depends(_require_admin)):
+    """Remove an admin correction (undo), returning the event to pending review."""
+    try:
+        removed = _delete_correction(body.source_key, body.hour_bucket, body.weekday)
+        return {"ok": True, "removed": removed}
     except Exception as e:
         raise HTTPException(500, str(e))
 

@@ -195,14 +195,12 @@ def _search_memory(query: str, lang: str = "nb") -> str:
             resp_short = h["response"][:80].replace("\n", " ")
             entity = f" [{h['entity_id']}]" if h["entity_id"] else ""
             lines.append(
-                f"- {ts}{entity}\n"
-                f"  Bruker: {prompt_short}\n"
-                f"  Kåre: {resp_short}\n"
-                f"  Utfall: {h['outcome']} | Tillit: {h['confidence']}"
+                t("mem_search_row", lang, ts=ts, entity=entity, prompt=prompt_short,
+                  response=resp_short, outcome=h['outcome'], confidence=h['confidence'])
             )
         return "\n".join(lines)
     except Exception as e:
-        return f"Søk i minne feilet: {e}"
+        return t("mem_search_error", lang, error=e)
 
 
 def _verify_interactions(ids, verdict: str, user_id: str, lang: str = "nb") -> str:

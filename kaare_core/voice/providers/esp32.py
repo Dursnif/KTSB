@@ -32,7 +32,7 @@ class Esp32Provider(BaseVoiceProvider):
                 log.error("Ingen media_player funnet på ESP32 %s — sjekk ESPHome-konfig", host)
                 return
             mp_key = media_players[0].key
-            await api.media_player_command(mp_key, media_url=media_url, announcement=True)
+            api.media_player_command(mp_key, media_url=media_url, announcement=True)
             log.info("ESP32 %s spiller av %s", host, media_url)
         except Exception as exc:
             log.error("ESP32 provider feil på %s: %s", host, exc)

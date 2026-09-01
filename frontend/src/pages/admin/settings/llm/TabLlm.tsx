@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  apiGetLlmSettings, apiGetServices, apiGetDockerControl, apiGetInnerVoices,
+  apiGetLlmSettings, apiGetServices, apiGetDockerControl, apiGetInnerVoices, apiGetLanguage,
   type LlmRoleConfig, type DockerControlSettings, type InnerVoicesData,
 } from "@/services/api";
 import { LlmInfraCard } from "./LlmInfraCard";
@@ -18,8 +18,9 @@ export function TabLlm() {
   const [configs, setConfigs] = useState<Record<string, LlmRoleConfig>>({});
   const [voiceData, setVoiceData] = useState<VoiceServicesData>({
     stt_backend: "openvino", faster_whisper_model: "large-v3", compute_type: "int8",
-    language: "no", stt_enabled: true, model_dir: "",
+    stt_enabled: true, model_dir: "",
   });
+  const [kareLanguage, setKareLanguage] = useState("en");
   const [embData, setEmbData] = useState<EmbServicesData>({
     device: "NPU", hf_model: "BAAI/bge-m3", model_path: "", emb_enabled: true,
   });
@@ -42,7 +43,8 @@ export function TabLlm() {
       apiGetServices(),
       apiGetDockerControl(),
       apiGetInnerVoices(),
-    ]).then(([llm, svc, dc, iv]) => {
+      apiGetLanguage(),
+    ]).then(([llm, svc, dc, iv, langSettings]) => {
       setConfigs(llm);
       setDockerControl(dc);
       const s = svc as any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -50,10 +52,10 @@ export function TabLlm() {
         stt_backend:          s.voice?.stt_backend          ?? "openvino",
         faster_whisper_model: s.voice?.faster_whisper_model ?? "large-v3",
         compute_type:         s.voice?.compute_type         ?? "int8",
-        language:             s.voice?.language             ?? "no",
         stt_enabled:          s.voice?.stt_enabled          ?? true,
         model_dir:            s.voice?.model_dir            ?? "",
       });
+      setKareLanguage(langSettings.kare_language || "en");
       setEmbData({
         device:      s.embedding?.device      ?? "NPU",
         hf_model:    s.embedding?.hf_model    ?? "BAAI/bge-m3",
@@ -90,7 +92,7 @@ export function TabLlm() {
           ? <ImageRoleCard key={role} role={role} config={configs[role]} onSaved={load} />
           : <LlmRoleCard   key={role} role={role} config={configs[role]} onSaved={load} allConfigs={configs} allowDockerControl={dockerControl.allow_docker_control} />
       ))}
-      <WhisperCard        data={voiceData}       onSaved={load} />
+      <WhisperCard        data={voiceData}       kareLanguage={kareLanguage} onSaved={load} />
       <PiperCard                               onSaved={load} />
       <EmbeddingCard      data={embData}        onSaved={load} />
       <MemoryEmbedCard    data={memEmbData}     onSaved={load} />

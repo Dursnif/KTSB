@@ -158,7 +158,7 @@ def _read_user_profile(user_id: str, lang: str = "nb") -> str:
     except Exception:
         pass
     parts = []
-    if yaml_content and yaml_content != "Ingen profildata registrert ennå.":
+    if yaml_content and yaml_content != t("prof_no_data", lang):
         parts.append(f"=== PROFIL (profile.yaml) ===\n{yaml_content}")
     if obs_content:
         if len(obs_content) > 6000:

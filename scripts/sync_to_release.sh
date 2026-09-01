@@ -30,6 +30,11 @@ fi
 rsync -av --delete \
   --exclude='.git/' \
   --exclude='local/' \
+  --exclude='firmware/' \
+  --exclude='services/wakeword_train' \
+  --exclude='scripts/backup_to_nas.sh' \
+  --exclude='scripts/backup_claude_to_nas.sh' \
+  --exclude='services/voice/cache/' \
   --exclude='docs/claude/' \
   --exclude='ov_cache/' \
   --exclude='*.blob' \
@@ -95,7 +100,6 @@ rsync -av --delete \
   --exclude='.vscode/' \
   --exclude='intent_server/' \
   --exclude='memory_embed_server/' \
-  --exclude='services/gui/' \
   --exclude='www/' \
   --exclude='mini_kaareha/' \
   --exclude='argus_halfyear.py' \

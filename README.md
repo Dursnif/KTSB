@@ -89,6 +89,17 @@ Kåre runs via **Docker**, which means it works on Linux, Windows, and macOS wit
 
 **Already running Home Assistant or Frigate?** KTSB's own code is lightweight — it is the LLM behind it that is demanding. Running KTSB on the same machine as Home Assistant or Frigate can cause KTSB to introduce delays on those systems instead of the other way around. A separate machine, even a modest one, keeps everything responsive.
 
+### What's actually been tested
+
+This is a one-person hobby project, not a company with a QA team, so here's an honest picture of what's been walked through end-to-end versus what should work in principle:
+
+- **Linux with an NVIDIA GPU** — the primary development machine. Used daily, most thoroughly exercised.
+- **Windows 11, no dedicated GPU, via Docker Desktop + WSL2** — tested from a genuinely fresh `git clone`, all the way through the onboarding wizard, user creation, and every admin page. Several real bugs were found and fixed this way — the install instructions below reflect what actually went wrong, not just what should theoretically work.
+- **macOS** — not tested yet. Should work in principle (it's still Docker), but nobody has walked through a fresh install on a Mac.
+- **A GPU on a completely from-scratch install** — the GPU testing above happened on an already-set-up machine, not a repeated fresh clone. If your first `docker compose up` on GPU hardware hits something unexpected, it's genuinely new territory.
+
+If you hit a problem, especially on macOS or a fresh GPU install, [open an issue](https://github.com/Dursnif/KTSB/issues) — that's exactly how the Windows fixes above happened.
+
 ---
 
 ## Getting started
@@ -97,9 +108,13 @@ Kåre runs via **Docker**, which means it works on Linux, Windows, and macOS wit
 
 Docker is a tool that packages software into self-contained boxes that run the same way on any computer. You do not need to install Python, databases, or any other programming tools — Docker handles all of it.
 
-**Windows:** Download and install [Docker Desktop](https://www.docker.com/products/docker-desktop/). During installation it will ask you to enable WSL 2 — say yes. Restart your computer when prompted. Open Docker Desktop once before continuing.
+**Windows:** Download and install [Docker Desktop](https://www.docker.com/products/docker-desktop/). During installation it will ask you to enable WSL 2 (a Linux environment that runs inside Windows — Docker needs it) — say yes. Restart your computer when prompted.
 
-**macOS:** Download and install [Docker Desktop](https://www.docker.com/products/docker-desktop/). Open it once to finish setup.
+After restarting, **open the Docker Desktop application itself** (find it in your Start menu, not just a terminal) and wait for it to say "Docker Desktop is running" — this can take a minute. Every command in the steps below needs Docker Desktop actually open and fully started first, not just installed — running a command too early gives a confusing error instead of a clear "Docker isn't running" message.
+
+> **If Docker Desktop shows an unclear error instead of asking about WSL 2 during install:** this happened during our own testing — Docker Desktop doesn't always prompt for WSL 2 automatically. Open PowerShell **as Administrator**, run `wsl --install`, restart your computer, then open Docker Desktop again.
+
+**macOS:** Download and install [Docker Desktop](https://www.docker.com/products/docker-desktop/). Open it once to finish setup, and — same as Windows — make sure it shows as running before continuing.
 
 **Linux:** Follow the [Docker Engine install guide](https://docs.docker.com/engine/install/) for your distribution. For NVIDIA GPU support, also install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
 
@@ -107,7 +122,7 @@ Verify Docker is working by opening a terminal and running:
 ```
 docker --version
 ```
-You should see a version number. If you get an error, make sure Docker Desktop is open and running.
+You should see a version number. If you get an error, make sure Docker Desktop (Windows/macOS) is open and shows as running — not just installed.
 
 ---
 

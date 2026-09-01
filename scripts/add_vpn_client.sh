@@ -1,7 +1,7 @@
 #!/bin/bash
 # Add a new WireGuard VPN client for Kåre
 # Usage: sudo bash /kaare/scripts/add_vpn_client.sh <client_name>
-# Example: sudo bash /kaare/scripts/add_vpn_client.sh stian-telefon
+# Example: sudo bash /kaare/scripts/add_vpn_client.sh min-telefon
 #
 # Client configs are saved to /kaare/state/vpn_clients/
 # IMPORTANT: these files contain private keys — never commit to git
@@ -12,7 +12,7 @@ CLIENT_NAME="${1:-}"
 if [ -z "$CLIENT_NAME" ]; then
     echo "Bruk: sudo bash $0 <klientnavn>"
     echo "Eksempel:"
-    echo "  sudo bash $0 stian-telefon"
+    echo "  sudo bash $0 min-telefon"
     echo "  sudo bash $0 kari-ipad"
     exit 1
 fi

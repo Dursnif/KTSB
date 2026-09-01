@@ -109,12 +109,11 @@ async def _run_jang_reflection() -> None:
     since = _read_jang_last_read()
     thoughts = _filter_new_thoughts(raw_text, since)
 
-    app_state._last_jang_run_time = time.time()
-
     if not thoughts.strip():
+        # Genuinely nothing new — this is a real "ran, found nothing" tick, safe to stamp.
+        app_state._last_jang_run_time = time.time()
         return
 
-    _write_jang_last_read()
     print("[KÅRE REFLECTION] Starting internal reflection cycle")
 
     micro_prompt = (
@@ -134,6 +133,15 @@ async def _run_jang_reflection() -> None:
 
     from kaare_core.tools.executor import execute_tool
 
+    # `deferred` stays True only if the very first round comes back busy — i.e. the
+    # model was never actually reached, so these thoughts must not be marked read and
+    # _last_jang_run_time must not advance (next 60s tick should retry with the same
+    # thoughts, not wait a full _JANG_INTERVAL_S). Any round that does reach the model
+    # — success, tool-call, or a genuine exception — counts as "attempted": a mid-cycle
+    # busy-abort on round 2/3 after that point is a clean early stop, not a lost cycle.
+    deferred = False
+    attempted_model = False
+
     for _round in range(3):
         try:
             result = await ask_llm_with_tools(
@@ -145,7 +153,18 @@ async def _run_jang_reflection() -> None:
             )
         except Exception as e:
             _log.warning("jang_reflection: ask_llm_with_tools failed: %s", e)
+            attempted_model = True
             break
+
+        if result.get("meta", {}).get("busy"):
+            if attempted_model:
+                print("[KÅRE REFLECTION] Kåre became busy mid-cycle — stopping early, already-attempted rounds stand.")
+            else:
+                deferred = True
+                print("[KÅRE REFLECTION] Kåre busy — deferring reflection cycle to next tick, thoughts kept unread.")
+            break
+
+        attempted_model = True
 
         tool_calls = result.get("tool_calls")
         if not tool_calls:
@@ -168,6 +187,10 @@ async def _run_jang_reflection() -> None:
             except Exception as e:
                 tool_result = f"Tool error: {e}"
             messages.append({"role": "tool", "name": name, "content": str(tool_result)})
+
+    if not deferred:
+        app_state._last_jang_run_time = time.time()
+        _write_jang_last_read()
 
     print("[KÅRE REFLECTION] Reflection cycle complete")
 

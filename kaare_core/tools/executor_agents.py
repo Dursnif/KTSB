@@ -29,6 +29,8 @@ from kaare_core.config import get_service as _svc, get_llm_config as _llm_cfg, g
 from kaare_core.memory.long_term import get_ltm
 from kaare_core.model_lock import lock_11445, LockTimeout
 from kaare_core.tools.i18n import t, get_lang
+from kaare_core.think_strip import strip_think_block
+from kaare_core.argus_query import build_argus_filter
 
 _SETTINGS_PATH  = Path("/kaare/configs/settings.yaml")
 _MECHANIC_DIR   = Path(__file__).parent.parent / "agents" / "mechanic"
@@ -71,14 +73,22 @@ def _fmt_ts_local(ts_raw: str) -> str:
         return ts_raw[:16].replace("T", " ")
 
 
-def _load_mechanic_personality(role: str = "standard") -> str:
-    if role and role != "standard":
-        path = _MECHANIC_DIR / f"personlighet_{role}.md"
-        if path.exists():
-            return path.read_text(encoding="utf-8")
-    path = _MECHANIC_DIR / "personlighet.md"
+def _load_mechanic_personality(role: str = "standard", lang: str = "nb") -> str:
+    suffix = "" if lang == "nb" else f"_{lang}"
+    base_name = f"personlighet_{role}" if role and role != "standard" else "personlighet"
+    path = _MECHANIC_DIR / f"{base_name}{suffix}.md"
     if path.exists():
         return path.read_text(encoding="utf-8")
+    fallback = _MECHANIC_DIR / f"{base_name}.md"
+    if fallback.exists():
+        return fallback.read_text(encoding="utf-8")
+    if base_name != "personlighet":
+        path = _MECHANIC_DIR / f"personlighet{suffix}.md"
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+        fallback = _MECHANIC_DIR / "personlighet.md"
+        if fallback.exists():
+            return fallback.read_text(encoding="utf-8")
     return "Du er Mechanic – en allsidig teknisk assistent."
 
 
@@ -100,20 +110,27 @@ def _tools_for_role(role: str) -> list:
 
 # ── Argus semantic search ─────────────────────────────────────────────────────
 
-async def _search_argus(query: str, grense: int = 8, lang: str = "nb") -> str:
+async def _search_argus(
+    query: str, grense: int = 8, lang: str = "nb",
+    entity_id: str = "", since: str = "", until: str = "",
+) -> str:
     if not query.strip():
         return t("agent_empty_query", lang)
     grense = max(1, min(grense, 20))
     qdrant_url = _svc("storage", "qdrant")
     embed_url  = _svc("ollama", "embed") + "/api/embed"
+    payload_filter = build_argus_filter(entity_id, since, until)
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             emb_r = await client.post(embed_url, json={"model": "bge-m3", "input": query}, timeout=15.0)
             emb_r.raise_for_status()
             vector = emb_r.json()["embeddings"][0]
+            body: dict = {"query": vector, "limit": grense, "with_payload": True}
+            if payload_filter:
+                body["filter"] = payload_filter
             r = await client.post(
                 f"{qdrant_url}/collections/argus_events/points/query",
-                json={"query": vector, "limit": grense, "with_payload": True},
+                json=body,
                 headers={"api-key": _qdrant_key(write=False) or ""},
                 timeout=15.0,
             )
@@ -258,7 +275,7 @@ async def _mechanic_search(arguments: Dict, lang: str) -> str:
     if not content:
         return t("svc_no_content", lang)
 
-    system = _load_mechanic_personality()
+    system = _load_mechanic_personality(lang=lang)
     memory = _load_mechanic_memory()
     if memory:
         system = f"{system}\n\n## Your memory\n{memory}"
@@ -281,8 +298,17 @@ async def _mechanic_search(arguments: Dict, lang: str) -> str:
                                       headers={"x-kaare-source": "mechanic_search"})
                 r.raise_for_status()
                 content_out = r.json().get("message", {}).get("content", "").strip()
-                answer = re.sub(r"<think>.*?</think>", "", content_out, flags=re.DOTALL).strip() \
-                         or "[No response from Mechanic]"
+                answer, _think_content, _think_closed = strip_think_block(content_out)
+                if _think_content:
+                    try:
+                        from kaare_core.tools.think_cache import log_think
+                        log_think(
+                            think_text=_think_content, response=answer, role="mechanic",
+                            model=MECHANIC_MODEL, recovered=False, rid=arguments.get("_rid", ""),
+                        )
+                    except Exception:
+                        pass
+                answer = answer or "[No response from Mechanic]"
                 try:
                     asyncio.create_task(get_ltm().log_agent_message(
                         from_agent="kare",
@@ -309,7 +335,7 @@ async def _ask_mechanic(task: str, arguments: Dict, lang: str) -> str:
     if not _llm_cfg("mechanic").get("enabled", True):
         return t("agent_mechanic_disabled", lang)
 
-    personality = _load_mechanic_personality()
+    personality = _load_mechanic_personality(lang=lang)
     memory = _load_mechanic_memory()
     system_parts = [personality]
     if memory:
@@ -422,6 +448,9 @@ async def dispatch(name: str, arguments: Dict) -> str:
             query=arguments.get("query", ""),
             grense=int(arguments.get("limit", 8)),
             lang=lang,
+            entity_id=arguments.get("entity_id", ""),
+            since=arguments.get("since", ""),
+            until=arguments.get("until", ""),
         )
 
     # ── spør_mechanic (legacy synchronous ask) ────────────────────────────────

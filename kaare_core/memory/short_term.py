@@ -30,6 +30,7 @@ from typing import Any, Deque, Dict, List, Optional, Tuple
 
 from kaare_core.crypto import seal, unseal
 from kaare_core.session_keys import resolve_key_sync
+from kaare_core.tools.i18n import t as _t_i18n
 from kaare_core.users.store import get_public_key_b64
 
 
@@ -288,7 +289,7 @@ class ShortTermMemory:
             return pairs[-n:] if pairs else []
 
     def build_prompt_context(self, user_text: str = "", user_id: str = "global",
-                              include_dialog: bool = True) -> str:
+                              include_dialog: bool = True, lang: str = "nb") -> str:
         """
         Bygger en kompakt kontekst-blokk. Dette er ment å prepends til prompt før LLM.
 
@@ -307,15 +308,15 @@ class ShortTermMemory:
 
             # 0) Daily summary – compressed context from previous day
             if self._daily_summary:
-                parts.append("Oppsummering fra i går:")
+                parts.append(_t_i18n("stm_daily_summary", lang))
                 parts.append(_clip(self._daily_summary, 800))
 
             # 1) Siste actions (filtrert på user_id)
             user_actions = [ev for ev in self._actions if ev.user_id == user_id]
             if user_actions:
-                parts.append("Siste handlinger:")
+                parts.append(_t_i18n("stm_last_actions", lang))
                 for ev in user_actions[-self.context_last_actions :]:
-                    status = "OK" if ev.ok else "FEIL"
+                    status = _t_i18n("stm_action_ok", lang) if ev.ok else _t_i18n("stm_action_failed", lang)
                     line = f"- [{ev.ts}] {status}: {ev.action} {ev.entity_id}"
                     if ev.result:
                         line += f" ({ev.result})"
@@ -356,14 +357,14 @@ class ShortTermMemory:
                     state_lines.append(f"- [{e.ts}] {e.key} = {val_s} (src={e.source})")
 
             if state_lines:
-                parts.append("Tilstand (siste kjent):")
+                parts.append(_t_i18n("stm_state_header", lang))
                 parts.extend(state_lines)
 
             # 3) Siste dialog-turns (filtrert på user_id) — kun hvis include_dialog=True
             if include_dialog:
                 user_dialog = [t for t in self._dialog if t.user_id == user_id]
                 if user_dialog:
-                    parts.append("Siste dialog (kort):")
+                    parts.append(_t_i18n("stm_dialog_header", lang))
                     for t in user_dialog[-self.context_last_dialog_turns :]:
                         parts.append(f"- [{t.ts}] {t.role}: {_clip(t.text, 300)}")
 
@@ -375,7 +376,7 @@ class ShortTermMemory:
         # hard cap
         if len(out) > self.context_max_chars:
             out = out[: self.context_max_chars - 1] + "…"
-        return "### KORTTIDSMINNE\n" + out
+        return _t_i18n("stm_header", lang) + "\n" + out
 
     # -------------------------
     # Kontroll / reset

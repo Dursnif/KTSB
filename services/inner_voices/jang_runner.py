@@ -13,26 +13,17 @@ from common import (
     INNER_THOUGHTS,
     JING_THOUGHTS,
     PERSONALITY,
+    get_pipe_lang,
     load_behavior_config,
     load_service_config,
     strip_think,
+    t,
 )
 from provider import load_provider
 from push_client import push_thought
 
 _JING_BLOCK_RE = re.compile(r"^\[Jing \d{2}:\d{2}\]")
 _JANG_ENTRY_RE = re.compile(r"^\[Jang (\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]")
-
-SYSTEM = """Du er Jang. Du mottar de siste Jing-blokkene — råobservasjoner fra Kares sansesystem.
-Destiller til maksimalt 1-2 linjer per kategori som har faktisk innhold.
-Utelat en kategori helt hvis alle Jing-blokkene viser (ingen) for den kategorien.
-Prioriter den nyeste Jing-blokken (siste [Jing]-oppføring).
-Skriv output slik:
-[MENNESKER] <1-2 linjer, eller utelat hele linjen>
-[ANDRE] <1-2 linjer, eller utelat hele linjen>
-[STM] <1-2 linjer, eller utelat hele linjen>
-[ARGUS] <1-2 linjer, eller utelat hele linjen>
-Skriv på norsk. Ingen forklaringer — kun de destillerte linjene."""
 
 
 def _parse_jing_blocks(text: str) -> list[str]:
@@ -50,9 +41,20 @@ def _parse_jing_blocks(text: str) -> list[str]:
     return blocks
 
 
-def _trim_jing_buffer(all_blocks: list[str], keep: int) -> None:
-    """Keep only the last `keep` blocks in jing_thoughts.txt as context for next run."""
-    to_keep = all_blocks[-keep:] if len(all_blocks) > keep else all_blocks
+def _trim_jing_buffer(keep: int) -> None:
+    """Keep only the last `keep` blocks in jing_thoughts.txt as context for next run.
+
+    Re-reads the file fresh instead of reusing a list parsed before the (slow) LLM
+    call — Jing may have appended a new block while Jang was generating, and trimming
+    from a stale in-memory list would silently drop it on write-back.
+    """
+    if not JING_THOUGHTS.exists():
+        return
+    fresh_text = JING_THOUGHTS.read_text(errors="replace").strip()
+    if not fresh_text:
+        return
+    fresh_blocks = _parse_jing_blocks(fresh_text)
+    to_keep = fresh_blocks[-keep:] if len(fresh_blocks) > keep else fresh_blocks
     JING_THOUGHTS.write_text("\n\n".join(to_keep) + "\n")
 
 
@@ -109,36 +111,37 @@ def run_once(provider, behavior_cfg: dict, service_cfg: dict) -> None:
     if not all_blocks:
         return
 
+    lang = get_pipe_lang()
     recent_blocks = all_blocks[-turns_back:]
     combined = "\n\n".join(recent_blocks)
 
     personality = PERSONALITY.read_text(errors="replace").strip() if PERSONALITY.exists() else ""
-    context = f"=== Jing-blokker (nyeste sist) ===\n{combined}"
+    context = f"{t('jang_context_jing_header', lang)}\n{combined}"
     if personality:
-        context += f"\n\n=== Kares personlighet ===\n{personality}"
+        context += f"\n\n{t('jang_context_personality_header', lang)}\n{personality}"
 
     prompt = (
-        f"<|im_start|>system\n{SYSTEM}<|im_end|>\n"
+        f"<|im_start|>system\n{t('jang_system', lang)}<|im_end|>\n"
         f"<|im_start|>user\n{context}<|im_end|>\n"
         f"<|im_start|>assistant\n/no_think\n"
     )
 
     raw = provider.generate(prompt, max_tokens)
     distilled = strip_think(raw).strip()
-    if not distilled:
-        return
 
-    push_url = (service_cfg.get("push_url") or "").strip()
-    push_token = (service_cfg.get("push_token") or "").strip()
+    if distilled:
+        push_url = (service_cfg.get("push_url") or "").strip()
+        push_token = (service_cfg.get("push_token") or "").strip()
+        if push_url:
+            push_thought(push_url, push_token, "jang", distilled)
+        else:
+            _roll_inner(distilled, retention_hours)
+        print(f"[Jang] Distilled: {distilled[:80]}...", flush=True)
 
-    if push_url:
-        push_thought(push_url, push_token, "jang", distilled)
-        _trim_jing_buffer(all_blocks, turns_back)
-    else:
-        _roll_inner(distilled, retention_hours)
-        _trim_jing_buffer(all_blocks, turns_back)
-
-    print(f"[Jang] Distilled: {distilled[:80]}...", flush=True)
+    # Always trim, even when distilled is empty — otherwise jing_thoughts.txt
+    # grows unbounded through any stretch where Jang consistently has nothing
+    # to distill (e.g. a quiet household with all categories empty).
+    _trim_jing_buffer(turns_back)
 
 
 def main() -> None:

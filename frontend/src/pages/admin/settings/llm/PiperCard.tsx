@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,12 +13,14 @@ const LANG_ORDER = ["nb", "en", "de"];
 type DownloadState = { jobId: string; modelName: string; done: boolean; error?: string };
 
 export function PiperCard({ onSaved }: { onSaved: () => void }) {
+  const { t } = useTranslation();
   const [collapsed, setCollapsed]     = useState(true);
   const [models, setModels]           = useState<Record<string, PiperPreset[]>>({});
   const [activating, setActivating]   = useState<string | null>(null);
   const [downloads, setDownloads]     = useState<Record<string, DownloadState>>({});
   const [restarting, setRestarting]   = useState(false);
   const [restartOk, setRestartOk]     = useState<boolean | null>(null);
+  const [restartError, setRestartError] = useState("");
   const pollRefs = useRef<Record<string, ReturnType<typeof setInterval>>>({});
 
   const load = useCallback(() => {
@@ -72,9 +75,11 @@ export function PiperCard({ onSaved }: { onSaved: () => void }) {
   const restart = async () => {
     setRestarting(true);
     setRestartOk(null);
+    setRestartError("");
     try {
       const r = await apiRestartService("voice");
       setRestartOk(r.ok);
+      if (!r.ok) setRestartError(r.error ?? "");
     } catch { setRestartOk(false); }
     finally { setRestarting(false); }
   };
@@ -86,7 +91,7 @@ export function PiperCard({ onSaved }: { onSaved: () => void }) {
           className="flex items-center gap-3 cursor-pointer select-none flex-1"
           onClick={() => setCollapsed(v => !v)}
         >
-          <CardTitle className="text-base">Piper (tekst-til-tale)</CardTitle>
+          <CardTitle className="text-base">{t("settings.llm.piper_title")}</CardTitle>
           <Badge variant="outline" className="text-xs font-mono">port 8011</Badge>
         </div>
         <div className="flex items-center gap-2">
@@ -100,8 +105,7 @@ export function PiperCard({ onSaved }: { onSaved: () => void }) {
       {!collapsed && (
         <CardContent className="space-y-5 pt-0">
           <p className="text-xs text-muted-foreground">
-            Én stemmemodell per språk. Velg modellen som er lastet ned for å aktivere den.
-            Nedlasting krever internettilgang og <code>huggingface-cli</code>.
+            {t("settings.llm.piper_intro", { cli: "huggingface-cli" })}
           </p>
 
           {LANG_ORDER.map(lang => {
@@ -130,7 +134,7 @@ export function PiperCard({ onSaved }: { onSaved: () => void }) {
                           </span>
                           {dlError && (
                             <span className="text-xs text-red-400 block truncate" title={dl.error}>
-                              Feil: {dl.error?.slice(0, 80)}
+                              {t("settings.llm.piper_download_error", { error: dl.error?.slice(0, 80) })}
                             </span>
                           )}
                         </div>
@@ -138,10 +142,10 @@ export function PiperCard({ onSaved }: { onSaved: () => void }) {
                         {/* State + action */}
                         <div className="flex items-center gap-2 shrink-0">
                           {p.active && (
-                            <Badge className="bg-green-600/20 text-green-400 border-green-600/30 text-xs">aktiv</Badge>
+                            <Badge className="bg-green-600/20 text-green-400 border-green-600/30 text-xs">{t("common.enabled")}</Badge>
                           )}
                           {!p.active && p.downloaded && (
-                            <Badge variant="outline" className="text-xs text-muted-foreground">lastet ned</Badge>
+                            <Badge variant="outline" className="text-xs text-muted-foreground">{t("settings.llm.piper_downloaded_badge")}</Badge>
                           )}
 
                           {!p.downloaded && !isDownloading && (
@@ -152,14 +156,14 @@ export function PiperCard({ onSaved }: { onSaved: () => void }) {
                               onClick={() => startDownload(lang, p)}
                             >
                               <Download className="h-3 w-3" />
-                              Last ned
+                              {t("settings.llm.piper_download_btn")}
                             </Button>
                           )}
 
                           {isDownloading && (
                             <span className="text-xs text-muted-foreground flex items-center gap-1">
                               <Loader2 className="h-3 w-3 animate-spin" />
-                              Laster ned…
+                              {t("settings.llm.piper_downloading")}
                             </span>
                           )}
 
@@ -172,7 +176,7 @@ export function PiperCard({ onSaved }: { onSaved: () => void }) {
                               onClick={() => activate(lang, p)}
                             >
                               {isActivating && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
-                              Aktiver
+                              {t("settings.llm.piper_activate_btn")}
                             </Button>
                           )}
                         </div>
@@ -189,13 +193,13 @@ export function PiperCard({ onSaved }: { onSaved: () => void }) {
           <div className="flex items-center gap-3 flex-wrap">
             <Button onClick={restart} disabled={restarting} size="sm" variant="outline">
               {restarting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
-              Restart tjeneste
+              {t("settings.llm.restart_service")}
             </Button>
-            {restartOk === true  && <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Restartet</span>}
-            {restartOk === false && <span className="text-xs text-red-400 flex items-center gap-1"><XCircle className="h-3 w-3" /> Feil ved restart</span>}
+            {restartOk === true  && <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> {t("settings.llm.restart_restarted")}</span>}
+            {restartOk === false && <span className="text-xs text-red-400 flex items-center gap-1"><XCircle className="h-3 w-3" /> {restartError || t("settings.llm.restart_generic_error")}</span>}
           </div>
           <p className="text-xs text-muted-foreground">
-            Aktivering av ny modell krever restart for at Kåre tar den i bruk.
+            {t("settings.llm.piper_restart_hint")}
           </p>
           </></ExpertOnly>
         </CardContent>

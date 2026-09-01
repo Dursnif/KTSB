@@ -165,6 +165,11 @@ export async function apiRecover(username: string, seed_phrase: string, new_pin:
   return data as { token: string; user: { username: string; role: string; display_name: string; avatar: string } };
 }
 
+export async function apiReissueSeedPhrase(username: string) {
+  const { data } = await api.post(`/api/users/${username}/reissue_seed_phrase`, {});
+  return data as { seed_phrase: string };
+}
+
 export async function apiListPersonalities() {
   const { data } = await api.get("/api/personalities");
   return data as { key: string; label: string }[];
@@ -218,6 +223,7 @@ export type KaareUser = {
   is_parent?: boolean;
   pin_required?: boolean;
   managed_children?: string | null;
+  seed_phrase?: string; // present only once, when a keypair was just generated (create or first login)
 };
 
 export type Role = "child" | "teen" | "young_adult" | "adult" | "admin";
@@ -695,7 +701,14 @@ export type ServiceKey =
   | "kaare" | "gateway" | "semantic_embed" | "agents" | "embedding"
   | "argus" | "voice" | "frontend" | "ha-log-bridge";
 
-export type AdminServiceStatus = { unit: string; active: boolean };
+export type AdminServiceStatus = {
+  unit: string; active: boolean;
+  // Docker-only: richer state than `active` alone can express — a container
+  // that was never created (profile off) needs different UI than one the
+  // restart mechanism itself can't reach at all.
+  state?: "running" | "stopped" | "not_created" | "unavailable";
+  reason?: string;
+};
 
 export async function apiAdminServices(): Promise<Record<string, AdminServiceStatus>> {
   const { data } = await api.get("/api/admin/services");
@@ -1410,4 +1423,13 @@ export async function apiPostNormalcyCorrect(body: {
 }) {
   const { data } = await api.post("/api/normalcy/correct", body);
   return data as { ok: boolean };
+}
+
+export async function apiDeleteNormalcyCorrect(body: {
+  source_key: string;
+  hour_bucket: string;
+  weekday: string;
+}) {
+  const { data } = await api.delete("/api/normalcy/correct", { data: body });
+  return data as { ok: boolean; removed: boolean };
 }

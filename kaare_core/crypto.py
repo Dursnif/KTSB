@@ -164,13 +164,12 @@ def generate_seed_phrase() -> str:
 def seed_phrase_to_private_key(words: str, original_salt: bytes, original_public_key: bytes) -> bytes | None:
     """
     Recover private key from seed phrase.
-    The seed phrase encodes the raw private key bytes directly (not via HD derivation).
+    The seed phrase encodes all 32 raw private key bytes directly (24-word BIP39, not via HD
+    derivation) — lossless round trip, no padding/truncation. See private_key_to_seed_phrase().
     Returns private_key bytes if the recovered key matches public_key, else None.
     """
     try:
-        entropy = _mnemo.to_entropy(words)
-        # entropy is 16 bytes for 12-word phrase — pad to 32 bytes for X25519
-        private_key_bytes = (entropy * 3)[:32]
+        private_key_bytes = bytes(_mnemo.to_entropy(words))
         recovered = nacl.public.PrivateKey(private_key_bytes)
         if bytes(recovered.public_key) == original_public_key:
             return private_key_bytes
@@ -223,8 +222,11 @@ def read_user_text_file(path_base: Path, user_id: str, allow_system_key: bool = 
 def private_key_to_seed_phrase(private_key_bytes: bytes) -> str:
     """
     Convert private key bytes to a BIP39-compatible seed phrase.
-    Uses the first 16 bytes of the private key as entropy (128 bits → 12 words).
-    NOTE: Shown to user only once at account creation.
+    Encodes the full 32-byte private key as entropy (256 bits -> 24 words) so recovery is a
+    lossless round trip. P95: a prior version used only the first 16 bytes (128 bits -> 12
+    words) and reconstructed the other 16 by repeating them — those bytes are independently
+    random for an X25519 key generated via generate_keypair(), so that version could never
+    actually recover the correct key. Fixed by encoding all 32 bytes instead of discarding half.
+    NOTE: Shown to user only once (account creation, or an explicit self-service reissue).
     """
-    entropy = private_key_bytes[:16]
-    return _mnemo.to_mnemonic(entropy)
+    return _mnemo.to_mnemonic(private_key_bytes)

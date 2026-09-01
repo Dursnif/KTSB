@@ -362,6 +362,18 @@ def _search_argus_tool(lang: str) -> dict:
                         "type": "integer",
                         "description": _t("tool_søk_i_argus_limit_desc", lang),
                     },
+                    "entity_id": {
+                        "type": "string",
+                        "description": _t("tool_søk_i_argus_entity_id_desc", lang),
+                    },
+                    "since": {
+                        "type": "string",
+                        "description": _t("tool_søk_i_argus_since_desc", lang),
+                    },
+                    "until": {
+                        "type": "string",
+                        "description": _t("tool_søk_i_argus_until_desc", lang),
+                    },
                 },
                 "required": ["query"],
             },

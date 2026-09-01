@@ -56,6 +56,45 @@ def _migrate_nodes(config_file: Path, changed: list) -> None:
         changed.append(f"  migrated nodes.yaml: {migrated_count} node(s) is_tv → has_display/has_audio")
 
 
+def _migrate_llm_system_i18n(config_file: Path, default_file: Path, changed: list) -> None:
+    """Migrate default.system / vision.system from a flat string to a {nb, en, de} dict.
+
+    Existing installs keep their own (possibly customized) Norwegian text as the nb
+    variant; en/de come from the shipped default translation since a customized prompt
+    has no other-language equivalent to migrate.
+    """
+    if not config_file.exists() or not default_file.exists():
+        return
+    try:
+        data = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
+        defaults = yaml.safe_load(default_file.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return
+    migrated_roles = []
+    for role in ("default", "vision"):
+        role_cfg = data.get(role)
+        if not isinstance(role_cfg, dict):
+            continue
+        sys_val = role_cfg.get("system")
+        if not isinstance(sys_val, str):
+            continue
+        default_sys = (defaults.get(role) or {}).get("system")
+        if not isinstance(default_sys, dict):
+            continue
+        role_cfg["system"] = {
+            "nb": sys_val,
+            "en": default_sys.get("en", sys_val),
+            "de": default_sys.get("de", sys_val),
+        }
+        migrated_roles.append(role)
+    if migrated_roles:
+        with open(config_file, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        changed.append(
+            f"  migrated {config_file.name}: {', '.join(migrated_roles)}.system → nb/en/de dict"
+        )
+
+
 def _migrate_network_config(config_file: Path, changed: list) -> None:
     """Migrate network.local_subnet (string) to network.local_subnets (list)."""
     if not config_file.exists():
@@ -111,6 +150,7 @@ def migrate():
 
     _migrate_network_config(CONFIGS_DIR / "settings.yaml", changed)
     _migrate_nodes(CONFIGS_DIR / "nodes.yaml", changed)
+    _migrate_llm_system_i18n(CONFIGS_DIR / "llm.yaml", DEFAULTS_DIR / "llm.yaml", changed)
 
     if changed:
         print("[migrate] Config changes applied:", flush=True)

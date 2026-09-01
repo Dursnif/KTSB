@@ -4,6 +4,7 @@ import i18n from "@/i18n";
 import {
   apiGetTimerSettings, apiPutTimerSettings,
   apiGetSshNodes, apiPutSshNodes, apiTestSshNode,
+  apiGetServices,
   type SshNodeConfig, type SshNodesData,
 } from "../../services/api";
 
@@ -70,7 +71,7 @@ function eventColor(call: ToolCall): string {
   if (label.includes("timer"))   return SOURCE_COLOR.timer;
   if (label.includes("styr"))    return "#e07070";
   if (label.includes("library")) return SOURCE_COLOR.miss_library;
-  if (label.includes("søk"))     return SOURCE_COLOR.jing;
+  if (label.includes("search"))  return SOURCE_COLOR.jing;
   return "#555";
 }
 
@@ -116,8 +117,7 @@ function SshNodes() {
   useEffect(() => {
     apiGetSshNodes().then(setData).catch(() => {});
     // fetch HA host for pre-population
-    fetch(`http://${window.location.hostname}:8000/api/settings/services`)
-      .then(r => r.json())
+    apiGetServices()
       .then(d => {
         const url: string = d?.home_assistant?.url ?? "";
         if (url) {
@@ -386,7 +386,7 @@ function SshNodes() {
               <input
                 value={modal.node.host}
                 onChange={e => setField("host", e.target.value)}
-                placeholder="192.168.0.233"
+                placeholder="192.168.0.x"
                 style={INPUT_STYLE}
               />
               {isHaOs && haHost && modal.node.host === "" && (
@@ -523,7 +523,7 @@ function SshNodes() {
               <button onClick={() => setModal(null)} style={{
                 padding: "7px 18px", borderRadius: 6, border: "1px solid #444",
                 background: "transparent", color: "#aaa", fontSize: 13, cursor: "pointer",
-              }}>Avbryt</button>
+              }}>{t("common.cancel")}</button>
               <button
                 onClick={saveModal}
                 disabled={!modal.id || !modal.node.host}
@@ -533,7 +533,7 @@ function SshNodes() {
                   color: !modal.id || !modal.node.host ? "#555" : "#fff",
                   fontSize: 13, fontWeight: 600, cursor: "pointer",
                 }}>
-                Lagre
+                {t("common.save")}
               </button>
             </div>
           </div>

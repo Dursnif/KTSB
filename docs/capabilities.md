@@ -178,8 +178,12 @@ yet used for alert routing. This is what lets away-mode alerting tell "the mail 
 every weekday around 11" apart from "someone at the back door at 3am."
 
 The **Security** admin page shows a grouped, filterable feed of recent detections with
-deviation scores, confidence badges, and click-to-view snapshot thumbnails. Admins can
-correct mis-scored events; corrections feed back into future baseline computation.
+deviation scores, confidence badges, and click-to-view snapshot thumbnails. Column headers
+(camera, object, deviation, timestamp, coverage, status) are clickable to sort within each
+group. Admins can correct mis-scored events, individually or in batch; corrections feed
+back into future baseline computation. A transient "undo last action" snackbar appears
+after every correction — reverting restores the previous state, or removes the correction
+entirely if the event was previously unassessed.
 
 ### Notifications
 
@@ -529,13 +533,18 @@ as its STT/TTS backend.
 
 ### Speech-to-Text
 
-Model: faster-whisper `large-v3`, int8 quantisation, CPU.
-Handles Norwegian, English, and German without configuration changes.
+Model: faster-whisper `large-v3` (int8, CPU) or OpenVINO nb-whisper-large, depending on
+hardware profile. STT and TTS follow the user's full `kare_language` selection directly (16
+languages) — this is a separate mechanism from the 3-language (nb/en/de) collapse used for
+GUI/pipe scaffold text, so voice input/output is not limited to those three.
 
 ### Text-to-Speech
 
-Model: Piper (Norwegian ONNX model, 22050 Hz).
-TTS-ducking pauses MPD playback automatically during spoken responses.
+Model: Piper, one ONNX voice model per language (nb/en/de shipped by default, more
+installable per language from Settings → LLM → Piper), quality tier configurable per voice.
+A pronunciation-correction lexicon (`configs/tts_lexicon*.yaml`, one file per language) is
+applied before synthesis to fix loanword/brand-name mispronunciations without touching
+code. TTS-ducking pauses MPD playback automatically during spoken responses.
 
 ### Output Targets
 
@@ -594,6 +603,9 @@ history — Kåre's introspective tools are never filtered.
 ### Authentication
 
 - PIN-based login (bcrypt hashed, minimum 6 digits; existing shorter PINs remain valid until changed)
+- Account recovery via a 24-word BIP39 seed phrase, shown once at account creation (or
+  re-issuable from Settings → Users) — losing the PIN doesn't lose access to encrypted
+  per-user data, since the seed phrase encodes the full private key losslessly
 - JWT session tokens (HS256, expiry configurable — default 4 hours)
 - Rate limiting: 5 failed login attempts per 15 minutes per IP; 20 requests/min per user on `/api/generate` (429 + `Retry-After`)
 - Forced PIN change on first login
@@ -657,6 +669,11 @@ manual YAML editing required after the initial install.
 | Reflections | Meeting notes by date, topic submission, PIN-protected user views |
 | Security | Grouped, filterable feed of recent camera detections with anomaly deviation scores, confidence badges, and snapshot thumbnails; multi-select batch actions and baseline corrections |
 | System | Hot-reload config, health check, hardware info, service restart, manual memory compression, server-side backup points (save / restore with PIN / download ZIP, max 5), config rollback, automated test suite (36 tests — run from GUI, results shown inline) |
+
+In Docker mode, each restartable service reports one of four states — `running`,
+`stopped`, `not_created` (outside the active `COMPOSE_PROFILES`, e.g. voice/embedding on a
+minimal install), or `unavailable` (Docker socket unreachable) — and the restart control is
+disabled with an explanation for the latter two instead of failing silently.
 | Agent Messages | Read-only view of inter-agent exchanges |
 
 ### Settings areas
@@ -893,7 +910,7 @@ This means encryption's real guarantee is **theft protection** (a stolen disk or
 - Qdrant `kaare_memory` narrative payloads — SealedBox on upsert; decrypted with session key on retrieval
 - Existing plaintext data migrated automatically on first login after upgrade
 
-**Account recovery:** a BIP39-derived seed phrase is generated at account creation. The seed phrase resets the PIN and re-derives all encryption keys without admin involvement. A standalone `/recover` page (no session required) handles the full flow. Data written before key re-derivation cannot be decrypted after recovery.
+**Account recovery:** a BIP39-derived 24-word seed phrase is generated at account creation, encoding the user's private key directly. The seed phrase resets the PIN and restores the exact original private key without admin involvement — all existing encrypted data (profile, observations, STM, LTM, semantic memory) remains readable after recovery, nothing is re-derived or lost. A standalone `/recover` page (no session required) handles the full flow.
 
 ### Audit and monitoring
 

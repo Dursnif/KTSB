@@ -30,7 +30,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
+from qdrant_client.models import Distance, PointStruct, VectorParams, PayloadSchemaType
 
 sys.path.insert(0, "/kaare")
 import yaml
@@ -162,10 +162,16 @@ def doc_id(source: str, raw_line: str) -> str:
 
 
 def file_signature(path: Path) -> str | None:
-    """Returnerer 'dev:inode' – endres hvis filen er rotert/erstattet."""
+    """Returnerer inode – endres hvis filen er rotert/erstattet.
+
+    Kun inode, ikke device-nummer: st_dev endres ved reboot/disk-bytte selv om
+    filen ikke er rotert (device-numre kan re-tildeles ved ny maskinvare-enumerering),
+    noe som tidligere fikk alle 7 loggfiler til å se "rotert" ut samtidig og trigget
+    full re-indeksering av flere GB historikk. Se FIX-log 2026-08-28.
+    """
     try:
         st = path.stat()
-        return f"{st.st_dev}:{st.st_ino}"
+        return str(st.st_ino)
     except Exception:
         return None
 
@@ -331,11 +337,11 @@ def make_message(ev: dict, source: str) -> str:
     if stage == "tool_consistency_mismatch":
         mismatches = ev.get("mismatches", [])
         preview = "; ".join(str(m) for m in mismatches)[:200]
-        return f"KRITISK: verktøy-konfigurasjon i utakt — {preview}"
+        return t("argus_tool_config_mismatch", get_lang("global"), preview=preview)
     if stage == "ha_handled_done":
         return f"HA: {ev.get('action','?')} {ev.get('entity_id','?')}"
     if stage == "ha_gateway_return":
-        ok = "OK" if ev.get("status") == "ok" else "FEIL"
+        ok = t("argus_status_ok", get_lang("global")) if ev.get("status") == "ok" else t("argus_status_fail", get_lang("global"))
         return f"HA gateway: {ok} {ev.get('rid', '')}"
     if stage == "fastpath_match":
         return f"Fastpath: {ev.get('route','?')}"
@@ -420,12 +426,20 @@ def _flush_face_session(name: str, session: dict) -> None:
 
 def process_face_event(ev: dict) -> None:
     """Update in-memory face sessions from a Frigate event with sub_label set."""
-    name = ev.get("sub_label")
+    raw_sub_label = ev.get("sub_label")
+    sub_label_score = ev.get("sub_label_score")
+    if isinstance(raw_sub_label, (list, tuple)):
+        # Frigate sometimes sends sub_label as [name, score] instead of a plain string.
+        name = raw_sub_label[0] if raw_sub_label else None
+        if sub_label_score is None and len(raw_sub_label) > 1:
+            sub_label_score = raw_sub_label[1]
+    else:
+        name = raw_sub_label
     if not name:
         return
 
     camera   = ev.get("camera", "?")
-    score    = float(ev.get("sub_label_score") or ev.get("score") or 0)
+    score    = float(sub_label_score or ev.get("score") or 0)
     label    = ev.get("label", "person")
     ts_raw   = ev.get("ts", "")
     event_id = ev.get("event_id", "")
@@ -523,8 +537,37 @@ def ensure_argus_collection() -> None:
             log.info("Qdrant-kolleksjon '%s' opprettet.", ARGUS_COLLECTION)
         else:
             log.info("Qdrant-kolleksjon '%s' klar.", ARGUS_COLLECTION)
+        _ensure_argus_payload_indexes(client)
     except Exception as exc:
         log.error("Feil ved init av Qdrant-kolleksjon: %s", exc)
+
+
+def _ensure_argus_payload_indexes(client: QdrantClient) -> None:
+    """
+    P96: entity_id/subsystem/source/level/event_type keyword indexes + ts range
+    index — enables entity_id/time-filtered search_argus queries (previously
+    always full semantic-only, no way to answer "did X happen at time Y").
+    Idempotent — safe to call on every startup, Qdrant no-ops on an existing index.
+    Each index created independently so one failure doesn't block the rest.
+    """
+    keyword_fields = ("entity_id", "subsystem", "source", "level", "event_type")
+    for field in keyword_fields:
+        try:
+            client.create_payload_index(
+                collection_name=ARGUS_COLLECTION,
+                field_name=field,
+                field_schema=PayloadSchemaType.KEYWORD,
+            )
+        except Exception as exc:
+            log.warning("Payload-indeks for '%s' feilet: %s", field, exc)
+    try:
+        client.create_payload_index(
+            collection_name=ARGUS_COLLECTION,
+            field_name="ts",
+            field_schema=PayloadSchemaType.DATETIME,
+        )
+    except Exception as exc:
+        log.warning("Payload-indeks for 'ts' feilet: %s", exc)
 
 
 async def qdrant_upsert_batch(http: httpx.AsyncClient, docs: list[dict]) -> int:
@@ -786,6 +829,7 @@ async def daemon():
                             "level":      get_level(ev),
                             "ts":         ts_iso,
                             "rid":        ev.get("rid") or "",
+                            "entity_id":  ev.get("entity_id") or "",
                         },
                     }
                     batch.append(doc)
@@ -818,14 +862,18 @@ async def daemon():
             # Flush face sessions that have been silent for > timeout
             flush_stale_face_sessions()
 
-            # Skriv rapport og lagre tilstand
+            # Lagre fil-offset/tilstand hver runde (ikke bare ved rapport-intervallet) —
+            # slik at en restart midt i en stor innhentingsjobb ikke mister fremgangen og
+            # må starte helt på nytt. Se FIX-log 2026-08-28.
+            state["counters"]    = counters
+            state["active_rids"] = active_rids
+            safe_write_json(STATE_PATH, state)
+
+            # Skriv rapport (helsesjekk-fil for GUI) sjeldnere
             now = asyncio.get_event_loop().time()
             if now - last_report >= REPORT_INTERVAL:
                 report = build_report(counters, active_rids)
                 safe_write_json(REPORT_PATH, report)
-                state["counters"]    = counters
-                state["active_rids"] = active_rids
-                safe_write_json(STATE_PATH, state)
                 if digest_buffer:
                     write_digest(DIGEST_PATH, list(digest_buffer))
                 trim_face_events_file()

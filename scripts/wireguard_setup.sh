@@ -54,4 +54,4 @@ echo ""
 wg show
 echo ""
 echo "Neste steg:"
-echo "  sudo bash /kaare/scripts/add_vpn_client.sh stian-telefon"
+echo "  sudo bash /kaare/scripts/add_vpn_client.sh min-telefon"

@@ -14,12 +14,12 @@ import {
 } from "@/services/api";
 import { useSaveState, FieldRow, SaveFeedback, MaskedInput, ExpertOnly } from "./shared";
 
-const WEATHER_PROVIDERS: { value: WeatherProvider; label: string; needsKey: boolean; keyField?: "owm" | "wapi" | "pirate" }[] = [
-  { value: "met.no",         label: "met.no (gratis, norsk, ingen nøkkel)",            needsKey: false },
-  { value: "open-meteo",     label: "Open-Meteo (gratis, global, ingen nøkkel)",       needsKey: false },
-  { value: "openweathermap", label: "OpenWeatherMap (global, API-nøkkel påkrevd)",     needsKey: true,  keyField: "owm" },
-  { value: "weatherapi",     label: "WeatherAPI.com (global, API-nøkkel påkrevd)",     needsKey: true,  keyField: "wapi" },
-  { value: "pirateweather",  label: "PirateWeather (global, gratis nøkkel påkrevd)",   needsKey: true,  keyField: "pirate" },
+const WEATHER_PROVIDERS: { value: WeatherProvider; labelKey: string; needsKey: boolean; keyField?: "owm" | "wapi" | "pirate" }[] = [
+  { value: "met.no",         labelKey: "settings.nettsok.weather.provider_met",        needsKey: false },
+  { value: "open-meteo",     labelKey: "settings.nettsok.weather.provider_openmeteo",  needsKey: false },
+  { value: "openweathermap", labelKey: "settings.nettsok.weather.provider_owm",        needsKey: true,  keyField: "owm" },
+  { value: "weatherapi",     labelKey: "settings.nettsok.weather.provider_wapi",       needsKey: true,  keyField: "wapi" },
+  { value: "pirateweather",  labelKey: "settings.nettsok.weather.provider_pirate",     needsKey: true,  keyField: "pirate" },
 ];
 
 export default function TabNettsokOgVaer() {
@@ -199,7 +199,7 @@ export default function TabNettsokOgVaer() {
   return (
     <div className="space-y-6">
 
-      {/* ── Vær ── */}
+      {/* ── Weather ── */}
       <Card>
         <CardHeader>
           <CardTitle>{t("settings.nettsok.weather.title")}</CardTitle>
@@ -215,7 +215,7 @@ export default function TabNettsokOgVaer() {
                 </SelectTrigger>
                 <SelectContent>
                   {WEATHER_PROVIDERS.map(p => (
-                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                    <SelectItem key={p.value} value={p.value}>{t(p.labelKey)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -233,34 +233,34 @@ export default function TabNettsokOgVaer() {
 
             {provider === "openweathermap" && (
               <FieldRow
-                label="OpenWeatherMap API-nøkkel"
+                label={t("settings.nettsok.weather.owm_key_label")}
                 hint={weather?.openweathermap_key_set
                   ? t("settings.llm.api_key_set_hint", { masked: weather.openweathermap_key_masked })
-                  : "Ikke satt — hent gratis nøkkel på openweathermap.org"}
+                  : t("settings.nettsok.weather.owm_key_unset_hint")}
               >
-                <MaskedInput value={owmKey} onChange={setOwmKey} placeholder={weather?.openweathermap_key_set ? "••• (oppdater)" : "Lim inn nøkkel"} />
+                <MaskedInput value={owmKey} onChange={setOwmKey} placeholder={weather?.openweathermap_key_set ? t("common.key_update_placeholder") : t("common.key_paste_placeholder")} />
               </FieldRow>
             )}
 
             {provider === "weatherapi" && (
               <FieldRow
-                label="WeatherAPI API-nøkkel"
+                label={t("settings.nettsok.weather.wapi_key_label")}
                 hint={weather?.weatherapi_key_set
                   ? t("settings.llm.api_key_set_hint", { masked: weather.weatherapi_key_masked })
-                  : "Ikke satt — hent gratis nøkkel på weatherapi.com"}
+                  : t("settings.nettsok.weather.wapi_key_unset_hint")}
               >
-                <MaskedInput value={wapiKey} onChange={setWapiKey} placeholder={weather?.weatherapi_key_set ? "••• (oppdater)" : "Lim inn nøkkel"} />
+                <MaskedInput value={wapiKey} onChange={setWapiKey} placeholder={weather?.weatherapi_key_set ? t("common.key_update_placeholder") : t("common.key_paste_placeholder")} />
               </FieldRow>
             )}
 
             {provider === "pirateweather" && (
               <FieldRow
-                label="PirateWeather API-nøkkel"
+                label={t("settings.nettsok.weather.pirate_key_label")}
                 hint={weather?.pirateweather_key_set
                   ? t("settings.llm.api_key_set_hint", { masked: weather.pirateweather_key_masked })
-                  : "Ikke satt — registrer gratis på pirate-weather.apiable.io"}
+                  : t("settings.nettsok.weather.pirate_key_unset_hint")}
               >
-                <MaskedInput value={pirateKey} onChange={setPirateKey} placeholder={weather?.pirateweather_key_set ? "••• (oppdater)" : "Lim inn nøkkel"} />
+                <MaskedInput value={pirateKey} onChange={setPirateKey} placeholder={weather?.pirateweather_key_set ? t("common.key_update_placeholder") : t("common.key_paste_placeholder")} />
               </FieldRow>
             )}
 
@@ -319,9 +319,9 @@ export default function TabNettsokOgVaer() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="auto">auto (Kartverket → Stormglass)</SelectItem>
-                      <SelectItem value="kartverket">Kartverket (norsk kyst)</SelectItem>
-                      <SelectItem value="stormglass">Stormglass (global)</SelectItem>
+                      <SelectItem value="auto">{t("settings.nettsok.weather.tide_auto_label")}</SelectItem>
+                      <SelectItem value="kartverket">{t("settings.nettsok.weather.tide_kartverket_label")}</SelectItem>
+                      <SelectItem value="stormglass">{t("settings.nettsok.weather.tide_stormglass_label")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </FieldRow>
@@ -332,7 +332,7 @@ export default function TabNettsokOgVaer() {
                       ? t("settings.llm.api_key_set_hint", { masked: weather.stormglass_key_masked })
                       : t("settings.nettsok.weather.stormglass_key_unset_hint")}
                   >
-                    <MaskedInput value={stormglassKey} onChange={setStormglassKey} placeholder={weather?.stormglass_key_set ? "••• (oppdater)" : "Lim inn nøkkel"} />
+                    <MaskedInput value={stormglassKey} onChange={setStormglassKey} placeholder={weather?.stormglass_key_set ? t("common.key_update_placeholder") : t("common.key_paste_placeholder")} />
                   </FieldRow>
                 )}
               </></ExpertOnly>
@@ -443,7 +443,7 @@ export default function TabNettsokOgVaer() {
         </CardContent>
       </Card>
 
-      {/* ── Nettsøk ── */}
+      {/* ── Web search ── */}
       <Card>
         <CardHeader>
           <CardTitle>{t("settings.nettsok.websearch.title")}</CardTitle>
@@ -524,7 +524,7 @@ export default function TabNettsokOgVaer() {
             hint={braveStatus?.is_set ? t("settings.llm.api_key_set_hint", { masked: braveStatus.masked }) : t("settings.nettsok.websearch.brave_key_unset_hint")}
           >
             <div className="flex gap-2 items-center">
-              <MaskedInput value={braveKey} onChange={setBraveKey} placeholder={braveStatus?.is_set ? "••• (oppdater)" : "Lim inn nøkkel"} />
+              <MaskedInput value={braveKey} onChange={setBraveKey} placeholder={braveStatus?.is_set ? t("common.key_update_placeholder") : t("common.key_paste_placeholder")} />
               <Button onClick={saveBrave} disabled={ssBrave.state === "saving" || !braveKey} variant="outline">
                 {ssBrave.state === "saving" ? <Loader2 className="h-4 w-4 animate-spin" /> : t("common.update")}
               </Button>
@@ -638,7 +638,7 @@ export default function TabNettsokOgVaer() {
             {/* Add new category */}
             <div className="flex items-center gap-2 pt-2">
               <Input
-                placeholder="ny_kategori_nøkkel"
+                placeholder={t("settings.nettsok.trusted.new_category_placeholder")}
                 value={newCat}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewCat(e.target.value)}
                 className="w-52 font-mono text-xs"

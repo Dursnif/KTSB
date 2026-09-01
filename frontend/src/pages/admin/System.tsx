@@ -47,8 +47,10 @@ const SERVICE_KEYS = new Set([
 ]);
 
 
-function ServiceRestartRow({ serviceKey, unit, active, onRestarted }: {
-  serviceKey: string; unit: string; active: boolean; onRestarted: () => void;
+function ServiceRestartRow({ serviceKey, unit, active, dockerState, dockerReason, onRestarted }: {
+  serviceKey: string; unit: string; active: boolean;
+  dockerState?: AdminServiceStatus["state"]; dockerReason?: string;
+  onRestarted: () => void;
 }) {
   const { t } = useTranslation();
   const [state, setState] = useState<"idle" | "restarting" | "ok" | "error">("idle");
@@ -60,6 +62,11 @@ function ServiceRestartRow({ serviceKey, unit, active, onRestarted }: {
   const hint = SERVICE_KEYS.has(serviceKey)
     ? t(`system.services.labels.${serviceKey}.hint`, unit)
     : unit;
+
+  // Docker-only: a container that was never created (profile off) or that
+  // the restart mechanism can't reach at all needs a disabled control with
+  // a reason, not a button that just fails when clicked.
+  const uncontrollable = dockerState === "not_created" || dockerState === "unavailable";
 
   const restart = async () => {
     setState("restarting");
@@ -90,20 +97,28 @@ function ServiceRestartRow({ serviceKey, unit, active, onRestarted }: {
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-        {state === "error" && <span style={{ color: "#f87171", fontSize: 12, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{errorMsg || t("system.services.error")}</span>}
-        {state === "ok"    && <span style={{ color: "#4caf50", fontSize: 12 }}>{t("system.services.restarted")}</span>}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={restart}
-          disabled={state === "restarting"}
-          className="gap-1.5"
-        >
-          {state === "restarting"
-            ? <Loader2 className="h-3 w-3 animate-spin" />
-            : <RotateCcw className="h-3 w-3" />}
-          {state === "restarting" ? t("system.services.restarting") : t("system.services.restart")}
-        </Button>
+        {uncontrollable ? (
+          <span style={{ color: "#666", fontSize: 12, maxWidth: 220, textAlign: "right" }}>
+            {dockerReason || t(`system.services.${dockerState}`)}
+          </span>
+        ) : (
+          <>
+            {state === "error" && <span style={{ color: "#f87171", fontSize: 12, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{errorMsg || t("system.services.error")}</span>}
+            {state === "ok"    && <span style={{ color: "#4caf50", fontSize: 12 }}>{t("system.services.restarted")}</span>}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={restart}
+              disabled={state === "restarting"}
+              className="gap-1.5"
+            >
+              {state === "restarting"
+                ? <Loader2 className="h-3 w-3 animate-spin" />
+                : <RotateCcw className="h-3 w-3" />}
+              {state === "restarting" ? t("system.services.restarting") : t("system.services.restart")}
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -140,9 +155,18 @@ function HardwareCard() {
 
   useEffect(() => { detect(false); }, [detect]);
 
+  const gpuTypeLabels: Record<string, string> = {
+    nvidia: "NVIDIA",
+    amd: "AMD",
+    intel: "Intel",
+    "intel-igpu": "Intel iGPU",
+    "intel-arc": "Intel Arc",
+  };
+
   const gpuLabel = (gpu: HardwareInfo["gpus"][0]) => {
     const vram = gpu.vram_gb != null ? ` (${t("system.hardware.vram", { gb: gpu.vram_gb })})` : "";
-    return `${gpu.type.toUpperCase()} ${gpu.name}${vram}`;
+    const typeLabel = gpuTypeLabels[gpu.type] ?? gpu.type.toUpperCase();
+    return `${typeLabel} ${gpu.name}${vram}`;
   };
 
   const row = (label: string, value: string, accent?: boolean) => (
@@ -994,12 +1018,14 @@ export default function System() {
           <div style={{ color: "#ddd", fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{t("system.services.title")}</div>
           <p style={{ color: "#666", fontSize: 13, marginBottom: 16 }}>{t("system.services.description")}</p>
           <div>
-            {Object.entries(services).map(([key, { unit, active }]) => (
+            {Object.entries(services).map(([key, { unit, active, state, reason }]) => (
               <ServiceRestartRow
                 key={key}
                 serviceKey={key}
                 unit={unit}
                 active={active}
+                dockerState={state}
+                dockerReason={reason}
                 onRestarted={loadServices}
               />
             ))}

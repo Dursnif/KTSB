@@ -96,7 +96,7 @@ export function ImageRoleCard({ role, config, onSaved }: { role: string; config:
               value={modelName}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setModelName(e.target.value)}
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm font-mono"
-              placeholder="f.eks. black-forest-labs/FLUX.1-schnell"
+              placeholder={t("settings.llm.img_model_placeholder")}
             />
           </FieldRow>
 
@@ -105,7 +105,7 @@ export function ImageRoleCard({ role, config, onSaved }: { role: string; config:
               value={modelEditName}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setModelEditName(e.target.value)}
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm font-mono"
-              placeholder="f.eks. black-forest-labs/FLUX.1-schnell"
+              placeholder={t("settings.llm.img_model_placeholder")}
             />
           </FieldRow>
 
@@ -113,7 +113,7 @@ export function ImageRoleCard({ role, config, onSaved }: { role: string; config:
             label={t("settings.llm.api_key_label")}
             hint={config.api_key_set ? t("settings.llm.api_key_set_hint", { masked: config.api_key_masked }) : t("settings.llm.api_key_unset_hint")}
           >
-            <MaskedInput value={apiKey} onChange={setApiKey} placeholder={config.api_key_set ? "••• (oppdater)" : "Lim inn nøkkel"} />
+            <MaskedInput value={apiKey} onChange={setApiKey} placeholder={config.api_key_set ? t("common.key_update_placeholder") : t("common.key_paste_placeholder")} />
           </FieldRow>
 
           <ExpertOnly><>
@@ -153,9 +153,9 @@ export function ImageRoleCard({ role, config, onSaved }: { role: string; config:
           <p className="text-xs text-muted-foreground py-2">{t("settings.llm.gen_params")}</p>
 
           {([
-            ["num_inference_steps", "Diffusion steps",   "Antall genereringssteg (f.eks. 28). Høyere = bedre kvalitet, men tregere."],
-            ["guidance_scale",      "Guidance scale",    "Tekstfesting (sett til 1.0 for Qwen-Image-2512, ellers 7.5)."],
-            ["true_cfg_scale",      "True CFG scale",    "Klassifierfri veiledning for Qwen-Image-2512 (f.eks. 5.0)."],
+            ["num_inference_steps", t("settings.llm.img_steps_label"),      t("settings.llm.img_steps_hint")],
+            ["guidance_scale",      t("settings.llm.img_guidance_label"),   t("settings.llm.img_guidance_hint")],
+            ["true_cfg_scale",      t("settings.llm.img_true_cfg_label"),   t("settings.llm.img_true_cfg_hint")],
           ] as [keyof LlmRoleConfig, string, string][]).map(([k, label, hint]) => (
             <FieldRow key={k} label={label} hint={hint}>
               <input

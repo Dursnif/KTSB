@@ -14,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, "/kaare")
 from kaare_core.config import get_service as _svc
+from kaare_core.tools.i18n import t as _t_i18n, get_lang as _get_lang
 
 log = logging.getLogger("mqtt_adapter")
 
@@ -184,10 +185,15 @@ async def _process_frigate_event(payload_bytes: bytes) -> None:
     )
 
     level = "warning" if (label == "person" and float(score) >= 0.6) else "info"
+    _mqtt_lang = _get_lang("global")
+    _sub_label_suffix = _t_i18n("mqtt_frigate_sub_label_suffix", _mqtt_lang, sub_label=sub_label) if sub_label else ""
     _write_event_log(
         event_type=f"detection_{event_type}",
         level=level,
-        message=f"{label} på {camera} ({int(float(score)*100)}%)" + (f" — {sub_label}" if sub_label else ""),
+        message=_t_i18n(
+            "mqtt_frigate_detection", _mqtt_lang,
+            label=label, camera=camera, pct=int(float(score) * 100), sub_label_suffix=_sub_label_suffix,
+        ),
         extra={
             "camera": camera,
             "label": label,

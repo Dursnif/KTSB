@@ -1,7 +1,7 @@
 """
 Jing – event scanner, lowest layer of Kare's inner processing.
 Runs every N minutes (from settings.yaml). Reads categorized recent events.
-Outputs 4 categorized sections: MENNESKER, ANDRE, STM, ARGUS.
+Outputs 3 categorized sections: MENNESKER, ANDRE, ARGUS.
 Only data from the last INTERVAL+10 seconds is included (time filter).
 """
 import re
@@ -13,22 +13,17 @@ from common import (
     DIGEST,
     FACE_EVENTS,
     JING_THOUGHTS,
+    get_pipe_lang,
     load_behavior_config,
     load_service_config,
-    read_stm_recent,
     strip_think,
+    t,
 )
 from provider import load_provider
 from push_client import push_thought
 
 _FACE_TS_RE = re.compile(r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]")
 _DIGEST_TS_RE = re.compile(r"^(\d{2}-\d{2} \d{2}:\d{2})")
-
-SYSTEM = """Du er Jing, et sanse-lag i Kares kognitive system.
-Du mottar fire forhåndssorterte kategorier med ferske hendelser.
-Skriv 1-3 korte, faktabaserte observasjoner per kategori som har innhold.
-Utelat hele kategorien hvis den er tom (ingen data). Maks 2 setninger per kategori.
-Skriv på norsk. Ingen refleksjon, ingen meninger — kun hva du faktisk ser i dataene."""
 
 
 def _parse_face_ts(line: str) -> float | None:
@@ -56,9 +51,9 @@ def _parse_digest_ts(line: str) -> float | None:
         return None
 
 
-def _read_face_events_recent(cutoff: float) -> str:
+def _read_face_events_recent(cutoff: float, lang: str) -> str:
     if not FACE_EVENTS.exists():
-        return "(ingen)"
+        return t("inner_none", lang)
     lines = []
     for line in FACE_EVENTS.read_text(errors="replace").splitlines():
         line = line.strip()
@@ -67,16 +62,16 @@ def _read_face_events_recent(cutoff: float) -> str:
         ts = _parse_face_ts(line)
         if ts is not None and ts >= cutoff:
             lines.append(line)
-    return "\n".join(lines) if lines else "(ingen)"
+    return "\n".join(lines) if lines else t("inner_none", lang)
 
 
-def _read_digest_category(cutoff: float, category: str) -> str:
+def _read_digest_category(cutoff: float, category: str, lang: str) -> str:
     """
     category='andre': frigate-mqtt lines where label is not person
     category='argus':  kaare-metrics, ha-events, and error messages
     """
     if not DIGEST.exists():
-        return "(ingen)"
+        return t("inner_none", lang)
     lines = []
     for line in DIGEST.read_text(errors="replace").splitlines():
         line = line.strip()
@@ -97,30 +92,29 @@ def _read_digest_category(cutoff: float, category: str) -> str:
                 lines.append(line)
             elif "error" in message.lower() or "feil" in message.lower():
                 lines.append(line)
-    return "\n".join(lines) if lines else "(ingen)"
+    return "\n".join(lines) if lines else t("inner_none", lang)
 
 
-def build_context(interval: int) -> str:
+def build_context(interval: int, lang: str) -> str:
     cutoff = time.time() - interval - 10
-    mennesker = _read_face_events_recent(cutoff)
-    andre = _read_digest_category(cutoff, "andre")
-    stm = read_stm_recent(cutoff)
-    argus = _read_digest_category(cutoff, "argus")
+    mennesker = _read_face_events_recent(cutoff, lang)
+    andre = _read_digest_category(cutoff, "andre", lang)
+    argus = _read_digest_category(cutoff, "argus", lang)
     return (
-        f"[MENNESKER]\n{mennesker}\n\n"
-        f"[ANDRE]\n{andre}\n\n"
-        f"[STM]\n{stm}\n\n"
-        f"[ARGUS]\n{argus}"
+        f"[{t('inner_label_mennesker', lang)}]\n{mennesker}\n\n"
+        f"[{t('inner_label_andre', lang)}]\n{andre}\n\n"
+        f"[{t('inner_label_argus', lang)}]\n{argus}"
     )
 
 
 def run_once(provider, behavior_cfg: dict, service_cfg: dict) -> None:
     interval = int(behavior_cfg.get("interval_seconds", 180))
     max_tokens = int(behavior_cfg.get("max_tokens", 300))
+    lang = get_pipe_lang()
 
-    context = build_context(interval)
+    context = build_context(interval, lang)
     prompt = (
-        f"<|im_start|>system\n{SYSTEM}<|im_end|>\n"
+        f"<|im_start|>system\n{t('jing_system', lang)}<|im_end|>\n"
         f"<|im_start|>user\n{context}<|im_end|>\n"
         f"<|im_start|>assistant\n/no_think\n"
     )

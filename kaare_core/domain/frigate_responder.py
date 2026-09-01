@@ -7,6 +7,8 @@ from pathlib import Path
 
 import yaml
 
+from kaare_core.tools.i18n import t, get_lang
+
 log = logging.getLogger("frigate_responder")
 
 _CONFIG_PATH = Path("/kaare/configs/frigate_cameras.yaml")
@@ -69,7 +71,7 @@ def _role_display(role: str) -> str:
     return r.get("display_name") or role
 
 
-def build_context_prompt(event: dict, cam_cfg: dict) -> str:
+def build_context_prompt(event: dict, cam_cfg: dict, lang: str = "nb") -> str:
     camera = event.get("camera", "")
     display = cam_cfg.get("display_name") or camera
     role = cam_cfg.get("role", "")
@@ -85,34 +87,29 @@ def build_context_prompt(event: dict, cam_cfg: dict) -> str:
     time_str = now.strftime("%H:%M")
     hour = now.hour
     if 5 <= hour < 12:
-        time_of_day = "morgen"
+        time_of_day = t("frigate_time_morning", lang)
     elif 12 <= hour < 17:
-        time_of_day = "ettermiddag"
+        time_of_day = t("frigate_time_afternoon", lang)
     elif 17 <= hour < 22:
-        time_of_day = "kveld"
+        time_of_day = t("frigate_time_evening", lang)
     else:
-        time_of_day = "natt"
+        time_of_day = t("frigate_time_night", lang)
 
     lines = [
-        f"Tidspunkt: {time_str} ({time_of_day})",
-        f"Kamera: {display} (rolle: {role_display})",
-        f"Detektert: {label} — sikkerhet {score}%",
-        f"Varighet: {duration:.1f} sekunder",
+        t("frigate_line_time", lang, time=time_str, time_of_day=time_of_day),
+        t("frigate_line_camera", lang, display=display, role_display=role_display),
+        t("frigate_line_detected", lang, label=label, score=score),
+        t("frigate_line_duration", lang, duration=duration),
     ]
     if zones:
-        lines.append(f"Soner: {', '.join(zones)}")
+        lines.append(t("frigate_line_zones", lang, zones=", ".join(zones)))
     if sub_label:
         face_pct = int((sub_score or 0) * 100)
-        lines.append(f"Ansiktsgjenkjenning: {sub_label} ({face_pct}% sikkerhet)")
+        lines.append(t("frigate_line_face", lang, sub_label=sub_label, face_pct=face_pct))
 
     context = "\n".join(lines)
 
-    return (
-        f"Du ser et overvåkningsbilde fra Kåres kamerasystem.\n\n"
-        f"{context}\n\n"
-        f"Beskriv kort hva du ser på bildet. Er det noe uvanlig eller noe som bør handles på? "
-        f"Svar på norsk, maks 3 setninger."
-    )
+    return t("frigate_prompt_wrapper", lang, context=context)
 
 
 async def analyze_event(event: dict, img_b64_override: str | None = None) -> dict | None:
@@ -157,7 +154,7 @@ async def analyze_event(event: dict, img_b64_override: str | None = None) -> dic
         log.warning("No snapshot available for event %s on %s", event_id, camera)
         return None
 
-    prompt = build_context_prompt(event, cam_cfg)
+    prompt = build_context_prompt(event, cam_cfg, lang=get_lang())
 
     try:
         from adapters.llm_adapter import ask_llm
@@ -250,7 +247,6 @@ async def _maybe_notify_away(camera: str, label: str, score: float) -> None:
         from adapters.frigate_adapter import derive_hints
         from kaare_core.notify import notify_user, Urgency
         from kaare_core.users.store import list_users
-        from kaare_core.tools.i18n import t
 
         cam_cfg = _cfg().get("cameras", {}).get(camera, {})
         camera_role = cam_cfg.get("role", "")
@@ -263,9 +259,8 @@ async def _maybe_notify_away(camera: str, label: str, score: float) -> None:
         for user in admins:
             uid = user["username"]
             source_key = f"frigate:{camera}:{label or 'unknown'}"
-            lang = "nb"
+            lang = "en"
             try:
-                from kaare_core.tools.i18n import get_lang
                 lang = get_lang(uid)
             except Exception:
                 pass

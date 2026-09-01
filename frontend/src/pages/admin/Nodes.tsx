@@ -146,11 +146,11 @@ function NodeModal({
           </div>
           <div>
             <Label className="text-xs text-muted-foreground mb-1 block">{t("nodes.modal.room")}</Label>
-            <Input value={form.room} onChange={e => set("room", e.target.value)} placeholder="stue" />
+            <Input value={form.room} onChange={e => set("room", e.target.value)} placeholder={t("nodes.modal.room_placeholder")} />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground mb-1 block">{t("nodes.modal.description")}</Label>
-            <Input value={form.description ?? ""} onChange={e => set("description", e.target.value)} placeholder="Nest Hub — kjøkkenet" />
+            <Input value={form.description ?? ""} onChange={e => set("description", e.target.value)} placeholder={t("nodes.modal.description_placeholder")} />
           </div>
 
           {/* Type selector — grouped */}
@@ -163,7 +163,7 @@ function NodeModal({
                   <SelectLabel>{t("nodes.modal.type_group_audio")}</SelectLabel>
                   <SelectItem value="ha_media_player">HA media_player</SelectItem>
                   <SelectItem value="esp32">ESP32 (ESPHome)</SelectItem>
-                  <SelectItem value="wyoming">Wyoming (satellitt, mic+høyttaler)</SelectItem>
+                  <SelectItem value="wyoming">{t("nodes.type_wyoming")}</SelectItem>
                   <SelectItem value="chromecast">Chromecast</SelectItem>
                   <SelectItem value="snapcast">Snapcast</SelectItem>
                   <SelectItem value="airplay">AirPlay</SelectItem>
@@ -177,7 +177,7 @@ function NodeModal({
                   <SelectItem value="google_tv">Google TV / Chromecast TV</SelectItem>
                   <SelectItem value="fire_tv">Amazon Fire TV</SelectItem>
                   <SelectItem value="lg_tv">LG TV (webOS)</SelectItem>
-                  <SelectItem value="projector">Projektor</SelectItem>
+                  <SelectItem value="projector">{t("nodes.type_projector")}</SelectItem>
                 </SelectGroup>
               </SelectContent>
             </Select>
@@ -358,7 +358,7 @@ function NodeCard({
 
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
         <span style={{ background: "#8b7cf822", color: "#8b7cf8", border: "1px solid #8b7cf844", fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4 }}>{node.room}</span>
-        <span style={{ background: `${typeColor}22`, color: typeColor, border: `1px solid ${typeColor}44`, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, letterSpacing: 0.3 }}>{meta.label}</span>
+        <span style={{ background: `${typeColor}22`, color: typeColor, border: `1px solid ${typeColor}44`, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, letterSpacing: 0.3 }}>{node.type === "projector" ? t("nodes.type_projector") : meta.label}</span>
         {node.type === "ha_media_player" && node.entity_id && (
           <span style={{ color: "#666", fontSize: 11, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 180 }}>{node.entity_id}</span>
         )}

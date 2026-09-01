@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,10 +16,10 @@ export type EmbServicesData = {
   emb_enabled: boolean;
 };
 
-const EMBEDDING_PRESETS: { model: string; dim: number; size: string; note: string }[] = [
-  { model: "BAAI/bge-m3",                                                 dim: 1024, size: "~570 MB", note: "Standard (tett + spare) — brukes nå" },
-  { model: "intfloat/multilingual-e5-large",                              dim: 1024, size: "~560 MB", note: "Alternativ multilingual" },
-  { model: "sentence-transformers/paraphrase-multilingual-mpnet-base-v2", dim: 768,  size: "~280 MB", note: "Lettvekt alternativ" },
+const EMBEDDING_PRESETS: { model: string; dim: number; size: string; noteKey: string; current: boolean }[] = [
+  { model: "BAAI/bge-m3",                                                 dim: 1024, size: "~570 MB", noteKey: "settings.llm.emb_preset_standard",     current: true },
+  { model: "intfloat/multilingual-e5-large",                              dim: 1024, size: "~560 MB", noteKey: "settings.llm.emb_preset_multilingual", current: false },
+  { model: "sentence-transformers/paraphrase-multilingual-mpnet-base-v2", dim: 768,  size: "~280 MB", noteKey: "settings.llm.emb_preset_lightweight",   current: false },
 ];
 
 const KNOWN_DIMS: Record<string, number> = {
@@ -28,6 +29,7 @@ const KNOWN_DIMS: Record<string, number> = {
 };
 
 export function EmbeddingCard({ data, onSaved }: { data: EmbServicesData; onSaved: () => void }) {
+  const { t } = useTranslation();
   const [collapsed, setCollapsed]     = useState(true);
   const [embEnabled, setEmbEnabled]   = useState(data.emb_enabled);
   const [device, setDevice]           = useState(data.device);
@@ -35,6 +37,7 @@ export function EmbeddingCard({ data, onSaved }: { data: EmbServicesData; onSave
   const [modelPath, setModelPath]     = useState(data.model_path);
   const [restarting, setRestarting]   = useState(false);
   const [restartOk, setRestartOk]     = useState<boolean | null>(null);
+  const [restartError, setRestartError] = useState("");
   const ss = useSaveState();
 
   const isOpenvino = device === "NPU" || device === "CPU";
@@ -59,9 +62,11 @@ export function EmbeddingCard({ data, onSaved }: { data: EmbServicesData; onSave
   const restart = async () => {
     setRestarting(true);
     setRestartOk(null);
+    setRestartError("");
     try {
       const r = await apiRestartService("embedding");
       setRestartOk(r.ok);
+      if (!r.ok) setRestartError(r.error ?? "");
     } catch { setRestartOk(false); }
     finally { setRestarting(false); }
   };
@@ -73,9 +78,9 @@ export function EmbeddingCard({ data, onSaved }: { data: EmbServicesData; onSave
           className="flex items-center gap-3 cursor-pointer select-none flex-1"
           onClick={() => setCollapsed(v => !v)}
         >
-          <CardTitle className="text-base">BGE-M3 (Innvektinger)</CardTitle>
+          <CardTitle className="text-base">{t("settings.llm.emb_title")}</CardTitle>
           <Badge variant="outline" className="text-xs font-mono">port 11446</Badge>
-          <span className="text-xs text-muted-foreground">{embEnabled ? "aktiv" : "deaktivert"}</span>
+          <span className="text-xs text-muted-foreground">{embEnabled ? t("common.enabled") : t("common.disabled")}</span>
         </div>
         <div className="flex items-center gap-3">
           <Switch
@@ -94,23 +99,23 @@ export function EmbeddingCard({ data, onSaved }: { data: EmbServicesData; onSave
         <CardContent className="space-y-5 pt-0">
         <ExpertOnly><>
           <div className="rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs text-blue-300/90">
-            ℹ️ <strong>BAAI/bge-m3</strong> er konvertert til OpenVINO IR-format og lever lokalt på <code>/mnt/wiki/bge-m3-ov/</code>. Modellen brukes av NPU- og CPU-backend uten nettilgang.
+            {t("settings.llm.emb_info_box", { model: "BAAI/bge-m3", path: "/mnt/wiki/bge-m3-ov/" })}
           </div>
 
-          <FieldRow label="Backend" hint="torch laster modellen automatisk fra HuggingFace og fungerer på AMD/Intel/Apple Silicon. OpenVINO krever ferdig konvertert IR-modell og Intel NPU/iGPU.">
+          <FieldRow label="Backend" hint={t("settings.llm.emb_backend_hint")}>
             <Select value={device} onValueChange={v => { if (v) setDevice(v); }}>
               <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="NPU">OpenVINO NPU (Intel) — nåværende</SelectItem>
-                <SelectItem value="CPU">OpenVINO CPU (Intel)</SelectItem>
-                <SelectItem value="torch">CPU universell (torch, auto-nedlasting)</SelectItem>
+                <SelectItem value="NPU">{t("settings.llm.emb_device_npu")}</SelectItem>
+                <SelectItem value="CPU">{t("settings.llm.emb_device_cpu")}</SelectItem>
+                <SelectItem value="torch">{t("settings.llm.emb_device_torch")}</SelectItem>
               </SelectContent>
             </Select>
           </FieldRow>
 
           <FieldRow
-            label="HuggingFace-modell"
-            hint={isOpenvino ? "Modellnavn (brukes som referanse for tokenizer-lastning). For OpenVINO brukes IR-modellen i stien nedenfor." : "Modellnavn på HuggingFace. Lastes automatisk ned ved første oppstart."}
+            label={t("settings.llm.emb_hf_model_label")}
+            hint={isOpenvino ? t("settings.llm.emb_hf_model_hint_ov") : t("settings.llm.emb_hf_model_hint_torch")}
           >
             <input
               value={hfModel}
@@ -131,7 +136,7 @@ export function EmbeddingCard({ data, onSaved }: { data: EmbServicesData; onSave
                 <span className="flex gap-3 text-xs text-muted-foreground shrink-0 ml-2">
                   <span className="font-mono">{p.dim}-dim</span>
                   <span>{p.size}</span>
-                  <span className={p.note.includes("nå") ? "text-green-400" : ""}>{p.note}</span>
+                  <span className={p.current ? "text-green-400" : ""}>{t(p.noteKey)}</span>
                 </span>
               </button>
             ))}
@@ -139,18 +144,18 @@ export function EmbeddingCard({ data, onSaved }: { data: EmbServicesData; onSave
 
           {currentDim && (
             <p className="text-xs text-muted-foreground">
-              Vektordimensjon for valgt modell: <strong>{currentDim}</strong>
+              {t("settings.llm.emb_current_dim_label")} <strong>{currentDim}</strong>
             </p>
           )}
 
           {dimChanged && (
             <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
-              ⚠️ Du bytter fra <strong>{defaultDim}-dim</strong> til <strong>{currentDim}-dim</strong>. Qdrant-kolleksjonene <code>kaare_memory</code> og <code>wiki_no</code> må slettes og bygges om — dette sletter all lagret hukommelse.
+              ⚠️ {t("settings.llm.emb_dim_change_warning", { from: defaultDim, to: currentDim, col1: "kaare_memory", col2: "wiki_no" })}
             </div>
           )}
 
           {isOpenvino && (
-            <FieldRow label="Lokal modellsti (OpenVINO IR)" hint="Sti til ferdig konvertert OpenVINO IR-modell. Inneholder openvino_model.xml og openvino_model.bin.">
+            <FieldRow label={t("settings.llm.emb_local_path_label")} hint={t("settings.llm.emb_local_path_hint")}>
               <input
                 value={modelPath}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setModelPath(e.target.value)}
@@ -163,19 +168,19 @@ export function EmbeddingCard({ data, onSaved }: { data: EmbServicesData; onSave
           <div className="flex items-center gap-3 flex-wrap">
             <Button onClick={restart} disabled={restarting} size="sm" variant="outline">
               {restarting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
-              Restart tjeneste
+              {t("settings.llm.restart_service")}
             </Button>
-            {restartOk === true  && <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Restartet</span>}
-            {restartOk === false && <span className="text-xs text-red-400 flex items-center gap-1"><XCircle className="h-3 w-3" /> Feil ved restart</span>}
+            {restartOk === true  && <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> {t("settings.llm.restart_restarted")}</span>}
+            {restartOk === false && <span className="text-xs text-red-400 flex items-center gap-1"><XCircle className="h-3 w-3" /> {restartError || t("settings.llm.restart_generic_error")}</span>}
           </div>
           <p className="text-xs text-muted-foreground">
-            Restart er nødvendig for at endringer skal tre i kraft.
+            {t("settings.llm.restart_needed_hint")}
           </p>
         </></ExpertOnly>
           <div className="flex items-center gap-3 flex-wrap">
             <Button onClick={save} disabled={ss.state === "saving"} size="sm">
               {ss.state === "saving" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Lagre
+              {t("common.save")}
             </Button>
             <SaveFeedback state={ss.state} />
           </div>

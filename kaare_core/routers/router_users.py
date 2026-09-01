@@ -24,10 +24,12 @@ from kaare_core.audit import audit_log as _audit
 from kaare_core.config import get_service
 from kaare_core.crypto import (
     seed_phrase_to_private_key,
+    private_key_to_seed_phrase,
     generate_salt,
     derive_key_from_pin,
     encrypt_private_key,
 )
+from kaare_core import session_keys as _session_keys
 from kaare_core.users import store
 from kaare_core.users.auth import (
     login,
@@ -143,7 +145,11 @@ async def api_login(req: LoginRequest, request: Request):
     pin_for_session = result.pop("_pin_for_session", None)
     expires_at = result.pop("_expires_at", None)
     if pin_for_session and expires_at:
-        await unlock_session(req.username, pin_for_session, expires_at)
+        _, new_seed_phrase = await unlock_session(req.username, pin_for_session, expires_at)
+        if new_seed_phrase:
+            # Keypair was just generated for a pre-existing account (P95 Phase 4) — surface
+            # the phrase once, same shape as POST /users's response (user.seed_phrase).
+            result["user"]["seed_phrase"] = new_seed_phrase
     return result
 
 
@@ -276,7 +282,6 @@ def api_update_pin(username: str, req: UpdatePinRequest,
     # Re-encrypt stored private key with new PIN (only when user changes their own PIN)
     if caller == username:
         try:
-            from kaare_core import session_keys as _session_keys
             from kaare_core.users.store import reencrypt_private_key
             pk = _session_keys.get_session_key_sync(username)
             if pk:
@@ -501,3 +506,24 @@ async def api_recover(req: RecoverRequest):
     return {"token": token, "user": {"username": req.username, "role": user["role"],
                                      "display_name": user.get("display_name", req.username),
                                      "avatar": user.get("avatar", "👤")}}
+
+
+@router.post("/users/{username}/reissue_seed_phrase")
+def api_reissue_seed_phrase(username: str, payload: dict = Depends(require_auth)):
+    """Recompute and return the caller's own recovery seed phrase, shown once.
+
+    Self only — never admin-on-behalf-of, never the P87 system key (see P95 Decision 2).
+    Exports a user's single most sensitive secret, so it must require the exact same live,
+    PIN-derived session as the private key itself. Requires an active session (private key
+    already decrypted to RAM by a real PIN login) — recomputes the phrase from that key via
+    the fixed private_key_to_seed_phrase() (P95 Phase 1), it is not read from storage.
+    """
+    caller = payload["sub"]
+    if caller != username:
+        raise HTTPException(status_code=403, detail="You can only reissue your own recovery key.")
+    private_key = _session_keys.get_session_key_sync(username)
+    if not private_key:
+        raise HTTPException(status_code=401, detail="Active session required — please log in again.")
+    seed_phrase = private_key_to_seed_phrase(private_key)
+    _audit("user_action", caller, "reissue_seed_phrase")
+    return {"seed_phrase": seed_phrase}

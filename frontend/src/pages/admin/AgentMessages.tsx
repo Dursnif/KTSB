@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import axios from "axios";
 
 const BASE = `http://${window.location.hostname}:8000`;
@@ -46,6 +47,7 @@ function AgentBadge({ name }: { name: string }) {
 }
 
 export default function AgentMessages() {
+  const { t, i18n } = useTranslation();
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -64,7 +66,8 @@ export default function AgentMessages() {
   useEffect(() => { load(); }, []);
 
   const fmt = (ts: string) => {
-    try { return new Date(ts).toLocaleString("no-NO", { dateStyle: "short", timeStyle: "medium" }); }
+    const locale = i18n.language === "nb" ? "nb-NO" : i18n.language;
+    try { return new Date(ts).toLocaleString(locale, { dateStyle: "short", timeStyle: "medium" }); }
     catch { return ts; }
   };
 
@@ -72,22 +75,22 @@ export default function AgentMessages() {
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
         <div>
-          <div style={{ color: "#fff", fontSize: 22, fontWeight: 700 }}>Intern kommunikasjon</div>
-          <div style={{ color: "#555", fontSize: 13, marginTop: 4 }}>Meldinger mellom agenter</div>
+          <div style={{ color: "#fff", fontSize: 22, fontWeight: 700 }}>{t("agentMessages.title")}</div>
+          <div style={{ color: "#555", fontSize: 13, marginTop: 4 }}>{t("agentMessages.subtitle")}</div>
         </div>
         <button onClick={load} style={{
           padding: "8px 16px", borderRadius: 8, border: "1px solid #333",
           background: "transparent", color: "#888", fontSize: 13, cursor: "pointer",
         }}>
-          Oppdater
+          {t("agentMessages.refresh")}
         </button>
       </div>
 
-      {loading && <div style={{ color: "#555" }}>Laster…</div>}
+      {loading && <div style={{ color: "#555" }}>{t("agentMessages.loading")}</div>}
 
       {!loading && messages.length === 0 && (
         <div style={{ color: "#555", fontSize: 14 }}>
-          Ingen agent-kommunikasjon logget ennå. Skjer første gang Kåre spør en agent om noe.
+          {t("agentMessages.empty")}
         </div>
       )}
 
@@ -108,12 +111,12 @@ export default function AgentMessages() {
             </div>
 
             <div style={{ marginBottom: 10 }}>
-              <div style={{ color: "#666", fontSize: 11, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Spørsmål</div>
+              <div style={{ color: "#666", fontSize: 11, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{t("agentMessages.question")}</div>
               <div style={{ color: "#ccc", fontSize: 14 }}>{m.query}</div>
             </div>
 
             <div style={{ borderTop: "1px solid #1a1a1a", paddingTop: 10 }}>
-              <div style={{ color: "#666", fontSize: 11, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Svar</div>
+              <div style={{ color: "#666", fontSize: 11, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{t("agentMessages.answer")}</div>
               <div style={{ color: "#aaa", fontSize: 13, whiteSpace: "pre-wrap" }}>{m.response}</div>
             </div>
 

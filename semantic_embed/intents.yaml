@@ -15,7 +15,7 @@ intents:
       - "ha av lyset i spisestua"
       - "lys på i kjellergang"
       - "lys av i yttergang"
-      - "skru på lyset i soverom patrick"
+      - "skru på lyset i soverom alex"
       - "slå av lyset i kjellerstua"
     slots: [room, entity]
 
@@ -29,7 +29,7 @@ intents:
       - "dim ned lyset i stua til 20"
       - "maks lys i verkstedet"
       - "sett lyset til 70% i spisestua"
-      - "svakt lys i soverom patrick"
+      - "svakt lys i soverom alex"
     slots: [room, entity, level]
 
   - intent_type: ha.climate.set_temperature

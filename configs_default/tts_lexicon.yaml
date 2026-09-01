@@ -1,0 +1,33 @@
+# TTS pronunciation corrections — applied before Piper synthesis.
+# Piper is a Norwegian model and reads English loanwords with Norwegian phonetics.
+# Add entries here to fix mispronunciations without touching code.
+#
+# Rules are matched case-insensitively at word boundaries (whole words only).
+# The replacement should be spelled as Piper would pronounce it correctly in Norwegian.
+#
+# Format:
+#   word: replacement
+#
+substitutions:
+  # "Kåre" phonemizes to a long o by default (k ˈoː r a) -- the "å held too long"
+  # heard in listening tests. Tried a raw phoneme override ([[ ]] syntax, Piper/piper1-gpl)
+  # for a precise fix (k ˈɔ r a, short o) -- confirmed live 2026-08-22 to sound *worse*:
+  # bypassing normal text phonemization also loses Piper's usual duration/rhythm modeling,
+  # making that one word sound rushed compared to the rest of the sentence ("alt er rolig
+  # til alle 'å'-bokstavene kommer" -- live listening test). Doubling the r instead keeps it
+  # inside normal phonemization (still shortens o -> ɔ, standard Norwegian orthographic
+  # short-vowel signal) at the cost of one extra r phoneme -- confirmed live to sound
+  # better overall despite being the less "precise" fix on paper.
+  kåre: kårre
+  interface: interfeis
+  wifi: wåifåi
+  ai: æi
+  software: såftuer
+  hardware: hårdwer
+  update: åpdeit
+  cache: kasj
+  router: råuter
+  server: server
+  browser: bråuser
+  streaming: striiming
+  podcast: podkast

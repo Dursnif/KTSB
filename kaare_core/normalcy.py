@@ -427,3 +427,35 @@ def add_correction(
         logger.info("[normalcy] correction saved: %s %s -> %s", source_key, weekday, verdict)
     except Exception as e:
         logger.warning("[normalcy] add_correction failed: %s", e)
+
+
+def delete_correction(source_key: str, hour_bucket: str, weekday: str) -> bool:
+    """
+    Remove an admin correction (used to undo a mistaken verdict, returning the
+    event to pending review). Invalidates the baseline cache so the next lookup
+    reflects the removal. Returns True if a matching correction was found and removed.
+    """
+    try:
+        corrections = _load_corrections()
+        remaining = [
+            c for c in corrections
+            if not (
+                c.get("source_key") == source_key
+                and c.get("hour_bucket") == hour_bucket
+                and c.get("weekday") == weekday
+            )
+        ]
+        removed = len(remaining) != len(corrections)
+        if removed:
+            _CORRECTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _CORRECTIONS_PATH.write_text(
+                json.dumps({"corrections": remaining}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            global _cache_mtime
+            _cache_mtime = 0.0
+            logger.info("[normalcy] correction removed: %s %s", source_key, weekday)
+        return removed
+    except Exception as e:
+        logger.warning("[normalcy] delete_correction failed: %s", e)
+        return False

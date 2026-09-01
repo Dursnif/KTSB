@@ -1,0 +1,180 @@
+allow_docker_control: false
+assistant_name: "Kåre"
+automation_reflex:
+  allowed_users: []
+  contributors: admin_only
+language: nb
+hotword: "Kåre"
+personality_mode: minimal
+location:
+  city: ""
+  postal_code: ""
+  country: ""
+  lat: 0.0
+  lon: 0.0
+  timezone: "Europe/Berlin"
+
+ha_token_file: "/kaare/configs/ha_token.env"
+ha_url: ""
+log_level: "INFO"
+
+stm:
+  dialog_max_turns: 40
+  dialog_max_text: 600
+  actions_max: 80
+  actions_max_text: 300
+  state_max_keys: 2000
+  context_max_chars: 20000
+  context_last_dialog_turns: 30
+  context_last_actions: 10
+  context_last_state_keys: 24
+  snapshot_path: "/kaare/state/stm_snapshot.json"
+  history_dir: "/kaare/state/stm_history"
+  history_days: 7
+  snapshot_interval_seconds: 300
+
+semantic_memory:
+  fallback_max_entries: 500
+  trim_margin: 50
+think_cache:
+  path: "/kaare/state/think_cache.jsonl"
+  max_entries: 150
+  trim_margin: 30
+
+kare_reminders:
+  injection_max_chars: 2000
+  max_entries: 100
+
+jang:
+  reflection_interval_seconds: 600
+  inner_thoughts_retention_hours: 48
+
+face_events:
+  session_timeout_seconds: 60
+  retention_hours: 48
+
+# When false (default): shell command tools (å_kjøre_kommando / local_kommando) are disabled.
+# Enable only on dedicated machines where all users are trusted.
+# Configurable in the admin GUI under Settings → Security.
+developer_tools: false
+
+# JWT token expiry in hours. Default 4 hours.
+token_expiry_hours: 4
+
+# Allowed CORS origins. Default ["*"] works for most home installs.
+# Restrict to specific origins for stricter setups, e.g.:
+# cors_origins: ["http://192.168.0.232:5173", "https://yourdomain.com"]
+cors_origins:
+  - "*"
+
+network:
+  local_subnets:
+    - "192.168.0.0/24"
+  vpn_subnet: "10.0.0.0/24"
+
+weather:
+  forecast_days: 2
+  ha_humidity_entity: ''
+  ha_precip_entity: ''
+  ha_precip_last_hour_entity: ''
+  ha_precip_today_entity: ''
+  ha_pressure_entity: ''
+  ha_temp_entity: ''
+  ha_wind_entity: ''
+  ha_wind_gust_entity: ''
+  ha_wind_direction_entity: ''
+  provider: met.no
+  show_air_quality: false
+  show_alerts: true
+  show_feels_like: false
+  show_sun_times: false
+  show_tides: false
+  show_uv_index: false
+  tide_provider: auto
+  use_camera_for_weather: false
+  weather_camera: ''
+  use_ha_sensors: false
+
+timers:
+  max_per_user: 20
+
+fastpath_reflex_threshold: 10
+
+rate_limit:
+  enabled: true
+  generate_per_minute: 20
+min_pin_length: 6
+
+data_retention:
+  interactions_retention_days: 0
+  episodes_retention_days: 0
+  think_cache_retention_days: 30
+
+# --- Added 2026-09-01: 12 keys that existed in the live config but were missing here,
+# leaving a fresh install with no defaults for these features at all (settings.yaml is
+# hand-maintained, excluded from the automatic configs/->configs_default/ snapshot
+# command — see CLAUDE.md). Values below are the generic/blank template versions, not
+# copied wholesale from any live install — lokasjon/personality_self/vpn in particular
+# had real personal data (GPS coordinates, a real username, a real DuckDNS hostname)
+# that must never appear here.
+
+kare_language: nb
+
+dev_meeting:
+  kare_invest_tokens: 4000
+  kare_max_tokens: 4000
+  leder_preset: standard
+  max_invest_rounds: 5
+  max_rounds: 6
+
+kare_reflection:
+  enabled: true
+  interval_seconds: 600
+  kare_max_tokens: 3000
+  leder_preset: standard
+  max_rounds: 6
+  miss_kare_max_tokens: 1500
+
+meeting_roles:
+  mechanic: analytiker
+
+images:
+  max_per_user_count: 500
+  max_per_user_mb: 200
+
+jing:
+  interval_seconds: 180
+  max_tokens: 300
+
+notifications:
+  quiet_hours_start: 22
+  quiet_hours_end: 7
+
+voice_enrollment:
+  dir: "/kaare/state/users"
+  identification_threshold: 0.75
+
+websearch:
+  brave_country: 'NO'
+  brave_search_lang: nb
+  content_max: 3000
+  fetch_count: 10
+  max_results: 3
+
+# Blank/generic — see `location:` above for the equivalent English-keyed block.
+# Both exist live; not yet merged into one (see BUG-log 2026-09-01).
+lokasjon:
+  sted: ""
+  postnummer: ""
+  land: ""
+  lat: 0.0
+  lon: 0.0
+  tidssone: "Europe/Berlin"
+
+personality_self:
+  allowed_users: []
+  contributors: admin_only
+
+vpn:
+  duckdns_host: ""
+  wg_port: 51820

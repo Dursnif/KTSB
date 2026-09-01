@@ -17,6 +17,7 @@ from kaare_core.memory.long_term import get_ltm
 from kaare_core.tools.executor_personality import PERSONALITY_CORE_TEXT
 from kaare_core.tools.i18n import t, get_lang
 from kaare_core.tools.think_cache import read_think_history, format_for_kare, log_think, extract_conclusion
+from kaare_core.think_strip import strip_think_block
 
 _SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
 _TRUSTED_PATH  = Path("/kaare/configs/trusted_sources.yaml")
@@ -47,12 +48,17 @@ _qdrant = QdrantClient(url=_QDRANT_URL, api_key=_qdrant_key(write=False))
 
 # ── Miss Library personality ──────────────────────────────────────────────────
 
-_LIBRARY_PERSONALITY_PATH = Path(__file__).parent.parent / "agents" / "miss_library" / "personlighet.md"
+_LIBRARY_DIR = Path(__file__).parent.parent / "agents" / "miss_library"
 
 
-def _load_library_personality() -> str:
-    if _LIBRARY_PERSONALITY_PATH.exists():
-        return _LIBRARY_PERSONALITY_PATH.read_text(encoding="utf-8")
+def _load_library_personality(lang: str = "nb") -> str:
+    suffix = "" if lang == "nb" else f"_{lang}"
+    path = _LIBRARY_DIR / f"personlighet{suffix}.md"
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    fallback = _LIBRARY_DIR / "personlighet.md"
+    if fallback.exists():
+        return fallback.read_text(encoding="utf-8")
     return "Du er Miss Library – en støvet bibliotekar med dyp kjærlighet for fakta."
 
 
@@ -198,7 +204,7 @@ def _is_domain_trusted(url: str) -> bool:
 async def _ask_library_wiki(question: str, lang: str = "nb") -> str:
     """Wiki search + LLM synthesis via Miss Library. Replaces /ask/miss_library."""
     from kaare_core.config import is_agent_tool_enabled
-    system = _load_library_personality()
+    system = _load_library_personality(lang)
     chunks = await _wiki_search(question) if is_agent_tool_enabled("miss_library", "wiki", default=False) else []
 
     if chunks:
@@ -226,29 +232,25 @@ async def _ask_library_wiki(question: str, lang: str = "nb") -> str:
                 seen.add(c["title"])
 
         wiki_ctx = "\n\n".join(ctx_parts)
-        user_msg = f"Wiki-utdrag:\n{wiki_ctx}\n\nSpørsmål: {question}"
+        user_msg = t("lib_wiki_excerpt_prefix", lang, wiki_ctx=wiki_ctx, question=question)
     else:
-        user_msg = f"Spørsmål: {question}\n\n(Ingen wiki-utdrag funnet.)"
+        user_msg = t("lib_wiki_no_excerpt", lang, question=question)
 
     return await _library_llm_call(system, user_msg)
 
 
 async def synthesize_web_results(question: str, sources: list[dict], lang: str = "nb") -> str:
     """Synthesize web search results via Miss Library. Called by web_search_adapter."""
-    system = _load_library_personality()
+    system = _load_library_personality(lang)
     lines = []
     for i, s in enumerate(sources, 1):
         content = s.get("content", "").strip()
         if content:
             lines.append(f"[{i}] {s['title']} — {s['url']}\n{content}")
         else:
-            lines.append(f"[{i}] {s['title']} — {s['url']}\n(Content unavailable.)")
-    sources_text = "\n\n".join(lines) if lines else "(No sources retrieved.)"
-    user_msg = (
-        f"Web sources:\n{sources_text}\n\n"
-        f"Question: {question}\n\n"
-        "Answer ONLY from the sources above. If not found, say so and include the URLs."
-    )
+            lines.append(f"[{i}] {s['title']} — {s['url']}\n{t('lib_web_content_unavailable', lang)}")
+    sources_text = "\n\n".join(lines) if lines else t("lib_web_no_sources", lang)
+    user_msg = t("lib_web_synthesis_prompt", lang, sources_text=sources_text, question=question)
     return await _library_llm_call(system, user_msg)
 
 
@@ -259,10 +261,8 @@ async def _ask_library(question: str, arguments: dict, lang: str = "nb") -> str:
         return t("lib_empty_query", lang)
     if not _lib_cfg.get("enabled", True):
         return t("lib_library_disabled", lang)
-    loc = location_prefix()
-    question_with_context = f"{loc}{question}" if loc else question
     try:
-        answer = await _ask_library_wiki(question_with_context, lang)
+        answer = await _ask_library_wiki(question, lang)
         try:
             asyncio.create_task(get_ltm().log_agent_message(
                 from_agent="kare",
@@ -287,9 +287,9 @@ async def _ask_library_online(question: str, arguments: dict, lang: str = "nb") 
     if not _lib_cfg.get("enabled", True):
         return t("lib_library_disabled", lang)
     try:
-        system = _load_library_personality()
+        system = _load_library_personality(lang)
         from adapters.llm_adapter import ask_llm_cloud
-        prompt = f"{system.strip()}\n\nSpørsmål: {question}"
+        prompt = t("lib_question_prefix", lang, system=system.strip(), question=question)
         result = await ask_llm_cloud(prompt)
         if not result.get("ok"):
             answer = t("lib_online_no_answer", lang)
@@ -357,12 +357,8 @@ async def _fetch_url(url: str, arguments: dict, lang: str = "nb") -> str:
         if not text:
             return t("svc_url_fetch_failed", lang, url=url)
 
-        system = _load_library_personality()
-        user_msg = (
-            f"Source: {url}\n\n{text}\n\n"
-            "Summarize the content clearly and helpfully. "
-            "If a specific question was asked, answer it based on the source."
-        )
+        system = _load_library_personality(lang)
+        user_msg = t("lib_url_summarize_prompt", lang, url=url, text=text)
         answer = await _library_llm_call(system, user_msg)
         try:
             asyncio.create_task(get_ltm().log_agent_message(
@@ -419,6 +415,13 @@ async def _reason_freely(query: str, lang: str = "nb") -> str:
             msg = (data.get("choices") or [{}])[0].get("message", {})
             think_text = (msg.get("reasoning") or msg.get("reasoning_content") or "").strip()
             text = (msg.get("content") or "").strip()
+            think_closed = True
+            # Defensive check: vLLM's own reasoning-parser is trusted to split cleanly,
+            # but if it ever trips on a truncated block, a literal <think> tag could
+            # still land in `content` (same class of bug as P88, llm_adapter.py).
+            if "<think>" in text.lower():
+                text, _extra_think, think_closed = strip_think_block(text)
+                think_text = (think_text + "\n\n" + _extra_think).strip() if think_text else _extra_think
         else:
             async with httpx.AsyncClient(timeout=180.0) as client:
                 r = await client.post(
@@ -437,14 +440,12 @@ async def _reason_freely(query: str, lang: str = "nb") -> str:
                 data = r.json()
             think_text = (data.get("thinking") or "").strip()
             text = (data.get("response") or "").strip()
+            think_closed = True
 
             if not think_text and "<think>" in text.lower():
-                upper = text.upper()
-                t_start = upper.find("<THINK>")
-                t_end = upper.find("</THINK>")
-                if t_start != -1 and t_end != -1:
-                    think_text = text[t_start + len("<THINK>"):t_end].strip()
-                    text = text[t_end + len("</THINK>"):].strip()
+                text, think_text, think_closed = strip_think_block(text)
+
+        recovered = bool(think_closed and not text and think_text)
 
         if think_text:
             try:
@@ -454,12 +455,14 @@ async def _reason_freely(query: str, lang: str = "nb") -> str:
                     role="reason_freely",
                     model=_KARE_MODEL,
                     prompt_preview=query[:200],
-                    recovered=not bool(text),
+                    recovered=recovered,
                 )
             except Exception:
                 pass
 
-        if not text and think_text:
+        # Never fabricate a conclusion from a truncated (unclosed) think fragment —
+        # only a legitimately closed-but-empty think block is a real recovery candidate.
+        if recovered:
             text = extract_conclusion(think_text)
 
         return text if text else t("lib_empty_model_answer", lang)

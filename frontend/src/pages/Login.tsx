@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { apiLogin, apiUpdatePin } from "../services/api";
 import { useAuth } from "../auth/AuthContext";
 import { loginTheme } from "../theme";
+import { SeedModal } from "./admin/Users";
 
 const S = {
   page: {
@@ -58,6 +59,8 @@ export default function Login() {
   const [newPin2, setNewPin2] = useState("");
   const [pinError, setPinError] = useState("");
   const [pinLoading, setPinLoading] = useState(false);
+  const [freshSeed, setFreshSeed] = useState<string | null>(null);
+  const [afterSeedRole, setAfterSeedRole] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,7 +74,14 @@ export default function Login() {
         setMustChange(true);
       } else {
         login(result.user, result.token);
-        navigate(result.user.role === "admin" ? "/admin" : "/");
+        if (result.user.seed_phrase) {
+          // Keypair just generated for a pre-existing account (P95 Phase 4) — show it once,
+          // same as at account creation, before continuing into the app.
+          setAfterSeedRole(result.user.role);
+          setFreshSeed(result.user.seed_phrase);
+        } else {
+          navigate(result.user.role === "admin" ? "/admin" : "/");
+        }
       }
     } catch (err: any) {
       setError(err?.response?.data?.detail ?? t("login.error_login"));
@@ -172,6 +182,16 @@ export default function Login() {
             </form>
           </div>
         </div>
+      )}
+
+      {freshSeed && (
+        <SeedModal
+          seed={freshSeed}
+          onClose={() => {
+            setFreshSeed(null);
+            navigate(afterSeedRole === "admin" ? "/admin" : "/");
+          }}
+        />
       )}
     </div>
   );

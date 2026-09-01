@@ -13,7 +13,6 @@ echo "Phase 1: Adding UMask=0002 to kaare service files..."
 SERVICES=(
   kaare.service
   kaare-semantic-embed.service
-  kaare-agents.service
   kaare-voice-bridge.service
   kaare-embedding.service
   kaare-argus.service
@@ -101,7 +100,7 @@ find /kaare -type f \
 
 # SSH config directory needs strict, non-group-writable permissions —
 # OpenSSH refuses to use a config/key file writable by anyone but the owner,
-# and the kaare group has multiple members (kaare, stian).
+# and the kaare group has multiple members (kaare, alice).
 if [ -d /kaare/.ssh ]; then
   chmod 700 /kaare/.ssh
   find /kaare/.ssh -name "id_*" -not -name "*.pub" -exec chmod 600 {} +

@@ -158,6 +158,10 @@ _ALLOWED_SERVICES = {
     "kaare-nvidia-init", "kaare-backup",
 }
 
+# Services run as Docker containers (docker-compose.yml), not systemd units —
+# checked via `docker inspect`/`docker logs` instead of systemctl/journalctl.
+_DOCKER_SERVICES = {"kaare-qdrant"}
+
 
 def check_services(arguments: dict, lang: str = "nb") -> str:
     service = (arguments.get("service") or arguments.get("tjeneste") or "").strip()
@@ -166,6 +170,20 @@ def check_services(arguments: dict, lang: str = "nb") -> str:
             return t("sys_unknown_service", lang, service=service,
                      allowed=', '.join(sorted(_ALLOWED_SERVICES)))
         log_lines = min(int(arguments.get("log_lines", arguments.get("logglinjer", 20))), 50)
+        if service in _DOCKER_SERVICES:
+            status_r = _sp.run(
+                ["docker", "inspect", "-f",
+                 "{{.State.Status}} (started {{.State.StartedAt}})", service],
+                capture_output=True, text=True,
+            )
+            log_r = _sp.run(
+                ["docker", "logs", "--tail", str(log_lines), service],
+                capture_output=True, text=True,
+            )
+            return (
+                f"=== {service} (docker) ===\n{status_r.stdout.strip()}\n\n"
+                f"=== Last {log_lines} log lines ===\n{(log_r.stdout + log_r.stderr).strip()}"
+            )[:5000]
         status_r = _sp.run(
             ["systemctl", "status", f"{service}.service", "--no-pager", "-l"],
             capture_output=True, text=True,
@@ -185,6 +203,13 @@ def check_services(arguments: dict, lang: str = "nb") -> str:
     ]
     rows = []
     for svc in services_list:
+        if svc in _DOCKER_SERVICES:
+            r = _sp.run(
+                ["docker", "inspect", "-f", "{{.State.Status}}", svc],
+                capture_output=True, text=True,
+            )
+            rows.append(f"{svc}: {r.stdout.strip() or 'not-found'}")
+            continue
         r = _sp.run(
             ["systemctl", "is-active", f"{svc}.service"],
             capture_output=True, text=True,

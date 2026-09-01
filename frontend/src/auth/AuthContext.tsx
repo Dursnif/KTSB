@@ -5,6 +5,7 @@ const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 type AuthContextValue = {
   user: KaareUser | null;
+  loading: boolean;
   login: (user: KaareUser, token: string) => void;
   logout: () => void;
 };
@@ -13,6 +14,13 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<KaareUser | null>(null);
+  // True until the sessionStorage restore below has run once. Route guards
+  // (RequireAuth/RequireAdmin) must wait for this instead of redirecting on
+  // the first render, where `user` is always still null — otherwise every
+  // full page load/refresh of an authenticated route bounces to /login even
+  // with a valid session, because their read of `user` races ahead of this
+  // effect.
+  const [loading, setLoading] = useState(true);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Gjenopprett sesjon fra sessionStorage ved reload
@@ -21,6 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (raw) {
       try { setUser(JSON.parse(raw)); } catch { sessionStorage.clear(); }
     }
+    setLoading(false);
   }, []);
 
   const logout = useCallback(() => {
@@ -55,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(u);
   }, []);
 
-  const value = useMemo(() => ({ user, login, logout }), [user, login, logout]);
+  const value = useMemo(() => ({ user, loading, login, logout }), [user, loading, login, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

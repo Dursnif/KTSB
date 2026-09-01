@@ -1,7 +1,36 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
-import { api, apiGetNormalcyEvents, apiPostNormalcyCorrect, type NormalcyEvent } from "../../services/api";
+import { Loader2, RefreshCw, ChevronDown, ChevronRight, Undo2, ArrowUp, ArrowDown } from "lucide-react";
+import { api, apiGetNormalcyEvents, apiPostNormalcyCorrect, apiDeleteNormalcyCorrect, type NormalcyEvent } from "../../services/api";
+
+const UNDO_TIMEOUT_MS = 8000;
+
+type UndoItem = { key: string; ev: NormalcyEvent; prev: NormalcyEvent["correction"] };
+type LastAction = { items: UndoItem[]; verdict: string };
+
+type SortColumn = "camera" | "label" | "deviation" | "time" | "confidence" | "status";
+type SortDir = "asc" | "desc";
+
+function compareEvents(
+  a: NormalcyEvent, b: NormalcyEvent, column: SortColumn, dir: SortDir,
+  localCorrections: Record<string, NormalcyEvent["correction"]>,
+): number {
+  let cmp = 0;
+  switch (column) {
+    case "camera": cmp = a.camera_friendly.localeCompare(b.camera_friendly); break;
+    case "label": cmp = a.label.localeCompare(b.label); break;
+    case "deviation": cmp = a.deviation_score - b.deviation_score; break;
+    case "time": cmp = new Date(a.ts).getTime() - new Date(b.ts).getTime(); break;
+    case "confidence": cmp = a.baseline_confidence - b.baseline_confidence; break;
+    case "status": {
+      const va = (localCorrections[eventKey(a)] ?? a.correction)?.verdict ?? "";
+      const vb = (localCorrections[eventKey(b)] ?? b.correction)?.verdict ?? "";
+      cmp = va.localeCompare(vb);
+      break;
+    }
+  }
+  return dir === "asc" ? cmp : -cmp;
+}
 
 function SnapshotImg({ eventId }: { eventId: string }) {
   const [blobUrl, setBlobUrl] = useState<string>("");
@@ -46,20 +75,23 @@ function confColor(pct: number) {
   return "#4caf50";
 }
 
-function confLabel(pct: number) {
-  if (pct < 20) return "Lite data";
-  if (pct < 50) return "Delvis";
-  return "God";
+type Tr = (key: string, opts?: Record<string, unknown>) => string;
+
+function confLabel(pct: number, t: Tr) {
+  if (pct < 20) return t("security.conf_low");
+  if (pct < 50) return t("security.conf_partial");
+  return t("security.conf_good");
 }
 
-function confTooltip(pct: number) {
-  if (pct < 20) return `${pct}% datadekning — for lite historikk, deteksjonen er usikker`;
-  if (pct < 50) return `${pct}% datadekning — delvis kalibrert`;
-  return `${pct}% datadekning — godt kalibrert`;
+function confTooltip(pct: number, t: Tr) {
+  const prefix = t("security.confidence", { pct });
+  if (pct < 20) return `${prefix} — ${t("security.conf_reason_low")}`;
+  if (pct < 50) return `${prefix} — ${t("security.conf_reason_partial")}`;
+  return `${prefix} — ${t("security.conf_reason_good")}`;
 }
 
 export default function Security() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [events, setEvents] = useState<NormalcyEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [days, setDays] = useState(7);
@@ -73,6 +105,20 @@ export default function Security() {
   const [batchSubmitting, setBatchSubmitting] = useState(false);
   const [localCorrections, setLocalCorrections] = useState<Record<string, NormalcyEvent["correction"]>>({});
   const [labelFilter, setLabelFilter] = useState<string>("");
+  const [lastAction, setLastAction] = useState<LastAction | null>(null);
+  const [undoing, setUndoing] = useState(false);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  const handleSort = (col: SortColumn) => {
+    if (sortColumn === col) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortColumn(col);
+      setSortDir("asc");
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -89,6 +135,14 @@ export default function Security() {
   }, [days, labelFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => () => { if (undoTimerRef.current) clearTimeout(undoTimerRef.current); }, []);
+
+  const armUndo = useCallback((items: UndoItem[], verdict: string) => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setLastAction({ items, verdict });
+    undoTimerRef.current = setTimeout(() => setLastAction(null), UNDO_TIMEOUT_MS);
+  }, []);
 
   const filteredEvents = useMemo(() =>
     events.filter(ev => {
@@ -107,8 +161,14 @@ export default function Security() {
       if (!groups[gk]) groups[gk] = [];
       groups[gk].push(ev);
     }
-    return Object.entries(groups).sort((a, b) => b[1].length - a[1].length);
-  }, [filteredEvents, groupBy]);
+    const entries = Object.entries(groups).sort((a, b) => b[1].length - a[1].length);
+    if (sortColumn) {
+      for (const [, evs] of entries) {
+        evs.sort((a, b) => compareEvents(a, b, sortColumn, sortDir, localCorrections));
+      }
+    }
+    return entries;
+  }, [filteredEvents, groupBy, sortColumn, sortDir, localCorrections]);
 
   const totalPending = useMemo(() =>
     events.filter(ev => !(localCorrections[eventKey(ev)] ?? ev.correction)).length,
@@ -130,6 +190,7 @@ export default function Security() {
   const submitSingle = async (ev: NormalcyEvent, verdict: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const k = eventKey(ev);
+    const prev = localCorrections[k] ?? ev.correction;
     setSubmittingKeys(s => new Set(s).add(k));
     try {
       await apiPostNormalcyCorrect({
@@ -141,6 +202,7 @@ export default function Security() {
       });
       applyCorrection(k, verdict, commentState[k] ?? "");
       setExpandedKeys(s => { const n = new Set(s); n.delete(k); return n; });
+      armUndo([{ key: k, ev, prev }], verdict);
     } finally {
       setSubmittingKeys(s => { const n = new Set(s); n.delete(k); return n; });
     }
@@ -149,9 +211,11 @@ export default function Security() {
   const submitBatch = async (verdict: string) => {
     if (batchSubmitting) return;
     setBatchSubmitting(true);
+    const done: UndoItem[] = [];
     for (const k of [...selectedKeys]) {
       const ev = events.find(e => eventKey(e) === k);
       if (!ev) continue;
+      const prev = localCorrections[k] ?? ev.correction;
       try {
         await apiPostNormalcyCorrect({
           source_key: ev.source_key,
@@ -161,10 +225,48 @@ export default function Security() {
           comment: commentState[k] ?? "",
         });
         applyCorrection(k, verdict, commentState[k] ?? "");
+        done.push({ key: k, ev, prev });
       } catch { /* continue with others */ }
     }
     setSelectedKeys(new Set());
     setBatchSubmitting(false);
+    if (done.length > 0) armUndo(done, verdict);
+  };
+
+  const handleUndo = async () => {
+    if (!lastAction || undoing) return;
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setUndoing(true);
+    try {
+      for (const item of lastAction.items) {
+        if (item.prev) {
+          await apiPostNormalcyCorrect({
+            source_key: item.ev.source_key,
+            hour_bucket: item.ev.hour_bucket,
+            weekday: item.ev.weekday,
+            verdict: item.prev.verdict,
+            comment: item.prev.comment ?? "",
+          });
+        } else {
+          await apiDeleteNormalcyCorrect({
+            source_key: item.ev.source_key,
+            hour_bucket: item.ev.hour_bucket,
+            weekday: item.ev.weekday,
+          });
+        }
+      }
+      setLocalCorrections(c => {
+        const n = { ...c };
+        for (const item of lastAction.items) {
+          if (item.prev) n[item.key] = item.prev;
+          else delete n[item.key];
+        }
+        return n;
+      });
+    } finally {
+      setUndoing(false);
+      setLastAction(null);
+    }
   };
 
   const toggleExpand = (k: string) =>
@@ -233,29 +335,29 @@ export default function Security() {
 
       {/* ── Toolbar ── */}
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
-        <span style={{ color: "#444", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, marginRight: 2 }}>Periode</span>
+        <span style={{ color: "#444", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, marginRight: 2 }}>{t("security.period")}</span>
         {DAY_OPTIONS.map(d => (
           <button key={d} style={tab(days === d)} onClick={() => setDays(d)}>{d}d</button>
         ))}
 
         <div style={{ width: 1, height: 18, background: "#2a2a2a", margin: "0 6px" }} />
-        <span style={{ color: "#444", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, marginRight: 2 }}>Grupper</span>
-        <button style={tab(groupBy === "label")} onClick={() => setGroupBy("label")}>Objekt</button>
-        <button style={tab(groupBy === "camera")} onClick={() => setGroupBy("camera")}>Kamera</button>
+        <span style={{ color: "#444", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, marginRight: 2 }}>{t("security.group_by")}</span>
+        <button style={tab(groupBy === "label")} onClick={() => setGroupBy("label")}>{t("security.group_object")}</button>
+        <button style={tab(groupBy === "camera")} onClick={() => setGroupBy("camera")}>{t("security.group_camera")}</button>
 
         <div style={{ width: 1, height: 18, background: "#2a2a2a", margin: "0 6px" }} />
-        <span style={{ color: "#444", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, marginRight: 2 }}>Vis</span>
-        <button style={tab(filterStatus === "pending")} onClick={() => setFilterStatus("pending")}>Ubehandlet</button>
-        <button style={tab(filterStatus === "all")} onClick={() => setFilterStatus("all")}>Alle</button>
-        <button style={tab(filterStatus === "reviewed")} onClick={() => setFilterStatus("reviewed")}>Behandlet</button>
+        <span style={{ color: "#444", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, marginRight: 2 }}>{t("common.show")}</span>
+        <button style={tab(filterStatus === "pending")} onClick={() => setFilterStatus("pending")}>{t("security.status_pending")}</button>
+        <button style={tab(filterStatus === "all")} onClick={() => setFilterStatus("all")}>{t("security.status_all")}</button>
+        <button style={tab(filterStatus === "reviewed")} onClick={() => setFilterStatus("reviewed")}>{t("security.status_reviewed")}</button>
 
         {knownLabels.length > 2 && (
           <>
             <div style={{ width: 1, height: 18, background: "#2a2a2a", margin: "0 6px" }} />
-            <span style={{ color: "#444", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, marginRight: 2 }}>Objekt</span>
+            <span style={{ color: "#444", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, marginRight: 2 }}>{t("security.group_object")}</span>
             {knownLabels.map(l => (
               <button key={l || "alle"} style={tab(labelFilter === l)} onClick={() => setLabelFilter(l)}>
-                {l || "Alle"}
+                {l || t("security.status_all")}
               </button>
             ))}
           </>
@@ -265,18 +367,18 @@ export default function Security() {
           style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 6, border: "1px solid #252525", background: "transparent", color: "#555", fontSize: 12, cursor: "pointer", marginLeft: "auto" }}
           onClick={load}
         >
-          <RefreshCw size={12} /> Oppdater
+          <RefreshCw size={12} /> {t("common.update")}
         </button>
       </div>
 
       {/* ── Summary line ── */}
       {!loading && (
         <p style={{ color: "#555", fontSize: 12, marginBottom: 16 }}>
-          <span style={{ color: "#a78bfa", fontWeight: 600 }}>{filteredEvents.length}</span> hendelser
+          <span style={{ color: "#a78bfa", fontWeight: 600 }}>{filteredEvents.length}</span> {t("security.events_suffix")}
           {filterStatus !== "all" && (
-            <> · <span style={{ color: "#666" }}>{totalPending} ubehandlet totalt</span></>
+            <> · <span style={{ color: "#666" }}>{totalPending} {t("security.pending_total_suffix")}</span></>
           )}
-          {" "}· siste <span style={{ color: "#666" }}>{days}</span> dager
+          {" "}· {t("security.last_days_prefix")} <span style={{ color: "#666" }}>{days}</span> {t("security.days_suffix")}
         </p>
       )}
 
@@ -284,7 +386,7 @@ export default function Security() {
       {loading ? (
         <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#444", fontSize: 13, paddingTop: 24 }}>
           <Loader2 size={15} style={{ animation: "spin 1s linear infinite" }} />
-          Laster hendelser…
+          {t("security.loading")}
         </div>
       ) : filteredEvents.length === 0 ? (
         <div style={{ color: "#444", fontSize: 13, paddingTop: 24, textAlign: "center" }}>
@@ -316,9 +418,9 @@ export default function Security() {
                     onClick={e => e.stopPropagation()}
                   />
                   <span style={{ color: "#ddd", fontSize: 13, fontWeight: 700, flex: 1 }}>{groupKey}</span>
-                  <span style={groupBadge(scoreColor(avgScore))}>{avgScore}% avvik</span>
+                  <span style={groupBadge(scoreColor(avgScore))}>{t("security.deviation", { score: avgScore })}</span>
                   {pendingCount > 0 && (
-                    <span style={groupBadge("#a78bfa")}>{pendingCount} ubehandlet</span>
+                    <span style={groupBadge("#a78bfa")}>{pendingCount} {t("security.status_pending")}</span>
                   )}
                   <span style={{ color: "#444", fontSize: 11 }}>{evs.length} total</span>
                   <span style={{ color: "#444", display: "flex", alignItems: "center" }}>
@@ -330,8 +432,30 @@ export default function Security() {
                   <>
                     {/* Column headers */}
                     <div style={{ display: "grid", gridTemplateColumns: GRID, padding: "5px 14px", gap: 8, background: "#0f0f0f", borderBottom: "1px solid #1e1e1e" }}>
-                      {["", "Kamera", "Objekt", "Avvik", "Tidspunkt", "Dekning", "Status"].map((h, i) => (
-                        <div key={i} style={{ color: "#383838", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>{h}</div>
+                      {([
+                        { key: null, label: "" },
+                        { key: "camera", label: t("security.group_camera") },
+                        { key: "label", label: t("security.group_object") },
+                        { key: "deviation", label: t("security.col_deviation") },
+                        { key: "time", label: t("security.col_time") },
+                        { key: "confidence", label: t("security.col_confidence") },
+                        { key: "status", label: t("security.col_status") },
+                      ] as { key: SortColumn | null; label: string }[]).map((col, i) => (
+                        <div
+                          key={i}
+                          onClick={col.key ? () => handleSort(col.key as SortColumn) : undefined}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 3,
+                            color: sortColumn === col.key && col.key ? "#a78bfa" : "#383838",
+                            fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600,
+                            cursor: col.key ? "pointer" : "default", userSelect: "none",
+                          }}
+                        >
+                          {col.label}
+                          {sortColumn === col.key && col.key && (
+                            sortDir === "asc" ? <ArrowUp size={10} /> : <ArrowDown size={10} />
+                          )}
+                        </div>
                       ))}
                     </div>
 
@@ -395,15 +519,15 @@ export default function Security() {
                             {/* Timestamp */}
                             <div style={{ color: "#888", fontSize: 11, lineHeight: 1.4 }}>
                               <span style={{ display: "block", color: "#aaa", fontWeight: 500 }}>
-                                {new Date(ev.ts).toLocaleString("nb-NO", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                                {new Date(ev.ts).toLocaleString(i18n.language === "nb" ? "nb-NO" : i18n.language, { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}
                               </span>
                             </div>
 
                             {/* Confidence */}
-                            <div title={confTooltip(conf)}>
+                            <div title={confTooltip(conf, t)}>
                               <span style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 7px", borderRadius: 9, fontSize: 10, fontWeight: 600, background: confColor(conf) + "1a", color: confColor(conf), border: `1px solid ${confColor(conf)}30` }}>
                                 <span style={{ width: 5, height: 5, borderRadius: "50%", background: confColor(conf), flexShrink: 0 }} />
-                                {confLabel(conf)}
+                                {confLabel(conf, t)}
                               </span>
                             </div>
 
@@ -411,7 +535,7 @@ export default function Security() {
                             <div>
                               {correction ? (
                                 <span style={verdictBadge(correction.verdict)}>
-                                  {correction.verdict === "normal" ? "Normalt" : "Mistenkelig"}
+                                  {correction.verdict === "normal" ? t("security.verdict_normal") : t("security.verdict_suspicious")}
                                 </span>
                               ) : (
                                 <span style={{ color: "#333", fontSize: 11 }}>—</span>
@@ -434,11 +558,11 @@ export default function Security() {
                                 <div style={{ flex: 1 }}>
                                   {correction ? (
                                     <div style={{ color: "#555", fontSize: 12 }}>
-                                      Bedømt som{" "}
+                                      {t("security.judged_as")}{" "}
                                       <span style={{ color: correction.verdict === "normal" ? "#4caf50" : "#ff6b6b", fontWeight: 600 }}>
-                                        {correction.verdict === "normal" ? "normalt" : "mistenkelig"}
+                                        {correction.verdict === "normal" ? t("security.judged_normal") : t("security.judged_suspicious")}
                                       </span>
-                                      {correction.by && <> av <span style={{ color: "#666" }}>{correction.by}</span></>}
+                                      {correction.by && <> {t("security.by", { by: correction.by })}</>}
                                       {correction.comment && <> · <em style={{ color: "#555" }}>«{correction.comment}»</em></>}
                                     </div>
                                   ) : (
@@ -446,17 +570,17 @@ export default function Security() {
                                       <textarea
                                         style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #252525", background: "#111", color: "#bbb", fontSize: 12, resize: "vertical", boxSizing: "border-box", fontFamily: "inherit" }}
                                         rows={2}
-                                        placeholder="Kommentar (valgfritt)"
+                                        placeholder={t("security.comment_placeholder")}
                                         value={commentState[k] ?? ""}
                                         onChange={e => setCommentState(s => ({ ...s, [k]: e.target.value }))}
                                         onClick={e => e.stopPropagation()}
                                       />
                                       <div style={{ display: "flex", gap: 8 }}>
                                         <button style={{ ...rowBtn("#4caf50", "#1a4a2a"), opacity: isSub ? 0.5 : 1 }} disabled={isSub} onClick={e => submitSingle(ev, "normal", e)}>
-                                          {isSub ? "Lagrer…" : "Dette er normalt"}
+                                          {isSub ? t("common.saving") : t("security.mark_normal")}
                                         </button>
                                         <button style={{ ...rowBtn("#ff6b6b", "#4a1a1a"), opacity: isSub ? 0.5 : 1 }} disabled={isSub} onClick={e => submitSingle(ev, "suspicious", e)}>
-                                          Bekreft som mistenkelig
+                                          {t("security.mark_suspicious")}
                                         </button>
                                       </div>
                                     </div>
@@ -480,19 +604,57 @@ export default function Security() {
       {selectedKeys.size > 0 && (
         <div style={{ position: "fixed", bottom: 0, left: 220, right: 0, background: "#18181b", borderTop: "1px solid #2a2a2a", display: "flex", alignItems: "center", gap: 12, padding: "12px 28px", zIndex: 100 }}>
           <span style={{ color: "#666", fontSize: 13, flex: 1 }}>
-            <span style={{ color: "#fff", fontWeight: 700 }}>{selectedKeys.size}</span> valgt
+            <span style={{ color: "#fff", fontWeight: 700 }}>{selectedKeys.size}</span> {t("security.selected_count_suffix")}
           </span>
           <button style={actionBtn("#4caf50", "#1a4a2a")} disabled={batchSubmitting} onClick={() => submitBatch("normal")}>
-            {batchSubmitting ? "Lagrer…" : "Dette er normalt"}
+            {batchSubmitting ? t("common.saving") : t("security.mark_normal")}
           </button>
           <button style={actionBtn("#ff6b6b", "#4a1a1a")} disabled={batchSubmitting} onClick={() => submitBatch("suspicious")}>
-            Bekreft som mistenkelige
+            {t("security.mark_suspicious_batch")}
           </button>
           <button
             style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #2a2a2a", background: "transparent", color: "#555", fontSize: 13, cursor: "pointer" }}
             onClick={() => setSelectedKeys(new Set())}
           >
-            Avbryt
+            {t("common.cancel")}
+          </button>
+        </div>
+      )}
+
+      {/* ── Undo toast ── */}
+      {lastAction && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: selectedKeys.size > 0 ? 92 : 24,
+            right: 24,
+            zIndex: 110,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "10px 16px",
+            borderRadius: 8,
+            background: "#18181b",
+            border: "1px solid #2a2a2a",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+          }}
+        >
+          <span style={{ color: "#bbb", fontSize: 13 }}>
+            {lastAction.items.length > 1
+              ? t("security.undo_snackbar_batch", {
+                  count: lastAction.items.length,
+                  verdict: lastAction.verdict === "normal" ? t("security.verdict_normal") : t("security.verdict_suspicious"),
+                })
+              : t("security.undo_snackbar_single", {
+                  verdict: lastAction.verdict === "normal" ? t("security.verdict_normal") : t("security.verdict_suspicious"),
+                })}
+          </span>
+          <button
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 6, border: "1px solid #a78bfa40", background: "#a78bfa1a", color: "#a78bfa", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: undoing ? 0.5 : 1 }}
+            disabled={undoing}
+            onClick={handleUndo}
+          >
+            <Undo2 size={12} /> {t("security.undo")}
           </button>
         </div>
       )}

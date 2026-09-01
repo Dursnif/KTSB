@@ -79,7 +79,7 @@ export default function TabMqtt() {
           <div className="divide-y divide-border">
             <FieldRow label={t("settings.mqtt.card.host_label")} hint={t("settings.mqtt.card.host_hint")}>
               <div className="flex gap-2">
-                <Input value={host} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHost(e.target.value)} placeholder="192.168.0.100" />
+                <Input value={host} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHost(e.target.value)} placeholder="192.168.0.x" />
                 <TestButton url={`http://${host}:${port}`} />
               </div>
             </FieldRow>

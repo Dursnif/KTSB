@@ -88,12 +88,20 @@ async def _run_job(job_id: str, task: str, role: str, context: str, user_id: str
         "analytiker": ANALYTIKER_TOOLS,
     }.get(role, MECHANIC_TOOLS)
 
+    from kaare_core.tools.i18n import get_lang as _get_lang
+    lang = _get_lang(user_id)
+    suffix = "" if lang == "nb" else f"_{lang}"
+
     pers_path = _Path(__file__).parent
     if role and role != "standard":
-        custom = pers_path / f"personlighet_{role}.md"
+        custom = pers_path / f"personlighet_{role}{suffix}.md"
+        if not custom.exists():
+            custom = pers_path / f"personlighet_{role}.md"
         personality = custom.read_text(encoding="utf-8") if custom.exists() else ""
     if not personality if role != "standard" else True:
-        default = pers_path / "personlighet.md"
+        default = pers_path / f"personlighet{suffix}.md"
+        if not default.exists():
+            default = pers_path / "personlighet.md"
         personality = default.read_text(encoding="utf-8") if default.exists() else "Du er Mechanic."
 
     memory_path = _Path("/kaare/state/mechanic_memory.md")

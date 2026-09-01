@@ -35,6 +35,7 @@ from kaare_core.memory.long_term import _ENC_PREFIX, _dec, _enc
 from kaare_core.memory.semantic_memory import ensure_collection, index_episode
 from adapters.llm_adapter import call_llm_chat as _llm_chat
 from kaare_core.normalcy import compute_baseline as _compute_baseline
+from kaare_core.tools.i18n import t as _t_i18n, get_lang as _get_lang
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Konfigurasjon
@@ -144,19 +145,16 @@ def _save_episode(
 # LLM-komprimering
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _build_compression_prompt(interactions: list[dict]) -> str:
+def _build_compression_prompt(interactions: list[dict], lang: str = "nb") -> str:
+    encrypted_label = _t_i18n("nightjob_encrypted_placeholder", lang)
+    label_user    = _t_i18n("nightjob_label_user", lang)
+    label_reply   = _t_i18n("nightjob_label_reply", lang)
+    label_outcome = _t_i18n("nightjob_label_outcome", lang)
     lines = [
-        "Du er Kåres hukommelsessystem. Her er et sett med interaksjoner fra de siste dagene.",
-        "Lag et kort og presist sammendrag (maks 5 setninger) som beskriver:",
-        "- Hva brukeren spurte om eller ba om",
-        "- Hvilke enheter eller rom som var involvert",
-        "- Hva som fungerte, hva som ikke fungerte",
-        "- Eventuelle mønstre du ser",
+        _t_i18n("nightjob_ltm_header", lang),
+        _t_i18n("nightjob_ltm_instructions", lang),
         "",
-        "Svar KUN med sammendraget — ingen introduksjon, ingen kommentarer.",
-        "Skriv på norsk.",
-        "",
-        "--- INTERAKSJONER ---",
+        _t_i18n("nightjob_sep_interactions", lang),
     ]
     for ix in interactions:
         ts     = ix["ts"][:16].replace("T", " ")
@@ -164,11 +162,11 @@ def _build_compression_prompt(interactions: list[dict]) -> str:
         # means the system key genuinely couldn't resolve, so this still degrades safely.
         raw_p  = ix["prompt"] or ""
         raw_r  = ix["response"] or ""
-        prompt = ("[kryptert]" if raw_p.startswith(_ENC_PREFIX) else raw_p[:120]).replace("\n", " ")
-        resp   = ("[kryptert]" if raw_r.startswith(_ENC_PREFIX) else raw_r[:120]).replace("\n", " ")
+        prompt = (encrypted_label if raw_p.startswith(_ENC_PREFIX) else raw_p[:120]).replace("\n", " ")
+        resp   = (encrypted_label if raw_r.startswith(_ENC_PREFIX) else raw_r[:120]).replace("\n", " ")
         entity = f" [{ix['entity_id']}]" if ix.get("entity_id") else ""
         lines.append(
-            f"[{ts}]{entity} Bruker: {prompt} | Svar: {resp} | Utfall: {ix['outcome']}"
+            f"[{ts}]{entity} {label_user}: {prompt} | {label_reply}: {resp} | {label_outcome}: {ix['outcome']}"
         )
     return "\n".join(lines)
 
@@ -186,8 +184,8 @@ def _extract_topics(interactions: list[dict]) -> str:
     return ", ".join(sorted(topics)[:10])
 
 
-async def _compress_with_llm(interactions: list[dict]) -> str:
-    prompt = _build_compression_prompt(interactions)
+async def _compress_with_llm(interactions: list[dict], lang: str = "nb") -> str:
+    prompt = _build_compression_prompt(interactions, lang)
     result = await _llm_chat(
         "default",
         [{"role": "user", "content": prompt}],
@@ -203,27 +201,22 @@ async def _compress_with_llm(interactions: list[dict]) -> str:
 # Hoved-løkke
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _build_stm_summary_prompt(interactions: list[dict]) -> str:
+def _build_stm_summary_prompt(interactions: list[dict], lang: str = "nb") -> str:
+    label_user    = _t_i18n("nightjob_label_user", lang)
+    label_reply   = _t_i18n("nightjob_label_reply", lang)
+    label_outcome = _t_i18n("nightjob_label_outcome", lang)
     lines = [
-        "You are Kåre's memory system. Below are all interactions from the past 24 hours.",
-        "Write a short summary (5–7 sentences in Norwegian) that captures:",
-        "- What the user asked about or requested",
-        "- Which rooms or devices were involved",
-        "- What worked and what didn't",
-        "- Any recurring themes or patterns",
-        "- Anything that seems important to remember for tomorrow",
+        _t_i18n("nightjob_stm_header", lang),
+        _t_i18n("nightjob_stm_instructions", lang),
         "",
-        "Reply ONLY with the summary — no introduction, no comments.",
-        "Write in Norwegian.",
-        "",
-        "--- INTERACTIONS ---",
+        _t_i18n("nightjob_sep_interactions", lang),
     ]
     for ix in interactions:
         ts     = ix["ts"][:16].replace("T", " ")
         prompt = (ix["prompt"] or "")[:100].replace("\n", " ")
         resp   = (ix["response"] or "")[:100].replace("\n", " ")
         entity = f" [{ix['entity_id']}]" if ix.get("entity_id") else ""
-        lines.append(f"[{ts}]{entity} User: {prompt} | Reply: {resp} | Outcome: {ix['outcome']}")
+        lines.append(f"[{ts}]{entity} {label_user}: {prompt} | {label_reply}: {resp} | {label_outcome}: {ix['outcome']}")
     return "\n".join(lines)
 
 
@@ -265,7 +258,7 @@ async def compress_daily_stm(conn: sqlite3.Connection) -> None:
             continue
 
         log.info("Building STM daily summary for %s user=%s (%d interactions).", yesterday, uid, len(interactions))
-        prompt = _build_stm_summary_prompt(interactions)
+        prompt = _build_stm_summary_prompt(interactions, _get_lang(uid))
         result = await _llm_chat(
             "default",
             [{"role": "user", "content": prompt}],
@@ -362,18 +355,12 @@ def _fetch_unprocessed_global(conn: sqlite3.Connection, after_id: int, limit: in
     return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
 
-def _build_global_compression_prompt(interactions: list[dict]) -> str:
+def _build_global_compression_prompt(interactions: list[dict], lang: str = "nb") -> str:
     lines = [
-        "Du er Kåres hukommelsessystem. Her er et sett med hendelser fra hjemmet — registrert av Jing (Kåres raske indre stemme).",
-        "Lag et kort og presist sammendrag (maks 5 setninger) som beskriver:",
-        "- Hvilke hjemhendelser som skjedde (bevegelse, kamera, lys, osv.)",
-        "- Om noen var til stede hjemme",
-        "- Eventuelle mønstre eller uvanlige hendelser",
+        _t_i18n("nightjob_global_header", lang),
+        _t_i18n("nightjob_global_instructions", lang),
         "",
-        "Svar KUN med sammendraget — ingen introduksjon, ingen kommentarer.",
-        "Skriv på norsk.",
-        "",
-        "--- HENDELSER ---",
+        _t_i18n("nightjob_sep_events", lang),
     ]
     for ix in interactions:
         ts = ix["ts"][:16].replace("T", " ")
@@ -382,8 +369,8 @@ def _build_global_compression_prompt(interactions: list[dict]) -> str:
     return "\n".join(lines)
 
 
-async def _compress_global_with_llm(interactions: list[dict]) -> str:
-    prompt = _build_global_compression_prompt(interactions)
+async def _compress_global_with_llm(interactions: list[dict], lang: str = "nb") -> str:
+    prompt = _build_global_compression_prompt(interactions, lang)
     result = await _llm_chat(
         "default",
         [{"role": "user", "content": prompt}],
@@ -441,7 +428,7 @@ async def _compress_global_events(conn: sqlite3.Connection) -> None:
         count = len(batch)
         log.info("Komprimerer globale hendelser: id %d–%d (%d)", from_id, to_id, count)
 
-        narrative = await _compress_global_with_llm(batch)
+        narrative = await _compress_global_with_llm(batch, _get_lang())
         if not narrative:
             log.warning("LLM gav tomt svar for global batch — hopper over")
             after_id = to_id
@@ -500,7 +487,7 @@ async def run_nightjob() -> None:
         count   = len(batch)
         log.info("Komprimerer batch: id %d–%d (%d interaksjoner)", from_id, to_id, count)
 
-        narrative = await _compress_with_llm(batch)
+        narrative = await _compress_with_llm(batch, _get_lang())
         if not narrative:
             log.warning("LLM ga tomt svar — hopper over denne bolken.")
             after_id = to_id

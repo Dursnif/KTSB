@@ -15,6 +15,7 @@ import httpx
 from kaare_core.model_lock import lock_11445, LockTimeout
 from kaare_core.config import get_model as _cfg_model, get_llm_config as _llm, is_agent_tool_enabled
 from kaare_core.llm_fallback import is_fallback_active
+from kaare_core.think_strip import strip_think_block
 from kaare_core.users.profile_manager import (
     get_display_name,
     get_section_fields,
@@ -87,7 +88,24 @@ async def _llm_call(messages: list, max_tokens: int = MAX_TOKENS) -> str:
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         r = await client.post(MISS_KARE_URL, json=payload)
         r.raise_for_status()
-        return r.json().get("message", {}).get("content", "").strip()
+        raw_content = (r.json().get("message", {}).get("content") or "").strip()
+
+    content, think_content, think_closed = strip_think_block(raw_content)
+    if think_content:
+        try:
+            from kaare_core.tools.think_cache import log_think
+            log_think(
+                think_text=think_content,
+                response=content,
+                role="miss_kare",
+                model=MISS_KARE_MODEL,
+                recovered=False,
+            )
+        except Exception:
+            pass
+        if not think_closed:
+            log.info("[Miss Kare] truncated <think> block, discarding fragment (was never a real answer)")
+    return content
 
 
 async def evaluate(

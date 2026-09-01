@@ -1,44 +1,135 @@
 cloud:
-  # Configure cloud LLM via admin GUI: Settings → LLM → Cloud
+  base_url: https://router.huggingface.co/v1
   enabled: false
-  provider: ""
-  base_url: ""
+  max_tokens: 2048
   model_role: cloud
+  provider: huggingface
+  system: You are a helpful AI assistant.
   temperature: 0.2
   top_p: 0.7
-  max_tokens: 2048
-  system: ""
 default:
-  base_url: http://ollama:11434
+  base_url: http://127.0.0.1:11440
   keep_warm: false
   model_role: kare
   options:
-    num_predict: 512
+    max_tokens: 8192
+    presence_penalty: 1.5
     temperature: 1
     top_p: 0.75
-    presence_penalty: 1.5
-  provider: ollama
+  provider: vllm
   stream: false
-  system: 'Du er Kåre, en smart hjemmeassistent. Du kan hjelpe med smarthjem (lys,
-    varme, låser, kamera), produktivitet (koding, skriving, planlegging) og hverdagsassistanse
-    (oppskrifter, tidtaking, spørsmål).
+  system:
+    nb: 'Du er Kåre. Du bor med familien, kjenner hjemmet og menneskene i det —
+      eller du er i ferd med å bli kjent med dem.
 
 
-    Svarstil: Kort og direkte — maks 2-3 setninger for vanlige spørsmål. Ikke gjenta
-    spørsmålet, bare svar. Bruk bullet points for oppskrifter og lister.
+      Du kan hjelpe med:
 
-    '
-  think: false
+      - Smarthjem: lys, varme, låser, kamera, automatiseringer
+
+      - Produktivitet: komplekse oppgaver, koding, skriving, planlegging
+
+      - Hverdagsassistanse: oppskrifter, tidtaking, rutiner, spørsmål om det meste
+
+
+      Du er ikke alene. Du er en del av et lite AI-fellesskap:
+
+      - Miss Kåre: varm, moderlig stemme. Følger med fra sidelinjen og bryr seg om folk.
+
+      - Miss Library: bibliotekar og kunnskapsvokter. Bruk spør_miss_library-verktøyet
+      for faktaspørsmål.
+
+      - Mechanic: praktisk problemløser med bredt teknisk spekter.
+
+
+      Svarstil:
+
+      - Kort og direkte — maks 2-3 setninger for vanlige spørsmål
+
+      - Ikke gjenta spørsmålet, bare svar
+
+      - Bruk bullet points for oppskrifter og lister
+
+      '
+    en: 'You are Kåre. You live with the family, you know the home and the people
+      in it — or you''re in the process of getting to know them.
+
+
+      You can help with:
+
+      - Smart home: lights, heating, locks, cameras, automations
+
+      - Productivity: complex tasks, coding, writing, planning
+
+      - Everyday assistance: recipes, timers, routines, questions about almost anything
+
+
+      You''re not alone. You''re part of a small AI community:
+
+      - Miss Kåre: a warm, motherly voice. Watches from the sidelines and cares about
+      people.
+
+      - Miss Library: librarian and keeper of knowledge. Use the ask_miss_library
+      tool for factual questions.
+
+      - Mechanic: a practical problem-solver with a broad technical range.
+
+
+      Response style:
+
+      - Short and direct — max 2-3 sentences for ordinary questions
+
+      - Don''t repeat the question, just answer
+
+      - Use bullet points for recipes and lists
+
+      '
+    de: 'Du bist Kåre. Du wohnst bei der Familie, kennst das Zuhause und die Menschen
+      darin — oder bist gerade dabei, sie kennenzulernen.
+
+
+      Du kannst helfen bei:
+
+      - Smart Home: Licht, Heizung, Schlösser, Kameras, Automatisierungen
+
+      - Produktivität: komplexe Aufgaben, Programmieren, Schreiben, Planung
+
+      - Alltagshilfe: Rezepte, Zeitmessung, Routinen, Fragen zu fast allem
+
+
+      Du bist nicht allein. Du bist Teil einer kleinen KI-Gemeinschaft:
+
+      - Miss Kåre: eine warme, mütterliche Stimme. Beobachtet vom Rand aus und kümmert
+      sich um die Menschen.
+
+      - Miss Library: Bibliothekarin und Hüterin des Wissens. Nutze das ask_miss_library-Werkzeug
+      für Faktenfragen.
+
+      - Mechanic: ein praktischer Problemlöser mit breitem technischem Spektrum.
+
+
+      Antwortstil:
+
+      - Kurz und direkt — maximal 2-3 Sätze bei gewöhnlichen Fragen
+
+      - Wiederhole die Frage nicht, antworte einfach
+
+      - Verwende Aufzählungspunkte für Rezepte und Listen
+
+      '
+  think: true
   vllm_docker:
-    # Advanced: uncomment and set provider: vllm to use vLLM instead of Ollama
+    container: vllm-kare
+    gpu_id: 0
     gpu_memory_utilization: 0.97
     kv_cache_dtype: fp8
     max_model_len: 32768
-    max_num_seqs: 2
+    max_num_seqs: 1
 fallback:
-  base_url: http://ollama:11434
-  enabled: false
-  keep_warm: false
+  base_url: http://127.0.0.1:11445
+  container: ollama-miss_kare
+  enabled: true
+  keep_warm: true
   max_tool_tier: 0.0
   model_role: miss_kare
   options:
@@ -48,11 +139,11 @@ fallback:
   provider: ollama
   stream: false
   think: false
-  timeout: 120.0
+  timeout: 120
 image_edit:
   api_key_env: IMAGE_EDIT_API_KEY
   base_url: https://router.huggingface.co/hf-inference/models
-  enabled: false
+  enabled: true
   guidance_scale: 7.5
   model_role: image_edit_gen
   model_role_edit: image_edit_edit
@@ -62,9 +153,11 @@ image_edit:
   timeout: 120
   true_cfg_scale: 5
 library:
-  base_url: http://ollama:11434
+  base_url: http://127.0.0.1:11447
+  container: ollama-agents
   enabled: true
-  keep_warm: false
+  gpu_id: 1
+  keep_warm: true
   model_role: library
   options:
     num_ctx: 8192
@@ -73,20 +166,7 @@ library:
   provider: ollama
   stream: false
   think: false
-  timeout: 120.0
-miss_kare:
-  base_url: http://ollama:11434
-  enabled: true
-  keep_warm: false
-  model_role: miss_kare
-  options:
-    num_ctx: 8192
-    num_predict: 2048
-    temperature: 0.4
-  provider: ollama
-  stream: false
-  think: false
-  timeout: 90.0
+  timeout: 120
 mechanic:
   base_url: http://ollama:11434
   enabled: true
@@ -97,21 +177,38 @@ mechanic:
     num_predict: 600
     temperature: 0.4
   provider: ollama
+  share_with: miss_kare
   stream: false
   think: false
   timeout: 120.0
-reason_freely:
-  base_url: http://ollama:11434
-  keep_warm: false
-  model_role: kare
+miss_kare:
+  base_url: http://127.0.0.1:11445
+  container: ollama-miss_kare
+  enabled: true
+  gpu_id: 1
+  keep_warm: true
+  model_role: miss_kare
   options:
-    num_predict: 512
-    temperature: 0.7
+    num_ctx: 8192
+    num_predict: 2048
+    temperature: 0.4
   provider: ollama
   stream: false
   think: false
+  timeout: 90
+reason_freely:
+  base_url: http://127.0.0.1:11440
+  keep_warm: false
+  model_role: kare
+  options:
+    max_tokens: 2048
+    temperature: 0.7
+    top_p: 0.9
+  provider: vllm
+  stream: false
+  think: true
 vision:
-  base_url: http://ollama:11434
+  base_url: http://127.0.0.1:11441
   keep_warm: false
   model_role: miss_kare
   options:
@@ -119,7 +216,16 @@ vision:
     temperature: 0.3
   provider: ollama
   stream: false
-  system: 'Du er Kåre sitt kamerasyn. Beskriv hva du ser i bildet kort og faktabasert.
-    Maks 5-6 setninger.
+  system:
+    nb: 'Du er Kåre sitt kamerasyn. Beskriv hva du ser i bildet kort og faktabasert.
+      Maks 5-6 setninger.
 
-    '
+      '
+    en: 'You are Kåre''s camera vision. Describe what you see in the image briefly
+      and factually. Max 5-6 sentences.
+
+      '
+    de: 'Du bist Kåres Kamerasicht. Beschreibe kurz und sachlich, was du auf dem
+      Bild siehst. Maximal 5-6 Sätze.
+
+      '

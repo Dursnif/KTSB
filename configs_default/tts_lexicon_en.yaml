@@ -1,0 +1,12 @@
+# TTS pronunciation lexicon — English
+# Applied when Kåre speaks in English (lang=en) via Piper.
+# Format: word: replacement (word-boundary match, case-insensitive)
+# Use this for Norwegian/German loanwords, brand names, and
+# abbreviations that an English Piper model mispronounces.
+
+substitutions:
+  # Norwegian place names often spoken in English context
+  # e.g. Ås: "Ohs", Øvre: "Uvre"
+
+  # Brand / tech terms
+  # e.g. WiFi: "Why-Fye" (already correct in en models — add only if needed)

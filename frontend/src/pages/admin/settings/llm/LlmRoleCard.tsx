@@ -449,7 +449,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
                   size="sm"
                   onClick={handleDiscover}
                   disabled={discovering}
-                  title="Søk etter Ollama-instanser på nettverket"
+                  title={t("settings.llm.discover_tooltip")}
                 >
                   {discovering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
                 </Button>
@@ -458,10 +458,10 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
             {isOllama && discoverResults !== null && (
               <div className="mt-2">
                 {discoverResults.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">Ingen Ollama funnet. Sjekk at Ollama er startet.</p>
+                  <p className="text-xs text-muted-foreground">{t("settings.llm.discover_none")}</p>
                 ) : (
                   <div className="flex flex-col gap-1">
-                    <p className="text-xs text-muted-foreground mb-1">Fant {discoverResults.length} instans{discoverResults.length > 1 ? "er" : ""}:</p>
+                    <p className="text-xs text-muted-foreground mb-1">{t("settings.llm.discover_found", { n: discoverResults.length })}</p>
                     {discoverResults.map(r => (
                       <button
                         key={r.url}
@@ -486,7 +486,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
               label={t("settings.llm.api_key_label")}
               hint={config.api_key_set ? t("settings.llm.api_key_set_hint", { masked: config.api_key_masked }) : t("settings.llm.api_key_unset_hint")}
             >
-              <MaskedInput value={apiKey} onChange={setApiKey} placeholder={config.api_key_set ? "••• (oppdater)" : "Lim inn nøkkel"} />
+              <MaskedInput value={apiKey} onChange={setApiKey} placeholder={config.api_key_set ? t("common.key_update_placeholder") : t("common.key_paste_placeholder")} />
             </FieldRow>
           )}
 
@@ -598,8 +598,8 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
 
               <Separator className="my-1" />
               <p className="text-xs text-muted-foreground py-2">{t("settings.llm.vllm_params")}</p>
-              {(["max_tokens", "top_p", "presence_penalty", "frequency_penalty"] as const).map((k) => {
-                const step = k === "max_tokens" ? "1" : "0.01";
+              {(["max_tokens", "top_p", "presence_penalty", "frequency_penalty", "top_k", "min_p"] as const).map((k) => {
+                const step = (k === "max_tokens" || k === "top_k") ? "1" : "0.01";
                 return (
                   <FieldRow key={k} label={t(`settings.llm.vllm_fields.${k}.label`)} hint={t(`settings.llm.vllm_fields.${k}.hint`)}>
                     <input

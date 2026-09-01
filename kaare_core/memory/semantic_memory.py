@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 from kaare_core.config import get_service as _svc, is_embedding_enabled as _emb_enabled, get_qdrant_api_key as _qdrant_key
 from kaare_core.crypto import seal, unseal
 from kaare_core.session_keys import resolve_key_sync
+from kaare_core.tools.i18n import t as _t_i18n
 from kaare_core.users.store import get_public_key_b64
 import kaare_core.memory.semantic_memory_file as _smf
 
@@ -188,10 +189,10 @@ async def search_memory(query: str, limit: int = 3, user_id: str = "global") -> 
         return []
 
 
-def format_for_context(hits: list[dict]) -> str:
+def format_for_context(hits: list[dict], lang: str = "nb") -> str:
     if not hits:
         return ""
-    lines = ["### LANGTIDSMINNE (relevante episoder)"]
+    lines = [_t_i18n("ltm_header", lang)]
     for h in hits:
         ts_short = h["ts"][:10] if h["ts"] else "?"
         lines.append(f"[{ts_short}] {h['narrative']}")

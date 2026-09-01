@@ -33,6 +33,7 @@ from kaare_core.users import store as _user_store
 from kaare_core.llm_fallback import is_fallback_active
 from kaare_core.tools.i18n import get_lang as _get_lang, t as _t_i18n
 from kaare_core.context_builder import set_request_context as _set_request_context
+from kaare_core.model_enforcement import ModelEnforcer
 
 
 def _hhmm() -> str:
@@ -55,112 +56,8 @@ _CLOUD_TRIGGERS = [
 
 _MAX_TOOL_ROUNDS = 6  # max rounds in the tool loop (prevents infinite loop)
 
-# Promise interceptor: detect when Kåre claims to use a tool but never calls it.
-# Fires at most once per request. Patterns cover nb / en / de.
-# Each entry: (expected_tool_names, i18n_correction_key, compiled_pattern)
-_TOOL_PROMISES: list[tuple[set[str], str, re.Pattern]] = [
-    (
-        {"note"},
-        "gen_promise_correction_note",
-        re.compile(
-            # nb
-            r'\bjeg\s+(noterte|noterer|har\s+notert|skriver?\s+det\s+ned|har\s+skrevet'
-            r'|husker\s+det|vil\s+huske|la\s+det\s+til|har\s+lagt\s+(det\s+)?til'
-            r'|følger\s+opp|merker\s+meg|noterer\s+meg)\b'
-            r'|\b(huskelisten\s+min|min\s+huskeliste|på\s+lista\s+mi'
-            r'|lagt\s+til\s+på\s+(min|kåres?)\s+(liste|huskeliste))\b'
-            # en
-            r"|I'?ve?\s+(noted\s+that|jotted\s+that\s+down|written\s+(that\s+)?down"
-            r'|added\s+(it\s+)?to\s+(my\s+)?(list|notes?))\b'
-            r"|\bI('ll|'m going to)\s+(note|jot|write\s+(that\s+)?down)\b",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        {"timer"},
-        "gen_promise_correction_timer",
-        re.compile(
-            # nb
-            r'\bjeg\s+(setter?\s+(en\s+)?(timer|påminnelse|alarm)'
-            r'|minner\s+deg\s+om|vil\s+minne\s+deg|kommer\s+til\s+å\s+minne'
-            r'|har\s+satt\s+(en\s+)?(timer|påminnelse))\b'
-            r'|\b(timer\s+er\s+satt|påminnelse\s+er\s+(satt|opprettet))\b'
-            # en
-            r"|I('ll|'ve|'m going to)\s+(set\s+(a\s+)?(timer|reminder|alarm)"
-            r'|remind\s+you)\b'
-            r"|\bI('ve|have)\s+set\s+(a\s+)?(timer|reminder)\b"
-            # de
-            r'|\bich\s+(stelle\s+(einen?\s+)?(timer|wecker|erinnerung)'
-            r'|erinnere\s+dich|werde\s+(dich\s+)?erinnern'
-            r'|habe\s+(einen?\s+)?(timer|erinnerung)\s+gestellt)\b',
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        {"user_profile"},
-        "gen_promise_correction_generic",
-        re.compile(
-            # nb
-            r'\bjeg\s+(oppdaterer\s+(profilen\s+din|brukerinfo(en)?)'
-            r'|lagrer\s+det\s+i\s+profilen|har\s+(oppdatert|lagret)\s+(profilen|det\s+i\s+profilen))\b'
-            # en
-            r"|I('ve|'ll)\s+(updated?|saved?|stored?)\s+(your\s+)?(profile|user\s+info|preferences)\b"
-            # de
-            r'|\bich\s+(habe\s+(dein\s+)?profil\s+aktualisiert'
-            r'|aktualisiere\s+(dein\s+)?profil|speichere\s+(es\s+)?in\s+(deinem\s+)?profil)\b',
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        {"world"},
-        "gen_promise_correction_generic",
-        re.compile(
-            # nb
-            r'\bjeg\s+(oppdaterer\s+verdensbildet|lagrer\s+det\s+i\s+verdensbildet'
-            r'|har\s+oppdatert\s+verdensbildet)\b'
-            # en
-            r"|I('ve|'ll)\s+(updated?|saved?)\s+(the\s+)?(world\s+(model|view|knowledge))\b"
-            # de
-            r'|\bich\s+(habe\s+(das\s+)?weltbild\s+aktualisiert|aktualisiere\s+(das\s+)?weltbild)\b',
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        {"memory"},
-        "gen_promise_correction_generic",
-        re.compile(
-            # nb
-            r'\bjeg\s+(lagrer?\s+det\s+i\s+minnet|har\s+lagret\s+det\s+i\s+minnet'
-            r'|søker\s+i\s+minnet\s+etter)\b'
-            # en
-            r"|I('ve|'ll)\s+(saved?\s+(that\s+)?to\s+(my\s+)?memory|stored?\s+that\s+in\s+memory)\b"
-            # de
-            r'|\bich\s+(speichere\s+(es\s+)?im\s+(gedächtnis|speicher)'
-            r'|habe\s+(es\s+)?im\s+gedächtnis\s+gespeichert)\b',
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        {"household"},
-        "gen_promise_correction_household",
-        re.compile(
-            # nb (covers both "jeg setter X" and V2 word order "setter jeg X")
-            r'\b(jeg\s+(setter|aktiverer|har\s+(satt|aktivert))|(setter|aktiverer|har\s+(satt|aktivert))\s+jeg)'
-            r'\s+(husstanden|huset|dere)\s+(til\s+)?["\']?(borte\S*|bortreise\S*|hjemme\S*)\b'
-            r'|\b(bortreisemodus|borte-?modus)\s+(er\s+)?(nå\s+)?(aktivert|satt|slått\s+på|skrudd\s+på)\b'
-            r'|\bhusstanden\s+er\s+(nå\s+)?satt\s+til\s+(borte|hjemme)\b'
-            # en
-            r"|\bI('ve|'ll|'m going to)\s+(set|activate|switch)\s+(the\s+)?(household|house)\s+(to\s+)?(away|home)\b"
-            r'|\baway\s+mode\s+is\s+(now\s+)?(activated|set|on)\b'
-            # de
-            r'|\bich\s+(setze|aktiviere)\s+den\s+(haushalt|abwesenheitsmodus)\b'
-            r'|\bhabe\s+den\s+haushalt\s+auf\s+(abwesend|zuhause)\s+gesetzt\b'
-            r'|\babwesenheitsmodus\s+ist\s+(jetzt\s+)?(aktiviert|eingeschaltet|gesetzt)\b',
-            re.IGNORECASE,
-        ),
-    ),
-]
-
+# Model-enforcement detectors (tool-promise-without-call, truncated-think, etc.)
+# live in kaare_core/model_enforcement.py — see ModelEnforcer usage in handle_generate().
 
 _NODES_PATH = Path("/kaare/configs/nodes.yaml")
 
@@ -348,7 +245,7 @@ async def handle_generate(
         except Exception as e:
             print(f"[ROUTER] cloud exception: {e}")
             text_out = ""
-        text_out = text_out or "Cloud-modellen svarte ikke. Prøv igjen."
+        text_out = text_out or _t_i18n("gen_cloud_no_answer", lang)
         memory.add_dialog(role="assistant", text=text_out, user_id=user_id)
         asyncio.create_task(ltm.update_response(
             _ltm_id, response=text_out, outcome="success", model_used="cloud"
@@ -378,26 +275,19 @@ async def handle_generate(
             pass
 
     ver_note = (
-        f"\n\n[SYSTEM: Du har {_ver_count} interaksjoner uten brukerbekreftelse. "
-        f"Her er de tidligste:{_ver_preview}\n"
-        "Presenter 2–3 av dem naturlig i samtalen og spør om de stemte — bruk din egen stemme, ingen fast mal. "
-        "Bruk hent_ubekreftede-verktøyet for å hente neste batch.]\n"
+        _t_i18n("gen_ver_note", lang, count=_ver_count, preview=_ver_preview)
         if _ask_verification else ""
     )
 
     mk_note = (
-        "\n\n[SYSTEM: Brukeren adresserer Miss Kåre direkte i dette innlegget. "
-        "Miss Kåre leser meldingen selv og svarer i sitt eget panel — du trenger ikke videreformidle, "
-        "introdusere henne, eller 'gi henne ordet'. "
-        "Si gjerne noe kort fra din egen synsvinkel hvis du genuint har noe å tilføye, "
-        "ellers hold deg i bakgrunnen.]\n"
+        _t_i18n("gen_mk_note", lang)
         if miss_kare_addressed else ""
     )
 
     # Build static context (state, actions, daily summary) — WITHOUT dialog.
     # Dialog is injected below as real message objects to give the LLM the correct multi-turn structure.
     context_block = memory.build_prompt_context(
-        user_text=user_text, user_id=user_id, include_dialog=False
+        user_text=user_text, user_id=user_id, include_dialog=False, lang=lang
     )
 
     # RAG: hent relevante episoder fra langtidsminnet
@@ -405,14 +295,14 @@ async def handle_generate(
     try:
         ltm_hits = await search_memory(user_text, limit=3, user_id=user_id)
     except Exception as e:
-        print(f"[RAG] search_memory feilet (ikke kritisk): {e}")
+        print(f"[RAG] search_memory failed (non-critical): {e}")
 
-    ltm_block = format_for_context(ltm_hits)
+    ltm_block = format_for_context(ltm_hits, lang=lang)
 
     network_note = (
-        "[Tilkobling: ekstern via VPN — brukeren er ikke hjemme akkurat nå.]"
+        _t_i18n("gen_network_vpn", lang)
         if network_context == "vpn"
-        else "[Tilkobling: lokal — brukeren er hjemme.]"
+        else _t_i18n("gen_network_local", lang)
     )
 
     rid_note = _t_i18n("rid_note", _get_lang(user_id), rid=rid) if rid else ""
@@ -526,8 +416,7 @@ async def handle_generate(
     tool_trace    = []  # visible thought process for frontend
     _used_fallback = False  # True if any round in this request used the 9B backup
     _generated_image_urls: list[str] = []  # /api/image/{id} URLs from kare_image calls
-    _promise_retry_done = False  # fires at most once per request
-    _original_text_out  = ""    # text saved when promise interceptor fires
+    enforcer = ModelEnforcer(lang, rid=rid)  # forces at most one correction round per request — see kaare_core/model_enforcement.py
 
     for round_num in range(_MAX_TOOL_ROUNDS):
         print(f"[ROUTER] tool round {round_num + 1}")
@@ -551,7 +440,7 @@ async def handle_generate(
             _ts = _hhmm()
             memory.add_dialog(
                 role="system",
-                text=f"[RESERVEMODUS aktivert kl. {_ts}: kjernemodellen svarte ikke. Svarer via 9B-backup-modell.]",
+                text=_t_i18n("gen_fallback_activated", lang, ts=_ts),
                 user_id=user_id,
             )
             print(f"[ROUTER] fallback aktivert kl {_ts}")
@@ -563,7 +452,7 @@ async def handle_generate(
             _t0_fb = _info.get("ts_start", "ukjent")
             memory.add_dialog(
                 role="system",
-                text=f"[GJENOPPRETTET kl. {_ts}: kjernemodellen er tilbake. Jeg svarte {_n} spørsmål i reservemodus (fra {_t0_fb}).]",
+                text=_t_i18n("gen_fallback_recovered", lang, ts=_ts, n=_n, t0=_t0_fb),
                 user_id=user_id,
             )
             print(f"[ROUTER] fallback gjenopprettet etter {_n} turns")
@@ -575,29 +464,25 @@ async def handle_generate(
         # ─────────────────────────────────────────────────────────────────────
 
         if not result.get("ok") and not result.get("tool_calls"):
-            text_out = result.get("text") or "Jeg fikk ikke kontakt med systemene akkurat nå."
+            text_out = result.get("text") or _t_i18n("gen_no_contact", lang)
             break
 
         tool_calls = result.get("tool_calls")
 
         if not tool_calls:
             # Final answer — Kåre is done
-            text_out = result.get("text", "").strip() or _t_i18n("gen_no_response", lang)
+            _raw_text = result.get("text", "").strip()
 
-            # Promise interceptor: if Kåre claimed to use a tool but never called it,
-            # force one correction round. Covers note/timer/user_profile/world/memory.
-            if not _promise_retry_done and round_num < _MAX_TOOL_ROUNDS - 1:
-                _used_set = set(used_tools)
-                for _expected, _corr_key, _pattern in _TOOL_PROMISES:
-                    if _expected & _used_set:
-                        continue  # tool was already called this request
-                    if _pattern.search(text_out):
-                        _promise_retry_done = True
-                        _original_text_out = text_out
-                        print(f"[ROUTER] promise interceptor: promised {_expected} without calling — forcing retry")
-                        messages.append(result["message"])
-                        messages.append({"role": "user", "content": _t_i18n(_corr_key, lang)})
-                        break
+            if round_num < _MAX_TOOL_ROUNDS - 1:
+                action = enforcer.check(text_out=_raw_text, used_tools=used_tools, meta=_meta)
+                if action:
+                    messages.append(result["message"])
+                    messages.append({"role": "user", "content": action.correction_message})
+                    continue  # send the correction to the model — do NOT break here
+
+            text_out = _raw_text or _t_i18n("gen_no_response", lang)
+            if enforcer.pending:
+                text_out = enforcer.resolve(text_out, None)
 
             print(f"[ROUTER] final answer after {round_num + 1} round(s)")
             break
@@ -619,7 +504,7 @@ async def handle_generate(
             try:
                 res = await execute_tool(name, args)
             except Exception as _tc_exc:
-                res = f"Feil ved utføring av verktøy {name}: {_tc_exc}"
+                res = _t_i18n("gen_tool_exec_error", lang, name=name, error=_tc_exc)
                 print(f"[ROUTER] execute_tool exception ({name}): {_tc_exc}")
             print(f"[ROUTER] tool-resultat: {res[:120]}")
             return name, args, res
@@ -662,20 +547,12 @@ async def handle_generate(
                 "images": _round_vision,
             })
 
-        # Promise interceptor: after the forced tool round, break immediately.
-        # Return the original text + a small tag — no new LLM round needed.
-        if _promise_retry_done:
-            _tags = []
-            for _fn, _fa, _tr in call_results:
-                if _fn in ("note", "notat"):
-                    _tags.append("_(notert ✓)_")
-                else:
-                    # Tool with real output — include truncated result
-                    _tags.append(f"_({_tr[:120]})_")
-            text_out = _original_text_out.rstrip()
-            if _tags:
-                text_out += "\n\n" + " · ".join(_tags)
-            print("[ROUTER] promise interceptor: returning original text + tag")
+        # After a forced enforcement retry round, resolve immediately — no
+        # further LLM round needed. The matched detector decides how (reuse
+        # original text + tag for a tool-promise, or the new text for a
+        # truncated-think retry — see kaare_core/model_enforcement.py).
+        if enforcer.pending:
+            text_out = enforcer.resolve(result.get("text", "").strip(), call_results)
             break
 
     else:
@@ -726,7 +603,7 @@ async def handle_generate(
             if tc.get("args"):
                 entry += f"({tc['args'][:60]})"
             calls_desc.append(entry)
-        tool_summary = "Mine verktøykall forrige svar: " + " → ".join(calls_desc)
+        tool_summary = _t_i18n("gen_tool_summary", lang, calls=" → ".join(calls_desc))
         memory.add_dialog(role="system", text=tool_summary, user_id=user_id)
 
     outcome = "success" if text_out and not text_out.startswith("[") else "error"

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,54 +13,72 @@ export type VoiceServicesData = {
   stt_backend: string;
   faster_whisper_model: string;
   compute_type: string;
-  language: string;
   stt_enabled: boolean;
   model_dir: string;
 };
 
-const WHISPER_FW_PRESETS: { model: string; size: string; note: string }[] = [
-  { model: "large-v3",       size: "~3 GB",    note: "Beste kvalitet (OpenAI)" },
-  { model: "large-v3-turbo", size: "~1.6 GB",  note: "Raskere, nesten like god" },
-  { model: "medium",         size: "~1.5 GB",  note: "God balanse" },
-  { model: "small",          size: "~0.5 GB",  note: "Rask, lavere nøyaktighet" },
+const WHISPER_FW_PRESETS: { model: string; size: string; noteKey: string }[] = [
+  { model: "large-v3",       size: "~3 GB",    noteKey: "settings.llm.whisper_fw_preset_best" },
+  { model: "large-v3-turbo", size: "~1.6 GB",  noteKey: "settings.llm.whisper_fw_preset_faster" },
+  { model: "medium",         size: "~1.5 GB",  noteKey: "settings.llm.whisper_fw_preset_balanced" },
+  { model: "small",          size: "~0.5 GB",  noteKey: "settings.llm.whisper_fw_preset_fast_less_accurate" },
 ];
 
-const WHISPER_OV_PRESETS: { model_dir: string; label: string; size: string; note: string }[] = [
+const WHISPER_OV_PRESETS: { model_dir: string; labelKey: string; size: string; noteKey: string }[] = [
   {
     model_dir: "/mnt/ai_disk/models/voice/nb-whisper-large-ov",
-    label: "NbAiLab/nb-whisper-large (OpenVINO IR, konvertert)",
+    labelKey: "settings.llm.whisper_ov_preset_label",
     size: "~1.5 GB",
-    note: "Norsk (Nasjonalbiblioteket) — brukes nå",
+    noteKey: "settings.llm.whisper_ov_preset_note",
   },
 ];
 
 const WHISPER_COMPUTE_OPTIONS = [
-  { value: "int8",          label: "int8 – standard (anbefalt)" },
-  { value: "float16",       label: "float16 – høy presisjon (GPU)" },
-  { value: "int8_float16",  label: "int8_float16 – rask på GPU" },
-  { value: "float32",       label: "float32 – CPU-vennlig" },
+  { value: "int8",          labelKey: "settings.llm.whisper_compute_int8" },
+  { value: "float16",       labelKey: "settings.llm.whisper_compute_float16" },
+  { value: "int8_float16",  labelKey: "settings.llm.whisper_compute_int8_float16" },
+  { value: "float32",       labelKey: "settings.llm.whisper_compute_float32" },
 ];
 
-const WHISPER_LANGUAGE_OPTIONS = [
-  { value: "no",   label: "Norsk (no) — anbefalt for NbAiLab-modellen" },
-  { value: "nn",   label: "Nynorsk (nn)" },
-  { value: "auto", label: "Auto-detect" },
-  { value: "en",   label: "English (en)" },
-];
+// STT language is driven by kare_language alone (P101) — no separate switch here. This
+// heuristic is model-driven and symmetric: it asks "which languages does THIS model support"
+// (from name/path pattern), not "is the selected language Norwegian". No language is an
+// implicit default here — nb is treated the same as en/de/anything else. Produces only a soft
+// warning; never changes actual STT behavior.
+function _sttModelSupportedLangs(backend: string, modelDir: string, fwModel: string): string[] | "all" {
+  const modelRef = (backend === "openvino" ? modelDir : fwModel).toLowerCase();
+  if (modelRef.includes("nb-whisper")) {
+    return ["nb"]; // NbAiLab specialization (also nn, but nn isn't a kare_language option)
+  }
+  if (modelRef.endsWith(".en")) {
+    return ["en"]; // English-only Whisper distill
+  }
+  return "all"; // standard multilingual Whisper (large-v3 etc.) — no known restriction
+}
 
-export function WhisperCard({ data, onSaved }: { data: VoiceServicesData; onSaved: () => void }) {
+
+export function WhisperCard({ data, kareLanguage, onSaved }: { data: VoiceServicesData; kareLanguage: string; onSaved: () => void }) {
+  const { t } = useTranslation();
   const [collapsed, setCollapsed]     = useState(true);
   const [sttEnabled, setSttEnabled]   = useState(data.stt_enabled);
   const [backend, setBackend]         = useState(data.stt_backend);
   const [model, setModel]             = useState(data.faster_whisper_model);
   const [modelDir, setModelDir]       = useState(data.model_dir);
   const [computeType, setComputeType] = useState(data.compute_type);
-  const [language, setLanguage]       = useState(data.language);
   const [restarting, setRestarting]   = useState(false);
   const [restartOk, setRestartOk]     = useState<boolean | null>(null);
+  const [restartError, setRestartError] = useState("");
   const ss = useSaveState();
 
   const isOpenvino = backend === "openvino";
+  const supportedLangs = _sttModelSupportedLangs(backend, modelDir, model);
+  const langWarning = supportedLangs === "all" || supportedLangs.includes(kareLanguage)
+    ? null
+    : t("settings.llm.whisper_lang_warning", {
+        model: isOpenvino ? (modelDir.split("/").pop() || modelDir) : model,
+        supported: supportedLangs.join("/"),
+        lang: kareLanguage,
+      });
 
   const save = async () => {
     ss.saving();
@@ -68,7 +87,6 @@ export function WhisperCard({ data, onSaved }: { data: VoiceServicesData; onSave
         stt_backend:          backend,
         faster_whisper_model: model,
         compute_type:         computeType,
-        language,
         stt_enabled:          sttEnabled,
         model_dir:            modelDir,
       });
@@ -80,9 +98,11 @@ export function WhisperCard({ data, onSaved }: { data: VoiceServicesData; onSave
   const restart = async () => {
     setRestarting(true);
     setRestartOk(null);
+    setRestartError("");
     try {
       const r = await apiRestartService("voice");
       setRestartOk(r.ok);
+      if (!r.ok) setRestartError(r.error ?? "");
     } catch { setRestartOk(false); }
     finally { setRestarting(false); }
   };
@@ -96,7 +116,7 @@ export function WhisperCard({ data, onSaved }: { data: VoiceServicesData; onSave
         >
           <CardTitle className="text-base">Whisper (Tale-til-tekst)</CardTitle>
           <Badge variant="outline" className="text-xs font-mono">port 8011</Badge>
-          <span className="text-xs text-muted-foreground">{sttEnabled ? "aktiv" : "deaktivert"}</span>
+          <span className="text-xs text-muted-foreground">{sttEnabled ? t("common.enabled") : t("common.disabled")}</span>
         </div>
         <div className="flex items-center gap-3">
           <Switch
@@ -114,12 +134,12 @@ export function WhisperCard({ data, onSaved }: { data: VoiceServicesData; onSave
       {!collapsed && (
         <CardContent className="space-y-5 pt-0">
           <ExpertOnly>
-          <FieldRow label="Backend" hint="faster_whisper fungerer på alle plattformer (CPU/GPU). openvino krever Intel Arc GPU og OpenVINO GenAI — brukes med NbAiLab/nb-whisper-large.">
+          <FieldRow label="Backend" hint={t("settings.llm.whisper_backend_hint")}>
             <Select value={backend} onValueChange={v => { if (v) setBackend(v); }}>
               <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="openvino">OpenVINO GPU (Intel Arc) — nåværende</SelectItem>
-                <SelectItem value="faster_whisper">CPU universell (faster-whisper)</SelectItem>
+                <SelectItem value="openvino">{t("settings.llm.whisper_openvino_select")}</SelectItem>
+                <SelectItem value="faster_whisper">{t("settings.llm.whisper_fw_select")}</SelectItem>
               </SelectContent>
             </Select>
           </FieldRow>
@@ -128,7 +148,7 @@ export function WhisperCard({ data, onSaved }: { data: VoiceServicesData; onSave
           {isOpenvino ? (
             <>
               <ExpertOnly>
-              <FieldRow label="Modellmappe (OpenVINO IR)" hint="Sti til ferdig konvertert OpenVINO IR-modell. Inneholder openvino_encoder_model.xml, openvino_decoder_model.xml osv.">
+              <FieldRow label={t("settings.llm.whisper_modeldir_label")} hint={t("settings.llm.whisper_modeldir_hint")}>
                 <input
                   value={modelDir}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setModelDir(e.target.value)}
@@ -146,23 +166,28 @@ export function WhisperCard({ data, onSaved }: { data: VoiceServicesData; onSave
                     className={`w-full flex items-start justify-between px-3 py-2 text-left hover:bg-white/5 transition-colors ${modelDir === p.model_dir ? "bg-white/10" : ""}`}
                   >
                     <div>
-                      <span className="font-mono text-xs text-foreground block">{p.label}</span>
+                      <span className="font-mono text-xs text-foreground block">{t(p.labelKey)}</span>
                       <span className="text-xs text-muted-foreground font-mono">{p.model_dir}</span>
                     </div>
                     <span className="flex gap-4 text-xs text-muted-foreground shrink-0 ml-3 mt-0.5">
                       <span>{p.size}</span>
-                      <span className="text-green-400">{p.note}</span>
+                      <span className="text-green-400">{t(p.noteKey)}</span>
                     </span>
                   </button>
                 ))}
               </div>
               <p className="text-xs text-amber-300/80">
-                ℹ️ <strong>NbAiLab/nb-whisper-large</strong> er OpenVINO IR-konvertert og lever lokalt på disk. Modellen støtter <code>&lt;|no|&gt;</code> og <code>&lt;|nn|&gt;</code> — <strong>ikke</strong> <code>&lt;|nb|&gt;</code>. Sett språk til <em>Norsk (no)</em>.
+                ℹ️ {t("settings.llm.whisper_ov_disclaimer", {
+                  model: "NbAiLab/nb-whisper-large",
+                  tokenNo: "<|no|>",
+                  tokenNn: "<|nn|>",
+                  tokenNb: "<|nb|>",
+                })}
               </p>
             </>
           ) : (
             <>
-              <FieldRow label="Modell" hint="HuggingFace-modellnavn eller sti til CTranslate2-konvertert modell. Lastes ned automatisk ved første oppstart.">
+              <FieldRow label={t("settings.llm.whisper_model_label")} hint={t("settings.llm.whisper_model_hint")}>
                 <input
                   value={model}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setModel(e.target.value)}
@@ -181,21 +206,25 @@ export function WhisperCard({ data, onSaved }: { data: VoiceServicesData; onSave
                     <span className="font-mono text-xs text-foreground">{p.model}</span>
                     <span className="flex gap-4 text-xs text-muted-foreground">
                       <span>{p.size}</span>
-                      <span>{p.note}</span>
+                      <span>{t(p.noteKey)}</span>
                     </span>
                   </button>
                 ))}
               </div>
               <p className="text-xs text-muted-foreground">
-                <strong>Norsk-optimalisert (NbAiLab):</strong> Bruk <code>NbAiLab/nb-whisper-large</code> med OpenVINO-backend (konvertert modell finnes allerede lokalt). For faster-whisper må den konverteres: <code className="bg-white/5 px-1 rounded">ct2-transformers-converter --model NbAiLab/nb-whisper-large --output_dir /sti/til/modell</code>
+                <strong>{t("settings.llm.whisper_fw_norsk_optimized_title")}</strong>{" "}
+                {t("settings.llm.whisper_fw_norsk_optimized_body", {
+                  model: "NbAiLab/nb-whisper-large",
+                  cmd: "ct2-transformers-converter --model NbAiLab/nb-whisper-large --output_dir /path/to/model",
+                })}
               </p>
               <ExpertOnly>
-              <FieldRow label="Beregningstype" hint="int8 anbefales for de fleste. float16/int8_float16 krever GPU. float32 fungerer på CPU uten spesial-maskinvare.">
+              <FieldRow label={t("settings.llm.whisper_compute_label")} hint={t("settings.llm.whisper_compute_hint")}>
                 <Select value={computeType} onValueChange={v => { if (v) setComputeType(v); }}>
                   <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {WHISPER_COMPUTE_OPTIONS.map(o => (
-                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      <SelectItem key={o.value} value={o.value}>{t(o.labelKey)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -204,16 +233,12 @@ export function WhisperCard({ data, onSaved }: { data: VoiceServicesData; onSave
             </>
           )}
 
-          <FieldRow label="Språk" hint="Norsk (no) er standard og anbefalt. NbAiLab-modellen støtter <|no|> og <|nn|> — ikke <|nb|>.">
-            <Select value={language} onValueChange={v => { if (v) setLanguage(v); }}>
-              <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {WHISPER_LANGUAGE_OPTIONS.map(o => (
-                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FieldRow>
+          <p className="text-xs text-muted-foreground">
+            {t("settings.llm.whisper_lang_note")}
+          </p>
+          {langWarning && (
+            <p className="text-xs text-amber-300/80">⚠️ {langWarning}</p>
+          )}
 
           <div className="flex items-center gap-3 flex-wrap">
             <Button onClick={save} disabled={ss.state === "saving"} size="sm">
@@ -224,15 +249,15 @@ export function WhisperCard({ data, onSaved }: { data: VoiceServicesData; onSave
             <ExpertOnly><>
               <Button onClick={restart} disabled={restarting} size="sm" variant="outline">
                 {restarting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
-                Restart tjeneste
+                {t("settings.llm.restart_service")}
               </Button>
-              {restartOk === true  && <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Restartet</span>}
-              {restartOk === false && <span className="text-xs text-red-400 flex items-center gap-1"><XCircle className="h-3 w-3" /> Feil ved restart</span>}
+              {restartOk === true  && <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> {t("settings.llm.restart_restarted")}</span>}
+              {restartOk === false && <span className="text-xs text-red-400 flex items-center gap-1"><XCircle className="h-3 w-3" /> {restartError || t("settings.llm.restart_generic_error")}</span>}
             </></ExpertOnly>
           </div>
           <ExpertOnly>
           <p className="text-xs text-muted-foreground">
-            Restart er nødvendig for at endringer skal tre i kraft.
+            {t("settings.llm.restart_needed_hint")}
           </p>
           </ExpertOnly>
         </CardContent>

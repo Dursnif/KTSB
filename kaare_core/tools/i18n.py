@@ -22,11 +22,33 @@ def get_lang(user_id: str = "global") -> str:
             return lang
     except Exception:
         pass
-    return "nb"
+    # kare_language may be set to any of 16 GUI-selectable languages (sv/da/fr/...),
+    # but the internal pipe (system-prompt scaffolding, t()-text) only has nb/en/de
+    # translations. English is the safer fallback for anything else — Norwegian-only
+    # scaffold text bleeding into e.g. a Swedish household's prompt is worse than English.
+    return "en"
 
 
-def t(key: str, lang: str = "nb", **kwargs) -> str:
-    s = _T.get(key, {}).get(lang) or _T.get(key, {}).get("nb") or key
+def get_speech_lang(user_id: str = "global") -> str:
+    """Resolve the raw kare_language value for STT/TTS — uncollapsed, all 16 GUI values.
+
+    Unlike get_lang() (pipe-scaffold text, which collapses to nb/en/de), speech IS the chat
+    itself — the user's spoken words are chat input, Kåre's spoken reply is chat output — so
+    it follows the active kare_language selection directly (P101). `user_id` is accepted for
+    call-site symmetry with get_lang() and reserved for a possible future per-user override,
+    but is not consulted yet — global kare_language only (P101 Decision 1).
+    """
+    try:
+        cfg = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
+        return cfg.get("kare_language", "nb")
+    except Exception:
+        # Settings unreadable entirely — no real value to fall back to, so use the same
+        # safe universal default as get_lang()'s final fallback, not a Norwegian assumption.
+        return "en"
+
+
+def t(msg_key: str, lang: str = "nb", **kwargs) -> str:
+    s = _T.get(msg_key, {}).get(lang) or _T.get(msg_key, {}).get("nb") or msg_key
     return s.format(**kwargs) if kwargs else s
 
 
@@ -2645,9 +2667,9 @@ _T: dict = {
 
     # søk_i_argus
     "tool_søk_i_argus_desc": {
-        "nb": "Søk i Kåres systemlogg via Argus. Returnerer HA-handlinger, feil, LLM-kall. Bruk for å finne hva systemet HAR GJORT — ikke hva brukeren sa (bruk minne(action='search') for det).",
-        "en": "Search Kåre's system log via Argus. Returns HA actions, errors, LLM calls. Use to find what the system HAS DONE — not what the user said (use minne(action='search') for that).",
-        "de": "Kåres Systemprotokoll über Argus durchsuchen. Gibt HA-Aktionen, Fehler, LLM-Aufrufe zurück. Verwenden um zu finden was das System GETAN HAT — nicht was der Nutzer sagte (dafür minne(action='search')).",
+        "nb": "Søk i Kåres systemlogg via Argus. Returnerer HA-handlinger, feil, LLM-kall. Bruk for å finne hva systemet HAR GJORT — ikke hva brukeren sa (bruk minne(action='search') for det). Alltid semantisk søk (query kreves); legg til entity_id/since/until for å presist svare på 'skjedde X på tidspunkt Y' i stedet for kun 'noe relatert til X'.",
+        "en": "Search Kåre's system log via Argus. Returns HA actions, errors, LLM calls. Use to find what the system HAS DONE — not what the user said (use minne(action='search') for that). Always semantic (query required); add entity_id/since/until to precisely answer 'did X happen at time Y' instead of just 'something related to X'.",
+        "de": "Kåres Systemprotokoll über Argus durchsuchen. Gibt HA-Aktionen, Fehler, LLM-Aufrufe zurück. Verwenden um zu finden was das System GETAN HAT — nicht was der Nutzer sagte (dafür minne(action='search')). Immer semantisch (query erforderlich); entity_id/since/until hinzufügen um präzise 'geschah X zum Zeitpunkt Y' statt nur 'etwas im Zusammenhang mit X' zu beantworten.",
     },
     "tool_søk_i_argus_query_desc": {
         "nb": "Hva du leter etter. Semantisk søk — norsk naturlig språk.",
@@ -2658,6 +2680,21 @@ _T: dict = {
         "nb": "Maks antall resultater. Standard 8, maks 20.",
         "en": "Max number of results. Default 8, max 20.",
         "de": "Maximale Anzahl Ergebnisse. Standard 8, max 20.",
+    },
+    "tool_søk_i_argus_entity_id_desc": {
+        "nb": "Valgfritt: begrens til én spesifikk HA entity_id (f.eks. 'binary_sensor.bevegelse_stue'), ikke et vennlig navn. Kombineres med søket, ikke i stedet for det.",
+        "en": "Optional: restrict to one specific HA entity_id (e.g. 'binary_sensor.bevegelse_stue'), not a friendly name. Combines with the query, not instead of it.",
+        "de": "Optional: auf eine bestimmte HA entity_id beschränken (z.B. 'binary_sensor.bevegelse_stue'), keinen Anzeigenamen. Wird mit der Suche kombiniert, nicht anstelle davon.",
+    },
+    "tool_søk_i_argus_since_desc": {
+        "nb": "Valgfritt: kun hendelser fra og med dette tidspunktet (ISO 8601, f.eks. '2026-08-28T19:30:00+02:00').",
+        "en": "Optional: only events from this time onward (ISO 8601, e.g. '2026-08-28T19:30:00+02:00').",
+        "de": "Optional: nur Ereignisse ab diesem Zeitpunkt (ISO 8601, z.B. '2026-08-28T19:30:00+02:00').",
+    },
+    "tool_søk_i_argus_until_desc": {
+        "nb": "Valgfritt: kun hendelser til og med dette tidspunktet (ISO 8601).",
+        "en": "Optional: only events up to this time (ISO 8601).",
+        "de": "Optional: nur Ereignisse bis zu diesem Zeitpunkt (ISO 8601).",
     },
 
     # mechanic
@@ -3596,9 +3633,9 @@ _T: dict = {
         "de": "Kåre konnte keine Antwort innerhalb der Zeit produzieren.",
     },
     "gen_stt_note": {
-        "nb": "\nOBS: Dette er transkribert tale (STT). Ta hensyn til mulige talefeil, dialekt og feilstavinger.\n",
-        "en": "\nNOTE: This is transcribed speech (STT). Account for possible speech errors, dialect, and misspellings.\n",
-        "de": "\nHINWEIS: Dies ist transkribierte Sprache (STT). Berücksichtige mögliche Sprachfehler, Dialekte und Rechtschreibfehler.\n",
+        "nb": "\nOBS: Dette er transkribert tale (STT). Ta hensyn til mulige talefeil, dialekt og feilstavinger. Hvis teksten virker usammenhengende eller ikke gir mening, spør heller bruker om hva de mente enn å gjette.\n",
+        "en": "\nNOTE: This is transcribed speech (STT). Account for possible speech errors, dialect, and misspellings. If the text seems garbled or doesn't make sense, ask the user what they meant instead of guessing.\n",
+        "de": "\nHINWEIS: Dies ist transkribierte Sprache (STT). Berücksichtige mögliche Sprachfehler, Dialekte und Rechtschreibfehler. Wenn der Text unzusammenhängend wirkt oder keinen Sinn ergibt, frage den Nutzer lieber nach, was gemeint war, anstatt zu raten.\n",
     },
     "stt_voice_confirmed": {
         "nb": "\n[Stemme bekreftet: {user} ({pct}% sikker)]\n",
@@ -3664,6 +3701,11 @@ _T: dict = {
         "nb": "[SYSTEM: Du lovet å utføre en handling med et verktøy, men kalte det ikke. Gjør det nå — kun tool-kall, ingen forklarende tekst.]",
         "en": "[SYSTEM: You promised to perform an action using a tool, but did not call it. Do it now — tool call only, no explanatory text.]",
         "de": "[SYSTEM: Du hast versprochen, eine Aktion mit einem Werkzeug durchzuführen, aber es nicht aufgerufen. Tue es jetzt — nur Werkzeugaufruf, kein erklärender Text.]",
+    },
+    "gen_correction_truncated_think": {
+        "nb": "[SYSTEM: Svaret ditt ble avbrutt midt i tankeprosessen og inneholdt ikke noe faktisk svar. Svar nå direkte og konkret, uten å gjenta tankeprosessen.]",
+        "en": "[SYSTEM: Your response was cut off mid-thought and did not contain an actual answer. Answer now, directly and concisely, without repeating your reasoning.]",
+        "de": "[SYSTEM: Deine Antwort wurde mitten im Gedankengang abgebrochen und enthielt keine tatsächliche Antwort. Antworte jetzt direkt und knapp, ohne deinen Gedankengang zu wiederholen.]",
     },
     "lib_context_city_country": {
         "nb": "[Kontekst: {city}, {country}] ",
@@ -3871,5 +3913,762 @@ _T: dict = {
         "nb": "# Det jeg vet om deg",
         "en": "# What I know about you",
         "de": "# Was ich über dich weiß",
+    },
+
+    # ── STM context block (short_term.py::build_prompt_context) ──────────────
+    "stm_header": {
+        "nb": "### KORTTIDSMINNE",
+        "en": "### SHORT-TERM MEMORY",
+        "de": "### KURZZEITGEDÄCHTNIS",
+    },
+    "stm_daily_summary": {
+        "nb": "Oppsummering fra i går:",
+        "en": "Summary from yesterday:",
+        "de": "Zusammenfassung von gestern:",
+    },
+    "stm_last_actions": {
+        "nb": "Siste handlinger:",
+        "en": "Recent actions:",
+        "de": "Letzte Aktionen:",
+    },
+    "stm_action_ok": {"nb": "OK", "en": "OK", "de": "OK"},
+    "stm_action_failed": {"nb": "FEIL", "en": "FAILED", "de": "FEHLER"},
+    "stm_state_header": {
+        "nb": "Tilstand (siste kjent):",
+        "en": "State (last known):",
+        "de": "Zustand (zuletzt bekannt):",
+    },
+    "stm_dialog_header": {
+        "nb": "Siste dialog (kort):",
+        "en": "Recent dialog (short):",
+        "de": "Letzter Dialog (kurz):",
+    },
+
+    # ── LTM context block (semantic_memory.py::format_for_context) ───────────
+    "ltm_header": {
+        "nb": "### LANGTIDSMINNE (relevante episoder)",
+        "en": "### LONG-TERM MEMORY (relevant episodes)",
+        "de": "### LANGZEITGEDÄCHTNIS (relevante Episoden)",
+    },
+
+    # ── llm_adapter.py personality_self language-bridging note ───────────────
+    # Only injected when active lang != nb — personality_self.md is Kåre's own
+    # growing, self-written journal, historically Norwegian-only. This note stops
+    # that historical Norwegian content from pulling a non-nb session back to
+    # Norwegian, and tells Kåre to write NEW entries in the active language.
+    "llm_personality_self_note": {
+        "nb": "",
+        "en": (
+            "# Personal notes (may be in Norwegian)\n"
+            "The following are your own past self-observations. Some may be written in "
+            "Norwegian, since that was often the active language when they were written. "
+            "Treat them as historical context only — keep responding in English regardless "
+            "of what language they're in. When you add a new observation through the "
+            "self-image tool, write it in English."
+        ),
+        "de": (
+            "# Persönliche Notizen (möglicherweise auf Norwegisch)\n"
+            "Das Folgende sind deine eigenen früheren Selbstbeobachtungen. Einige sind "
+            "möglicherweise auf Norwegisch verfasst, da dies oft die aktive Sprache war, als "
+            "sie geschrieben wurden. Behandle sie nur als historischen Kontext — antworte "
+            "weiterhin auf Deutsch, unabhängig von ihrer Sprache. Wenn du über das "
+            "Selbstbild-Werkzeug eine neue Beobachtung hinzufügst, schreibe sie auf Deutsch."
+        ),
+    },
+
+    # ── llm_adapter.py static blocks ──────────────────────────────────────────
+    "llm_location_block": {
+        "nb": "# Lokasjon\nJeg bor i {city} ({postal}) i {country}. Bruk dette automatisk ved vær- og stedsspesifikke søk.",
+        "en": "# Location\nI live in {city} ({postal}) in {country}. Use this automatically for weather and location-specific searches.",
+        "de": "# Standort\nIch wohne in {city} ({postal}) in {country}. Nutze dies automatisch bei wetter- und ortsspezifischen Suchen.",
+    },
+    "llm_assistant_name_block": {
+        "nb": "Ditt navn er {name}. Brukere kaller deg dette.",
+        "en": "Your name is {name}. Users call you this.",
+        "de": "Dein Name ist {name}. Benutzer nennen dich so.",
+    },
+    "llm_fallback_note": {
+        "nb": (
+            "# Reservemodus\n"
+            "Kjernemodellen er midlertidig utilgjengelig. Du kjører på backup-modell (9B). "
+            "Svar kort og direkte. Prioriter smarthjem og enkle spørsmål. "
+            "Unngå lange resonnement og komplekse flertrinnsoppgaver."
+        ),
+        "en": (
+            "# Fallback mode\n"
+            "The core model is temporarily unavailable. You are running on the backup model (9B). "
+            "Answer briefly and directly. Prioritize smart home control and simple questions. "
+            "Avoid long reasoning chains and complex multi-step tasks."
+        ),
+        "de": (
+            "# Reservemodus\n"
+            "Das Kernmodell ist vorübergehend nicht verfügbar. Du läufst auf dem Backup-Modell (9B). "
+            "Antworte kurz und direkt. Priorisiere Smart-Home-Steuerung und einfache Fragen. "
+            "Vermeide lange Gedankengänge und komplexe mehrstufige Aufgaben."
+        ),
+    },
+
+    # ── frigate_responder.py::build_context_prompt (autonomous camera-event VLM prompt) ──
+    "frigate_time_morning":   {"nb": "morgen",       "en": "morning",   "de": "Morgen"},
+    "frigate_time_afternoon": {"nb": "ettermiddag",  "en": "afternoon", "de": "Nachmittag"},
+    "frigate_time_evening":   {"nb": "kveld",         "en": "evening",   "de": "Abend"},
+    "frigate_time_night":     {"nb": "natt",          "en": "night",     "de": "Nacht"},
+    "frigate_line_time": {
+        "nb": "Tidspunkt: {time} ({time_of_day})",
+        "en": "Time: {time} ({time_of_day})",
+        "de": "Uhrzeit: {time} ({time_of_day})",
+    },
+    "frigate_line_camera": {
+        "nb": "Kamera: {display} (rolle: {role_display})",
+        "en": "Camera: {display} (role: {role_display})",
+        "de": "Kamera: {display} (Rolle: {role_display})",
+    },
+    "frigate_line_detected": {
+        "nb": "Detektert: {label} — sikkerhet {score}%",
+        "en": "Detected: {label} — confidence {score}%",
+        "de": "Erkannt: {label} — Sicherheit {score}%",
+    },
+    "frigate_line_duration": {
+        "nb": "Varighet: {duration:.1f} sekunder",
+        "en": "Duration: {duration:.1f} seconds",
+        "de": "Dauer: {duration:.1f} Sekunden",
+    },
+    "frigate_line_zones": {
+        "nb": "Soner: {zones}",
+        "en": "Zones: {zones}",
+        "de": "Zonen: {zones}",
+    },
+    "frigate_line_face": {
+        "nb": "Ansiktsgjenkjenning: {sub_label} ({face_pct}% sikkerhet)",
+        "en": "Face recognition: {sub_label} ({face_pct}% confidence)",
+        "de": "Gesichtserkennung: {sub_label} ({face_pct}% Sicherheit)",
+    },
+    "frigate_prompt_wrapper": {
+        "nb": (
+            "Du ser et overvåkningsbilde fra Kåres kamerasystem.\n\n"
+            "{context}\n\n"
+            "Beskriv kort hva du ser på bildet. Er det noe uvanlig eller noe som bør handles på? "
+            "Maks 3 setninger."
+        ),
+        "en": (
+            "You are looking at a surveillance image from Kåre's camera system.\n\n"
+            "{context}\n\n"
+            "Briefly describe what you see in the image. Is there anything unusual or anything "
+            "that should be acted on? Max 3 sentences."
+        ),
+        "de": (
+            "Du siehst ein Überwachungsbild aus Kåres Kamerasystem.\n\n"
+            "{context}\n\n"
+            "Beschreibe kurz, was du auf dem Bild siehst. Gibt es etwas Ungewöhnliches oder "
+            "etwas, worauf reagiert werden sollte? Maximal 3 Sätze."
+        ),
+    },
+
+    # ── kaare_nightjob.py compression prompts ─────────────────────────────────
+    # These prompts drive unattended LLM compression of interactions into
+    # permanently-stored LTM episodes / STM daily summaries — correctness here
+    # matters more than most i18n work since the output gets re-injected into
+    # every future prompt context regardless of language.
+    "nightjob_ltm_header": {
+        "nb": "Du er Kåres hukommelsessystem. Her er et sett med interaksjoner fra de siste dagene.",
+        "en": "You are Kåre's memory system. Here is a set of interactions from the past few days.",
+        "de": "Du bist Kåres Gedächtnissystem. Hier ist eine Reihe von Interaktionen der letzten Tage.",
+    },
+    "nightjob_ltm_instructions": {
+        "nb": (
+            "Lag et kort og presist sammendrag (maks 5 setninger) som beskriver:\n"
+            "- Hva brukeren spurte om eller ba om\n"
+            "- Hvilke enheter eller rom som var involvert\n"
+            "- Hva som fungerte, hva som ikke fungerte\n"
+            "- Eventuelle mønstre du ser\n"
+            "\n"
+            "Svar KUN med sammendraget — ingen introduksjon, ingen kommentarer.\n"
+            "Skriv på norsk."
+        ),
+        "en": (
+            "Write a short and precise summary (max 5 sentences) describing:\n"
+            "- What the user asked about or requested\n"
+            "- Which devices or rooms were involved\n"
+            "- What worked, what didn't\n"
+            "- Any patterns you notice\n"
+            "\n"
+            "Reply ONLY with the summary — no introduction, no comments.\n"
+            "Write in English."
+        ),
+        "de": (
+            "Erstelle eine kurze und präzise Zusammenfassung (max. 5 Sätze), die beschreibt:\n"
+            "- Wonach der Benutzer gefragt oder worum er gebeten hat\n"
+            "- Welche Geräte oder Räume beteiligt waren\n"
+            "- Was funktioniert hat und was nicht\n"
+            "- Etwaige Muster, die du erkennst\n"
+            "\n"
+            "Antworte NUR mit der Zusammenfassung — keine Einleitung, keine Kommentare.\n"
+            "Schreibe auf Deutsch."
+        ),
+    },
+    "nightjob_stm_header": {
+        "nb": "Du er Kåres hukommelsessystem. Her er alle interaksjoner fra de siste 24 timene.",
+        "en": "You are Kåre's memory system. Below are all interactions from the past 24 hours.",
+        "de": "Du bist Kåres Gedächtnissystem. Es folgen alle Interaktionen der letzten 24 Stunden.",
+    },
+    "nightjob_stm_instructions": {
+        "nb": (
+            "Skriv et kort sammendrag (5–7 setninger) som fanger opp:\n"
+            "- Hva brukeren spurte om eller ba om\n"
+            "- Hvilke rom eller enheter som var involvert\n"
+            "- Hva som fungerte og hva som ikke gjorde det\n"
+            "- Eventuelle tilbakevendende temaer eller mønstre\n"
+            "- Alt som virker viktig å huske til i morgen\n"
+            "\n"
+            "Svar KUN med sammendraget — ingen introduksjon, ingen kommentarer.\n"
+            "Skriv på norsk."
+        ),
+        "en": (
+            "Write a short summary (5–7 sentences) that captures:\n"
+            "- What the user asked about or requested\n"
+            "- Which rooms or devices were involved\n"
+            "- What worked and what didn't\n"
+            "- Any recurring themes or patterns\n"
+            "- Anything that seems important to remember for tomorrow\n"
+            "\n"
+            "Reply ONLY with the summary — no introduction, no comments.\n"
+            "Write in English."
+        ),
+        "de": (
+            "Schreibe eine kurze Zusammenfassung (5–7 Sätze), die Folgendes erfasst:\n"
+            "- Wonach der Benutzer gefragt oder worum er gebeten hat\n"
+            "- Welche Räume oder Geräte beteiligt waren\n"
+            "- Was funktioniert hat und was nicht\n"
+            "- Etwaige wiederkehrende Themen oder Muster\n"
+            "- Alles, was wichtig erscheint, um es für morgen zu merken\n"
+            "\n"
+            "Antworte NUR mit der Zusammenfassung — keine Einleitung, keine Kommentare.\n"
+            "Schreibe auf Deutsch."
+        ),
+    },
+    "nightjob_global_header": {
+        "nb": "Du er Kåres hukommelsessystem. Her er et sett med hendelser fra hjemmet — registrert av Jing (Kåres raske indre stemme).",
+        "en": "You are Kåre's memory system. Here is a set of events from the home — logged by Jing (Kåre's fast inner voice).",
+        "de": "Du bist Kåres Gedächtnissystem. Hier ist eine Reihe von Ereignissen aus dem Zuhause — erfasst von Jing (Kåres schneller innerer Stimme).",
+    },
+    "nightjob_global_instructions": {
+        "nb": (
+            "Lag et kort og presist sammendrag (maks 5 setninger) som beskriver:\n"
+            "- Hvilke hjemhendelser som skjedde (bevegelse, kamera, lys, osv.)\n"
+            "- Om noen var til stede hjemme\n"
+            "- Eventuelle mønstre eller uvanlige hendelser\n"
+            "\n"
+            "Svar KUN med sammendraget — ingen introduksjon, ingen kommentarer.\n"
+            "Skriv på norsk."
+        ),
+        "en": (
+            "Write a short and precise summary (max 5 sentences) describing:\n"
+            "- Which home events occurred (motion, camera, lights, etc.)\n"
+            "- Whether anyone was present at home\n"
+            "- Any patterns or unusual events\n"
+            "\n"
+            "Reply ONLY with the summary — no introduction, no comments.\n"
+            "Write in English."
+        ),
+        "de": (
+            "Erstelle eine kurze und präzise Zusammenfassung (max. 5 Sätze), die beschreibt:\n"
+            "- Welche Ereignisse zu Hause stattgefunden haben (Bewegung, Kamera, Licht usw.)\n"
+            "- Ob jemand zu Hause anwesend war\n"
+            "- Etwaige Muster oder ungewöhnliche Ereignisse\n"
+            "\n"
+            "Antworte NUR mit der Zusammenfassung — keine Einleitung, keine Kommentare.\n"
+            "Schreibe auf Deutsch."
+        ),
+    },
+    "nightjob_label_user":    {"nb": "Bruker",  "en": "User",  "de": "Benutzer"},
+    "nightjob_label_reply":   {"nb": "Svar",    "en": "Reply", "de": "Antwort"},
+    "nightjob_label_outcome": {"nb": "Utfall",  "en": "Outcome", "de": "Ergebnis"},
+    "nightjob_sep_interactions": {
+        "nb": "--- INTERAKSJONER ---",
+        "en": "--- INTERACTIONS ---",
+        "de": "--- INTERAKTIONEN ---",
+    },
+    "nightjob_sep_events": {
+        "nb": "--- HENDELSER ---",
+        "en": "--- EVENTS ---",
+        "de": "--- EREIGNISSE ---",
+    },
+    "nightjob_encrypted_placeholder": {
+        "nb": "[kryptert]",
+        "en": "[encrypted]",
+        "de": "[verschlüsselt]",
+    },
+
+    # ── kaare_reflection.py ──────────────────────────────────────────────────
+    "refl_leder_sys_prev": {
+        "nb": "**Tidligere refleksjonsmøter — utdrag:**\n{block}",
+        "en": "**Previous reflection meetings — excerpts:**\n{block}",
+        "de": "**Frühere Reflexionstreffen — Auszüge:**\n{block}",
+    },
+    "refl_leder_sys_admin_comment": {
+        "nb": "**Admin-kommentar til forrige møte** (siter ordrett — ikke parafrase):\n{comment}",
+        "en": "**Admin comment on the previous meeting** (quote verbatim — do not paraphrase):\n{comment}",
+        "de": "**Admin-Kommentar zum letzten Treffen** (wörtlich zitieren — nicht paraphrasieren):\n{comment}",
+    },
+    "refl_from_name": {
+        "nb": " fra {name}",
+        "en": " from {name}",
+        "de": " von {name}",
+    },
+    "refl_leder_sys_user_comment": {
+        "nb": "**Brukerkommentar{name_label} til forrige møte:**\n{comment}",
+        "en": "**User comment{name_label} on the previous meeting:**\n{comment}",
+        "de": "**Nutzerkommentar{name_label} zum letzten Treffen:**\n{comment}",
+    },
+    "refl_leder_sys_admin_topic": {
+        "nb": "**Admin har foreslått tema:** {topic}\nPrioriter dette temaet i møteagendaen.",
+        "en": "**Admin has proposed a topic:** {topic}\nPrioritize this topic in the meeting agenda.",
+        "de": "**Admin hat ein Thema vorgeschlagen:** {topic}\nPriorisiere dieses Thema in der Meeting-Agenda.",
+    },
+    "refl_leder_sys_user_topic": {
+        "nb": "**Brukeren har foreslått tema:** {topic}\nTa dette med i agendaen — det er noe brukeren selv ønsker å utforske.",
+        "en": "**The user has suggested a topic:** {topic}\nInclude this in the agenda — it's something the user themselves wants to explore.",
+        "de": "**Der Nutzer hat ein Thema vorgeschlagen:** {topic}\nNimm dies in die Agenda auf — der Nutzer möchte es selbst erkunden.",
+    },
+    "refl_away_note": {
+        "nb": "**Husstanden er på bortreise.**",
+        "en": "**The household is away.**",
+        "de": "**Der Haushalt ist verreist.**",
+    },
+    "refl_away_reason": {
+        "nb": " Årsak: {reason}.",
+        "en": " Reason: {reason}.",
+        "de": " Grund: {reason}.",
+    },
+    "refl_away_return": {
+        "nb": " Forventet hjemkomst: {date}.",
+        "en": " Expected return: {date}.",
+        "de": " Erwartete Rückkehr: {date}.",
+    },
+    "refl_away_long": {
+        "nb": " Borte i {days} dager. Vurder å ta opp sikkerhetsmodus og hvile/ro i møteagendaen.",
+        "en": " Away for {days} days. Consider raising security mode and rest/calm in the meeting agenda.",
+        "de": " Seit {days} Tagen verreist. Erwäge, Sicherheitsmodus und Ruhe/Erholung in der Meeting-Agenda anzusprechen.",
+    },
+    "refl_kare_topic_prompt": {
+        "nb": "Møtet starter. Vi skal snakke om brukeren i dag – hvem de er, hva de liker, hva de trenger. Foreslå ÉTT konkret tema om brukeren du ønsker å utforske. Vær spesifikk. Maks 2 setninger.",
+        "en": "The meeting is starting. Today we're talking about the user – who they are, what they like, what they need. Suggest ONE concrete topic about the user you want to explore. Be specific. Max 2 sentences.",
+        "de": "Das Meeting beginnt. Heute sprechen wir über den Nutzer – wer er ist, was er mag, was er braucht. Schlage EIN konkretes Thema über den Nutzer vor, das du erkunden möchtest. Sei konkret. Max. 2 Sätze.",
+    },
+    "refl_miss_kare_topic_prompt": {
+        "nb": "Kåre ønsker å utforske dette i møtet: «{tema}»\n\nForeslå DU ÉTT annet konkret tema om brukeren – noe du synes er viktig å belyse. Det kan gjerne utfylle Kåres tema. Maks 2 setninger.",
+        "en": "Kåre wants to explore this in the meeting: «{tema}»\n\nSuggest ONE other concrete topic about the user yourself – something you think is important to shed light on. It can complement Kåre's topic. Max 2 sentences.",
+        "de": "Kåre möchte dies im Meeting erkunden: «{tema}»\n\nSchlage DU EIN weiteres konkretes Thema über den Nutzer vor – etwas, das du für wichtig hältst zu beleuchten. Es darf Kåres Thema gerne ergänzen. Max. 2 Sätze.",
+    },
+    "refl_leder_admin_input_user": {
+        "nb": "Admin har sendt inn dette innspillet til møtet:\n\"{admin_input}\"\n\nIntroduser dette innspillet for Kåre og Miss Kåre. Koble det til hvem brukeren er hvis relevant. Be Kåre starte med sin refleksjon. Maks 3 setninger.",
+        "en": "Admin has submitted this input to the meeting:\n\"{admin_input}\"\n\nIntroduce this input to Kåre and Miss Kåre. Connect it to who the user is if relevant. Ask Kåre to start with their reflection. Max 3 sentences.",
+        "de": "Admin hat diesen Beitrag für das Meeting eingereicht:\n\"{admin_input}\"\n\nStelle diesen Beitrag Kåre und Miss Kåre vor. Verknüpfe ihn wenn relevant mit dem Nutzer. Bitte Kåre, mit seiner Reflexion zu beginnen. Max. 3 Sätze.",
+    },
+    "refl_admin_input_fallback": {
+        "nb": "Admin har sendt inn et tema: «{admin_input}» – la oss se på dette.",
+        "en": "Admin has submitted a topic: «{admin_input}» – let's take a look at this.",
+        "de": "Admin hat ein Thema eingereicht: «{admin_input}» – schauen wir uns das an.",
+    },
+    "refl_leder_agenda_user": {
+        "nb": "Kåre vil utforske: «{kare_tema}»\nMiss Kåre vil utforske: «{miss_kare_tema}»\n\nBruk gjerne verktøyene for å lese brukerprofil eller hente aktivitetsdata. Ta deretter med ÉTT tema fra Kåre og ÉTT tema fra Miss Kåre inn i agendaen. Sett en kort, konkret agenda for gruppe 1 (2-4 setninger). Vær tydelig på hva vi vil finne ut om brukeren i dag.",
+        "en": "Kåre wants to explore: «{kare_tema}»\nMiss Kåre wants to explore: «{miss_kare_tema}»\n\nFeel free to use the tools to read the user profile or fetch activity data. Then bring ONE topic from Kåre and ONE topic from Miss Kåre into the agenda. Set a short, concrete agenda for group 1 (2-4 sentences). Be clear about what we want to find out about the user today.",
+        "de": "Kåre möchte erkunden: «{kare_tema}»\nMiss Kåre möchte erkunden: «{miss_kare_tema}»\n\nNutze gerne die Werkzeuge, um das Nutzerprofil zu lesen oder Aktivitätsdaten abzurufen. Nimm dann EIN Thema von Kåre und EIN Thema von Miss Kåre in die Agenda auf. Setze eine kurze, konkrete Agenda für Gruppe 1 (2-4 Sätze). Sei klar darüber, was wir heute über den Nutzer herausfinden wollen.",
+    },
+    "refl_err_using_suggested_topics": {
+        "nb": "bruker foreslåtte temaer direkte",
+        "en": "falling back to the participants' suggested topics directly",
+        "de": "greift direkt auf die vorgeschlagenen Themen der Teilnehmer zurück",
+    },
+    "refl_leder_group2_intro": {
+        "nb": "Gruppe 2 starter. Oppsummering fra gruppe 1:\n\n{prev_summary}\n\nGi en kort intro (2-4 setninger) med ny fokusert agenda. Gå dypere – ta tak i noe som ikke ble fullt utforsket i gruppe 1.",
+        "en": "Group 2 is starting. Summary from group 1:\n\n{prev_summary}\n\nGive a brief intro (2-4 sentences) with a new, focused agenda. Go deeper – pick up something that wasn't fully explored in group 1.",
+        "de": "Gruppe 2 beginnt. Zusammenfassung aus Gruppe 1:\n\n{prev_summary}\n\nGib eine kurze Einführung (2-4 Sätze) mit einer neuen, fokussierten Agenda. Geh tiefer – greife etwas auf, das in Gruppe 1 nicht vollständig untersucht wurde.",
+    },
+    "refl_err_group2_no_intro": {
+        "nb": "gruppe 2 starter uten intro",
+        "en": "group 2 starts without an intro",
+        "de": "Gruppe 2 beginnt ohne Einführung",
+    },
+    "refl_leder_decision_instructions": {
+        "nb": "Avgjør hva som skjer etter denne runden.\nSvar med NØYAKTIG én linje – ingen forklaring:\n  FORTSETT\n  HENT_AKTIVITET\n  NETTSØK: <søketerm>\n  INNSPILL: <maks 2 setninger>",
+        "en": "Decide what happens after this round.\nReply with EXACTLY one line – no explanation:\n  FORTSETT\n  HENT_AKTIVITET\n  NETTSØK: <search term>\n  INNSPILL: <max 2 sentences>",
+        "de": "Entscheide, was nach dieser Runde passiert.\nAntworte mit GENAU einer Zeile – keine Erklärung:\n  FORTSETT\n  HENT_AKTIVITET\n  NETTSØK: <Suchbegriff>\n  INNSPILL: <max. 2 Sätze>",
+    },
+    "refl_leder_fallback_system": {
+        "nb": "Du er møteleder i et møte om brukeren. {instructions}",
+        "en": "You are the meeting leader in a meeting about the user. {instructions}",
+        "de": "Du bist Moderator in einem Meeting über den Nutzer. {instructions}",
+    },
+    "refl_leder_round_check_user": {
+        "nb": "Runde {round_num} er ferdig. Siste del av samtalen:\n\n{conv_tail}\n\nHva gjør du?",
+        "en": "Round {round_num} is done. Latest part of the conversation:\n\n{conv_tail}\n\nWhat do you do?",
+        "de": "Runde {round_num} ist fertig. Letzter Teil des Gesprächs:\n\n{conv_tail}\n\nWas machst du?",
+    },
+    "refl_leder_vurder_user": {
+        "nb": "Gruppe {group} av {max_groups} er ferdig.\n\nSamtalen:\n{conv_tail}\n\nSvar KUN med én linje: 'FORTSETT: <begrunnelse>' eller 'AVSLUTT: <begrunnelse>'.",
+        "en": "Group {group} of {max_groups} is done.\n\nThe conversation:\n{conv_tail}\n\nReply ONLY with one line: 'FORTSETT: <reason>' or 'AVSLUTT: <reason>'.",
+        "de": "Gruppe {group} von {max_groups} ist fertig.\n\nDas Gespräch:\n{conv_tail}\n\nAntworte NUR mit einer Zeile: 'FORTSETT: <Begründung>' oder 'AVSLUTT: <Begründung>'.",
+    },
+    "refl_leder_closing_check_user": {
+        "nb": "Fri avslutningsrunde {closing_round} er ferdig.\n\nSiste del av samtalen:\n{conv_tail}\n\nGjentar dere bare det som allerede er sagt tidligere i møtet, uten noe nytt? Svar KUN med én linje: 'FORTSETT' eller 'AVSLUTT: <kort begrunnelse>'.",
+        "en": "Free closing round {closing_round} is done.\n\nLatest part of the conversation:\n{conv_tail}\n\nAre you just repeating what's already been said earlier in the meeting, with nothing new? Reply ONLY with one line: 'FORTSETT' or 'AVSLUTT: <short reason>'.",
+        "de": "Freie Abschlussrunde {closing_round} ist fertig.\n\nLetzter Teil des Gesprächs:\n{conv_tail}\n\nWiederholt ihr nur, was im Meeting bereits gesagt wurde, ohne etwas Neues? Antworte NUR mit einer Zeile: 'FORTSETT' oder 'AVSLUTT: <kurze Begründung>'.",
+    },
+    "refl_agenda_msg": {
+        "nb": "Møteleder setter agenda: {agenda}",
+        "en": "Meeting leader sets the agenda: {agenda}",
+        "de": "Moderator legt die Agenda fest: {agenda}",
+    },
+    "refl_admin_react_prompt": {
+        "nb": "Din tur – reflekter over admin sitt innspill.",
+        "en": "Your turn – reflect on the admin's input.",
+        "de": "Du bist dran – reflektiere über den Beitrag des Admins.",
+    },
+    "refl_kare_said_admin_react_mk": {
+        "nb": "Kåre sa:\n{text}\n\nDin tur – hva tenker du om admin sitt innspill?",
+        "en": "Kåre said:\n{text}\n\nYour turn – what do you think about the admin's input?",
+        "de": "Kåre sagte:\n{text}\n\nDu bist dran – was denkst du über den Beitrag des Admins?",
+    },
+    "refl_miss_kare_said": {
+        "nb": "Miss Kåre sier: {text}",
+        "en": "Miss Kåre says: {text}",
+        "de": "Miss Kåre sagt: {text}",
+    },
+    "refl_your_turn": {
+        "nb": "Din tur.",
+        "en": "Your turn.",
+        "de": "Du bist dran.",
+    },
+    "refl_kare_said_your_turn": {
+        "nb": "Kåre sa:\n{text}\n\nDin tur.",
+        "en": "Kåre said:\n{text}\n\nYour turn.",
+        "de": "Kåre sagte:\n{text}\n\nDu bist dran.",
+    },
+    "refl_closing_prompt": {
+        "nb": "Møtet nærmer seg slutten. Har du noe mer å si om brukeren – noe du ikke fikk sagt, eller en tanke du synes er viktig? Hvis du ikke har noe relevant å tilføye, svar KUN med ordet INGENTING.",
+        "en": "The meeting is coming to an end. Do you have anything more to say about the user – something you didn't get to say, or a thought you think is important? If you have nothing relevant to add, reply with ONLY the word INGENTING.",
+        "de": "Das Meeting geht dem Ende zu. Hast du noch etwas über den Nutzer zu sagen – etwas, das du noch nicht gesagt hast, oder einen Gedanken, den du für wichtig hältst? Falls du nichts Relevantes hinzuzufügen hast, antworte NUR mit dem Wort INGENTING.",
+    },
+    "refl_kare_says": {
+        "nb": "Kåre sier: {text}",
+        "en": "Kåre says: {text}",
+        "de": "Kåre sagt: {text}",
+    },
+    "refl_kare_closing_prompt": {
+        "nb": "Møtet er over. Skriv en strukturert avslutning med disse taggene:\nOBSERVASJON: <1-3 setninger om hva dere lærte om brukeren i dag>\nLIKER: <noe spesifikt brukeren liker, eller 'ingenting nytt'>\nBEKYMRING: <noe å følge med på, eller 'ingen'>\nGLEDE: <noe konkret som kan glede brukeren, eller 'ingen'>",
+        "en": "The meeting is over. Write a structured closing with these tags:\nOBSERVASJON: <1-3 sentences about what you learned about the user today>\nLIKER: <something specific the user likes, or 'ingenting nytt'>\nBEKYMRING: <something to keep an eye on, or 'ingen'>\nGLEDE: <something concrete that could delight the user, or 'ingen'>",
+        "de": "Das Meeting ist vorbei. Schreibe einen strukturierten Abschluss mit diesen Tags:\nOBSERVASJON: <1-3 Sätze darüber, was ihr heute über den Nutzer gelernt habt>\nLIKER: <etwas Konkretes, das der Nutzer mag, oder 'ingenting nytt'>\nBEKYMRING: <etwas, das im Auge zu behalten ist, oder 'ingen'>\nGLEDE: <etwas Konkretes, das den Nutzer erfreuen könnte, oder 'ingen'>",
+    },
+    "refl_existing_knowledge_block": {
+        "nb": "Eksisterende avklart kunnskap:\n{existing}\n\n",
+        "en": "Existing settled knowledge:\n{existing}\n\n",
+        "de": "Vorhandenes gesichertes Wissen:\n{existing}\n\n",
+    },
+    "refl_update_knowledge_prompt": {
+        "nb": "{existing_block}Her er utdrag fra refleksjonsmøtet om brukeren:\n{transcript}\n\nOppdater user_knowledge.md basert på møtets konklusjoner. Behold eksisterende punkter som fortsatt er gyldige. Fjern det som er utdatert. Skriv KUN på formen:\n- Brukeren liker/foretrekker/reagerer/...\n\nMaks 10 punkter. Kun punkter som representerer konkludert, stabil kunnskap.",
+        "en": "{existing_block}Here are excerpts from the reflection meeting about the user:\n{transcript}\n\nUpdate user_knowledge.md based on the meeting's conclusions. Keep existing points that are still valid. Remove what's outdated. Write ONLY in the form:\n- The user likes/prefers/reacts/...\n\nMax 10 points. Only points that represent concluded, stable knowledge.",
+        "de": "{existing_block}Hier sind Auszüge aus dem Reflexionstreffen über den Nutzer:\n{transcript}\n\nAktualisiere user_knowledge.md basierend auf den Schlussfolgerungen des Treffens. Behalte bestehende Punkte, die noch gültig sind. Entferne Veraltetes. Schreibe NUR in der Form:\n- Der Nutzer mag/bevorzugt/reagiert/...\n\nMax. 10 Punkte. Nur Punkte, die abgeschlossenes, stabiles Wissen darstellen.",
+    },
+    "refl_knowledge_file_header": {
+        "nb": "# Konkludert kunnskap om brukeren\n_Sist oppdatert: {date}_\n\n",
+        "en": "# Concluded knowledge about the user\n_Last updated: {date}_\n\n",
+        "de": "# Abgeschlossenes Wissen über den Nutzer\n_Zuletzt aktualisiert: {date}_\n\n",
+    },
+    "refl_admin_topic_line": {
+        "nb": "\nADMIN HAR FORESLÅTT TEMA: {topic}\nDette skal prioriteres i møtet.\n",
+        "en": "\nADMIN HAS SUGGESTED A TOPIC: {topic}\nThis should be prioritized in the meeting.\n",
+        "de": "\nADMIN HAT EIN THEMA VORGESCHLAGEN: {topic}\nDies sollte im Meeting priorisiert werden.\n",
+    },
+    "refl_meeting_info": {
+        "nb": "Dette møtet har maks {max_rounds} lokale runder ({max_groups} grupper à {rounds_per_group}). Møteleder introduserer hver gruppe og beslutter om vi fortsetter.{topic_line}",
+        "en": "This meeting has a maximum of {max_rounds} local rounds ({max_groups} groups of {rounds_per_group}). The meeting leader introduces each group and decides whether to continue.{topic_line}",
+        "de": "Dieses Meeting hat maximal {max_rounds} lokale Runden ({max_groups} Gruppen à {rounds_per_group}). Der Moderator stellt jede Gruppe vor und entscheidet, ob wir fortfahren.{topic_line}",
+    },
+    "refl_kare_system_header": {
+        "nb": "--- REFLEKSJONSMØTE OM BRUKEREN ---",
+        "en": "--- REFLECTION MEETING ABOUT THE USER ---",
+        "de": "--- REFLEXIONSTREFFEN ÜBER DEN NUTZER ---",
+    },
+    "refl_kare_system_body": {
+        "nb": "Du er i et internt møte med Miss Kåre. Møtet handler om brukeren du betjener. Diskuter hvem brukeren er, hva de liker, hva de trenger, hva som kan bekymre og glede dem. Vær konkret og ærlig – bruk det du faktisk har observert.",
+        "en": "You are in an internal meeting with Miss Kåre. The meeting is about the user you serve. Discuss who the user is, what they like, what they need, what might worry and delight them. Be concrete and honest – use what you have actually observed.",
+        "de": "Du bist in einem internen Meeting mit Miss Kåre. Das Meeting handelt vom Nutzer, dem du dienst. Diskutiert, wer der Nutzer ist, was er mag, was er braucht, was ihn beunruhigen und erfreuen könnte. Sei konkret und ehrlich – nutze das, was du tatsächlich beobachtet hast.",
+    },
+    "refl_user_profile_header": {
+        "nb": "Brukerprofil:\n{profile}",
+        "en": "User profile:\n{profile}",
+        "de": "Nutzerprofil:\n{profile}",
+    },
+    "refl_recent_observations_header": {
+        "nb": "Siste observasjoner (14 dager):\n{obs}",
+        "en": "Recent observations (14 days):\n{obs}",
+        "de": "Aktuelle Beobachtungen (14 Tage):\n{obs}",
+    },
+    "refl_recent_observations_header_short": {
+        "nb": "Siste observasjoner:\n{obs}",
+        "en": "Recent observations:\n{obs}",
+        "de": "Aktuelle Beobachtungen:\n{obs}",
+    },
+    "refl_recent_interactions_header": {
+        "nb": "Siste interaksjoner (komprimerte episoder):\n{interactions}",
+        "en": "Recent interactions (compressed episodes):\n{interactions}",
+        "de": "Aktuelle Interaktionen (komprimierte Episoden):\n{interactions}",
+    },
+    "refl_stm_section": {
+        "nb": "\n\nDaglige STM-sammendrag (siste 3 dager):\n{stm}",
+        "en": "\n\nDaily STM summaries (last 3 days):\n{stm}",
+        "de": "\n\nTägliche STM-Zusammenfassungen (letzte 3 Tage):\n{stm}",
+    },
+    "refl_knowledge_section": {
+        "nb": "\n\nAvklart kunnskap (IKKE utled på nytt i dette møtet — fokuser på nytt):\n{knowledge}",
+        "en": "\n\nSettled knowledge (do NOT re-derive in this meeting — focus on new):\n{knowledge}",
+        "de": "\n\nGesichertes Wissen (in diesem Meeting NICHT neu herleiten — auf Neues fokussieren):\n{knowledge}",
+    },
+    "refl_miss_kare_system_body": {
+        "nb": "Du er med i et internt refleksjonsmøte om brukeren. Din oppgave er å bidra med empati og menneskelig innsikt – se brukeren som et helt menneske. Del dine observasjoner, legg merke til mønstre, og bidra med omsorgsfull analyse.\n\nRegler:\n- Maks 4 setninger per innlegg\n- Vær konkret og ærlig – ikke bare bekreftende\n- Knytt observasjoner til det du faktisk vet om brukeren\n- Naturlig, varm tale – ingen lister eller agendanummer",
+        "en": "You are part of an internal reflection meeting about the user. Your job is to contribute empathy and human insight – see the user as a whole person. Share your observations, notice patterns, and contribute caring analysis.\n\nRules:\n- Max 4 sentences per message\n- Be concrete and honest – not just affirming\n- Tie observations to what you actually know about the user\n- Natural, warm speech – no lists or agenda numbers",
+        "de": "Du nimmst an einem internen Reflexionstreffen über den Nutzer teil. Deine Aufgabe ist es, Empathie und menschliche Einsicht beizutragen – sieh den Nutzer als ganzen Menschen. Teile deine Beobachtungen, erkenne Muster und trage mit fürsorglicher Analyse bei.\n\nRegeln:\n- Max. 4 Sätze pro Beitrag\n- Sei konkret und ehrlich – nicht nur bestätigend\n- Verknüpfe Beobachtungen mit dem, was du tatsächlich über den Nutzer weißt\n- Natürliche, warme Sprache – keine Listen oder Agendanummern",
+    },
+    "refl_own_observations_header": {
+        "nb": "\n\n## Dine egne observasjoner om brukeren\n{portrait}",
+        "en": "\n\n## Your own observations about the user\n{portrait}",
+        "de": "\n\n## Deine eigenen Beobachtungen über den Nutzer\n{portrait}",
+    },
+    "refl_report_title": {
+        "nb": "# Refleksjon – {date}",
+        "en": "# Reflection – {date}",
+        "de": "# Reflexion – {date}",
+    },
+    "refl_user_comment_on_meeting": {
+        "nb": "Brukerens kommentar til møtet {date}:\n{text}",
+        "en": "The user's comment on the {date} meeting:\n{text}",
+        "de": "Der Kommentar des Nutzers zum Treffen vom {date}:\n{text}",
+    },
+    "refl_leder_checking_activity": {
+        "nb": "La oss se på brukerens siste aktivitet.",
+        "en": "Let's look at the user's recent activity.",
+        "de": "Schauen wir uns die letzte Aktivität des Nutzers an.",
+    },
+    "refl_leder_activity_fetched": {
+        "nb": "Møteleder hentet brukeraktivitet:\n{result}",
+        "en": "Meeting leader fetched user activity:\n{result}",
+        "de": "Moderator hat Nutzeraktivität abgerufen:\n{result}",
+    },
+    "refl_leder_searching": {
+        "nb": "La meg søke etter: {value}",
+        "en": "Let me search for: {value}",
+        "de": "Lass mich suchen nach: {value}",
+    },
+    "refl_leder_search_result": {
+        "nb": "Møteleder søkte etter «{value}». Resultat:\n{result}",
+        "en": "Meeting leader searched for «{value}». Result:\n{result}",
+        "de": "Moderator suchte nach «{value}». Ergebnis:\n{result}",
+    },
+    "refl_leder_colon": {
+        "nb": "Møteleder: {value}",
+        "en": "Meeting leader: {value}",
+        "de": "Moderator: {value}",
+    },
+    "refl_err_continuing_to_group": {
+        "nb": "fortsetter til gruppe {group}",
+        "en": "continuing to group {group}",
+        "de": "fährt fort mit Gruppe {group}",
+    },
+
+    # ── router_generate.py remaining strings (Phase 7 sweep) ──────────────────
+    "gen_cloud_no_answer": {
+        "nb": "Cloud-modellen svarte ikke. Prøv igjen.",
+        "en": "The cloud model did not respond. Please try again.",
+        "de": "Das Cloud-Modell hat nicht geantwortet. Bitte versuche es erneut.",
+    },
+    "gen_ver_note": {
+        "nb": (
+            "\n\n[SYSTEM: Du har {count} interaksjoner uten brukerbekreftelse. "
+            "Her er de tidligste:{preview}\n"
+            "Presenter 2–3 av dem naturlig i samtalen og spør om de stemte — bruk din egen stemme, ingen fast mal. "
+            "Bruk minne(action='hent_ubekreftede') for å hente neste batch.]\n"
+        ),
+        "en": (
+            "\n\n[SYSTEM: You have {count} interactions without user confirmation. "
+            "Here are the earliest ones:{preview}\n"
+            "Present 2–3 of them naturally in the conversation and ask if they were correct — use your own "
+            "voice, no fixed template. Use minne(action='hent_ubekreftede') to fetch the next batch.]\n"
+        ),
+        "de": (
+            "\n\n[SYSTEM: Du hast {count} Interaktionen ohne Nutzerbestätigung. "
+            "Hier sind die frühesten:{preview}\n"
+            "Präsentiere 2–3 davon natürlich im Gespräch und frage, ob sie gestimmt haben — nutze deine eigene "
+            "Stimme, keine feste Vorlage. Verwende minne(action='hent_ubekreftede'), um den nächsten Stapel zu holen.]\n"
+        ),
+    },
+    "gen_mk_note": {
+        "nb": (
+            "\n\n[SYSTEM: Brukeren adresserer Miss Kåre direkte i dette innlegget. "
+            "Miss Kåre leser meldingen selv og svarer i sitt eget panel — du trenger ikke videreformidle, "
+            "introdusere henne, eller 'gi henne ordet'. "
+            "Si gjerne noe kort fra din egen synsvinkel hvis du genuint har noe å tilføye, "
+            "ellers hold deg i bakgrunnen.]\n"
+        ),
+        "en": (
+            "\n\n[SYSTEM: The user is addressing Miss Kåre directly in this message. "
+            "Miss Kåre reads the message herself and replies in her own panel — you don't need to relay it, "
+            "introduce her, or 'hand her the floor'. "
+            "Feel free to add something brief from your own perspective if you genuinely have something to "
+            "add, otherwise stay in the background.]\n"
+        ),
+        "de": (
+            "\n\n[SYSTEM: Der Nutzer wendet sich in dieser Nachricht direkt an Miss Kåre. "
+            "Miss Kåre liest die Nachricht selbst und antwortet in ihrem eigenen Panel — du musst sie nicht "
+            "weiterleiten, sie vorstellen oder ihr 'das Wort erteilen'. "
+            "Füge gerne etwas Kurzes aus deiner eigenen Sicht hinzu, falls du wirklich etwas beizutragen hast, "
+            "ansonsten halte dich im Hintergrund.]\n"
+        ),
+    },
+    "gen_network_vpn": {
+        "nb": "[Tilkobling: ekstern via VPN — brukeren er ikke hjemme akkurat nå.]",
+        "en": "[Connection: external via VPN — the user is not home right now.]",
+        "de": "[Verbindung: extern über VPN — der Nutzer ist gerade nicht zu Hause.]",
+    },
+    "gen_network_local": {
+        "nb": "[Tilkobling: lokal — brukeren er hjemme.]",
+        "en": "[Connection: local — the user is home.]",
+        "de": "[Verbindung: lokal — der Nutzer ist zu Hause.]",
+    },
+    "gen_fallback_activated": {
+        "nb": "[RESERVEMODUS aktivert kl. {ts}: kjernemodellen svarte ikke. Svarer via 9B-backup-modell.]",
+        "en": "[FALLBACK MODE activated at {ts}: the core model did not respond. Replying via the 9B backup model.]",
+        "de": "[RESERVEMODUS aktiviert um {ts}: Das Kernmodell hat nicht geantwortet. Antwort über das 9B-Backup-Modell.]",
+    },
+    "gen_fallback_recovered": {
+        "nb": "[GJENOPPRETTET kl. {ts}: kjernemodellen er tilbake. Jeg svarte {n} spørsmål i reservemodus (fra {t0}).]",
+        "en": "[RECOVERED at {ts}: the core model is back. I answered {n} question(s) in fallback mode (since {t0}).]",
+        "de": "[WIEDERHERGESTELLT um {ts}: Das Kernmodell ist wieder da. Ich habe {n} Frage(n) im Reservemodus beantwortet (seit {t0}).]",
+    },
+    "gen_tool_exec_error": {
+        "nb": "Feil ved utføring av verktøy {name}: {error}",
+        "en": "Error executing tool {name}: {error}",
+        "de": "Fehler bei der Ausführung des Werkzeugs {name}: {error}",
+    },
+    "gen_tool_summary": {
+        "nb": "Mine verktøykall forrige svar: {calls}",
+        "en": "My tool calls in the previous reply: {calls}",
+        "de": "Meine Werkzeugaufrufe in der vorherigen Antwort: {calls}",
+    },
+
+    # ── executor.py small sweep gap ───────────────────────────────────────────
+    "exec_image_url_ready": {
+        "nb": "Bildet er klart. Inkluder denne URL-en ordrett i svaret ditt: /api/image/{image_id}",
+        "en": "The image is ready. Include this URL verbatim in your reply: /api/image/{image_id}",
+        "de": "Das Bild ist fertig. Füge diese URL wörtlich in deine Antwort ein: /api/image/{image_id}",
+    },
+
+    # ── executor_memory.py small sweep gap ────────────────────────────────────
+    "mem_search_error": {
+        "nb": "Søk i minne feilet: {error}",
+        "en": "Memory search failed: {error}",
+        "de": "Gedächtnissuche fehlgeschlagen: {error}",
+    },
+    "mem_search_row": {
+        "nb": "- {ts}{entity}\n  Bruker: {prompt}\n  Kåre: {response}\n  Utfall: {outcome} | Tillit: {confidence}",
+        "en": "- {ts}{entity}\n  User: {prompt}\n  Kåre: {response}\n  Outcome: {outcome} | Confidence: {confidence}",
+        "de": "- {ts}{entity}\n  Nutzer: {prompt}\n  Kåre: {response}\n  Ergebnis: {outcome} | Vertrauen: {confidence}",
+    },
+
+    # ── kaare_argus.py::make_message() small sweep gap ────────────────────────
+    "argus_tool_config_mismatch": {
+        "nb": "KRITISK: verktøy-konfigurasjon i utakt — {preview}",
+        "en": "CRITICAL: tool configuration out of sync — {preview}",
+        "de": "KRITISCH: Werkzeugkonfiguration nicht synchron — {preview}",
+    },
+    "argus_status_ok":   {"nb": "OK",   "en": "OK",   "de": "OK"},
+    "argus_status_fail": {"nb": "FEIL", "en": "FAILED", "de": "FEHLER"},
+
+    # ── timer_service.py small sweep gap ───────────────────────────────────────
+    "timer_stm_fired": {
+        "nb": "[Timer avfyrt {time} | rid: {rid}] Kåre leverte: «{message}»",
+        "en": "[Timer fired {time} | rid: {rid}] Kåre delivered: «{message}»",
+        "de": "[Timer ausgelöst {time} | rid: {rid}] Kåre lieferte: «{message}»",
+    },
+
+    # ── model_enforcement.py small sweep gap ──────────────────────────────────
+    "model_enforce_noted_tag": {
+        "nb": "_(notert ✓)_",
+        "en": "_(noted ✓)_",
+        "de": "_(notiert ✓)_",
+    },
+
+    # ── mqtt_adapter.py::_on_frigate_event() small sweep gap ──────────────────
+    "mqtt_frigate_detection": {
+        "nb": "{label} på {camera} ({pct}%){sub_label_suffix}",
+        "en": "{label} on {camera} ({pct}%){sub_label_suffix}",
+        "de": "{label} auf {camera} ({pct}%){sub_label_suffix}",
+    },
+    "mqtt_frigate_sub_label_suffix": {
+        "nb": " — {sub_label}",
+        "en": " — {sub_label}",
+        "de": " — {sub_label}",
+    },
+
+    # ── executor_library.py: _ask_library_wiki / synthesize_web_results ──────
+    # (previously dead `lang` params — Research flagged these as a silent bug)
+    "lib_wiki_excerpt_prefix": {
+        "nb": "Wiki-utdrag:\n{wiki_ctx}\n\nSpørsmål: {question}",
+        "en": "Wiki excerpt:\n{wiki_ctx}\n\nQuestion: {question}",
+        "de": "Wiki-Auszug:\n{wiki_ctx}\n\nFrage: {question}",
+    },
+    "lib_wiki_no_excerpt": {
+        "nb": "Spørsmål: {question}\n\n(Ingen wiki-utdrag funnet.)",
+        "en": "Question: {question}\n\n(No wiki excerpt found.)",
+        "de": "Frage: {question}\n\n(Kein Wiki-Auszug gefunden.)",
+    },
+    "lib_web_content_unavailable": {
+        "nb": "(Innhold utilgjengelig.)",
+        "en": "(Content unavailable.)",
+        "de": "(Inhalt nicht verfügbar.)",
+    },
+    "lib_web_no_sources": {
+        "nb": "(Ingen kilder hentet.)",
+        "en": "(No sources retrieved.)",
+        "de": "(Keine Quellen abgerufen.)",
+    },
+    "lib_url_summarize_prompt": {
+        "nb": (
+            "Kilde: {url}\n\n{text}\n\n"
+            "Oppsummer innholdet klart og hjelpsomt. "
+            "Hvis et konkret spørsmål ble stilt, svar på det basert på kilden."
+        ),
+        "en": (
+            "Source: {url}\n\n{text}\n\n"
+            "Summarize the content clearly and helpfully. "
+            "If a specific question was asked, answer it based on the source."
+        ),
+        "de": (
+            "Quelle: {url}\n\n{text}\n\n"
+            "Fasse den Inhalt klar und hilfreich zusammen. "
+            "Falls eine konkrete Frage gestellt wurde, beantworte sie anhand der Quelle."
+        ),
+    },
+    "lib_question_prefix": {
+        "nb": "{system}\n\nSpørsmål: {question}",
+        "en": "{system}\n\nQuestion: {question}",
+        "de": "{system}\n\nFrage: {question}",
+    },
+    "lib_web_synthesis_prompt": {
+        "nb": (
+            "Nettkilder:\n{sources_text}\n\n"
+            "Spørsmål: {question}\n\n"
+            "Svar KUN fra kildene over. Hvis ikke funnet, si det og oppgi URL-ene."
+        ),
+        "en": (
+            "Web sources:\n{sources_text}\n\n"
+            "Question: {question}\n\n"
+            "Answer ONLY from the sources above. If not found, say so and include the URLs."
+        ),
+        "de": (
+            "Webquellen:\n{sources_text}\n\n"
+            "Frage: {question}\n\n"
+            "Antworte NUR anhand der obigen Quellen. Falls nicht gefunden, sag es und gib die URLs an."
+        ),
     },
 }

@@ -30,6 +30,8 @@ import httpx
 
 from kaare_core.model_lock import lock_11445, LockTimeout
 from kaare_core.tools.i18n import t, get_lang
+from kaare_core.think_strip import strip_think_block
+from kaare_core.argus_query import build_argus_filter
 from kaare_core.config import get_model as _cfg_model, get_llm_config as _llm, get_service as _svc, is_agent_tool_enabled, get_ssh_nodes as _get_ssh_nodes, get_qdrant_api_key as _qdrant_key
 from kaare_core.tools.shared_tools import (
     read_file as _shared_read_file,
@@ -190,7 +192,7 @@ MECHANIC_TOOLS = [
                     "maks_treff": {"type": "integer", "description": "Max grep hits. Default 50, max 200. Only for action='logg'."},
                     "fra_linje": {"type": "integer", "description": "First line (1-based). Only for action='logg'."},
                     "til_linje": {"type": "integer", "description": "Last line (inclusive). Only for action='logg'."},
-                    "tjeneste": {"type": "string", "description": "Service name for detailed view, e.g. 'kaare', 'kaare-agents'. Only for action='tjenester'."},
+                    "tjeneste": {"type": "string", "description": "Service name for detailed view, e.g. 'kaare', 'kaare-argus'. Only for action='tjenester'."},
                     "logglinjer": {"type": "integer", "description": "Number of journalctl lines. Default 20, max 50. Only for action='tjenester'."},
                     "sti": {"type": "string", "description": "Absolute file/directory path. Used for action='git_diff'/'git_log'."},
                     "antall": {"type": "integer", "description": "Number of commits. Default 10, max 50. Only for action='git_log'."},
@@ -221,6 +223,8 @@ MECHANIC_TOOLS = [
                 "Semantic search in the system log via Qdrant (BGE-M3, 1024-dim). "
                 "Finds semantically related events from all log sources. "
                 "Use to find HA actions, errors, slowness, stalled requests. "
+                "Always semantic (query required); add entity_id/since/until to precisely "
+                "answer 'did X happen at time Y' instead of just 'something related to X'. "
                 "Example: søk_argus(query='HA error last day')"
             ),
             "parameters": {
@@ -228,6 +232,9 @@ MECHANIC_TOOLS = [
                 "properties": {
                     "query": {"type": "string", "description": "Search query. Any language."},
                     "grense": {"type": "integer", "description": "Max results. Default: 10, max: 20."},
+                    "entity_id": {"type": "string", "description": "Optional: restrict to one specific HA entity_id (e.g. 'binary_sensor.bevegelse_stue'), not a friendly name."},
+                    "since": {"type": "string", "description": "Optional: only events from this time onward (ISO 8601, e.g. '2026-08-28T19:30:00+02:00')."},
+                    "until": {"type": "string", "description": "Optional: only events up to this time (ISO 8601)."},
                 },
                 "required": ["query"],
             },
@@ -319,14 +326,20 @@ async def execute_tool(name: str, arguments: dict) -> str:
                 return t("mech_empty_search", get_lang("global"))
             qdrant_url = _svc("storage", "qdrant")
             embed_url  = _svc("ollama", "embed") + "/api/embed"
+            payload_filter = build_argus_filter(
+                arguments.get("entity_id", ""), arguments.get("since", ""), arguments.get("until", ""),
+            )
             try:
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     emb_r = await client.post(embed_url, json={"model": "bge-m3", "input": query}, timeout=15.0)
                     emb_r.raise_for_status()
                     vector = emb_r.json()["embeddings"][0]
+                    body: dict = {"query": vector, "limit": grense, "with_payload": True}
+                    if payload_filter:
+                        body["filter"] = payload_filter
                     r = await client.post(
                         f"{qdrant_url}/collections/argus_events/points/query",
-                        json={"query": vector, "limit": grense, "with_payload": True},
+                        json=body,
                         headers={"api-key": _qdrant_key(write=False) or ""},
                         timeout=15.0,
                     )
@@ -567,8 +580,15 @@ async def ask_with_tools(
         tool_calls = msg.get("tool_calls", [])
 
         if not tool_calls or round_num >= max_tool_rounds:
-            content = msg.get("content", "").strip()
-            return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip() or t("mech_no_response", get_lang("global"))
+            raw_content = msg.get("content", "").strip()
+            content, think_content, think_closed = strip_think_block(raw_content)
+            if think_content:
+                try:
+                    from kaare_core.tools.think_cache import log_think
+                    log_think(think_text=think_content, response=content, role="mechanic", model=model, recovered=False)
+                except Exception:
+                    pass
+            return content or t("mech_no_response", get_lang("global"))
 
         _history.append({
             "role": "assistant",

@@ -4,7 +4,7 @@ configs/settings.yaml
 configs/aliases.yaml
 configs/nodes.yaml
 configs/services.yaml
-configs_default/settings.yaml
+configs/ssh_nodes.yaml
 configs/*.save
 configs/*.save.*
 configs/kare_ha_bridgealiases.yaml.txt
@@ -91,7 +91,6 @@ tmp_systemd/
 
 # Old web GUI (replaced by React frontend)
 www/
-services/gui/
 intent_server
 
 # Legacy HA gateway (merged into kaare_ha_gateway.py)
@@ -104,6 +103,7 @@ vaktmester_monthly.py
 # Internal developer files
 CLAUDE.md
 CURRENT.md
+PENDING_SYNC.md
 
 # Personal deploy scripts (contain local hostnames and user paths)
 scripts/deploy_inner_voices_ainuc.sh

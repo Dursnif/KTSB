@@ -4,18 +4,19 @@ import { useNavigate } from "react-router-dom";
 import { useUserPrefs } from "../../hooks/useUserPrefs";
 import { useTheme } from "../../theme";
 import { useAuth } from "../../auth/AuthContext";
-import { apiGetUnlockConfig, apiPutUnlockConfig, apiGetUserFlags, apiPutUserFlags } from "../../services/api";
+import { apiGetUnlockConfig, apiPutUnlockConfig, apiGetUserFlags, apiPutUserFlags, apiReissueSeedPhrase } from "../../services/api";
+import { SeedModal } from "../admin/Users";
 
 const ACCENT_PRESETS = [
-  { value: "#646cff", label: "Blå-lilla" },
-  { value: "#8b5cf6", label: "Lilla" },
-  { value: "#4f9cf9", label: "Blå" },
-  { value: "#c084fc", label: "Lys lilla" },
-  { value: "#4caf50", label: "Grønn" },
-  { value: "#ff9800", label: "Oransje" },
-  { value: "#f06292", label: "Rose" },
-  { value: "#00bcd4", label: "Teal" },
-  { value: "#ff6b9d", label: "Rosa" },
+  { value: "#646cff", labelKey: "user_settings.accent_blue_purple" },
+  { value: "#8b5cf6", labelKey: "user_settings.accent_purple" },
+  { value: "#4f9cf9", labelKey: "user_settings.accent_blue" },
+  { value: "#c084fc", labelKey: "user_settings.accent_light_purple" },
+  { value: "#4caf50", labelKey: "user_settings.accent_green" },
+  { value: "#ff9800", labelKey: "user_settings.accent_orange" },
+  { value: "#f06292", labelKey: "user_settings.accent_rose" },
+  { value: "#00bcd4", labelKey: "user_settings.accent_teal" },
+  { value: "#ff6b9d", labelKey: "user_settings.accent_pink" },
 ];
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
@@ -322,6 +323,9 @@ export default function UserSettings() {
   const { user } = useAuth();
   const [allowPinReset, setAllowPinReset] = useState(false);
   const [pinResetSaving, setPinResetSaving] = useState(false);
+  const [reissuedSeed, setReissuedSeed] = useState<string | null>(null);
+  const [reissuing, setReissuing] = useState(false);
+  const [reissueError, setReissueError] = useState("");
 
   useEffect(() => {
     if (user?.username) {
@@ -339,6 +343,20 @@ export default function UserSettings() {
       setAllowPinReset(val);
     } finally {
       setPinResetSaving(false);
+    }
+  };
+
+  const reissueSeedPhrase = async () => {
+    if (!user?.username) return;
+    setReissuing(true);
+    setReissueError("");
+    try {
+      const { seed_phrase } = await apiReissueSeedPhrase(user.username);
+      setReissuedSeed(seed_phrase);
+    } catch {
+      setReissueError(t("privacy.reissue_error"));
+    } finally {
+      setReissuing(false);
     }
   };
 
@@ -383,7 +401,7 @@ export default function UserSettings() {
                 <button
                   key={p.value}
                   onClick={() => updatePrefs({ accentColor: p.value })}
-                  title={p.label}
+                  title={t(p.labelKey)}
                   style={{
                     width: 28, height: 28, borderRadius: "50%", border: "none",
                     background: p.value,
@@ -444,7 +462,7 @@ export default function UserSettings() {
           </SettingRow>
         </div>
 
-        {/* ── Stemmeopplåsing ── */}
+        {/* ── Voice unlock ── */}
         {user?.username && <VoiceUnlockSection username={user.username} />}
 
         {/* ── Preview ── */}
@@ -521,12 +539,26 @@ export default function UserSettings() {
             <div style={{ color: "#555", fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>{t("privacy.recovery_hint")}</div>
             <button
               onClick={() => navigate("/recover")}
-              style={{ padding: "7px 16px", borderRadius: 8, border: "1px solid #333", background: "transparent", color: "#888", fontSize: 13, cursor: "pointer" }}
+              style={{ padding: "7px 16px", borderRadius: 8, border: "1px solid #333", background: "transparent", color: "#888", fontSize: 13, cursor: "pointer", marginRight: 8 }}
             >
               {t("privacy.forgot_pin")}
             </button>
+            <button
+              onClick={reissueSeedPhrase}
+              disabled={reissuing}
+              style={{ padding: "7px 16px", borderRadius: 8, border: "1px solid #333", background: "transparent", color: reissuing ? "#555" : "#888", fontSize: 13, cursor: reissuing ? "wait" : "pointer" }}
+            >
+              {reissuing ? t("privacy.reissuing") : t("privacy.reissue_seed")}
+            </button>
+            {reissueError && (
+              <div style={{ color: "#e57373", fontSize: 12, marginTop: 8 }}>{reissueError}</div>
+            )}
           </div>
         </div>
+
+        {reissuedSeed && (
+          <SeedModal seed={reissuedSeed} onClose={() => setReissuedSeed(null)} />
+        )}
 
         {/* ── Tilbakestill ── */}
         <button

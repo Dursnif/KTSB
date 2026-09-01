@@ -51,6 +51,7 @@ from kaare_core.agents.mechanic.tools import (
 from kaare_core.tools.executor import execute_tool as _kaare_execute_tool
 from kaare_core.tools.definitions import KAARE_TOOLS
 from adapters.llm_adapter import call_llm_chat
+from kaare_core.think_strip import strip_think_block
 
 
 def _build_kare_dev_tools() -> list[dict]:
@@ -158,24 +159,34 @@ def _trim(messages: list[dict], window: int) -> list[dict]:
     return system + rest[-window:]
 
 def _strip_think(text: str) -> str:
-    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    # Defense-in-depth: content routed through call_llm_chat() (P88 Phase 1) already
+    # arrives stripped in the normal case — this catches anything that slips through.
+    content, _think_content, _think_closed = strip_think_block(text)
+    return content
 
 KARE_CORE     = _load("/kaare/configs/personality_core.md")
 KARE_BEHAVIOR = _load("/kaare/configs/personality_behavior.md")
 
 _MECHANIC_DIR = Path(__file__).parent / "kaare_core" / "agents" / "mechanic"
 
-def _load_mechanic_pers(role: str = "standard") -> str:
+def _load_mechanic_pers(role: str = "standard", lang: str = "nb") -> str:
     if role == "egendefinert":
         custom = Path("/kaare/configs/meeting_role_mechanic_custom.md")
         if custom.exists():
             return custom.read_text(encoding="utf-8")
+    suffix = "" if lang == "nb" else f"_{lang}"
     if role and role not in ("standard", "egendefinert"):
-        p = _MECHANIC_DIR / f"personlighet_{role}.md"
+        p = _MECHANIC_DIR / f"personlighet_{role}{suffix}.md"
         if p.exists():
             return p.read_text(encoding="utf-8")
-    p = _MECHANIC_DIR / "personlighet.md"
-    return p.read_text(encoding="utf-8") if p.exists() else "Du er Mechanic – praktisk problemløser."
+        fallback = _MECHANIC_DIR / f"personlighet_{role}.md"
+        if fallback.exists():
+            return fallback.read_text(encoding="utf-8")
+    p = _MECHANIC_DIR / f"personlighet{suffix}.md"
+    if p.exists():
+        return p.read_text(encoding="utf-8")
+    fallback = _MECHANIC_DIR / "personlighet.md"
+    return fallback.read_text(encoding="utf-8") if fallback.exists() else "Du er Mechanic – praktisk problemløser."
 
 
 def _get_mechanic_meeting_role() -> str:
@@ -454,7 +465,7 @@ async def _mechanic_investigate(system_prompt: str, lang: str = "nb") -> str:
 
 async def _mechanic_kritiker(kare_funn: str, mechanic_memory: str, lang: str = "nb") -> str:
     """Mechanic in critic mode — asks critical questions about Kåre's findings."""
-    pers = _load_mechanic_pers("kritiker")
+    pers = _load_mechanic_pers("kritiker", lang=lang)
     mem_block = f"\n\n{t('meet_mechanic_your_mem_header', lang)}\n{mechanic_memory}" if mechanic_memory else ""
     messages = [
         {"role": "system", "content": f"/no_think\n{pers}{mem_block}"},
@@ -1018,7 +1029,7 @@ async def main() -> None:
     )
 
     mechanic_investigate_system = (
-        f"{_load_mechanic_pers('undersøker')}\n\n"
+        f"{_load_mechanic_pers('undersøker', lang=_lang)}\n\n"
         f"{t('meet_phase_investigate', _lang)}\n"
         f"{_time_anchor}"
         f"{_health_block}"
@@ -1028,7 +1039,7 @@ async def main() -> None:
     )
 
     mechanic_discuss_system = (
-        f"{_load_mechanic_pers('standard')}\n\n"
+        f"{_load_mechanic_pers('standard', lang=_lang)}\n\n"
         f"{t('meet_phase_discuss', _lang)}\n"
         f"{_time_anchor}"
         f"{_memory_block}"
@@ -1129,9 +1140,9 @@ async def main() -> None:
                 mechanic_messages.append({"role": "user", "content": styring_msg})
 
         # Online etter gruppen — hoppes over hvis cloud ikke er tilgjengelig
+        conv_text = "\n\n".join(f"{a}: {t}" for a, t in exchanges)
         if _cloud_ok:
             is_final  = (group == max_groups)
-            conv_text = "\n\n".join(f"{a}: {t}" for a, t in exchanges)
             cloud_reply = await _ask_cloud(conv_text, is_final=is_final, lang=_lang)
             if cloud_reply.startswith("["):
                 log.warning("[Online] unavailable: %s", cloud_reply[:120])

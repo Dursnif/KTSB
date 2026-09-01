@@ -27,7 +27,7 @@ function StepProfil({ onDone }: { onDone: () => void }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    axios.get(`${BASE}/api/settings/location`, { headers: authHeader() })
+    axios.get(`${BASE}/api/settings`, { headers: authHeader() })
       .then(r => { if (r.data.location) setLok(r.data.location); })
       .catch(() => {});
   }, []);
@@ -98,7 +98,7 @@ function StepBruker({ onDone, onSkip }: { onDone: () => void; onSkip: () => void
     setSaving(true);
     setError("");
     try {
-      await axios.post(`${BASE}/api/admin/users`, { display_name: displayName, username, pin, role }, { headers: authHeader() });
+      await axios.post(`${BASE}/api/users`, { display_name: displayName, username, pin, role }, { headers: authHeader() });
       onDone();
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? t("onboarding.bruker.error_create");
@@ -342,10 +342,10 @@ function StepIntegrasjoner({ onDone }: { onDone: () => void }) {
   };
 
   const integrations = [
-    { key: "haUrl" as keyof IntegrationState,      label: "Home Assistant URL",  placeholder: "http://192.168.0.100:8123" },
-    { key: "mqttHost" as keyof IntegrationState,   label: "MQTT Broker host",    placeholder: "192.168.0.100" },
-    { key: "frigateUrl" as keyof IntegrationState, label: "Frigate URL",         placeholder: "http://192.168.0.100:5000" },
-    { key: "plexUrl" as keyof IntegrationState,    label: "Plex Server URL",     placeholder: "http://192.168.0.156:32400" },
+    { key: "haUrl" as keyof IntegrationState,      label: "Home Assistant URL",  placeholder: "http://192.168.0.x:8123" },
+    { key: "mqttHost" as keyof IntegrationState,   label: "MQTT Broker host",    placeholder: "192.168.0.x" },
+    { key: "frigateUrl" as keyof IntegrationState, label: "Frigate URL",         placeholder: "http://192.168.0.x:5000" },
+    { key: "plexUrl" as keyof IntegrationState,    label: "Plex Server URL",     placeholder: "http://192.168.0.x:32400" },
   ];
 
   return (

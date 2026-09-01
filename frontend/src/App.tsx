@@ -26,12 +26,14 @@ import UserSettings from "./pages/user/UserSettings";
 import UserChildren from "./pages/user/UserChildren";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  if (loading) return null;
   return user ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
 function RequireAdmin({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
   if (user.role !== "admin") return <Navigate to="/" replace />;
   return <>{children}</>;
