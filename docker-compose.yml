@@ -14,7 +14,9 @@ services:
   qdrant:
     image: qdrant/qdrant:v1.19.2   # pinned (DT03) — must match qdrant-client 1.19.x
     restart: unless-stopped
-    ports: ["127.0.0.1:6333:6333"]
+    # No published port: every KTSB container reaches it as http://qdrant:6333. A host port let any web page
+    # opened on this machine read or delete the memory collections (Qdrant has no key in Docker and allows any
+    # CORS origin). Need it for a host script? Add the port in docker-compose.override.yml.
     volumes:
       - ./state/qdrant:/qdrant/storage
     env_file:
