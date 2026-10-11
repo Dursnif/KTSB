@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import axios from "axios";
+import { API_BASE } from "@/services/api";
 
-const BASE = `http://${window.location.hostname}:8000`;
 
 type AgentMessage = {
   id: number;
@@ -11,8 +11,6 @@ type AgentMessage = {
   user_id: string;
   from_agent: string;
   to_agent: string;
-  query: string;
-  response: string;
 };
 
 const AGENT_COLORS: Record<string, string> = {
@@ -54,7 +52,7 @@ export default function AgentMessages() {
   const load = async () => {
     try {
       const token = sessionStorage.getItem("kaare_token");
-      const { data } = await axios.get(`${BASE}/api/agent_messages?limit=100`, {
+      const { data } = await axios.get(`${API_BASE}/api/agent_messages?limit=100`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setMessages(data);
@@ -108,16 +106,6 @@ export default function AgentMessages() {
               {m.user_id !== "global" && (
                 <span style={{ color: "#555", fontSize: 11 }}>({m.user_id})</span>
               )}
-            </div>
-
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ color: "#666", fontSize: 11, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{t("agentMessages.question")}</div>
-              <div style={{ color: "#ccc", fontSize: 14 }}>{m.query}</div>
-            </div>
-
-            <div style={{ borderTop: "1px solid #1a1a1a", paddingTop: 10 }}>
-              <div style={{ color: "#666", fontSize: 11, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{t("agentMessages.answer")}</div>
-              <div style={{ color: "#aaa", fontSize: 13, whiteSpace: "pre-wrap" }}>{m.response}</div>
             </div>
 
             {m.rid && (

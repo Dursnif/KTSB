@@ -1,62 +1,129 @@
+# Trusted sources for web search (P121). Edited in the GUI: Settings → Web Search & Weather →
+# Whitelisted websites. type: public_authority | encyclopedia | newsroom | research | official |
+# other_serious. trust: high | normal | low. blocked: domains that are never used.
 sources:
-  film_og_serier:
-  - beskrivelse: Internasjonal film og serie database, med rating
-    domain: imdb.com
-  kode_og_utvikling:
-  - beskrivelse: Kildekode og eksempler
-    domain: github.com
-  - beskrivelse: Problemløsning
-    domain: stackoverflow.com
-  - beskrivelse: Home Assistant forum – integrasjoner og feilsøking
-    domain: community.home-assistant.io
-  - beskrivelse: MDN – Standard for webutvikling
-    domain: developer.mozilla.org
-  - beskrivelse: Python-dokumentasjon
-    domain: docs.python.org
-  - beskrivelse: Rust-dokumentasjon
-    domain: rust-lang.org
-  - beskrivelse: Go-dokumentasjon
-    domain: go.dev
-  - beskrivelse: Python-pakkeoversikt
-    domain: pypi.org
-  - beskrivelse: Node-pakkeoversikt
-    domain: npmjs.com
-  - beskrivelse: Modeller, datasett og AI-dokumentasjon
-    domain: huggingface.co
-  kunnskap_og_forskning:
-  - beskrivelse: Store norske leksikon
-    domain: snl.no
-  - beskrivelse: NTNU – akademisk innhold
-    domain: ntnu.no
-  - beskrivelse: Norsk forskningsformidling
-    domain: forskning.no
-  mat_og_oppskrifter:
-  - beskrivelse: Gjennomtestede norske oppskrifter
-    domain: matprat.no
-  - beskrivelse: Bredde fra VG
-    domain: godt.no
-  - beskrivelse: Matvitenskap og ekstremt nøyaktige teknikker
-    domain: seriouseats.com
-  - beskrivelse: Internasjonal standard
-    domain: bbcgoodfood.com
-  - beskrivelse: Norsk kulinarisk ressurs
-    domain: kulinarisk.no
-  norsk_lov_og_offentlig:
-  - beskrivelse: Norges lover – helt essensiell
-    domain: lovdata.no
-  - beskrivelse: Offentlige utredninger og pressemeldinger
-    domain: regjeringen.no
-  - beskrivelse: Skatt og avgifter
-    domain: skatteetaten.no
-  nyheter_og_faktasjekk:
-  - beskrivelse: Lisensbetalt og nøytralt
-    domain: nrk.no
-  - beskrivelse: Verifisering av påstander
-    domain: faktisk.no
-  - beskrivelse: Internasjonalt nyhetsbyrå med lite bias
-    domain: reuters.com
-  - beskrivelse: Internasjonalt nyhetsbyrå med lite bias
-    domain: apnews.com
-  vær_og_natur:
-  - beskrivelse: Norsk værtjeneste (Meteorologisk institutt + NRK)
-    domain: yr.no
+  film_and_tv:
+  - domain: imdb.com
+    description: Internasjonal film og serie database, med rating
+    type: other_serious
+    trust: normal
+  code_and_development:
+  - domain: github.com
+    description: Kildekode og eksempler
+    type: other_serious
+    trust: normal
+  - domain: stackoverflow.com
+    description: Problemløsning
+    type: other_serious
+    trust: normal
+  - domain: community.home-assistant.io
+    description: Home Assistant forum – integrasjoner og feilsøking
+    type: other_serious
+    trust: normal
+  - domain: developer.mozilla.org
+    description: MDN – Standard for webutvikling
+    type: official
+    trust: normal
+  - domain: docs.python.org
+    description: Python-dokumentasjon
+    type: official
+    trust: normal
+  - domain: rust-lang.org
+    description: Rust-dokumentasjon
+    type: official
+    trust: normal
+  - domain: go.dev
+    description: Go-dokumentasjon
+    type: official
+    trust: normal
+  - domain: pypi.org
+    description: Python-pakkeoversikt
+    type: other_serious
+    trust: normal
+  - domain: npmjs.com
+    description: Node-pakkeoversikt
+    type: other_serious
+    trust: normal
+  - domain: huggingface.co
+    description: Modeller, datasett og AI-dokumentasjon
+    type: other_serious
+    trust: normal
+  knowledge_and_research:
+  - domain: snl.no
+    description: Store norske leksikon
+    type: encyclopedia
+    trust: normal
+  - domain: ntnu.no
+    description: NTNU – akademisk innhold
+    type: research
+    trust: normal
+  - domain: forskning.no
+    description: Norsk forskningsformidling
+    type: research
+    trust: normal
+  food_and_recipes:
+  - domain: matprat.no
+    description: Gjennomtestede norske oppskrifter
+    type: other_serious
+    trust: normal
+  - domain: godt.no
+    description: Bredde fra VG
+    type: other_serious
+    trust: normal
+  - domain: seriouseats.com
+    description: Matvitenskap og ekstremt nøyaktige teknikker
+    type: other_serious
+    trust: normal
+  - domain: bbcgoodfood.com
+    description: Internasjonal standard
+    type: other_serious
+    trust: normal
+  - domain: kulinarisk.no
+    description: Norsk kulinarisk ressurs
+    type: other_serious
+    trust: normal
+  law_and_government:
+  - domain: lovdata.no
+    description: Norges lover – helt essensiell
+    type: public_authority
+    trust: normal
+  - domain: regjeringen.no
+    description: Offentlige utredninger og pressemeldinger
+    type: public_authority
+    trust: normal
+  - domain: skatteetaten.no
+    description: Skatt og avgifter
+    type: public_authority
+    trust: normal
+  news_and_fact_checking:
+  - domain: nrk.no
+    description: Lisensbetalt og nøytralt
+    type: newsroom
+    trust: normal
+  - domain: faktisk.no
+    description: Verifisering av påstander
+    type: newsroom
+    trust: normal
+  - domain: reuters.com
+    description: Internasjonalt nyhetsbyrå med lite bias
+    type: newsroom
+    trust: normal
+  - domain: apnews.com
+    description: Internasjonalt nyhetsbyrå med lite bias
+    type: newsroom
+    trust: normal
+  weather_and_nature:
+  - domain: yr.no
+    description: Norsk værtjeneste (Meteorologisk institutt + NRK)
+    type: public_authority
+    trust: normal
+  encyclopedias:
+  - domain: wikipedia.org
+    description: Wikipedia, all languages
+    type: encyclopedia
+    trust: normal
+  - domain: britannica.com
+    description: Encyclopaedia Britannica
+    type: encyclopedia
+    trust: normal
+blocked: []

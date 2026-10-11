@@ -1,6 +1,5 @@
-import { createContext, useContext, useEffect, useState } from "react";
-
-const AssistantNameContext = createContext<string>("Kåre");
+import { useEffect, useState } from "react";
+import { AssistantNameContext } from "@/hooks/useAssistantName";
 
 export function AssistantNameProvider({ children }: { children: React.ReactNode }) {
   const [name, setName] = useState("Kåre");
@@ -15,8 +14,4 @@ export function AssistantNameProvider({ children }: { children: React.ReactNode 
       {children}
     </AssistantNameContext.Provider>
   );
-}
-
-export function useAssistantName() {
-  return useContext(AssistantNameContext);
 }

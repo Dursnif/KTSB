@@ -1,20 +1,7 @@
-import { createContext, useContext, useEffect, useState } from "react";
-
-export type SettingsLevel = "basic" | "expert";
+import { useEffect, useState } from "react";
+import { SettingsLevelContext, type SettingsLevel } from "@/hooks/useSettingsLevel";
 
 const STORAGE_KEY = "kaare_settings_level";
-
-type SettingsLevelContextValue = {
-  level: SettingsLevel;
-  setLevel: (level: SettingsLevel) => void;
-  toggle: () => void;
-};
-
-const SettingsLevelContext = createContext<SettingsLevelContextValue>({
-  level: "basic",
-  setLevel: () => {},
-  toggle: () => {},
-});
 
 export function SettingsLevelProvider({ children }: { children: React.ReactNode }) {
   const [level, setLevelState] = useState<SettingsLevel>(() => {
@@ -34,8 +21,4 @@ export function SettingsLevelProvider({ children }: { children: React.ReactNode 
       {children}
     </SettingsLevelContext.Provider>
   );
-}
-
-export function useSettingsLevel() {
-  return useContext(SettingsLevelContext);
 }

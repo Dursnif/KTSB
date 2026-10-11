@@ -18,14 +18,12 @@ Prioriteter:
   20 = andre      (venter på alle)
 """
 
-import os
-import time
-import json
 import fcntl
-import signal
+import json
+import os
 import threading
+import time
 from dataclasses import dataclass, field
-from typing import Optional, List, Callable
 
 # ------------------------------------------------------------
 # Konfig
@@ -46,6 +44,7 @@ WATCHDOG_INTERVAL_S = 5
 # Logging
 # ------------------------------------------------------------
 
+
 def _log(event: str, **fields):
     payload = {
         "ts": time.time(),
@@ -54,9 +53,11 @@ def _log(event: str, **fields):
     }
     print(json.dumps(payload, ensure_ascii=False), flush=True)
 
+
 # ------------------------------------------------------------
 # GpuRequest
 # ------------------------------------------------------------
+
 
 @dataclass
 class GpuRequest:
@@ -67,10 +68,10 @@ class GpuRequest:
 
     timeout_profile: str
     baseline_timeout_s: int
-    priority: int = 10          # 0=kaare, 10=frigate, 20=andre
+    priority: int = 10  # 0=kaare, 10=frigate, 20=andre
 
     enqueue_ts: float = field(default_factory=time.monotonic)
-    acquire_ts: Optional[float] = None
+    acquire_ts: float | None = None
     state: str = "NEW"
     cancel_event: threading.Event = field(default_factory=threading.Event)
 
@@ -79,15 +80,17 @@ class GpuRequest:
         mult = PROFILE_MULTIPLIER.get(self.timeout_profile, 1.0)
         return int(self.baseline_timeout_s * mult)
 
+
 # ------------------------------------------------------------
 # GPU Gate (singleton)
 # ------------------------------------------------------------
 
+
 class GpuGate:
     def __init__(self):
-        self._queue: List[GpuRequest] = []
-        self._current: Optional[GpuRequest] = None
-        self._lock_fd = open(GPU_LOCK_PATH, "w")
+        self._queue: list[GpuRequest] = []
+        self._current: GpuRequest | None = None
+        self._lock_fd = open(GPU_LOCK_PATH, "w")  # noqa: SIM115 — held for the gate's lifetime (flock)
         self._mutex = threading.Lock()
         self._watchdog_thread = threading.Thread(
             target=self._watchdog_loop,

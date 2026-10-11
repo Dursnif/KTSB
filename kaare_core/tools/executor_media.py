@@ -1,30 +1,44 @@
+import asyncio
 import json as _json
 import re as _re
 import subprocess as _sp
-import yaml
-import httpx
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
+
+import httpx
+import yaml
 
 from adapters.plex_adapter import (
-    get_sessions as _plex_get_sessions,
-    get_history as _plex_get_history,
-    search as _plex_search,
-    get_libraries as _plex_get_libraries,
     get_children as _plex_get_children,
+)
+from adapters.plex_adapter import (
     get_clients as _plex_get_clients,
-    play_on_client as _plex_play_on_client,
+)
+from adapters.plex_adapter import (
+    get_history as _plex_get_history,
+)
+from adapters.plex_adapter import (
+    get_libraries as _plex_get_libraries,
+)
+from adapters.plex_adapter import (
     get_metadata as _plex_get_metadata,
 )
-from kaare_core.config import get_service as _svc
+from adapters.plex_adapter import (
+    get_sessions as _plex_get_sessions,
+)
+from adapters.plex_adapter import (
+    search as _plex_search,
+)
 from kaare_core.tools.executor_ha import get_ha_token, resolve_node_entity
-from kaare_core.tools.i18n import t, get_lang
+from kaare_core.tools.i18n import get_lang, t
 
 MEDIA_TOOLS = {"media"}
 
 
 async def _play_media_via_ha(entity_id: str, content_type: str, content_id: str) -> str:
-    ha_url = yaml.safe_load(Path("/kaare/configs/services.yaml").read_text())["home_assistant"]["url"]
+    ha_url = yaml.safe_load(Path("/kaare/configs/services.yaml").read_text())["home_assistant"][
+        "url"
+    ]
     headers = {
         "Authorization": f"Bearer {get_ha_token()}",
         "Content-Type": "application/json",
@@ -66,7 +80,7 @@ def _resolve_station(name_or_url: str) -> str | None:
     return None
 
 
-async def _handle_media(arguments: Dict[str, Any], lang: str = "nb") -> str:
+async def _handle_media(arguments: dict[str, Any], lang: str = "nb") -> str:
     action = arguments.get("action", "")
 
     if action == "plex_sessions":
@@ -128,7 +142,7 @@ async def _handle_media(arguments: Dict[str, Any], lang: str = "nb") -> str:
             if meta.get("episode_number") is not None:
                 content["episode_number"] = meta["episode_number"]
             ha_type = "episode"
-            label = f"{meta['show_name']} S{meta.get('season_number','?'):02d}E{meta.get('episode_number','?'):02d}"
+            label = f"{meta['show_name']} S{meta.get('season_number', '?'):02d}E{meta.get('episode_number', '?'):02d}"
         elif item_type == "movie":
             content = {"library_name": library_name, "title": meta["title"]}
             ha_type = "movie"
@@ -154,12 +168,16 @@ async def _handle_media(arguments: Dict[str, Any], lang: str = "nb") -> str:
 
     if action == "radio_status":
         try:
-            result = _sp.run(["mpc", "status"], capture_output=True, text=True, timeout=5)
+            result = await asyncio.to_thread(
+                _sp.run, ["mpc", "status"], capture_output=True, text=True, timeout=5
+            )
             if result.returncode != 0 or not result.stdout.strip():
                 return t("media_mpd_not_running", lang)
-            current = _sp.run(["mpc", "current"], capture_output=True, text=True, timeout=5)
+            current = await asyncio.to_thread(
+                _sp.run, ["mpc", "current"], capture_output=True, text=True, timeout=5
+            )
             lines = result.stdout.strip().splitlines()
-            status_line = next((l for l in lines if "[" in l), lines[0] if lines else "")
+            status_line = next((ln for ln in lines if "[" in ln), lines[0] if lines else "")
             current_title = current.stdout.strip()
             volume_str = ""
             vol_match = _re.search(r"volume:\s*(\d+)%", result.stdout)
@@ -180,23 +198,31 @@ async def _handle_media(arguments: Dict[str, Any], lang: str = "nb") -> str:
             known = ", ".join(s["name"] for s in _load_radio_stations())
             return t("media_unknown_station", lang, station=station_input, known=known)
         try:
-            _sp.run(["mpd", f"{Path.home()}/.mpdconf"], capture_output=True, timeout=5)
-            _sp.run(["mpc", "clear"], capture_output=True, timeout=5)
-            _sp.run(["mpc", "add", url], capture_output=True, text=True, timeout=5)
-            play_result = _sp.run(["mpc", "play"], capture_output=True, text=True, timeout=5)
+            await asyncio.to_thread(
+                _sp.run, ["mpd", f"{Path.home()}/.mpdconf"], capture_output=True, timeout=5
+            )
+            await asyncio.to_thread(_sp.run, ["mpc", "clear"], capture_output=True, timeout=5)
+            await asyncio.to_thread(
+                _sp.run, ["mpc", "add", url], capture_output=True, text=True, timeout=5
+            )
+            play_result = await asyncio.to_thread(
+                _sp.run, ["mpc", "play"], capture_output=True, text=True, timeout=5
+            )
             station_name = next(
                 (s["name"] for s in _load_radio_stations() if s["url"] == url),
                 station_input,
             )
             if play_result.returncode == 0:
                 return t("media_playing", lang, station=station_name)
-            return t("media_start_failed", lang, station=station_name, error=play_result.stderr.strip())
+            return t(
+                "media_start_failed", lang, station=station_name, error=play_result.stderr.strip()
+            )
         except Exception as exc:
             return t("media_radio_start_error", lang, error=exc)
 
     if action == "radio_stop":
         try:
-            _sp.run(["mpc", "stop"], capture_output=True, timeout=5)
+            await asyncio.to_thread(_sp.run, ["mpc", "stop"], capture_output=True, timeout=5)
             return t("media_radio_stopped", lang)
         except Exception as exc:
             return t("media_radio_stop_error", lang, error=exc)
@@ -207,7 +233,9 @@ async def _handle_media(arguments: Dict[str, Any], lang: str = "nb") -> str:
             return t("media_no_volume", lang)
         vol = max(0, min(100, int(vol)))
         try:
-            _sp.run(["mpc", "volume", str(vol)], capture_output=True, timeout=5)
+            await asyncio.to_thread(
+                _sp.run, ["mpc", "volume", str(vol)], capture_output=True, timeout=5
+            )
             return t("media_volume_set", lang, vol=vol)
         except Exception as exc:
             return t("media_radio_volume_error", lang, error=exc)

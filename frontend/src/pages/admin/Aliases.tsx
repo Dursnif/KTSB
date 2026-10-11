@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, CheckCircle2, XCircle, Plus, Trash2, Search } from "lucide-react";
 import { apiGetAliases, apiPutAliases, type AliasesConfig } from "@/services/api";
+import { withoutKey } from "@/lib/collections";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -29,14 +30,13 @@ type AliasPair = { key: string; value: string };
 
 function TabAliases({ data, onSave, ss }: { data: Record<string, string>; onSave: (d: Record<string, string>) => void; ss: ReturnType<typeof useSaveState> }) {
   const { t } = useTranslation();
-  const [pairs, setPairs] = useState<AliasPair[]>([]);
+  // Initialised from props; the parent remounts this tab (key) when it reloads the config.
+  const [pairs, setPairs] = useState<AliasPair[]>(() =>
+    Object.entries(data).map(([key, value]) => ({ key, value })),
+  );
   const [filter, setFilter] = useState("");
   const [editIdx, setEditIdx] = useState<number | null>(null);
   const [editPair, setEditPair] = useState<AliasPair>({ key: "", value: "" });
-
-  useEffect(() => {
-    setPairs(Object.entries(data).map(([key, value]) => ({ key, value })));
-  }, [data]);
 
   const filtered = useMemo(() => {
     if (!filter.trim()) return pairs;
@@ -137,10 +137,8 @@ function TabAliases({ data, onSave, ss }: { data: Record<string, string>; onSave
 
 function TabRooms({ data, onSave, ss }: { data: Record<string, string[]>; onSave: (d: Record<string, string[]>) => void; ss: ReturnType<typeof useSaveState> }) {
   const { t } = useTranslation();
-  const [rooms, setRooms] = useState<Record<string, string[]>>({});
+  const [rooms, setRooms] = useState<Record<string, string[]>>(data);
   const [newRoom, setNewRoom] = useState("");
-
-  useEffect(() => { setRooms(data); }, [data]);
 
   const updateSynonyms = (room: string, val: string) => {
     setRooms(p => ({ ...p, [room]: val.split(",").map(s => s.trim()).filter(Boolean) }));
@@ -154,8 +152,7 @@ function TabRooms({ data, onSave, ss }: { data: Record<string, string[]>; onSave
   };
 
   const deleteRoom = (room: string) => {
-    const { [room]: _, ...rest } = rooms;
-    setRooms(rest);
+    setRooms(withoutKey(rooms, room));
   };
 
   const save = () => onSave(rooms);
@@ -206,10 +203,8 @@ function TabRooms({ data, onSave, ss }: { data: Record<string, string[]>; onSave
 
 function TabRoomEntities({ data, onSave, ss }: { data: Record<string, string[]>; onSave: (d: Record<string, string[]>) => void; ss: ReturnType<typeof useSaveState> }) {
   const { t } = useTranslation();
-  const [roomEntities, setRoomEntities] = useState<Record<string, string[]>>({});
+  const [roomEntities, setRoomEntities] = useState<Record<string, string[]>>(data);
   const [newEntity, setNewEntity] = useState<Record<string, string>>({});
-
-  useEffect(() => { setRoomEntities(data); }, [data]);
 
   const addEntity = (room: string) => {
     const val = (newEntity[room] ?? "").trim();
@@ -275,13 +270,19 @@ export default function Aliases() {
   const ssAliases      = useSaveState();
   const ssRooms        = useSaveState();
   const ssRoomEntities = useSaveState();
+  // Bumped on every load from the API — the tabs use it as key, so they start fresh from the
+  // loaded data (they keep their own edit state between saves).
+  const [loadCount, setLoadCount] = useState(0);
 
   useEffect(() => {
-    apiGetAliases().then(d => setConfig({
-      aliases: d.aliases ?? {},
-      rooms: d.rooms ?? {},
-      room_entities: d.room_entities ?? {},
-    })).catch(() => {});
+    apiGetAliases().then(d => {
+      setConfig({
+        aliases: d.aliases ?? {},
+        rooms: d.rooms ?? {},
+        room_entities: d.room_entities ?? {},
+      });
+      setLoadCount(n => n + 1);
+    }).catch(() => {});
   }, []);
 
   const saveAliases = async (aliases: Record<string, string>) => {
@@ -329,13 +330,13 @@ export default function Aliases() {
             <TabsTrigger value="room_entities">{t("aliases.tab_room_entities")} ({Object.keys(config.room_entities).length})</TabsTrigger>
           </TabsList>
           <TabsContent value="aliases">
-            <TabAliases data={config.aliases} onSave={saveAliases} ss={ssAliases} />
+            <TabAliases key={`aliases-${loadCount}`} data={config.aliases} onSave={saveAliases} ss={ssAliases} />
           </TabsContent>
           <TabsContent value="rooms">
-            <TabRooms data={config.rooms} onSave={saveRooms} ss={ssRooms} />
+            <TabRooms key={`rooms-${loadCount}`} data={config.rooms} onSave={saveRooms} ss={ssRooms} />
           </TabsContent>
           <TabsContent value="room_entities">
-            <TabRoomEntities data={config.room_entities} onSave={saveRoomEntities} ss={ssRoomEntities} />
+            <TabRoomEntities key={`room-entities-${loadCount}`} data={config.room_entities} onSave={saveRoomEntities} ss={ssRoomEntities} />
           </TabsContent>
         </Tabs>
       </div>

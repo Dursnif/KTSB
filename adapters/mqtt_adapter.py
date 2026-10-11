@@ -9,23 +9,28 @@ import os
 import ssl
 import sys
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, "/kaare")
+import aiomqtt
+
+from kaare_core import log_buffer
+from kaare_core.background import spawn
 from kaare_core.config import get_service as _svc
-from kaare_core.tools.i18n import t as _t_i18n, get_lang as _get_lang
+from kaare_core.tools.i18n import get_lang as _get_lang
+from kaare_core.tools.i18n import t as _t_i18n
 
 log = logging.getLogger("mqtt_adapter")
 
-_FRIGATE_LOG         = Path("/kaare/logs/frigate_mqtt.log")
+_FRIGATE_LOG = Path("/kaare/logs/frigate_mqtt.log")
 _ZIGBEE_CONTEXT_PATH = Path("/kaare/state/zigbee_context.json")
 
 
 def _write_event_log(event_type: str, level: str, message: str, extra: dict | None = None) -> None:
     try:
         record: dict = {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "source": "frigate-mqtt",
             "subsystem": "frigate",
             "stage": event_type,
@@ -34,11 +39,10 @@ def _write_event_log(event_type: str, level: str, message: str, extra: dict | No
         }
         if extra:
             record.update(extra)
-        _FRIGATE_LOG.parent.mkdir(parents=True, exist_ok=True)
-        with open(_FRIGATE_LOG, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        log_buffer.write(_FRIGATE_LOG, record)
     except Exception:
         pass
+
 
 _STATUS: dict = {"connected": False, "last_event_ts": None, "events_received": 0}
 _END_EVENT_HOOKS: list[Callable] = []
@@ -82,10 +86,10 @@ def _process_zigbee_awareness(topic: str, payload_bytes: bytes) -> None:
         return
 
     state_field = cfg.get("state_field", "state")
-    on_value    = str(cfg.get("on_value", "true"))
-    on_label    = cfg.get("on_label", "on")
-    off_label   = cfg.get("off_label", "off")
-    label       = cfg.get("label", topic.split("/")[-1])
+    on_value = str(cfg.get("on_value", "true"))
+    on_label = cfg.get("on_label", "on")
+    off_label = cfg.get("off_label", "off")
+    label = cfg.get("label", topic.split("/")[-1])
 
     raw_val = payload.get(state_field)
     if raw_val is None:
@@ -100,7 +104,7 @@ def _process_zigbee_awareness(topic: str, payload_bytes: bytes) -> None:
         ctx[topic] = {
             "label": label,
             "state": current_state,
-            "ts":    datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
         }
         _ZIGBEE_CONTEXT_PATH.parent.mkdir(parents=True, exist_ok=True)
         _ZIGBEE_CONTEXT_PATH.write_text(
@@ -162,7 +166,9 @@ async def _process_frigate_event(payload_bytes: bytes) -> None:
     # Duration only available on "end" events
     start_time = before.get("start_time") or 0
     end_time = before.get("end_time") or 0
-    duration = round(end_time - start_time, 1) if (event_type == "end" and end_time > start_time) else 0.0
+    duration = (
+        round(end_time - start_time, 1) if (event_type == "end" and end_time > start_time) else 0.0
+    )
 
     # Frigate 0.17.x sends sub_label as ["name", confidence] — normalize to string + score
     sub_label_raw = src.get("sub_label") or before.get("sub_label")
@@ -177,22 +183,36 @@ async def _process_frigate_event(payload_bytes: bytes) -> None:
         sub_label_score = None
 
     _STATUS["events_received"] += 1
-    _STATUS["last_event_ts"] = datetime.now(timezone.utc).isoformat()
+    _STATUS["last_event_ts"] = datetime.now(UTC).isoformat()
 
-    log.info(
+    log.debug(
         "Frigate MQTT event: type=%s camera=%s label=%s score=%.2f zones=%s sub_label=%s duration=%.1fs",
-        event_type, camera, label, float(score), zones, sub_label, duration,
+        event_type,
+        camera,
+        label,
+        float(score),
+        zones,
+        sub_label,
+        duration,
     )
 
     level = "warning" if (label == "person" and float(score) >= 0.6) else "info"
     _mqtt_lang = _get_lang("global")
-    _sub_label_suffix = _t_i18n("mqtt_frigate_sub_label_suffix", _mqtt_lang, sub_label=sub_label) if sub_label else ""
+    _sub_label_suffix = (
+        _t_i18n("mqtt_frigate_sub_label_suffix", _mqtt_lang, sub_label=sub_label)
+        if sub_label
+        else ""
+    )
     _write_event_log(
         event_type=f"detection_{event_type}",
         level=level,
         message=_t_i18n(
-            "mqtt_frigate_detection", _mqtt_lang,
-            label=label, camera=camera, pct=int(float(score) * 100), sub_label_suffix=_sub_label_suffix,
+            "mqtt_frigate_detection",
+            _mqtt_lang,
+            label=label,
+            camera=camera,
+            pct=int(float(score) * 100),
+            sub_label_suffix=_sub_label_suffix,
         ),
         extra={
             "camera": camera,
@@ -223,7 +243,7 @@ async def _process_frigate_event(payload_bytes: bytes) -> None:
             "has_clip": has_clip,
         }
         for _hook in _END_EVENT_HOOKS:
-            asyncio.create_task(_hook(event_dict))
+            spawn(_hook(event_dict))
 
 
 async def publish_mqtt(topic: str, payload: str) -> bool:
@@ -232,7 +252,7 @@ async def publish_mqtt(topic: str, payload: str) -> bool:
     Returns True on success, False on failure or misconfiguration.
     """
     try:
-        import aiomqtt
+        pass
     except ImportError:
         log.error("aiomqtt not installed — cannot publish to MQTT")
         return False
@@ -271,12 +291,9 @@ async def run_mqtt_listener() -> None:
     Import aiomqtt lazily so startup still works if library is missing.
     """
     try:
-        import aiomqtt
+        pass
     except ImportError:
-        log.error(
-            "aiomqtt not installed. MQTT adapter disabled. "
-            "Install with: pip install aiomqtt"
-        )
+        log.error("aiomqtt not installed. MQTT adapter disabled. Install with: pip install aiomqtt")
         return
 
     cfg = _load_mqtt_config()
@@ -286,7 +303,9 @@ async def run_mqtt_listener() -> None:
 
     log.info(
         "Starting MQTT listener: %s:%s topic=%s",
-        cfg["host"], cfg["port"], cfg["topic_events"],
+        cfg["host"],
+        cfg["port"],
+        cfg["topic_events"],
     )
 
     tls_ctx = ssl.create_default_context() if cfg["tls_enabled"] else None
@@ -307,7 +326,9 @@ async def run_mqtt_listener() -> None:
             async with aiomqtt.Client(**client_kwargs) as client:
                 _STATUS["connected"] = True
                 log.info("MQTT connected to %s:%s", cfg["host"], cfg["port"])
-                _write_event_log("mqtt_connected", "info", f"Connected to {cfg['host']}:{cfg['port']}")
+                _write_event_log(
+                    "mqtt_connected", "info", f"Connected to {cfg['host']}:{cfg['port']}"
+                )
                 await client.subscribe(cfg["topic_events"])
 
                 # Subscribe to Zigbee awareness topics (opt-in, empty by default)
@@ -329,7 +350,8 @@ async def run_mqtt_listener() -> None:
             _STATUS["connected"] = False
             log.warning(
                 "MQTT disconnected: %s — reconnecting in %ss",
-                e, cfg["reconnect_interval"],
+                e,
+                cfg["reconnect_interval"],
             )
             _write_event_log("mqtt_disconnected", "warning", f"Disconnected: {e}")
             await asyncio.sleep(cfg["reconnect_interval"])

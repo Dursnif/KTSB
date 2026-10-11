@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { apiGetNotifications, apiPutNotifications } from "@/services/api";
-import { useSaveState, SaveFeedback, ExpertOnly } from "./shared";
+import { SaveFeedback, ExpertOnly } from "./shared";
+import { useSaveState } from "./useSaveState";
 
 export default function TabVarsler() {
   const { t } = useTranslation();

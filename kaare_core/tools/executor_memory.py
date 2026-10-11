@@ -1,12 +1,17 @@
+import asyncio
 import json as _json
-import yaml
 from pathlib import Path
 
+import yaml
+
+from kaare_core.config import ADMIN_ONLY_TOOLS
 from kaare_core.crypto import unseal
-from kaare_core.memory.long_term import get_ltm, USER_GLOBAL
+from kaare_core.memory.long_term import USER_GLOBAL, get_ltm
+from kaare_core.memory.semantic_memory import search_memory
 from kaare_core.session_keys import resolve_key_sync
-from kaare_core.tools.i18n import t, get_lang
-from kaare_core.tools.think_cache import read_think_history, format_for_kare
+from kaare_core.tools.i18n import get_lang, t
+from kaare_core.tools.think_cache import format_for_kare, read_think_history
+from kaare_core.users.store import get_user
 
 _SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
 
@@ -41,8 +46,12 @@ def _load_stm_snapshot_data(path: Path, user_id: str, allow_system_key: bool = F
         return f"[read error: {e}]"
 
 
-def _get_stm_history(date: str | None = None, lang: str = "nb", user_id: str = "global",
-                      allow_system_key: bool = False) -> str:
+def _get_stm_history(
+    date: str | None = None,
+    lang: str = "nb",
+    user_id: str = "global",
+    allow_system_key: bool = False,
+) -> str:
     """Return a formatted STM snapshot for the given date, or list available dates.
 
     allow_system_key=True (P87): set by dispatch() when the tool call carries
@@ -82,7 +91,7 @@ def _get_stm_history(date: str | None = None, lang: str = "nb", user_id: str = "
         if not date_dir.is_dir():
             flat = [f.stem for f in hist_dir.glob("*.json")]
             dirs = [d.name for d in hist_dir.iterdir() if d.is_dir() and len(d.name) == 10]
-            tip = ", ".join(sorted(set(flat + dirs), reverse=True)[:5]) or "ingen"
+            tip = ", ".join(sorted(set(flat + dirs), reverse=True)[:5]) or t("mem_no_dates", lang)
             return t("mem_no_stm_for_date", lang, date=date, tip=tip)
 
         uid_candidates = [user_id] if user_id not in ("", "global") else []
@@ -146,7 +155,9 @@ def _read_reflection(date: str | None = None, lang: str = "nb") -> str:
         path = Path(f"/kaare/state/memory/reflections/{date}.md")
         if not path.exists():
             available = sorted(Path("/kaare/state/memory/reflections").glob("*.md"))
-            dates = ", ".join(p.stem for p in available[-5:]) if available else "ingen"
+            dates = (
+                ", ".join(p.stem for p in available[-5:]) if available else t("mem_no_dates", lang)
+            )
             return t("mem_no_reflection", lang, date=date, dates=dates)
     else:
         path = Path("/kaare/state/memory/reflection_latest.md")
@@ -155,7 +166,7 @@ def _read_reflection(date: str | None = None, lang: str = "nb") -> str:
     try:
         content = path.read_text(encoding="utf-8").strip()
         if len(content) > 6000:
-            content = content[:6000] + "\n\n[… resten er kuttet]"
+            content = content[:6000] + "\n\n" + t("mem_truncated", lang)
         return content
     except Exception as e:
         return t("mem_reflection_error", lang, error=e)
@@ -166,7 +177,9 @@ def _read_dev_meeting(date: str | None = None, lang: str = "nb") -> str:
         path = Path(f"/kaare/state/memory/dev_meetings/{date}.md")
         if not path.exists():
             available = sorted(Path("/kaare/state/memory/dev_meetings").glob("*.md"))
-            dates = ", ".join(p.stem for p in available[-5:]) if available else "ingen"
+            dates = (
+                ", ".join(p.stem for p in available[-5:]) if available else t("mem_no_dates", lang)
+            )
             return t("mem_no_dev_meeting", lang, date=date, dates=dates)
     else:
         path = Path("/kaare/state/memory/dev_meeting_latest.md")
@@ -175,29 +188,59 @@ def _read_dev_meeting(date: str | None = None, lang: str = "nb") -> str:
     try:
         content = path.read_text(encoding="utf-8").strip()
         if len(content) > 6000:
-            content = content[:6000] + "\n\n[… resten er kuttet]"
+            content = content[:6000] + "\n\n" + t("mem_truncated", lang)
         return content
     except Exception as e:
         return t("mem_dev_meeting_error", lang, error=e)
 
 
-def _search_memory(query: str, lang: str = "nb") -> str:
+def _clip(text: str, n: int) -> str:
+    text = (text or "").replace("\n", " ")
+    return text if len(text) <= n else text[:n] + "…"
+
+
+async def _search_memory(
+    query: str, user_id: str = "", allow_system_key: bool = False, lang: str = "nb"
+) -> str:
     if not query.strip():
         return t("mem_empty_query", lang)
+    uid = user_id if user_id else USER_GLOBAL
     try:
-        hits = get_ltm().search_interactions(query, limit=6)
-        if not hits:
+        result = await asyncio.to_thread(
+            get_ltm().search_interactions_ranked, query, 6, uid, allow_system_key
+        )
+        episodes = [
+            e
+            for e in await search_memory(query, limit=3, user_id=uid)
+            if e.get("narrative") and e["narrative"] != "[kryptert]"
+        ]
+        hits = result["hits"]
+        if not hits and not episodes:
             return t("mem_no_results", lang, query=query)
-        lines = [t("mem_search_results", lang, count=len(hits)) + "\n"]
-        for h in hits:
-            ts = h["ts"][:16].replace("T", " ")
-            prompt_short = h["prompt"][:80].replace("\n", " ")
-            resp_short = h["response"][:80].replace("\n", " ")
-            entity = f" [{h['entity_id']}]" if h["entity_id"] else ""
+        lines = []
+        if hits:
             lines.append(
-                t("mem_search_row", lang, ts=ts, entity=entity, prompt=prompt_short,
-                  response=resp_short, outcome=h['outcome'], confidence=h['confidence'])
+                t("mem_search_results", lang, count=len(hits), total=result["total"]) + "\n"
             )
+            for h in hits:
+                ts = h["ts"][:16].replace("T", " ")
+                entity = f" [{h['entity_id']}]" if h["entity_id"] else ""
+                lines.append(
+                    t(
+                        "mem_search_row",
+                        lang,
+                        id=h["id"],
+                        ts=ts,
+                        entity=entity,
+                        prompt=_clip(h["prompt"], 200),
+                        response=_clip(h["response"], 300),
+                        outcome=h["outcome"],
+                        confidence=h["confidence"],
+                    )
+                )
+        if episodes:
+            lines.append("\n" + t("mem_episode_header", lang, count=len(episodes)))
+            lines.extend(f"- [{(e.get('ts') or '?')[:10]}] {e['narrative']}" for e in episodes)
         return "\n".join(lines)
     except Exception as e:
         return t("mem_search_error", lang, error=e)
@@ -214,8 +257,8 @@ def _verify_interactions(ids, verdict: str, user_id: str, lang: str = "nb") -> s
         updated = get_ltm().mark_interactions(ids=ids_int, verdict=verdict, user_id=uid)
         verdict_labels = {
             "verified": t("mem_verdict_verified", lang),
-            "denied":   t("mem_verdict_denied", lang),
-            "test":     t("mem_verdict_test", lang),
+            "denied": t("mem_verdict_denied", lang),
+            "test": t("mem_verdict_test", lang),
         }
         return f"{updated} {verdict_labels.get(verdict, verdict)}: {ids_int}"
     except Exception as e:
@@ -225,32 +268,63 @@ def _verify_interactions(ids, verdict: str, user_id: str, lang: str = "nb") -> s
 def _get_unverified(user_id: str, limit: int = 10, offset: int = 0, lang: str = "nb") -> str:
     uid = user_id if user_id else USER_GLOBAL
     try:
-        rows = get_ltm().get_unverified_interactions(user_id=uid, limit=limit, offset=offset)
+        ltm = get_ltm()
+        rows = ltm.get_unverified_interactions(
+            user_id=uid, limit=limit, offset=offset, newest_first=True
+        )
         if not rows:
             return t("mem_no_unverified", lang)
-        total_note = f" (viser {offset + 1}–{offset + len(rows)})"
-        lines = [t("mem_unverified_header", lang, note=total_note)]
+        stats = ltm.count_unverified(uid)
+        lines = [
+            t(
+                "mem_unverified_header",
+                lang,
+                start=offset + 1,
+                end=offset + len(rows),
+                total=stats["total"],
+                first=stats["first_ts"][:10],
+                last=stats["last_ts"][:10],
+            )
+        ]
         for r in rows:
             ts = r["ts"][:10]
-            prompt_short = r["prompt"][:100].replace("\n", " ")
-            resp_short = r["response"][:150].replace("\n", " ")
             lines.append(
                 f"\n[ID {r['id']} | {ts}]\n"
-                f"  Du: {prompt_short}\n"
-                f"  Kåre: {resp_short}"
+                f"  {t('mem_unverified_user', lang)}: {_clip(r['prompt'], 100)}\n"
+                f"  Kåre: {_clip(r['response'], 150)}"
             )
         return "\n".join(lines)
     except Exception as e:
         return t("mem_unverified_error", lang, error=e)
 
 
+def _is_admin_caller(user_id: str) -> bool:
+    """True only for a real user whose role is admin. Missing, unknown or system ids → False."""
+    if not user_id or user_id == "global":
+        return False
+    try:
+        rec = get_user(user_id)
+    except Exception:
+        return False
+    return bool(rec) and rec.get("role") == "admin"
+
+
 async def dispatch(name: str, arguments: dict) -> str:
     lang = get_lang(arguments.get("_user_id", "global"))
+
+    # Shared logs with other users' text — admin only, fail closed (see config.ADMIN_ONLY_TOOLS).
+    if name in ADMIN_ONLY_TOOLS and not _is_admin_caller(arguments.get("_user_id", "")):
+        return t("mem_admin_only_tool", lang)
 
     if name in ("memory", "minne"):
         action = arguments.get("action", "")
         if action == "search":
-            return _search_memory(arguments.get("query", ""), lang=lang)
+            return await _search_memory(
+                arguments.get("query", ""),
+                user_id=arguments.get("_user_id", ""),
+                allow_system_key=bool(arguments.get("_allow_system_key", False)),
+                lang=lang,
+            )
         if action == "fetch_unverified":
             return _get_unverified(
                 user_id=arguments.get("_user_id", ""),
@@ -266,8 +340,12 @@ async def dispatch(name: str, arguments: dict) -> str:
                 lang=lang,
             )
         if action in ("fetch_stm", "hent_gammel_stm"):
-            return _get_stm_history(arguments.get("date"), lang=lang, user_id=arguments.get("_user_id", "global"),
-                                     allow_system_key=bool(arguments.get("_allow_system_key", False)))
+            return _get_stm_history(
+                arguments.get("date"),
+                lang=lang,
+                user_id=arguments.get("_user_id", "global"),
+                allow_system_key=bool(arguments.get("_allow_system_key", False)),
+            )
         return f"Unknown action for memory: '{action}'. Valid: search, fetch_unverified, confirm, fetch_stm."
 
     if name in ("read_meeting", "les_møte"):
@@ -281,7 +359,12 @@ async def dispatch(name: str, arguments: dict) -> str:
         return _read_inner_thoughts(lang=lang)
 
     if name == "søk_i_minne":
-        return _search_memory(arguments.get("query", ""), lang=lang)
+        return await _search_memory(
+            arguments.get("query", ""),
+            user_id=arguments.get("_user_id", ""),
+            allow_system_key=bool(arguments.get("_allow_system_key", False)),
+            lang=lang,
+        )
 
     if name == "bekreft_interaksjoner":
         return _verify_interactions(
@@ -300,8 +383,12 @@ async def dispatch(name: str, arguments: dict) -> str:
         )
 
     if name == "hent_gammel_stm":
-        return _get_stm_history(arguments.get("date"), lang=lang, user_id=arguments.get("_user_id", "global"),
-                                 allow_system_key=bool(arguments.get("_allow_system_key", False)))
+        return _get_stm_history(
+            arguments.get("date"),
+            lang=lang,
+            user_id=arguments.get("_user_id", "global"),
+            allow_system_key=bool(arguments.get("_allow_system_key", False)),
+        )
 
     if name in ("thought_history", "les_tankehistorikk"):
         entries = read_think_history(

@@ -11,31 +11,34 @@ import asyncio
 import json
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import websockets
 
 sys.path.insert(0, "/kaare")
+from kaare_core import log_buffer
 from kaare_core.config import get_service as _svc
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
 _HA_URL: str = _svc("home_assistant", "url")
 HA_WS_URL: str = (
-    _HA_URL.replace("http://", "ws://").replace("https://", "wss://")
-    + "/api/websocket"
+    _HA_URL.replace("http://", "ws://").replace("https://", "wss://") + "/api/websocket"
 )
 
-_HA_CFG: dict = (_svc("home_assistant", "log_bridge") or {})
-SUBSCRIBE_EVENTS: list[str] = _HA_CFG.get("subscribe_events", [
-    "state_changed",
-    "call_service",
-])
+_HA_CFG: dict = _svc("home_assistant", "log_bridge") or {}
+SUBSCRIBE_EVENTS: list[str] = _HA_CFG.get(
+    "subscribe_events",
+    [
+        "state_changed",
+        "call_service",
+    ],
+)
 RECONNECT_DELAY: int = int(_HA_CFG.get("reconnect_delay", 10))
 
 TOKEN_FILE = Path("/kaare/configs/ha_token.env")
-LOG_PATH   = Path("/kaare/logs/ha_events.log")
+LOG_PATH = Path("/kaare/logs/ha_events.log")
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 
@@ -50,6 +53,7 @@ logging.getLogger("websockets").setLevel(logging.WARNING)
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def read_token() -> str:
     for line in TOKEN_FILE.read_text(encoding="utf-8").splitlines():
         if line.startswith("HA_TOKEN="):
@@ -58,7 +62,7 @@ def read_token() -> str:
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def make_entry(event_type: str, data: dict) -> dict | None:
@@ -67,38 +71,38 @@ def make_entry(event_type: str, data: dict) -> dict | None:
     if event_type == "state_changed":
         new_state = data.get("new_state") or {}
         old_state = data.get("old_state") or {}
-        ctx       = new_state.get("context") or {}
+        ctx = new_state.get("context") or {}
         return {
-            "ts":        ts,
-            "source":    "ha-events",
+            "ts": ts,
+            "source": "ha-events",
             "subsystem": "home",
-            "stage":     "state_changed",
+            "stage": "state_changed",
             "entity_id": data.get("entity_id", ""),
-            "from":      old_state.get("state", ""),
-            "to":        new_state.get("state", ""),
-            "user_id":   ctx.get("user_id") or "",
+            "from": old_state.get("state", ""),
+            "to": new_state.get("state", ""),
+            "user_id": ctx.get("user_id") or "",
             "parent_id": ctx.get("parent_id") or "",
         }
 
     if event_type == "call_service":
         svc_data = data.get("service_data") or {}
         return {
-            "ts":        ts,
-            "source":    "ha-events",
+            "ts": ts,
+            "source": "ha-events",
             "subsystem": "home",
-            "stage":     "call_service",
-            "domain":    data.get("domain", ""),
-            "service":   data.get("service", ""),
+            "stage": "call_service",
+            "domain": data.get("domain", ""),
+            "service": data.get("service", ""),
             "entity_id": str(svc_data.get("entity_id", "")),
         }
 
     if event_type == "automation_triggered":
         return {
-            "ts":        ts,
-            "source":    "ha-events",
+            "ts": ts,
+            "source": "ha-events",
             "subsystem": "home",
-            "stage":     "automation_triggered",
-            "name":      data.get("name", ""),
+            "stage": "automation_triggered",
+            "name": data.get("name", ""),
             "entity_id": data.get("entity_id", ""),
         }
 
@@ -106,17 +110,16 @@ def make_entry(event_type: str, data: dict) -> dict | None:
 
 
 def write_entry(entry: dict) -> None:
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with LOG_PATH.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    log_buffer.write(LOG_PATH, entry)  # RAM, batched to disk (P131)
 
 
 # ─── WebSocket loop ───────────────────────────────────────────────────────────
 
+
 async def connect_and_listen() -> None:
     if not TOKEN_FILE.exists():
         raise RuntimeError(f"ha_token.env not found at {TOKEN_FILE} — configure HA token via GUI")
-    token  = read_token()
+    token = read_token()
     msg_id = 1
 
     async with websockets.connect(HA_WS_URL, ping_interval=30, ping_timeout=10) as ws:
@@ -134,11 +137,15 @@ async def connect_and_listen() -> None:
 
         # Subscribe to events
         for event_type in SUBSCRIBE_EVENTS:
-            await ws.send(json.dumps({
-                "id":         msg_id,
-                "type":       "subscribe_events",
-                "event_type": event_type,
-            }))
+            await ws.send(
+                json.dumps(
+                    {
+                        "id": msg_id,
+                        "type": "subscribe_events",
+                        "event_type": event_type,
+                    }
+                )
+            )
             sub_resp = json.loads(await ws.recv())
             if sub_resp.get("success"):
                 log.info("Subscribed to: %s", event_type)
@@ -153,9 +160,9 @@ async def connect_and_listen() -> None:
             if msg.get("type") != "event":
                 continue
 
-            event      = msg.get("event", {})
+            event = msg.get("event", {})
             event_type = event.get("event_type", "")
-            data       = event.get("data", {})
+            data = event.get("data", {})
 
             entry = make_entry(event_type, data)
             if entry:
@@ -170,11 +177,13 @@ async def connect_and_listen() -> None:
 
 # ─── Daemon ───────────────────────────────────────────────────────────────────
 
+
 async def daemon() -> None:
     if not _HA_URL:
-        log.info("Home Assistant URL not configured — sleeping (set home_assistant.url in services.yaml to enable).")
-        while True:
-            await asyncio.sleep(300)
+        log.info(
+            "Home Assistant URL not configured — sleeping (set home_assistant.url in services.yaml to enable)."
+        )
+        await asyncio.Event().wait()  # idle until the service is stopped
 
     log.info("ha_log_bridge starting — events: %s", SUBSCRIBE_EVENTS)
     while True:
@@ -186,6 +195,7 @@ async def daemon() -> None:
 
 
 def main() -> None:
+    log_buffer.install_sigterm_flush()  # systemd stop → write buffered events before exit
     try:
         asyncio.run(daemon())
     except KeyboardInterrupt:

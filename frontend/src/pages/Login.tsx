@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { apiLogin, apiUpdatePin } from "../services/api";
-import { useAuth } from "../auth/AuthContext";
+import { apiLogin, apiUpdatePin, type KaareUser } from "../services/api";
+import { useAuth } from "@/hooks/useAuth";
 import { loginTheme } from "../theme";
 import { SeedModal } from "./admin/Users";
+import { apiErrorDetail } from "@/lib/apiError";
 
 const S = {
   page: {
@@ -54,7 +55,7 @@ export default function Login() {
 
   const [mustChange, setMustChange] = useState(false);
   const [pendingToken, setPendingToken] = useState("");
-  const [pendingUser, setPendingUser] = useState<any>(null);
+  const [pendingUser, setPendingUser] = useState<KaareUser | null>(null);
   const [newPin, setNewPin] = useState("");
   const [newPin2, setNewPin2] = useState("");
   const [pinError, setPinError] = useState("");
@@ -83,8 +84,8 @@ export default function Login() {
           navigate(result.user.role === "admin" ? "/admin" : "/");
         }
       }
-    } catch (err: any) {
-      setError(err?.response?.data?.detail ?? t("login.error_login"));
+    } catch (err) {
+      setError(apiErrorDetail(err) ?? t("login.error_login"));
     } finally {
       setLoading(false);
     }
@@ -93,6 +94,7 @@ export default function Login() {
   const handleChangePin = async (e: React.FormEvent) => {
     e.preventDefault();
     setPinError("");
+    if (!pendingUser) return;
     if (newPin.length < 6) { setPinError(t("login.error_pin_short")); return; }
     if (newPin !== newPin2) { setPinError(t("login.error_pin_mismatch")); return; }
     setPinLoading(true);
@@ -102,9 +104,9 @@ export default function Login() {
       const updated = { ...pendingUser, must_change_pin: false };
       login(updated, pendingToken);
       navigate(updated.role === "admin" ? "/admin" : "/");
-    } catch (err: any) {
+    } catch (err) {
       sessionStorage.removeItem("kaare_token");
-      setPinError(err?.response?.data?.detail ?? t("login.error_generic"));
+      setPinError(apiErrorDetail(err) ?? t("login.error_generic"));
     } finally {
       setPinLoading(false);
     }

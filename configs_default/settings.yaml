@@ -20,7 +20,7 @@ log_level: "INFO"
 
 stm:
   dialog_max_turns: 40
-  dialog_max_text: 600
+  dialog_max_text: 2000  # raised 2026-09-28 (P105 Phase 7): long answers were cut before replay
   actions_max: 80
   actions_max_text: 300
   state_max_keys: 2000
@@ -32,6 +32,9 @@ stm:
   history_dir: "/kaare/state/stm_history"
   history_days: 7
   snapshot_interval_seconds: 300
+  # P105 Phase 6: tell the model the replayed turns are old when the previous message is at least
+  # this many hours back
+  replay_gap_note_hours: 6
 
 semantic_memory:
   fallback_max_entries: 500
@@ -44,6 +47,21 @@ think_cache:
 kare_reminders:
   injection_max_chars: 2000
   max_entries: 100
+  note_prompt_chars: 300   # per note in the prompt index (P133 C0)
+  write_max_chars: 600     # a follow-up, not a diary (P133 D13)
+
+# Kåre's memory drawers in the prompt (P133) — GUI: Settings → Assistant settings → Kåre's memory
+memory_prompt:
+  relevance_enabled: true  # needs an embedding service; without one only the index is shown
+  top_k: 3
+  min_score: 0.5
+  echo_min_score: 0.6
+  lessons_max_chars: 1500
+  lessons_write_max_chars: 600
+  core_facts_max_chars: 1500
+  index_max_chars: 2000
+  resolve_roles:
+  - admin
 
 jang:
   reflection_interval_seconds: 600
@@ -53,24 +71,38 @@ face_events:
   session_timeout_seconds: 60
   retention_hours: 48
 
-# When false (default): shell command tools (å_kjøre_kommando / local_kommando) are disabled.
-# Enable only on dedicated machines where all users are trusted.
-# Configurable in the admin GUI under Settings → Security.
+# Not read any more — kept so older configs stay valid. Mechanic's shell (read-only, off by
+# default) is switched in the admin GUI under Settings → Agent Settings → Mechanic → shell.
 developer_tools: false
+
+# Git repository inspected by Mechanic's git_diff and git_log actions.
+# Defaults to the app root, which is a normal git working tree for a standard
+# `git clone`-based install. Override only if your install root isn't itself
+# git-tracked (e.g. a dev setup that syncs to a separate release repo).
+git_repo_path: /kaare
 
 # JWT token expiry in hours. Default 4 hours.
 token_expiry_hours: 4
 
 # Allowed CORS origins. Default ["*"] works for most home installs.
 # Restrict to specific origins for stricter setups, e.g.:
-# cors_origins: ["http://192.168.0.232:5173", "https://yourdomain.com"]
+# cors_origins: ["http://192.168.0.x:5173", "https://yourdomain.com"]
 cors_origins:
   - "*"
 
 network:
+  # Clients on these subnets count as «local» (home). The setup wizard suggests your own /24;
+  # Settings → General → Network and access (Expert) changes it.
   local_subnets:
-    - "192.168.0.0/24"
+    - "192.168.0.0/16"
   vpn_subnet: "10.0.0.0/24"
+  # Reverse proxies whose X-Forwarded-For is believed (IP, subnet or host name). Default: the
+  # bundled Caddy + a proxy on the same host. Add your own proxy here or in the GUI.
+  trusted_proxies:
+    - "caddy"
+    - "127.0.0.1"
+    - "::1"
+  api_docs: false   # /docs, /redoc, /openapi.json (developer use)
 
 weather:
   forecast_days: 2
@@ -109,6 +141,10 @@ data_retention:
   interactions_retention_days: 0
   episodes_retention_days: 0
   think_cache_retention_days: 30
+# How often buffered logs are written to disk, in seconds (0 = every line at once, max 30).
+# GUI: Settings → General → Logs and data (Expert). P131.
+logging:
+  flush_interval_seconds: 2
 
 # --- Added 2026-09-01: 12 keys that existed in the live config but were missing here,
 # leaving a fresh install with no defaults for these features at all (settings.yaml is
@@ -121,16 +157,22 @@ data_retention:
 kare_language: nb
 
 dev_meeting:
+  enabled: true   # nightly dev slot on/off — GUI: Settings → Reflection
   kare_invest_tokens: 4000
   kare_max_tokens: 4000
   leder_preset: standard
   max_invest_rounds: 5
   max_rounds: 6
 
+# Night sequence (nightjob → Lovdata → portrait → knowledge review → reflection → dev slot):
+# local start time in the GUI timezone, set in Settings → Reflection. Read by kaare_night_runner.py.
+night_sequence:
+  start_time: "03:00"
+
 kare_reflection:
   enabled: true
   interval_seconds: 600
-  kare_max_tokens: 3000
+  kare_max_tokens: 8192
   leder_preset: standard
   max_rounds: 6
   miss_kare_max_tokens: 1500
@@ -155,22 +197,14 @@ voice_enrollment:
   identification_threshold: 0.75
 
 websearch:
-  brave_country: 'NO'
-  brave_search_lang: nb
+  brave_country: ''
+  brave_search_lang: ''
   content_max: 3000
   fetch_count: 10
   max_results: 3
 
 # Blank/generic — see `location:` above for the equivalent English-keyed block.
 # Both exist live; not yet merged into one (see BUG-log 2026-09-01).
-lokasjon:
-  sted: ""
-  postnummer: ""
-  land: ""
-  lat: 0.0
-  lon: 0.0
-  tidssone: "Europe/Berlin"
-
 personality_self:
   allowed_users: []
   contributors: admin_only
@@ -178,3 +212,24 @@ personality_self:
 vpn:
   duckdns_host: ""
   wg_port: 51820
+knowledge_reflection:
+  # user whose profile/memory the weekly knowledge review runs with (P105 Decision 7);
+  # blank = household context only
+  acting_user: ""
+context_budget:  # P105 Phase 7 — keeps Kåre's request under the model's context window
+  chars_per_token: 3.6          # measured for Norwegian with the Qwen tokenizer (2026-09-28); used only for estimates
+  safety_margin_tokens: 2000    # headroom kept below the input cap (context window minus reserved output tokens)
+  replay_token_budget: 4000     # max tokens of replayed earlier turns (current session first)
+  replay_max_pairs: 20          # hard cap on replayed user/assistant pairs
+  replay_prior_session_pairs: 2  # pairs replayed from before the current session (gap >= 30 min)
+  stub_threshold_tokens: 1500   # tool results larger than this are replaced by a short tag after one round
+  library_max_chars: 20000      # upper bound for library fetch_article max_chars
+  image_tokens_estimate: 1200    # per image in the loop, when no real usage is reported (9B fallback)
+  system_prompt_tokens_estimate: 6000  # used only when no real usage is reported (9B fallback)
+
+dev_slot:
+  time_budget_minutes: 25
+  topics_per_meeting: 3
+  max_user_traces: 20
+  round_cap_per_topic: 4
+models_dir: /kaare/models

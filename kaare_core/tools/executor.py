@@ -3,33 +3,86 @@ Tool executor for Kåre's tool calls. Returns results as plain text
 that is fed back to the LLM in the next round.
 """
 
-import json as _json
+import asyncio
+import base64 as _b64
 import logging
 import time as _time
-import yaml
-
-import httpx
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from zoneinfo import ZoneInfo
 
+import httpx
+
+from adapters.display_adapter import get_display_nodes, send_display
+from adapters.image_generation_adapter import edit_image, generate_image
 from adapters.weather_adapter import fetch_weather as _fetch_weather
-from kaare_core.config import get_service as _svc, get_llm_config as _llm_cfg
-from kaare_core.tools.i18n import t, get_lang
-from kaare_core.tools.notisblokk import skriv_notat, les_notater, slett_notat, tøm_notater
-from kaare_core.tools.lister import (
-    handle_legg_til, handle_les, handle_merk_kjøpt, handle_slett, handle_tøm_kjøpte, handle_tøm,
-    huske_husk, huske_les, huske_ferdig, huske_slett, huske_tøm,
-    kare_husk, kare_les, kare_ferdig, kare_tøm, kare_flytt_til_topp, kare_fjern_pin,
-)
-from kaare_core.tools.timer_service import set_timer, cancel_timer, list_timers, ack_timer
+from kaare_core.config import get_llm_config as _llm_cfg
+from kaare_core.config import get_local_tz, now_local
+from kaare_core.config import get_service as _svc
+from kaare_core.image_store import find_image, list_images
+from kaare_core.memory import learning_store
+from kaare_core.service_auth import service_headers
 from kaare_core.tools import (
-    executor_world, executor_memory, executor_personality,
-    executor_ha, executor_media, executor_library,
-    executor_agents, executor_system, executor_camera,
-    executor_reflexes, executor_household,
+    executor_agents,
+    executor_camera,
+    executor_ha,
+    executor_household,
+    executor_library,
+    executor_media,
+    executor_memory,
+    executor_personality,
+    executor_reflexes,
+    executor_world,
 )
+from kaare_core.tools.agenda import (
+    agenda_add,
+    agenda_read,
+    observation_add,
+    observation_read,
+    reopen,
+    resolve,
+    resolved_read,
+)
+from kaare_core.tools.i18n import get_lang, t
+from kaare_core.tools.lessons import lesson_add, lesson_delete, lesson_edit, lesson_read
+from kaare_core.tools.lister import (
+    kare_note_add,
+    kare_note_clear,
+    kare_note_done,
+    kare_note_edit,
+    kare_note_pin,
+    kare_note_read,
+    kare_note_unpin,
+    reminder_add,
+    reminder_clear,
+    reminder_delete,
+    reminder_done,
+    reminder_read,
+    shopping_add,
+    shopping_clear,
+    shopping_clear_bought,
+    shopping_delete,
+    shopping_mark_bought,
+    shopping_read,
+)
+from kaare_core.tools.note_move import move_kare_note
+from kaare_core.tools.notisblokk import (
+    les_notater,
+    marker_notat_viktig,
+    skriv_notat,
+    slett_notat,
+    tøm_notater,
+)
+from kaare_core.tools.shared_tools import log_tool_call
+from kaare_core.tools.timer_service import ack_timer, cancel_timer, list_timers, set_timer
+from kaare_core.tools.trace_reader import (
+    format_patterns_for_kare,
+    format_trace_for_kare,
+    get_recent_traces,
+    get_trace,
+)
+from kaare_core.users.profile_manager import get_unlock_config
 
 logger = logging.getLogger(__name__)
 
@@ -37,38 +90,51 @@ _VOICE_BRIDGE_URL = _svc("internal", "voice_bridge")
 
 # Tools that require an unlocked voice session when called from a mic node.
 # All tool aliases (nb/en variants) are included.
-_LOCKED_TOOLS: frozenset[str] = frozenset({
-    # Memory
-    "memory", "minne",
-    "read_meeting", "inner_thoughts", "thought_history",
-    # Profile & identity
-    "user_profile", "brukerprofil",
-    "self_image", "selvbilde", "les_selvbilde", "slett_fra_selvbilde",
-    # World model
-    "world", "verden", "les_verden", "oppdater_felt_i_verden", "legg_til_i_verden",
-    # Camera
-    "camera", "kamera", "hent_snapshot", "hent_frigate_hendelser", "les_kamerahendelser",
-    # Agents with full context
-    "mechanic", "spør_mechanic", "deleger_til_mechanic",
-    # File/system access
-    "explore_code", "utforsk_kode",
-    "inspect_system",
-})
+_LOCKED_TOOLS: frozenset[str] = frozenset(
+    {
+        # Memory
+        "memory",
+        "minne",
+        "read_meeting",
+        "inner_thoughts",
+        "thought_history",
+        # Profile & identity
+        "user_profile",
+        "brukerprofil",
+        "self_image",
+        "selvbilde",
+        "les_selvbilde",
+        "slett_fra_selvbilde",
+        # World model
+        "world",
+        "verden",
+        "les_verden",
+        "oppdater_felt_i_verden",
+        "legg_til_i_verden",
+        # Camera
+        "camera",
+        "kamera",
+        "hent_snapshot",
+        "hent_frigate_hendelser",
+        "les_kamerahendelser",
+        # Agents with full context
+        "mechanic",
+        "spør_mechanic",
+        "deleger_til_mechanic",
+        # Self-improvement trace
+        "self_trace",
+    }
+)
 
 # These tools are locked by default but can be opened globally (no unlock needed)
 # if the user has enabled global_lists in their unlock config.
 _GLOBAL_LIST_TOOLS: frozenset[str] = frozenset({"note", "notat"})
-_TOOL_LOG         = Path("/kaare/logs/tool_calls.log")
-_SETTINGS_PATH    = Path("/kaare/configs/settings.yaml")
+_SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
 
 
 def _local_tz() -> ZoneInfo:
-    try:
-        cfg = yaml.safe_load(_SETTINGS_PATH.read_text())
-        loc = cfg.get("location") or cfg.get("lokasjon", {})
-        return ZoneInfo(loc.get("timezone", "Europe/Oslo"))
-    except Exception:
-        return ZoneInfo("Europe/Oslo")
+    # Cached config, no disk read; legacy lokasjon.tidssone fallback; UTC when unset (P116 B19)
+    return get_local_tz()
 
 
 def _fmt_ts_local(ts_raw: str) -> str:
@@ -77,31 +143,51 @@ def _fmt_ts_local(ts_raw: str) -> str:
     try:
         dt = datetime.fromisoformat(ts_raw)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt.astimezone(_local_tz()).strftime("%Y-%m-%d %H:%M")
     except Exception:
         return ts_raw[:16].replace("T", " ")
 
 
-def _log_tool(name: str, arguments: Dict, result: str, duration_ms: int, source: str = "kare"):
-    try:
-        safe_args = {k: v for k, v in arguments.items() if not k.startswith("_")}
-        rec = {
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "rid": arguments.get("_rid", ""),
-            "source": source,
-            "tool": name,
-            "args": safe_args,
-            "result_preview": str(result)[:120],
-            "duration_ms": duration_ms,
-        }
-        with open(_TOOL_LOG, "a", encoding="utf-8") as f:
-            f.write(_json.dumps(rec, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
+def _log_tool(name: str, arguments: dict, result: str, duration_ms: int, source: str = "kare"):
+    log_tool_call(name, arguments, result, duration_ms, source=source)
 
 
-async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
+# The note tool's schema offers English list names (definitions.py); older prompts, logs and
+# the dispatcher below use the Norwegian ones. Both map to the same list. Before this map,
+# 'remember'/'shopping' silently fell through to the architect notes (BUG-log 2026-10-03).
+_LIST_NAME_ALIASES = {
+    "handle": "handle",
+    "shopping": "handle",
+    "huske": "huske",
+    "remember": "huske",
+    "kare": "kare",
+    "agenda": "agenda",
+    # P133 drawers
+    "observations": "observations",
+    "observation": "observations",
+    "observasjoner": "observations",
+    "lessons": "lessons",
+    "lesson": "lessons",
+    "lærdommer": "lessons",
+    "laerdommer": "lessons",
+    "resolved": "resolved",
+    "løst": "resolved",
+    "arkitekt": "arkitekt",
+    "architect": "arkitekt",
+}
+
+
+def normalize_list_name(raw) -> str:
+    """Map a note list_name (English or Norwegian, possibly with leaked tool-call junk after
+    it, e.g. «huske\n<parameter=text>…») to the dispatcher's key. Unknown → 'arkitekt'
+    (the documented default list)."""
+    first = str(raw or "").strip().split()[0].lower() if str(raw or "").strip() else ""
+    first = first.split("<")[0]
+    return _LIST_NAME_ALIASES.get(first, "arkitekt")
+
+
+async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
     """Dispatcher — kalles fra execute_tool. Returnerer alltid streng."""
     lang = get_lang(arguments.get("_user_id", "global"))
 
@@ -114,8 +200,8 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
     if name == "timer":
         action = arguments.get("action", "")
         if action == "clock":
-            now = datetime.now()
-            return t("timer_clock", lang, time=now.strftime('%H:%M'), date=now.strftime('%d.%m.%Y'))
+            now = now_local()
+            return t("timer_clock", lang, time=now.strftime("%H:%M"), date=now.strftime("%d.%m.%Y"))
         if action == "set":
             return set_timer(
                 prompt=arguments.get("prompt", ""),
@@ -144,7 +230,13 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
                 user_id=arguments.get("_user_id", "global"),
                 lang=lang,
             )
-        return f"Unknown action for timer: '{action}'. Valid: clock, set, cancel, list, ack."
+        return t(
+            "agent_unknown_action",
+            lang,
+            tool="timer",
+            action=action,
+            valid="clock, set, cancel, list, ack",
+        )
 
     if name in executor_memory.MEMORY_TOOLS:
         return await executor_memory.dispatch(name, arguments)
@@ -160,68 +252,217 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
 
     if name in ("note", "notat"):
         action = arguments.get("action", "")
-        liste = arguments.get("list_name", arguments.get("liste", "arkitekt"))
+        liste = normalize_list_name(arguments.get("list_name", arguments.get("liste", "arkitekt")))
         user_id = arguments.get("_user_id", "global")
+
+        # resolve/reopen act on a topic number in learning.db, not on a list. Without an explicit list (or
+        # with 'resolved', where a reopen naturally starts) they go by topic_id — KTSB's own echo hint asks
+        # for exactly `note action='reopen', topic_id=N` (BUG-log 2026-10-09). An explicit other list (kare,
+        # shopping …) is still refused below, so a note id is never taken for a topic number (P133 C2).
+        explicit_list = arguments.get("list_name") or arguments.get("liste")
+        if action in ("resolve", "reopen") and (not explicit_list or liste == "resolved"):
+            liste = "observations"
+
+        if liste in ("agenda", "observations"):
+            # Dev-meeting agenda (P118 B1) and observations (P133 C1): append-only inbox in
+            # learning.db, never injected. Resolve/reopen = the P133 C2 lifecycle.
+            writer = agenda_add if liste == "agenda" else observation_add
+            reader = agenda_read if liste == "agenda" else observation_read
+            if action in ("write", "add"):
+                return await asyncio.to_thread(
+                    writer,
+                    (arguments.get("text") or arguments.get("tekst") or ""),
+                    (arguments.get("context") or arguments.get("kontekst") or ""),
+                    user_id=user_id,
+                    rid=arguments.get("_rid", ""),
+                    source=arguments.get("_source", ""),
+                    pointer=arguments.get("_pointer", ""),
+                    lang=lang,
+                    theme=str(arguments.get("theme") or ""),
+                    title=str(arguments.get("title") or ""),
+                )
+            if action == "read":
+                return await asyncio.to_thread(reader, lang)
+            if action == "resolve":
+                return await asyncio.to_thread(
+                    resolve,
+                    arguments.get("topic_id"),
+                    str(arguments.get("conclusion") or arguments.get("text") or ""),
+                    user_id=user_id,
+                    rid=arguments.get("_rid", ""),
+                    lang=lang,
+                )
+            if action == "reopen":
+                return await asyncio.to_thread(
+                    reopen,
+                    arguments.get("topic_id"),
+                    str(arguments.get("text") or ""),
+                    lang=lang,
+                )
+            return t(
+                "agent_unknown_action",
+                lang,
+                tool=liste,
+                action=action,
+                valid="write, read, resolve, reopen",
+            )
+
+        if liste == "resolved":
+            if action == "read":
+                return await asyncio.to_thread(resolved_read, lang)
+            return t("agent_unknown_action", lang, tool="resolved", action=action, valid="read")
+
+        if liste == "lessons":
+            # P133 C1/D7: rules Kåre learned — always in the prompt as short prose.
+            note_id = arguments.get("note_id") or arguments.get("notat_id") or ""
+            text = arguments.get("text") or arguments.get("tekst") or ""
+            title = str(arguments.get("title") or "")
+            if action in ("write", "add"):
+                return await asyncio.to_thread(lesson_add, text, title, lang)
+            if action == "read":
+                return await asyncio.to_thread(lesson_read, lang)
+            if action == "edit":
+                return await asyncio.to_thread(lesson_edit, note_id, text, title, lang)
+            if action in ("delete", "done"):
+                return await asyncio.to_thread(lesson_delete, note_id, lang)
+            return t(
+                "agent_unknown_action",
+                lang,
+                tool="lessons",
+                action=action,
+                valid="write, read, edit, delete",
+            )
 
         if liste == "handle":
             if action in ("write", "add"):
-                return handle_legg_til(
-                    tekst=(arguments.get("text") or arguments.get("tekst") or ""),
-                    mengde=(arguments.get("quantity") or arguments.get("mengde") or ""),
-                    enhet=(arguments.get("unit") or arguments.get("enhet") or ""),
-                    lagt_til_av=user_id,
-                )
-            if action == "read":
-                return handle_les()
-            if action == "mark_bought":
-                return handle_merk_kjøpt((arguments.get("note_id") or arguments.get("notat_id") or ""))
-            if action == "delete":
-                return handle_slett((arguments.get("note_id") or arguments.get("notat_id") or ""))
-            if action in ("clear", "clear_bought"):
-                return handle_tøm_kjøpte()
-            if action == "clear_all":
-                return handle_tøm()
-            return f"Unknown action for handle-liste: '{action}'. Valid: write, read, mark_bought, delete, clear, clear_all."
-
-        if liste == "huske":
-            if action in ("write", "add"):
-                return huske_husk(
-                    tekst=(arguments.get("text") or arguments.get("tekst") or ""),
-                    user_id=user_id,
-                    påminn_ved_login=bool(arguments.get("remind_on_login", arguments.get("påminn_ved_login", False))),
-                )
-            if action == "read":
-                return huske_les(user_id=user_id)
-            if action == "done":
-                return huske_ferdig((arguments.get("note_id") or arguments.get("notat_id") or ""), user_id=user_id)
-            if action == "delete":
-                return huske_slett((arguments.get("note_id") or arguments.get("notat_id") or ""), user_id=user_id)
-            if action == "clear":
-                return huske_tøm(user_id=user_id)
-            return f"Unknown action for huskeliste: '{action}'. Valid: write, read, done, delete, clear."
-
-        if liste == "kare":
-            if action in ("write", "add"):
-                return kare_husk(
-                    tekst=(arguments.get("text") or arguments.get("tekst") or ""),
-                    kontekst=(arguments.get("context") or arguments.get("kontekst") or ""),
+                return shopping_add(
+                    text=(arguments.get("text") or arguments.get("tekst") or ""),
+                    amount=(arguments.get("quantity") or arguments.get("mengde") or ""),
+                    unit=(arguments.get("unit") or arguments.get("enhet") or ""),
+                    added_by=user_id,
                     lang=lang,
                 )
             if action == "read":
-                return kare_les(
-                    søkeord=(arguments.get("search") or ""),
-                    fra_dato=(arguments.get("date_from") or ""),
-                    til_dato=(arguments.get("date_to") or ""),
+                return shopping_read(lang=lang)
+            if action == "mark_bought":
+                return shopping_mark_bought(
+                    (arguments.get("note_id") or arguments.get("notat_id") or ""), lang=lang
+                )
+            if action == "delete":
+                return shopping_delete(
+                    (arguments.get("note_id") or arguments.get("notat_id") or ""), lang=lang
+                )
+            if action in ("clear", "clear_bought"):
+                return shopping_clear_bought(lang=lang)
+            if action == "clear_all":
+                return shopping_clear(lang=lang)
+            return t(
+                "agent_unknown_action",
+                lang,
+                tool="handle-liste",
+                action=action,
+                valid="write, read, mark_bought, delete, clear, clear_all",
+            )
+
+        if liste == "huske":
+            # The reminder list belongs to a user. On any path without one (internal reflection,
+            # background jobs, …) a write would land in a 'global' list nobody reads — tell Kåre
+            # where it belongs instead.
+            if action in ("write", "add") and user_id in ("", "global", "kare"):
+                return t("list_reminder_needs_user", lang)
+            if action in ("write", "add"):
+                return reminder_add(
+                    text=(arguments.get("text") or arguments.get("tekst") or ""),
+                    user_id=user_id,
+                    remind_on_login=bool(
+                        arguments.get("remind_on_login", arguments.get("påminn_ved_login", False))
+                    ),
+                    lang=lang,
+                )
+            if action == "read":
+                return reminder_read(user_id=user_id, lang=lang)
+            if action == "done":
+                return reminder_done(
+                    (arguments.get("note_id") or arguments.get("notat_id") or ""),
+                    user_id=user_id,
+                    lang=lang,
+                )
+            if action == "delete":
+                return reminder_delete(
+                    (arguments.get("note_id") or arguments.get("notat_id") or ""),
+                    user_id=user_id,
+                    lang=lang,
+                )
+            if action == "clear":
+                return reminder_clear(user_id=user_id, lang=lang)
+            return t(
+                "agent_unknown_action",
+                lang,
+                tool="huskeliste",
+                action=action,
+                valid="write, read, done, delete, clear",
+            )
+
+        if liste == "kare":
+            if action in ("write", "add"):
+                return kare_note_add(
+                    text=(arguments.get("text") or arguments.get("tekst") or ""),
+                    context=(arguments.get("context") or arguments.get("kontekst") or ""),
+                    lang=lang,
+                    title=str(arguments.get("title") or ""),
+                )
+            if action == "read":
+                ids = arguments.get("note_ids") or []
+                if isinstance(ids, str):
+                    ids = [x for x in ids.replace(",", " ").split() if x]
+                return kare_note_read(
+                    search=(arguments.get("search") or ""),
+                    date_from=(arguments.get("date_from") or ""),
+                    date_to=(arguments.get("date_to") or ""),
+                    lang=lang,
+                    note_ids=ids,
+                )
+            if action == "move":
+                return await asyncio.to_thread(
+                    move_kare_note,
+                    (arguments.get("note_id") or arguments.get("notat_id") or ""),
+                    str(arguments.get("to") or ""),
+                    title=str(arguments.get("title") or ""),
+                    theme=str(arguments.get("theme") or ""),
+                    text=str(arguments.get("text") or ""),
+                    user_id=user_id,
+                    rid=arguments.get("_rid", ""),
+                    source=arguments.get("_source", ""),
+                    lang=lang,
                 )
             if action in ("done", "delete"):
-                return kare_ferdig((arguments.get("note_id") or arguments.get("notat_id") or ""))
+                return kare_note_done(
+                    (arguments.get("note_id") or arguments.get("notat_id") or ""), lang=lang
+                )
+            if action == "edit":
+                return kare_note_edit(
+                    (arguments.get("note_id") or arguments.get("notat_id") or ""),
+                    (arguments.get("text") or arguments.get("tekst") or ""),
+                    lang=lang,
+                    title=str(arguments.get("title") or ""),
+                )
             if action == "clear":
-                return kare_tøm(lang=lang)
+                return kare_note_clear(lang=lang)
             if action == "pin":
-                return kare_flytt_til_topp((arguments.get("note_id") or arguments.get("notat_id") or ""), lang=lang)
+                return kare_note_pin(
+                    (arguments.get("note_id") or arguments.get("notat_id") or ""), lang=lang
+                )
             if action == "unpin":
-                return kare_fjern_pin((arguments.get("note_id") or arguments.get("notat_id") or ""), lang=lang)
-            return f"Unknown action for kare-liste: '{action}'. Valid: write, read, done, delete, clear, pin, unpin."
+                return kare_note_unpin(
+                    (arguments.get("note_id") or arguments.get("notat_id") or ""), lang=lang
+                )
+            return t(
+                "agent_unknown_action",
+                lang,
+                tool="kare-liste",
+                action=action,
+                valid="write, read, done, delete, clear, pin, unpin, edit, move",
+            )
 
         if action == "write":
             return skriv_notat(
@@ -232,26 +473,105 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
         if action == "read":
             return les_notater((arguments.get("category") or arguments.get("kategori")), lang=lang)
         if action == "delete":
-            return slett_notat((arguments.get("note_id") or arguments.get("notat_id") or ""), lang=lang)
+            return slett_notat(
+                (arguments.get("note_id") or arguments.get("notat_id") or ""), lang=lang
+            )
         if action == "clear":
             return tøm_notater((arguments.get("category") or arguments.get("kategori")), lang=lang)
-        return f"Unknown action for note: '{action}'. Valid: write, read, delete, clear."
+        if action == "mark_important":
+            return marker_notat_viktig(
+                (arguments.get("note_id") or arguments.get("notat_id") or ""), lang=lang
+            )
+        return t(
+            "agent_unknown_action",
+            lang,
+            tool="note",
+            action=action,
+            valid="write, read, delete, clear, mark_important",
+        )
 
-    if name in executor_system.SYSTEM_TOOLS:
-        return await executor_system.dispatch(name, arguments)
+    if name == "dev_proposals":
+        # Dev-slot proposals (P118 B4, T2-D13): list / record a human decision. Never applies anything.
+        action = arguments.get("action", "")
+        if action == "list":
+            rows = await asyncio.to_thread(learning_store.list_proposals, "pending")
+            if not rows:
+                return t("dev_proposals_none", lang)
+            lines = [t("dev_proposals_title", lang, count=len(rows))]
+            for r in rows:
+                label = f" ({r['topic_label']})" if r.get("topic_label") else ""
+                lines.append(f"  #{r['id']}{label}: {r['text']}")
+                if r.get("finding"):
+                    lines.append(f"     ← {r['finding']} {r.get('evidence_refs') or ''}")
+            return "\n".join(lines)
+        if action in ("confirm", "reject"):
+            try:
+                pid = int(arguments.get("proposal_id"))
+            except (TypeError, ValueError):
+                return t("dev_proposals_needs_id", lang)
+            user = arguments.get("_user_id", "global")
+            status = "confirmed" if action == "confirm" else "rejected"
+            row = await asyncio.to_thread(learning_store.decide_proposal, pid, status, user)
+            if row is None:
+                return t("dev_proposals_not_pending", lang, id=pid)
+            key = "dev_proposals_confirmed" if status == "confirmed" else "dev_proposals_rejected"
+            return t(key, lang, id=pid, user=user)
+        return t(
+            "agent_unknown_action",
+            lang,
+            tool="dev_proposals",
+            action=action,
+            valid="list, confirm, reject",
+        )
+
+    if name == "self_trace":
+        # Kåre's own self-improvement trace view — deliberately narrow (fetch_trace/
+        # trace_patterns only). Code/system exploration and shell access moved to Mechanic
+        # in Fase B (P104) — this is the one piece of the old inspect_system tool Kåre keeps.
+        action = arguments.get("action", "")
+        if action == "fetch_trace":
+            rid_arg = arguments.get("rid", "").strip()
+            if not rid_arg:
+                return t("inspiser_system_hent_trace_mangler_rid", lang)
+            trace = get_trace(rid_arg)
+            if (
+                not trace.get("stages")
+                and not trace.get("llm_calls")
+                and not trace.get("tool_calls")
+            ):
+                return t("inspiser_system_hent_trace_ikke_funnet", lang, rid=rid_arg)
+            return format_trace_for_kare(trace, lang=lang)
+        if action == "trace_patterns":
+            n = min(int(arguments.get("count", 50)), 200)
+            source = arguments.get("source", "all")
+            if source not in ("user", "refl", "meet", "all"):
+                source = "all"
+            traces = get_recent_traces(n, source=source)
+            if not traces:
+                return t("inspiser_system_trace_mønstre_ingen", lang)
+            return format_patterns_for_kare(traces, lang=lang)
+        return t(
+            "agent_unknown_action",
+            lang,
+            tool="self_trace",
+            action=action,
+            valid="fetch_trace, trace_patterns",
+        )
 
     if name in executor_camera.CAMERA_TOOLS:
         return await executor_camera.dispatch(name, arguments)
 
     if name in executor_household.HOUSEHOLD_TOOLS:
-        return await executor_household.dispatch(name, arguments, user_id=arguments.get("_user_id", "global"))
+        return await executor_household.dispatch(
+            name, arguments, user_id=arguments.get("_user_id", "global")
+        )
 
     if name in ("get_weather", "hent_yr_varsel"):
         return await _fetch_weather(arguments.get("location"), lang=lang)
 
     if name == "hent_klokke":
-        now = datetime.now()
-        return t("timer_clock", lang, time=now.strftime('%H:%M'), date=now.strftime('%d.%m.%Y'))
+        now = now_local()
+        return t("timer_clock", lang, time=now.strftime("%H:%M"), date=now.strftime("%d.%m.%Y"))
 
     if name == "skriv_notat":
         return skriv_notat(
@@ -289,7 +609,7 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
     if name == "kare_image":
         if not _llm_cfg("image_edit").get("enabled", True):
             return t("exec_image_disabled", lang)
-        from adapters.image_generation_adapter import generate_image, edit_image
+
         mode = arguments.get("mode", "generate")
         prompt = arguments.get("prompt", "").strip()
         negative_prompt = arguments.get("negative_prompt", "").strip()
@@ -304,12 +624,10 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
         else:
             res = await generate_image(prompt, negative_prompt, user_id=uid)
         if not res.get("ok"):
-            return t("exec_image_failed", lang, error=res.get('error', 'ukjent feil'))
-        return t("exec_image_ready", lang, image_id=res['image_id'])
+            return t("exec_image_failed", lang, error=res.get("error", "ukjent feil"))
+        return t("exec_image_ready", lang, image_id=res["image_id"])
 
     if name in ("view_images", "se_bilder"):
-        import base64 as _b64
-        from kaare_core.image_store import list_images, find_image
         uid = arguments.get("user_id") or arguments.get("_user_id", "global")
         folder = arguments.get("folder", "all")
         limit = int(arguments.get("limit", 10))
@@ -335,17 +653,15 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
         action = arguments.get("action", "say")
 
         if action == "list_display":
-            from adapters.display_adapter import get_display_nodes
             nodes = await get_display_nodes()
             if not nodes:
                 return t("announce_no_display_nodes", lang)
-            lines = [f"- **{n['id']}** ({n.get('type', '?')}) — {n.get('room', '?')}" for n in nodes]
+            lines = [
+                f"- **{n['id']}** ({n.get('type', '?')}) — {n.get('room', '?')}" for n in nodes
+            ]
             return t("announce_display_list", lang) + "\n" + "\n".join(lines)
 
         if action == "display":
-            from adapters.display_adapter import get_display_nodes, send_display
-            from kaare_core.image_store import find_image
-            from pathlib import Path as _Path
             text = arguments.get("text", "").strip()
             target = arguments.get("target", "").strip()
             image_id = arguments.get("image_id")
@@ -368,7 +684,8 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             else:
                 tn = target.lower().replace(" ", "_")
                 node_ids = [
-                    n["id"] for n in all_display
+                    n["id"]
+                    for n in all_display
                     if n.get("room", "").lower().replace(" ", "_") == tn
                 ]
 
@@ -378,8 +695,12 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
             results = []
             for nid in node_ids:
                 res = await send_display(
-                    nid, text=text, title=title,
-                    image_path=image_path, duration=duration, position=position,
+                    nid,
+                    text=text,
+                    title=title,
+                    image_path=image_path,
+                    duration=duration,
+                    position=position,
                 )
                 results.append((nid, res))
 
@@ -407,10 +728,17 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
                 resp = await client.post(
                     f"{_VOICE_BRIDGE_URL}/speak",
                     json=payload,
+                    headers=service_headers(),
                 )
                 resp.raise_for_status()
-            target_label = t("exec_announce_all_rooms", lang) if target in ("all", "alle") else f"'{target}'"
-            vol_label = t("exec_announce_volume_label", lang, pct=int(volume * 100)) if volume is not None else ""
+            target_label = (
+                t("exec_announce_all_rooms", lang) if target in ("all", "alle") else f"'{target}'"
+            )
+            vol_label = (
+                t("exec_announce_volume_label", lang, pct=int(volume * 100))
+                if volume is not None
+                else ""
+            )
             return t("exec_announce_sent", lang, target=target_label, vol_label=vol_label)
         except Exception as exc:
             return f"Could not reach voice bridge: {exc}"
@@ -424,7 +752,7 @@ async def _dispatch(name: str, arguments: Dict[str, Any]) -> str:
     return t("exec_unknown_tool", lang, name=name)
 
 
-async def execute_tool(name: str, arguments: Dict[str, Any]) -> str:
+async def execute_tool(name: str, arguments: dict[str, Any]) -> str:
     """
     Utfører ett tool-kall og logger det.
     Returnerer alltid en streng — aldri exception.
@@ -438,7 +766,6 @@ async def execute_tool(name: str, arguments: Dict[str, Any]) -> str:
         if name in _GLOBAL_LIST_TOOLS:
             uid = arguments.get("_user_id", "global")
             try:
-                from kaare_core.users.profile_manager import get_unlock_config
                 if not get_unlock_config(uid).get("global_lists", False):
                     return t("voice_tool_blocked", lang)
             except Exception:

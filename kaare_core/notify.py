@@ -17,33 +17,35 @@ State is lost on restart — one duplicate per event class per restart is accept
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
-from enum import Enum
+from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from pathlib import Path
-from typing import Optional
 
 import httpx
 import yaml
 
-from kaare_core.config import get_settings, get_service
+from kaare_core.config import get_service, get_settings, now_local
+from kaare_core.service_auth import service_headers
+from kaare_core.tools.i18n import get_lang
+from kaare_core.users.profile_manager import load_profile
 
 logger = logging.getLogger("notify")
 
 _NODES_PATH = Path("/kaare/configs/nodes.yaml")
 
 
-class Urgency(str, Enum):
-    LOW      = "low"
-    MEDIUM   = "medium"
-    HIGH     = "high"
+class Urgency(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
     CRITICAL = "critical"
 
 
 # Dedup TTL per urgency level (CRITICAL is never deduped)
-_DEDUP_TTL: dict[Urgency, Optional[timedelta]] = {
-    Urgency.LOW:      timedelta(minutes=60),
-    Urgency.MEDIUM:   timedelta(minutes=30),
-    Urgency.HIGH:     timedelta(minutes=10),
+_DEDUP_TTL: dict[Urgency, timedelta | None] = {
+    Urgency.LOW: timedelta(minutes=60),
+    Urgency.MEDIUM: timedelta(minutes=30),
+    Urgency.HIGH: timedelta(minutes=10),
     Urgency.CRITICAL: None,
 }
 
@@ -57,13 +59,11 @@ def _is_deduped(user_id: str, source_key: str, urgency: Urgency) -> bool:
         return False
     key = (user_id, source_key)
     last = _dedup.get(key)
-    if last and datetime.now() - last < ttl:
-        return True
-    return False
+    return bool(last and datetime.now(UTC) - last < ttl)
 
 
 def _record_dedup(user_id: str, source_key: str) -> None:
-    _dedup[(user_id, source_key)] = datetime.now()
+    _dedup[(user_id, source_key)] = datetime.now(UTC)
 
 
 def _is_quiet_hours() -> bool:
@@ -71,8 +71,8 @@ def _is_quiet_hours() -> bool:
         settings = get_settings()
         notif = settings.get("notifications", {})
         start = int(notif.get("quiet_hours_start", 22))
-        end   = int(notif.get("quiet_hours_end",   7))
-        hour  = datetime.now().hour
+        end = int(notif.get("quiet_hours_end", 7))
+        hour = now_local().hour  # quiet hours are household clock time (N16)
         if start > end:
             return hour >= start or hour < end
         return start <= hour < end
@@ -80,7 +80,7 @@ def _is_quiet_hours() -> bool:
         return False
 
 
-def _resolve_sound_node(user_id: str) -> Optional[str]:
+def _resolve_sound_node(user_id: str) -> str | None:
     """Return the best audio node ID for a user, or None if not found."""
     try:
         data = yaml.safe_load(_NODES_PATH.read_text(encoding="utf-8")) or {}
@@ -107,6 +107,7 @@ async def _tts(node_id: str, message: str, lang: str = "nb") -> None:
             resp = await client.post(
                 f"{voice_bridge}/speak",
                 json={"text": message, "target": node_id, "lang": lang},
+                headers=service_headers(),
             )
             resp.raise_for_status()
         logger.info("[notify] TTS sent to node '%s'", node_id)
@@ -116,7 +117,6 @@ async def _tts(node_id: str, message: str, lang: str = "nb") -> None:
 
 def _get_user_lang(user_id: str) -> str:
     try:
-        from kaare_core.tools.i18n import get_lang
         return get_lang(user_id)
     except Exception:
         return "nb"
@@ -124,7 +124,6 @@ def _get_user_lang(user_id: str) -> str:
 
 def _get_notify_channel(user_id: str) -> str:
     try:
-        from kaare_core.users.profile_manager import load_profile
         profile = load_profile(user_id)
         hv = profile.get("household_visible", {})
         return hv.get("notify_channel", "sound_node") or "sound_node"
@@ -134,7 +133,9 @@ def _get_notify_channel(user_id: str) -> str:
 
 def _inject_stm(user_id: str, message: str) -> None:
     try:
-        from kaare_core.memory.short_term import get_stm
+        # PLC0415: broken import (get_stm lives in app_state) — kept as is, see BUG-log 2026-10-08
+        from kaare_core.memory.short_term import get_stm  # noqa: PLC0415
+
         stm = get_stm(user_id)
         stm.add_assistant(f"[Varsling]: {message}", source="notify")
     except Exception as e:
@@ -143,7 +144,9 @@ def _inject_stm(user_id: str, message: str) -> None:
 
 async def _push_notify(user_id: str, message: str) -> None:
     try:
-        from kaare_ha_gateway import call_ha_service
+        # PLC0415: kaare_ha_gateway configures logging and loads HA config at import — import only when used
+        from kaare_ha_gateway import call_ha_service  # noqa: PLC0415
+
         services = get_service("home_assistant") or {}
         entity = (services.get("ha_notify_entity") or "").strip()
         if not entity:
@@ -174,7 +177,9 @@ async def notify_user(
             return
 
         if _is_deduped(user_id, source_key, urgency):
-            logger.debug("[notify] deduped: user=%s source_key=%s urgency=%s", user_id, source_key, urgency)
+            logger.debug(
+                "[notify] deduped: user=%s source_key=%s urgency=%s", user_id, source_key, urgency
+            )
             return
 
         _record_dedup(user_id, source_key)
@@ -204,7 +209,11 @@ async def notify_user(
 
         logger.info(
             "[notify] delivered: user=%s urgency=%s source_key=%s channel=%s node=%s",
-            user_id, urgency, source_key, channel, node or "none",
+            user_id,
+            urgency,
+            source_key,
+            channel,
+            node or "none",
         )
 
     except Exception as e:

@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, CheckCircle2, XCircle, Pencil, Plus, Trash2, Volume2, Monitor, Mic } from "lucide-react";
 import { apiGetNodes, apiPutNodes, apiTestDisplayNode, type NodeConfig } from "@/services/api";
+import { withoutKey } from "@/lib/collections";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -66,6 +67,7 @@ const EMPTY_NODE: NodeConfig = {
   has_audio: true,
   has_display: false,
   default_user: "",
+  trust: "indoor",
   enabled: true,
 };
 
@@ -270,6 +272,21 @@ function NodeModal({
             <Input value={form.default_user ?? ""} onChange={e => set("default_user", e.target.value)} placeholder="admin" />
           </div>
 
+          {/* Trust: who an unidentified speaker is at this node (P120) */}
+          {(form.type === "wyoming" || form.type === "esp32" || form.mic_enabled) && (
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">{t("nodes.modal.trust")}</Label>
+              <Select value={form.trust ?? "indoor"} onValueChange={v => set("trust", v as "indoor" | "outdoor")}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="indoor">{t("nodes.modal.trust_indoor")}</SelectItem>
+                  <SelectItem value="outdoor">{t("nodes.modal.trust_outdoor")}</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">{t("nodes.modal.trust_hint")}</p>
+            </div>
+          )}
+
           {/* Capability toggles */}
           <div>
             <Label className="text-xs text-muted-foreground mb-1 block">{t("nodes.modal.capabilities")}</Label>
@@ -443,7 +460,7 @@ export default function Nodes() {
 
   const handleDelete = (key: string) => {
     if (!confirm(t("nodes.delete_confirm", { key }))) return;
-    const { [key]: _, ...rest } = nodes;
+    const rest = withoutKey(nodes, key);
     setNodes(rest);
     saveAll(rest);
   };

@@ -21,7 +21,7 @@ If you've already reported an observation, don't repeat it. Build on what you've
 
 `systemctl status <service>` does **NOT** require sudo. Run it directly:
 ```
-ssh_kommando(node='mynuc', kommando='systemctl status mosquitto')
+shell(node='<node>', kommando='systemctl status mosquitto')
 ```
 
 Sudo is only allowed for the commands configured in the `sudo_commands` list for that node (ssh_nodes.yaml).
@@ -33,10 +33,10 @@ All other commands run without sudo. Always try without sudo first.
 ## Order of the investigation phase
 
 1. `søk_argus` – semantic search for errors and patterns from the last 24h
-2. `les_logg` – concrete log files for details
-3. `git_log` – what's changed since last time?
-4. `sjekk_tjenester` – is anything unstable?
-5. `sjekk_ressurser` – CPU/RAM/GPU pressure?
+2. `inspiser` (action='logg') – concrete log files for details
+3. `inspiser` (action='git_log') – what's changed since last time?
+4. `inspiser` (action='tjenester') – is anything unstable?
+5. `inspiser` (action='ressurser') – CPU/RAM/GPU pressure?
 
 Zoom in on what matters most. Finish with a concrete summary of what you actually found.
 

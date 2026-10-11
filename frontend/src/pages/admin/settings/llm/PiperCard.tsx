@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, XCircle, Loader2, RotateCcw, ChevronDown, ChevronUp, Download } from "lucide-react";
 import { apiGetPiperModels, apiPostPiperDownload, apiGetPiperDownloadStatus, apiPutPiperActivate, apiRestartService, type PiperPreset } from "@/services/api";
 import { ExpertOnly } from "../shared";
+import { MediaHostSection } from "./MediaHostSection";
 
 const LANG_LABELS: Record<string, string> = { nb: "Norsk (nb)", en: "English (en)", de: "Deutsch (de)" };
 const LANG_ORDER = ["nb", "en", "de"];
@@ -187,6 +188,8 @@ export function PiperCard({ onSaved }: { onSaved: () => void }) {
               </div>
             );
           })}
+
+          <MediaHostSection />
 
           {/* Footer */}
           <ExpertOnly><>

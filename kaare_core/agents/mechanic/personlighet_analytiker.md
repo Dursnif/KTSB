@@ -29,7 +29,7 @@ Les møterapportene du har fått tilgang til. Produser et strukturert sammendrag
 
 ## Verktøy du kan bruke
 
-`les_fil` – les en konkret møterapport  
-`liste_filer` – finn hvilke rapporter som finnes  
-`søk_kode` – søk etter spesifikke mønstre på tvers av rapporter  
+`utforsk` (action='les') – les en konkret møterapport  
+`utforsk` (action='liste') – finn hvilke rapporter som finnes  
+`utforsk` (action='søk') – søk etter spesifikke mønstre på tvers av rapporter  
 `hukommelse` – les hva du husker fra før / skriv nye observasjoner

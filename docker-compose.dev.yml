@@ -51,6 +51,7 @@ services:
       - .:/kaare
       - ./configs:/kaare/configs
       - ./state:/kaare/state
+      - ./logs:/kaare/logs
 
   kaare-ha-log-bridge:
     build: .
@@ -70,3 +71,20 @@ services:
       - ./configs:/kaare/configs
       - bge_model:/kaare/models/bge-m3
     profiles: [medium, full]
+
+  # Inner voices from source (the main compose file uses the prebuilt CI image)
+  kaare-jing:
+    build:
+      context: .
+      dockerfile: Dockerfile.inner_voices
+      args:
+        PROVIDER: openvino
+    image: kaare-inner-voices-dev
+
+  kaare-jang:
+    build:
+      context: .
+      dockerfile: Dockerfile.inner_voices
+      args:
+        PROVIDER: openvino
+    image: kaare-inner-voices-dev

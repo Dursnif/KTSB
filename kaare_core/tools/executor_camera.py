@@ -7,16 +7,22 @@ import asyncio
 import base64
 import json as _json
 import logging
-import yaml
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict
-from zoneinfo import ZoneInfo
 
-from adapters.frigate_adapter import fetch_snapshot_b64, get_cameras, fetch_events, fetch_face_events
+from adapters.frigate_adapter import (
+    fetch_event_snapshot,
+    fetch_events,
+    fetch_face_events,
+    fetch_snapshot_b64,
+    get_cameras,
+)
 from adapters.llm_adapter import ask_llm
+from kaare_core import log_buffer
 from kaare_core.audit import audit_log as _audit
-from kaare_core.tools.i18n import t, get_lang
+from kaare_core.config import get_local_tz, local_from_ts, now_local
+from kaare_core.image_store import save_image as _save_image
+from kaare_core.tools.i18n import get_lang, t
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +53,7 @@ async def describe_snapshot(camera: str, prompt: str) -> str | None:
         return None
 
 
-async def dispatch(name: str, arguments: Dict) -> str:
+async def dispatch(name: str, arguments: dict) -> str:
     lang = get_lang(arguments.get("_user_id", "global"))
 
     if name in ("camera", "kamera"):
@@ -68,14 +74,14 @@ async def dispatch(name: str, arguments: Dict) -> str:
     return f"[executor_camera] Unknown tool: '{name}'"
 
 
-async def _kamera(arguments: Dict, lang: str = "nb") -> str:
+async def _kamera(arguments: dict, lang: str = "nb") -> str:
     action = arguments.get("action", "")
     _uid = arguments.get("_user_id", "global")
 
     if action == "snapshot":
-        _audit("camera_access", _uid, f"action=snapshot scope={arguments.get('scope','one')}")
+        _audit("camera_access", _uid, f"action=snapshot scope={arguments.get('scope', 'one')}")
         scope = arguments.get("scope", "one")
-        ts = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+        ts = now_local().strftime("%d.%m.%Y %H:%M:%S")
         if scope in ("all", "alle"):
             prompt_text = arguments.get("spørsmål", "").strip() or t("cam_prompt_all", lang)
             cams = await get_cameras()
@@ -95,11 +101,13 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
             failed = [n for n, b64 in fetched if b64 is None]
             if not images:
                 return t("cam_fetch_failed", lang, ts=ts)
-            prompt = t("cam_prefix_all", lang, cam_list=', '.join(cam_names)) + prompt_text
+            prompt = t("cam_prefix_all", lang, cam_list=", ".join(cam_names)) + prompt_text
             try:
                 vlm_result = await ask_llm(prompt=prompt, images=images)
                 if not vlm_result.get("ok"):
-                    return t("cam_analysis_failed", lang, ts=ts, error="VLM returned empty response")
+                    return t(
+                        "cam_analysis_failed", lang, ts=ts, error="VLM returned empty response"
+                    )
                 description = vlm_result.get("text", "").strip() or t("cam_empty_vlm", lang)
             except Exception as e:
                 return t("cam_analysis_failed", lang, ts=ts, error=e)
@@ -109,7 +117,9 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
             return result
 
         kamera_navn = (arguments.get("camera") or arguments.get("kamera") or "").strip()
-        prompt_text = (arguments.get("query") or arguments.get("spørsmål") or "").strip() or t("cam_prompt_single", lang)
+        prompt_text = (arguments.get("query") or arguments.get("spørsmål") or "").strip() or t(
+            "cam_prompt_single", lang
+        )
         if not kamera_navn:
             cams = await get_cameras()
             cam_list = ", ".join(f"{c['friendly_name']} ({c['api_name']})" for c in cams)
@@ -125,7 +135,9 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
         try:
             vlm_result = await ask_llm(prompt=prompt_text, images=[img_b64])
             if not vlm_result.get("ok"):
-                return t("cam_snapshot_analysis_failed", lang, ts=ts, error="VLM returned empty response")
+                return t(
+                    "cam_snapshot_analysis_failed", lang, ts=ts, error="VLM returned empty response"
+                )
             description = vlm_result.get("text", "").strip() or t("cam_empty_vlm", lang)
         except Exception as e:
             return t("cam_snapshot_analysis_failed", lang, ts=ts, error=e)
@@ -134,27 +146,26 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
     if action == "events":
         _audit("camera_access", _uid, "action=events")
         navn_filter = (arguments.get("name") or arguments.get("navn") or "").strip().lower()
-        timer_tilbake = min(int(arguments.get("hours_back", arguments.get("timer_tilbake", 24))), 48)
+        timer_tilbake = min(
+            int(arguments.get("hours_back", arguments.get("timer_tilbake", 24))), 48
+        )
         face_path = Path("/kaare/state/argus/face_events.txt")
         if not face_path.exists():
             return t("cam_no_events", lang)
         try:
-            raw_lines = [l for l in face_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+            raw_lines = [
+                ln for ln in face_path.read_text(encoding="utf-8").splitlines() if ln.strip()
+            ]
         except Exception as e:
             return t("cam_events_read_error", lang, error=e)
         if not raw_lines:
             return t("cam_no_events", lang)
-        try:
-            cfg = yaml.safe_load(Path("/kaare/configs/settings.yaml").read_text())
-            _loc = cfg.get("location") or cfg.get("lokasjon", {})
-            local_tz = ZoneInfo(_loc.get("timezone") or _loc.get("tidssone", "Europe/Oslo"))
-        except Exception:
-            local_tz = ZoneInfo("Europe/Oslo")
+        local_tz = get_local_tz()
         cutoff = datetime.now(local_tz) - timedelta(hours=timer_tilbake)
         filtered = []
         for line in raw_lines:
             try:
-                inner = line[1: line.index("]")]
+                inner = line[1 : line.index("]")]
                 ts_part = inner.split("→")[0].strip()
                 dt = datetime.strptime(ts_part, "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
                 if dt < cutoff:
@@ -165,7 +176,11 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
                 continue
             filtered.append(line)
         if not filtered:
-            label = f" for «{arguments.get('name') or arguments.get('navn', '')}»" if (arguments.get("name") or arguments.get("navn")) else ""
+            label = (
+                f" for «{arguments.get('name') or arguments.get('navn', '')}»"
+                if (arguments.get("name") or arguments.get("navn"))
+                else ""
+            )
             return t("cam_no_events_filtered", lang, label=label, hours=timer_tilbake)
         count = len(filtered)
         suffix = "r" if count != 1 else ""
@@ -190,7 +205,7 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
         for ev in events:
             ts_raw = ev.get("start_time") or ev.get("ts", 0)
             try:
-                ts_str = datetime.fromtimestamp(float(ts_raw)).strftime("%d.%m %H:%M:%S")
+                ts_str = local_from_ts(float(ts_raw)).strftime("%d.%m %H:%M:%S")
             except Exception:
                 ts_str = str(ts_raw)
             cam = ev.get("camera_friendly") or ev.get("camera", "?")
@@ -200,7 +215,7 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
             face_str = f" — ansikt: {face}" if face else ""
             eid = ev.get("id", "")
             eid_str = f" [event_id: {eid}]" if eid else ""
-            lines.append(f"[{ts_str}] {cam}: {lbl} ({int(float(conf)*100)}%){face_str}{eid_str}")
+            lines.append(f"[{ts_str}] {cam}: {lbl} ({int(float(conf) * 100)}%){face_str}{eid_str}")
         return "\n".join(lines)
 
     if action == "list":
@@ -216,11 +231,14 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
     if action == "analyze":
         antall = min(int(arguments.get("count", arguments.get("antall", 10))), 50)
         log_path = Path("/kaare/logs/frigate_analysis.log")
+        log_buffer.flush(log_path)  # include lines still buffered in RAM in this process (P131)
         if not log_path.exists():
             return t("cam_no_analysis", lang)
         try:
-            raw_lines = [l for l in log_path.read_text(encoding="utf-8").splitlines() if l.strip()]
-            entries = [_json.loads(l) for l in raw_lines][-antall:]
+            raw_lines = [
+                ln for ln in log_path.read_text(encoding="utf-8").splitlines() if ln.strip()
+            ]
+            entries = [_json.loads(ln) for ln in raw_lines][-antall:]
         except Exception as e:
             return t("cam_analysis_log_error", lang, error=e)
         if not entries:
@@ -256,16 +274,19 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
             # frigate_cameras.yaml. Fetch live from Frigate's REST API
             # instead of giving up. Same fetch + 404-retry-once pattern as
             # frigate_responder.analyze_event().
-            from adapters.frigate_adapter import fetch_event_snapshot
             try:
                 img_bytes = await asyncio.wait_for(fetch_event_snapshot(event_id), timeout=10)
             except Exception as e:
                 if "404" in str(e):
                     await asyncio.sleep(1.5)
                     try:
-                        img_bytes = await asyncio.wait_for(fetch_event_snapshot(event_id), timeout=10)
+                        img_bytes = await asyncio.wait_for(
+                            fetch_event_snapshot(event_id), timeout=10
+                        )
                     except Exception as e2:
-                        logger.warning("[vis_hendelse] REST fallback retry failed for %s: %s", event_id, e2)
+                        logger.warning(
+                            "[vis_hendelse] REST fallback retry failed for %s: %s", event_id, e2
+                        )
                 else:
                     logger.warning("[vis_hendelse] REST fallback failed for %s: %s", event_id, e)
 
@@ -275,11 +296,21 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
             # Cache locally for next time, respecting the same size cap the
             # automatic-analysis write path already enforces.
             try:
-                from kaare_core.domain.frigate_responder import (
-                    _save_snapshot as _fr_save_snapshot,
-                    _cleanup_snapshots as _fr_cleanup_snapshots,
+                # PLC0415: circular: executor_camera → frigate_responder → weather_adapter → executor_camera
+                from kaare_core.domain.frigate_responder import (  # noqa: PLC0415
                     _cfg as _fr_cfg,
                 )
+
+                # PLC0415: circular: executor_camera → frigate_responder → weather_adapter → executor_camera
+                from kaare_core.domain.frigate_responder import (  # noqa: PLC0415
+                    _cleanup_snapshots as _fr_cleanup_snapshots,
+                )
+
+                # PLC0415: circular: executor_camera → frigate_responder → weather_adapter → executor_camera
+                from kaare_core.domain.frigate_responder import (  # noqa: PLC0415
+                    _save_snapshot as _fr_save_snapshot,
+                )
+
                 _fr_save_snapshot(event_id, base64.b64encode(img_bytes).decode())
                 snap_max = _fr_cfg().get("storage", {}).get("snapshots_max_mb", 500)
                 _fr_cleanup_snapshots(snap_max)
@@ -295,17 +326,21 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
         # picture (confirmed via full-codebase sweep, see plan Research).
         _img_url = ""
         try:
-            from kaare_core.image_store import save_image as _save_image
             _uid = arguments.get("_user_id", "global")
             _img_id = _save_image(img_bytes, _uid, "input", ext="jpg")
             _img_url = f"/api/image/{_img_id}"
         except Exception as _e:
-            logger.warning("[vis_hendelse] save_image feilet for %s (user=%s): %s",
-                           event_id, arguments.get("_user_id"), _e)
+            logger.warning(
+                "[vis_hendelse] save_image feilet for %s (user=%s): %s",
+                event_id,
+                arguments.get("_user_id"),
+                _e,
+            )
 
         stored_analysis = ""
         try:
             log_path = Path("/kaare/logs/frigate_analysis.log")
+            log_buffer.flush(log_path)  # include lines still buffered in RAM in this process (P131)
             for line in log_path.read_text(encoding="utf-8").splitlines():
                 if not line.strip():
                     continue
@@ -332,9 +367,9 @@ async def _kamera(arguments: Dict, lang: str = "nb") -> str:
     return f"Unknown action for camera: '{action}'. Valid: snapshot, events, frigate, list, analyze, show_event."
 
 
-async def _compat_hent_snapshot(arguments: Dict, lang: str = "nb") -> str:
+async def _compat_hent_snapshot(arguments: dict, lang: str = "nb") -> str:
     scope = arguments.get("scope", "one")
-    ts = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+    ts = now_local().strftime("%d.%m.%Y %H:%M:%S")
     if scope in ("all", "alle"):
         prompt_text = arguments.get("spørsmål", "").strip() or t("cam_prompt_all", lang)
         cams = await get_cameras()
@@ -354,7 +389,7 @@ async def _compat_hent_snapshot(arguments: Dict, lang: str = "nb") -> str:
         failed = [n for n, b64 in fetched if b64 is None]
         if not images:
             return t("cam_fetch_failed", lang, ts=ts)
-        prompt = t("cam_prefix_all", lang, cam_list=', '.join(cam_names)) + prompt_text
+        prompt = t("cam_prefix_all", lang, cam_list=", ".join(cam_names)) + prompt_text
         try:
             vlm_result = await ask_llm(prompt=prompt, images=images)
             description = vlm_result.get("text", "").strip() or t("cam_empty_vlm", lang)
@@ -387,7 +422,7 @@ async def _compat_hent_snapshot(arguments: Dict, lang: str = "nb") -> str:
     return f"[{kamera} — {ts}]\n{description}"
 
 
-async def _compat_hent_frigate_hendelser(arguments: Dict, lang: str = "nb") -> str:
+async def _compat_hent_frigate_hendelser(arguments: dict, lang: str = "nb") -> str:
     kamera = arguments.get("kamera", "").strip() or None
     label = arguments.get("label", "").strip() or None
     antall = min(int(arguments.get("antall", 10)), 50)
@@ -405,7 +440,7 @@ async def _compat_hent_frigate_hendelser(arguments: Dict, lang: str = "nb") -> s
     for ev in events:
         ts_raw = ev.get("start_time") or ev.get("ts", 0)
         try:
-            ts_str = datetime.fromtimestamp(float(ts_raw)).strftime("%d.%m %H:%M:%S")
+            ts_str = local_from_ts(float(ts_raw)).strftime("%d.%m %H:%M:%S")
         except Exception:
             ts_str = str(ts_raw)
         cam = ev.get("camera_friendly") or ev.get("camera", "?")
@@ -415,34 +450,30 @@ async def _compat_hent_frigate_hendelser(arguments: Dict, lang: str = "nb") -> s
         face_str = f" — ansikt: {face}" if face else ""
         eid = ev.get("id", "")
         eid_str = f" [event_id: {eid}]" if eid else ""
-        lines.append(f"[{ts_str}] {cam}: {lbl} ({int(float(conf)*100)}%){face_str}{eid_str}")
+        lines.append(f"[{ts_str}] {cam}: {lbl} ({int(float(conf) * 100)}%){face_str}{eid_str}")
     return "\n".join(lines)
 
 
-async def _compat_les_kamerahendelser(arguments: Dict, lang: str = "nb") -> str:
-    navn_filter   = (arguments.get("navn") or "").strip().lower()
+async def _compat_les_kamerahendelser(arguments: dict, lang: str = "nb") -> str:
+    navn_filter = (arguments.get("navn") or "").strip().lower()
     timer_tilbake = min(int(arguments.get("timer_tilbake", 24)), 48)
-    face_path     = Path("/kaare/state/argus/face_events.txt")
+    face_path = Path("/kaare/state/argus/face_events.txt")
     if not face_path.exists():
         return t("cam_no_events", lang)
     try:
-        raw_lines = [l for l in face_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+        raw_lines = [ln for ln in face_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
     except Exception as e:
         return t("cam_events_read_error", lang, error=e)
     if not raw_lines:
         return t("cam_no_events", lang)
-    try:
-        cfg = yaml.safe_load(Path("/kaare/configs/settings.yaml").read_text())
-        local_tz = ZoneInfo(cfg["lokasjon"]["tidssone"])
-    except Exception:
-        local_tz = ZoneInfo("Europe/Oslo")
+    local_tz = get_local_tz()  # location.timezone (legacy lokasjon.tidssone as fallback) — P116 B19
     cutoff = datetime.now(local_tz) - timedelta(hours=timer_tilbake)
     filtered = []
     for line in raw_lines:
         try:
-            inner   = line[1: line.index("]")]
+            inner = line[1 : line.index("]")]
             ts_part = inner.split("→")[0].strip()
-            dt      = datetime.strptime(ts_part, "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
+            dt = datetime.strptime(ts_part, "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
             if dt < cutoff:
                 continue
         except Exception:
@@ -459,7 +490,7 @@ async def _compat_les_kamerahendelser(arguments: Dict, lang: str = "nb") -> str:
     return header + "\n" + "\n".join(filtered)
 
 
-async def _compat_liste_kameraer(arguments: Dict, lang: str = "nb") -> str:
+async def _compat_liste_kameraer(arguments: dict, lang: str = "nb") -> str:
     try:
         cams = await get_cameras()
     except Exception as e:

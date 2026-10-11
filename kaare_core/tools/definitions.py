@@ -8,7 +8,23 @@ All action enum values and parameter names are in English.
 Descriptions are i18n'd via get_tools(lang).
 """
 
+from kaare_core.memory.agenda_themes import THEMES
+from kaare_core.model_lock import restartable_containers
 from kaare_core.tools.i18n import t as _t
+
+
+def _library_wiki_suffix(lang: str) -> str:
+    """Which wikis exist and what each holds — from the wiki registry, never hardcoded
+    (P111 Phase 3: Kåre must see that e.g. the English wiki has no tables)."""
+    # Imported here, not at the top: wiki_registry imports kaare_core.config, and config's
+    # module-level _load_tool_permissions() imports this module → circular import at startup.
+    # PLC0415: circular: definitions ↔ config/model_lock (tests/test_d1_agent_pool_topology.py)
+    from kaare_core.tools import wiki_registry as _wiki_registry  # noqa: PLC0415
+
+    try:
+        return _t("tool_library_wiki_suffix", lang, wikis=_wiki_registry.capability_text(lang))
+    except Exception:
+        return ""
 
 
 def _library_tool(lang: str) -> dict:
@@ -16,18 +32,42 @@ def _library_tool(lang: str) -> dict:
         "type": "function",
         "function": {
             "name": "library",
-            "description": _t("tool_library_desc", lang),
+            "description": _t("tool_library_desc", lang) + _library_wiki_suffix(lang),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["search", "fetch_article", "fetch_url", "online"],
+                        "enum": [
+                            "search",
+                            "fetch_article",
+                            "fetch_table",
+                            "fetch_url",
+                            "online",
+                            "law",
+                        ],
                         "description": _t("tool_library_action_desc", lang),
                     },
                     "query": {
                         "type": "string",
                         "description": _t("tool_library_query_desc", lang),
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": _t("tool_library_task_desc", lang),
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": _t("tool_subject_desc", lang),
+                    },
+                    "keywords": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": _t("tool_library_keywords_desc", lang),
+                    },
+                    "background": {
+                        "type": "boolean",
+                        "description": _t("tool_background_desc", lang),
                     },
                     "title": {
                         "type": "string",
@@ -40,6 +80,19 @@ def _library_tool(lang: str) -> dict:
                     "max_chars": {
                         "type": "integer",
                         "description": _t("tool_library_max_chars_desc", lang),
+                    },
+                    "wiki": {
+                        "type": "string",
+                        "description": _t("tool_library_wiki_desc", lang),
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": _t("tool_library_label_desc", lang),
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["raw", "translated"],
+                        "description": _t("tool_library_mode_desc", lang),
                     },
                 },
                 "required": ["action"],
@@ -53,18 +106,35 @@ def _library_no_online_tool(lang: str) -> dict:
         "type": "function",
         "function": {
             "name": "library",
-            "description": _t("tool_library_no_online_desc", lang),
+            "description": _t("tool_library_no_online_desc", lang) + _library_wiki_suffix(lang),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["search", "fetch_article", "fetch_url"],
+                        "enum": ["search", "fetch_article", "fetch_table", "fetch_url", "law"],
                         "description": _t("tool_library_no_online_action_desc", lang),
                     },
                     "query": {
                         "type": "string",
                         "description": _t("tool_library_query_desc", lang),
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": _t("tool_library_task_desc", lang),
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": _t("tool_subject_desc", lang),
+                    },
+                    "keywords": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": _t("tool_library_keywords_desc", lang),
+                    },
+                    "background": {
+                        "type": "boolean",
+                        "description": _t("tool_background_desc", lang),
                     },
                     "title": {
                         "type": "string",
@@ -77,6 +147,19 @@ def _library_no_online_tool(lang: str) -> dict:
                     "max_chars": {
                         "type": "integer",
                         "description": _t("tool_library_max_chars_desc", lang),
+                    },
+                    "wiki": {
+                        "type": "string",
+                        "description": _t("tool_library_wiki_desc", lang),
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": _t("tool_library_label_desc", lang),
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["raw", "translated"],
+                        "description": _t("tool_library_mode_desc", lang),
                     },
                 },
                 "required": ["action"],
@@ -129,7 +212,15 @@ def _styr_enhet_tool(lang: str) -> dict:
                     },
                     "action": {
                         "type": "string",
-                        "enum": ["turn_on", "turn_off", "toggle", "set_level", "set_color_temp", "set_color", "ha_history"],
+                        "enum": [
+                            "turn_on",
+                            "turn_off",
+                            "toggle",
+                            "set_level",
+                            "set_color_temp",
+                            "set_color",
+                            "ha_history",
+                        ],
                         "description": _t("tool_styr_enhet_action_desc", lang),
                     },
                     "brightness_pct": {
@@ -173,9 +264,31 @@ def _søk_nett_tool(lang: str) -> dict:
                     "query": {
                         "type": "string",
                         "description": _t("tool_søk_nett_query_desc", lang),
-                    }
+                    },
+                    "near_home": {
+                        "type": "boolean",
+                        "description": _t("tool_søk_nett_near_home_desc", lang),
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": _t("tool_subject_desc", lang),
+                    },
+                    "keywords": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": _t("tool_keywords_desc", lang),
+                    },
+                    "stakes": {
+                        "type": "string",
+                        "enum": ["trivial", "normal", "high", "extraordinary"],
+                        "description": _t("tool_stakes_desc", lang),
+                    },
+                    "background": {
+                        "type": "boolean",
+                        "description": _t("tool_background_desc", lang),
+                    },
                 },
-                "required": ["query"],
+                "required": ["query", "near_home", "stakes"],
             },
         },
     }
@@ -471,7 +584,7 @@ def _restart_docker_tool(lang: str) -> dict:
                 "properties": {
                     "container": {
                         "type": "string",
-                        "enum": ["ollama-kare", "ollama-miss_kare", "ollama-library"],
+                        "enum": restartable_containers(),
                         "description": _t("tool_restart_docker_container_desc", lang),
                     },
                 },
@@ -536,8 +649,17 @@ def _verden_tool(lang: str) -> dict:
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["read", "update_field", "add", "delete", "edit",
-                                 "read_var", "set_var", "delete_var", "list_vars"],
+                        "enum": [
+                            "read",
+                            "update_field",
+                            "add",
+                            "delete",
+                            "edit",
+                            "read_var",
+                            "set_var",
+                            "delete_var",
+                            "list_vars",
+                        ],
                         "description": _t("tool_verden_action_desc", lang),
                     },
                     "category": {
@@ -590,7 +712,15 @@ def _brukerprofil_tool(lang: str) -> dict:
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["read", "update", "update_house", "set_field", "edit", "delete", "curiosity"],
+                        "enum": [
+                            "read",
+                            "update",
+                            "update_house",
+                            "set_field",
+                            "edit",
+                            "delete",
+                            "curiosity",
+                        ],
                         "description": _t("tool_brukerprofil_action_desc", lang),
                     },
                     "observation": {
@@ -639,12 +769,36 @@ def _notat_tool(lang: str) -> dict:
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["write", "read", "delete", "clear", "done", "mark_bought", "clear_all", "pin", "unpin"],
+                        "enum": [
+                            "write",
+                            "read",
+                            "delete",
+                            "clear",
+                            "done",
+                            "mark_bought",
+                            "clear_all",
+                            "pin",
+                            "unpin",
+                            "mark_important",
+                            "edit",
+                            "resolve",
+                            "reopen",
+                            "move",
+                        ],
                         "description": _t("tool_notat_action_desc", lang),
                     },
                     "list_name": {
                         "type": "string",
-                        "enum": ["architect", "shopping", "remember", "kare"],
+                        "enum": [
+                            "architect",
+                            "shopping",
+                            "remember",
+                            "kare",
+                            "agenda",
+                            "observations",
+                            "lessons",
+                            "resolved",
+                        ],
                         "description": _t("tool_notat_list_name_desc", lang),
                     },
                     "text": {
@@ -670,6 +824,33 @@ def _notat_tool(lang: str) -> dict:
                     "context": {
                         "type": "string",
                         "description": _t("tool_notat_context_desc", lang),
+                    },
+                    "theme": {
+                        "type": "string",
+                        "enum": list(THEMES),
+                        "description": _t("tool_notat_theme_desc", lang),
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": _t("tool_notat_title_desc", lang),
+                    },
+                    "topic_id": {
+                        "type": "integer",
+                        "description": _t("tool_notat_topic_id_desc", lang),
+                    },
+                    "conclusion": {
+                        "type": "string",
+                        "description": _t("tool_notat_conclusion_desc", lang),
+                    },
+                    "to": {
+                        "type": "string",
+                        "enum": ["observations", "agenda", "lessons"],
+                        "description": _t("tool_notat_to_desc", lang),
+                    },
+                    "note_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": _t("tool_notat_note_ids_desc", lang),
                     },
                     "remind_on_login": {
                         "type": "boolean",
@@ -742,113 +923,35 @@ def _les_tankehistorikk_tool(lang: str) -> dict:
     }
 
 
-def _utforsk_kode_tool(lang: str) -> dict:
+def _self_trace_tool(lang: str) -> dict:
+    """Kåre's own self-improvement trace view — NOT system exploration (that's Mechanic's
+    job now, see Fase B / P104). Deliberately kept narrow: only fetch_trace/trace_patterns,
+    the two actions that inspect Kåre's own response history rather than the live system."""
     return {
         "type": "function",
         "function": {
-            "name": "explore_code",
-            "description": _t("tool_utforsk_kode_desc", lang),
+            "name": "self_trace",
+            "description": _t("tool_self_trace_desc", lang),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["read", "list", "search"],
-                        "description": _t("tool_utforsk_kode_action_desc", lang),
-                    },
-                    "path": {
-                        "type": "string",
-                        "description": _t("tool_utforsk_kode_path_desc", lang),
-                    },
-                    "from_line": {
-                        "type": "integer",
-                        "description": _t("tool_utforsk_kode_from_line_desc", lang),
-                    },
-                    "to_line": {
-                        "type": "integer",
-                        "description": _t("tool_utforsk_kode_to_line_desc", lang),
-                    },
-                    "directory": {
-                        "type": "string",
-                        "description": _t("tool_utforsk_kode_directory_desc", lang),
-                    },
-                    "recursive": {
-                        "type": "boolean",
-                        "description": _t("tool_utforsk_kode_recursive_desc", lang),
-                    },
-                    "pattern": {
-                        "type": "string",
-                        "description": _t("tool_utforsk_kode_pattern_desc", lang),
-                    },
-                },
-                "required": ["action"],
-            },
-        },
-    }
-
-
-def _inspiser_system_tool(lang: str) -> dict:
-    return {
-        "type": "function",
-        "function": {
-            "name": "inspect_system",
-            "description": _t("tool_inspiser_system_desc", lang),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "action": {
-                        "type": "string",
-                        "enum": ["log", "services", "resources", "git_diff", "git_log", "fetch_trace", "trace_patterns"],
-                        "description": _t("tool_inspiser_system_action_desc", lang),
-                    },
-                    "file": {
-                        "type": "string",
-                        "description": _t("tool_inspiser_system_file_desc", lang),
-                    },
-                    "lines": {
-                        "type": "integer",
-                        "description": _t("tool_inspiser_system_lines_desc", lang),
-                    },
-                    "pattern": {
-                        "type": "string",
-                        "description": _t("tool_inspiser_system_pattern_desc", lang),
-                    },
-                    "max_hits": {
-                        "type": "integer",
-                        "description": _t("tool_inspiser_system_max_hits_desc", lang),
-                    },
-                    "from_line": {
-                        "type": "integer",
-                        "description": _t("tool_inspiser_system_from_line_desc", lang),
-                    },
-                    "to_line": {
-                        "type": "integer",
-                        "description": _t("tool_inspiser_system_to_line_desc", lang),
-                    },
-                    "service": {
-                        "type": "string",
-                        "description": _t("tool_inspiser_system_service_desc", lang),
-                    },
-                    "log_lines": {
-                        "type": "integer",
-                        "description": _t("tool_inspiser_system_log_lines_desc", lang),
-                    },
-                    "path": {
-                        "type": "string",
-                        "description": _t("tool_inspiser_system_path_desc", lang),
-                    },
-                    "count": {
-                        "type": "integer",
-                        "description": _t("tool_inspiser_system_count_desc", lang),
+                        "enum": ["fetch_trace", "trace_patterns"],
+                        "description": _t("tool_self_trace_action_desc", lang),
                     },
                     "rid": {
                         "type": "string",
-                        "description": _t("tool_inspiser_system_rid_desc", lang),
+                        "description": _t("tool_self_trace_rid_desc", lang),
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": _t("tool_self_trace_count_desc", lang),
                     },
                     "source": {
                         "type": "string",
                         "enum": ["user", "refl", "meet", "all"],
-                        "description": _t("tool_inspiser_system_source_desc", lang),
+                        "description": _t("tool_self_trace_source_desc", lang),
                     },
                 },
                 "required": ["action"],
@@ -910,56 +1013,6 @@ def _kamera_tool(lang: str) -> dict:
                     },
                 },
                 "required": ["action"],
-            },
-        },
-    }
-
-
-def _ssh_kommando_tool(lang: str) -> dict:
-    from kaare_core.config import get_ssh_nodes
-    node_ids = list(get_ssh_nodes().get("nodes", {}).keys())
-    if node_ids:
-        node_schema: dict = {"type": "string", "enum": node_ids}
-    else:
-        node_schema = {"type": "string", "description": "No SSH nodes configured."}
-    return {
-        "type": "function",
-        "function": {
-            "name": "ssh_command",
-            "description": _t("tool_ssh_kommando_desc", lang),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "node": {
-                        **node_schema,
-                        "description": _t("tool_ssh_kommando_node_desc", lang),
-                    },
-                    "command": {
-                        "type": "string",
-                        "description": _t("tool_ssh_kommando_command_desc", lang),
-                    },
-                },
-                "required": ["node", "command"],
-            },
-        },
-    }
-
-
-def _local_kommando_tool(lang: str) -> dict:
-    return {
-        "type": "function",
-        "function": {
-            "name": "local_command",
-            "description": _t("tool_local_kommando_desc", lang),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": _t("tool_local_kommando_command_desc", lang),
-                    }
-                },
-                "required": ["command"],
             },
         },
     }
@@ -1048,9 +1101,17 @@ def _media_tool(lang: str) -> dict:
                     "action": {
                         "type": "string",
                         "enum": [
-                            "plex_sessions", "plex_history", "plex_search",
-                            "plex_library", "plex_episodes", "plex_clients", "plex_play",
-                            "radio_status", "radio_play", "radio_stop", "radio_volume",
+                            "plex_sessions",
+                            "plex_history",
+                            "plex_search",
+                            "plex_library",
+                            "plex_episodes",
+                            "plex_clients",
+                            "plex_play",
+                            "radio_status",
+                            "radio_play",
+                            "radio_stop",
+                            "radio_volume",
                         ],
                         "description": _t("tool_media_action_desc", lang),
                     },
@@ -1168,6 +1229,31 @@ def _skriv_reflex_tool(lang: str) -> dict:
     }
 
 
+def _dev_proposals_tool(lang: str) -> dict:
+    return {
+        "type": "function",
+        "function": {
+            "name": "dev_proposals",
+            "description": _t("tool_dev_proposals_desc", lang),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["list", "confirm", "reject"],
+                        "description": _t("tool_dev_proposals_action_desc", lang),
+                    },
+                    "proposal_id": {
+                        "type": "integer",
+                        "description": _t("tool_dev_proposals_id_desc", lang),
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    }
+
+
 def _household_tool(lang: str) -> dict:
     return {
         "type": "function",
@@ -1228,14 +1314,11 @@ def get_tools(lang: str = "nb") -> list:
         # Reasoning and reflection
         _reason_freely_tool(lang),
         _les_tankehistorikk_tool(lang),
-        # Code and files
-        _utforsk_kode_tool(lang),
-        _inspiser_system_tool(lang),
+        # Self-improvement trace (fetch_trace/trace_patterns only — code/system
+        # exploration and shell access moved to Mechanic, see Fase B / P104)
+        _self_trace_tool(lang),
         # Cameras
         _kamera_tool(lang),
-        # Shell commands
-        _ssh_kommando_tool(lang),
-        _local_kommando_tool(lang),
         # Images
         _kare_image_tool(lang),
         _se_bilder_tool(lang),
@@ -1245,6 +1328,8 @@ def get_tools(lang: str = "nb") -> list:
         _announce_tool(lang),
         # Reflex learning
         _skriv_reflex_tool(lang),
+        # Dev slot proposals (P118 B4) — admin only: not in any role list in tool_permissions.yaml
+        _dev_proposals_tool(lang),
         # Household presence mode
         _household_tool(lang),
     ]
@@ -1266,30 +1351,28 @@ LIBRARY_NO_ONLINE = get_library_no_online("nb")
 # are never filtered — handled in filter_tools_by_model().
 TOOL_MODEL_TIERS: dict[str, float] = {
     # Tier 0 — any model (0.8B+)
-    "timer":           0.0,
-    "note":            0.0,
-    "ha_control":      0.0,
-    "ha_read":         0.0,
-    "get_weather":     0.0,
-    "announce":        0.0,
+    "timer": 0.0,
+    "note": 0.0,
+    "ha_control": 0.0,
+    "ha_read": 0.0,
+    "get_weather": 0.0,
+    "announce": 0.0,
     # Tier 3 — needs 3B+ to reason about context and search results
-    "web_search":      3.0,
-    "library":         3.0,
-    "memory":          3.0,
-    "camera":          3.0,
-    "read_meeting":    3.0,
-    "kare_image":      3.0,
-    "view_images":     3.0,
-    "media":           3.0,
+    "web_search": 3.0,
+    "library": 3.0,
+    "memory": 3.0,
+    "camera": 3.0,
+    "read_meeting": 3.0,
+    "kare_image": 3.0,
+    "view_images": 3.0,
+    "media": 3.0,
     # Tier 9 — needs 9B+ for multi-step reasoning, shell access, delegation
-    "mechanic":              9.0,
-    "explore_code":          9.0,
-    "inspect_system":        9.0,
-    "ssh_command":           9.0,
-    "local_command":         9.0,
+    "mechanic": 9.0,
+    "self_trace": 9.0,
     "restart_docker_container": 9.0,
-    "search_argus":          9.0,
-    "reason_freely":         9.0,
-    "write_reflex":          9.0,
-    "household":             0.0,
+    "search_argus": 9.0,
+    "reason_freely": 9.0,
+    "write_reflex": 9.0,
+    "dev_proposals": 9.0,
+    "household": 0.0,
 }

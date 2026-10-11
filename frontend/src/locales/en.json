@@ -52,6 +52,9 @@
     "restarting": "Restarting...",
     "container_restarted": "Container restarted",
     "restart_failed": "Restart failed",
+    "vllm_loading": "Loading model…",
+    "vllm_rolling_back": "Failed – restoring previous container…",
+    "vllm_rolled_back": "New container did not start – previous container restored",
     "test": "Test",
     "testing": "Testing...",
     "copy": "Copy",
@@ -128,6 +131,32 @@
           "en": "English",
           "de": "German"
         }
+      },
+      "network": {
+        "title": "Network and access",
+        "description": "Which addresses count as home and VPN, which reverse proxies KTSB trusts, and whether the API documentation is open. Changes apply at once.",
+        "local_subnets_label": "Local subnets",
+        "local_subnets_hint": "Your home network, comma-separated (e.g. 192.168.0.0/24). Users from here count as at home.",
+        "vpn_subnet_label": "VPN subnet",
+        "vpn_subnet_hint": "The addresses WireGuard clients get (e.g. 10.0.0.0/24).",
+        "trusted_proxies_label": "Trusted proxies",
+        "trusted_proxies_hint": "Only these may state the client's address (X-Forwarded-For). IP, subnet or host name, comma-separated. Default: caddy, 127.0.0.1, ::1. Add your own reverse proxy here.",
+        "api_docs_label": "API documentation",
+        "api_docs_hint": "Opens /docs, /redoc and /openapi.json. Off by default — the map of every endpoint is useful to an attacker."
+      },
+      "logs": {
+        "title": "Logs and data",
+        "description": "How often logs are written to disk, and how long conversations and memories are kept.",
+        "flush_label": "Log write interval (seconds)",
+        "flush_hint": "Log lines are collected in memory and written to disk together. Low values mean many small writes (more I/O, faster SD-card wear). High values mean more lines can be lost in a power cut. 0 = write every line at once. Recommended: 2–10.",
+        "flush_warn_low": "Many small disk writes — more I/O and faster wear on SD cards/eMMC.",
+        "flush_warn_high": "In a power cut or crash, up to {{seconds}} seconds of log lines can be lost.",
+        "interactions_label": "Keep conversations (days)",
+        "episodes_label": "Keep episodes/memories (days)",
+        "think_label": "Keep thought history (days)",
+        "retention_hint": "0 = keep forever (the disk keeps growing). A number = older data is permanently deleted at night, and the assistant can no longer remember or look it up.",
+        "retention_warn_low": "Very short: everything older than {{days}} days is permanently deleted every night.",
+        "load_error": "Could not load the settings."
       }
     },
     "ha": {
@@ -137,7 +166,9 @@
         "url_label": "Home Assistant URL",
         "url_hint": "E.g. http://192.168.0.x:8123",
         "timeout_label": "Timeout (seconds)",
-        "timeout_hint": "Max wait time per HA call"
+        "timeout_hint": "Max wait time per HA call",
+        "enabled_label": "Home Assistant on",
+        "enabled_hint": "Off: Kåre controls no devices and reads no HA sensors. The setup wizard turns it on once URL and token are saved. A new URL or token takes effect immediately."
       },
       "token": {
         "title": "Home Assistant Token",
@@ -204,13 +235,13 @@
       "subtitle": "Messages between agents",
       "refresh": "Refresh",
       "loading": "Loading…",
-      "empty": "No agent communication logged yet. Happens the first time Kåre asks an agent something.",
-      "question": "Question",
-      "answer": "Answer"
+      "empty": "No agent communication logged yet. Happens the first time Kåre asks an agent something."
     },
     "llm": {
       "description": "One section per LLM role. Stored in configs/llm.yaml. Restart the affected service after changes.",
       "ctx_warning": "All calls to the same Ollama instance MUST use identical num_ctx — mismatch forces full model reload (~3.5 min).",
+      "model_missing": "The model «{{model}}» is not downloaded in Ollama — this role won't work until it is.",
+      "model_unreachable": "Can't reach {{url}} — unable to check whether the model is downloaded.",
       "whisper_lang_note": "STT language follows the chat language (kare_language, set under General) — no separate switch here.",
       "whisper_lang_warning": "The model \"{{model}}\" likely only supports {{supported}} — not \"{{lang}}\". STT accuracy may suffer.",
       "whisper_backend_hint": "faster_whisper works on all platforms (CPU/GPU). openvino requires an Intel Arc GPU and OpenVINO GenAI — used with NbAiLab/nb-whisper-large.",
@@ -218,7 +249,7 @@
       "restart_restarted": "Restarted",
       "restart_generic_error": "Restart failed",
       "restart_needed_hint": "A restart is required for changes to take effect.",
-      "memembed_title": "Semantic memory (MiniLM)",
+      "memembed_title": "Semantic memory",
       "memembed_intro": "384-dim embedding for semantic memory search. Uses {{model}} (ONNX).",
       "memembed_files": "The model must be stored locally — place these files in the folder below:",
       "memembed_model_dir_label": "Model folder",
@@ -251,17 +282,6 @@
       "whisper_fw_select": "CPU universal (faster-whisper)",
       "whisper_modeldir_label": "Model folder (OpenVINO IR)",
       "whisper_modeldir_hint": "Path to an already-converted OpenVINO IR model. Contains openvino_encoder_model.xml, openvino_decoder_model.xml, etc.",
-      "whisper_ov_preset_label": "NbAiLab/nb-whisper-large (OpenVINO IR, converted)",
-      "whisper_ov_preset_note": "Norwegian (National Library) — in use now",
-      "whisper_ov_disclaimer": "{{model}} is OpenVINO IR-converted and lives locally on disk. The model supports {{tokenNo}} and {{tokenNn}} — not {{tokenNb}}. Works best when the chat language (General) is set to Norwegian.",
-      "whisper_model_label": "Model",
-      "whisper_model_hint": "HuggingFace model name or path to a CTranslate2-converted model. Downloaded automatically on first start.",
-      "whisper_fw_preset_best": "Best quality (OpenAI)",
-      "whisper_fw_preset_faster": "Faster, nearly as good",
-      "whisper_fw_preset_balanced": "Good balance",
-      "whisper_fw_preset_fast_less_accurate": "Fast, lower accuracy",
-      "whisper_fw_norsk_optimized_title": "Norwegian-optimized (NbAiLab):",
-      "whisper_fw_norsk_optimized_body": "Use {{model}} with the OpenVINO backend (converted model already available locally). For faster-whisper it must be converted: {{cmd}}",
       "whisper_compute_label": "Compute type",
       "whisper_compute_hint": "int8 is recommended for most cases. float16/int8_float16 require a GPU. float32 works on CPU without special hardware.",
       "whisper_compute_int8": "int8 – standard (recommended)",
@@ -299,6 +319,7 @@
       "image_provider_hint": "What type of image generation service",
       "image_timeout_hint": "Max wait time per image generation. Empty = no limit.",
       "ollama_params": "Ollama inference parameters",
+      "agent_pool_note": "Shared agent pool ({{roles}}): thinking, context and sampling are common to all these roles — a change here changes it for all of them. Only max answer length (num_predict) is per role.",
       "vllm_params": "vLLM inference parameters",
       "vllm_docker_params": "vLLM Docker parameters — requires container restart to take effect",
       "reason_freely_title": "Reason Freely tool",
@@ -309,9 +330,9 @@
       "think_unset": "Not set",
       "think_enabled": "Enabled (full reasoning)",
       "think_disabled": "Disabled",
-      "role_fallback_desc": "Step 2 of 3 — activated if 27B fails, cloud LLM is last resort",
+      "role_fallback_desc": "Step 2 — takes over when the main model does not answer. The cloud is only used when you ask for it («ask online»).",
       "share_with_label": "Share model with Miss Kåre",
-      "share_with_active_note": "Mechanic shares model and settings with Miss Kåre. Edit in the Miss Kåre card. Requires restart of kaare.service to take effect.",
+      "share_with_active_note": "Mechanic shares model and settings with Miss Kåre. Edit in the Miss Kåre card. Changes apply at once.",
       "providers": {
         "ollama": "Ollama (local)",
         "vllm": "vLLM (local, OpenAI-compatible)",
@@ -489,7 +510,77 @@
         "remote_section_hint": "The remote machine pushes Jing/Jang thoughts here. Copy the token to that machine's configs/services.yaml (inner_voices.push_token).",
         "push_token": "Push token",
         "generate_token": "Generate new"
-      }
+      },
+      "basic_mode_note": "Basic mode: this model handles conversation, but tool use is unreliable. For KTSB as intended: 27B on a 24 GB+ GPU.",
+      "memembed_intro2": "Lets Kåre find old conversations by meaning, not just words — also when you ask in another language than the memory was written in. Pick a size: a larger model finds better matches but uses more disk and memory.",
+      "memembed_tier_small": "Small",
+      "memembed_tier_medium": "Medium",
+      "memembed_tier_large": "Large",
+      "memembed_tier_legacy": "Earlier default",
+      "memembed_note_minilm_int8": "Fastest and smallest. Suits low-power machines (Raspberry Pi, mini PC).",
+      "memembed_note_mpnet": "Clearly better matches in Norwegian, English and German. Recommended when the machine has a few GB of free memory.",
+      "memembed_note_bge_m3": "Best matches. Uses the Embedding service (BGE-M3) that also serves the wiki — no separate download here, but slower per search.",
+      "memembed_note_minilm": "The model KTSB used before. Works, but weakest in Norwegian.",
+      "memembed_points": "{{n}} memories indexed",
+      "memembed_active": "In use",
+      "memembed_downloaded": "Downloaded",
+      "memembed_download_btn": "Download",
+      "memembed_use_btn": "Use this",
+      "memembed_needs_embedding": "Turn on the «Embedding (BGE-M3)» card further up this page first.",
+      "memembed_switch_warning": "Memory search is rebuilt from the stored conversations. It takes from a few seconds to a few minutes, and search is weaker while it runs. No memories are deleted and the old search index is kept, so you can switch back at any time. Memories that cannot be read (encrypted without a key) are left out of the new index.",
+      "memembed_switch_confirm": "Switch and rebuild",
+      "memembed_download_done": "Downloaded — press «Use this» to start using it.",
+      "memembed_switch_done": "Done: {{indexed}} of {{total}} memories indexed.",
+      "memembed_switch_skipped": "{{n}} could not be read and are left out.",
+      "memembed_phase_start": "Starting …",
+      "memembed_phase_download": "Downloading",
+      "memembed_phase_config": "Saving the choice …",
+      "memembed_phase_restart": "Restarting the memory service with the new model …",
+      "memembed_phase_reindex": "Rebuilding memory search",
+      "memembed_phase_done": "Finishing …",
+      "memembed_err_permission": "Cannot write to the model folder. Pick another one under «Model storage» (Expert), or give KTSB write access to the folder.",
+      "memembed_err_download_failed": "The download failed. Check the internet connection and try again.",
+      "memembed_err_service_not_ready": "The memory service did not come up with the new model. The previous model has been put back.",
+      "memembed_err_reindex_failed": "Rebuilding memory search failed. Try «Use this» again.",
+      "memembed_err_not_downloaded": "The model has not been downloaded yet.",
+      "memembed_err_embedding_service_off": "The Embedding service (BGE-M3) is off. Turn it on first.",
+      "memembed_err_generic": "Something went wrong. Try again.",
+      "memembed_model_dir_hint": "Optional: read the model in use from another folder. Empty = the folder it was downloaded to.",
+      "models_dir_title": "Model storage",
+      "models_dir_label": "Folder for downloaded models",
+      "models_dir_hint": "KTSB puts models you download from this page here (each feature gets its own sub-folder). In Docker: /kaare/models = the models/ folder next to docker-compose.yml.",
+      "stt_title": "Whisper (speech-to-text)",
+      "stt_intro_nb": "Turns speech into text. For Norwegian, the National Library of Norway's NB-Whisper is used — far better on Bokmål than the standard model at every size. Runs on the CPU.",
+      "stt_intro_other": "Turns speech into text with OpenAI's multilingual Whisper, which is strong in English and German. Runs on the CPU.",
+      "stt_note_small": "Fast enough for most machines — recommended start.",
+      "stt_note_medium": "Better in noise, but a couple of seconds per sentence on an ordinary CPU.",
+      "stt_note_large": "Best, but slow on a CPU — for powerful machines.",
+      "stt_custom_label": "Own model",
+      "stt_custom_field_label": "Other model",
+      "stt_custom_field_hint": "Hugging Face name (org/name) or link to a CTranslate2-converted Whisper (faster-whisper). Checked before download.",
+      "stt_openvino_active": "In use now: the OpenVINO model «{{model}}» (Expert). Choosing a model below moves speech recognition to the CPU.",
+      "stt_switch_warning": "Speech recognition restarts with this model — voice control is unavailable for a few seconds.",
+      "stt_switch_from_openvino": "It switches from OpenVINO (iGPU) to the CPU; you can switch back under Expert → Backend.",
+      "stt_switch_confirm": "Switch model",
+      "stt_download_done": "Downloaded — press «Use this» to start using it.",
+      "stt_switch_done": "Switched — speech recognition is loading the model (large models take a moment the first time).",
+      "stt_phase_check": "Checking the model on Hugging Face …",
+      "stt_err_not_found": "That model was not found on Hugging Face.",
+      "stt_err_not_ct2": "The model is not a CTranslate2 conversion (no model.bin/config.json) and cannot be used by faster-whisper.",
+      "stt_err_bad_repo": "Enter a Hugging Face name (org/name) or a huggingface.co link.",
+      "stt_err_not_downloaded": "The model has not been downloaded yet.",
+      "stt_err_restart_failed": "The choice is saved, but speech recognition could not be restarted. Use «Restart service» (Expert).",
+      "stt_err_permission": "Cannot write to the model folder. Pick another under «Model storage» (Expert), or give KTSB write access.",
+      "stt_err_download_failed": "The download failed. Check the internet connection and try again.",
+      "stt_threads_label": "CPU threads",
+      "stt_threads_hint": "Auto = half the cores (at least 2, at most 8). Measured: 4→8 threads answers 10–25 % faster; more than 8 rarely helps. Needs a service restart.",
+      "stt_threads_auto": "Auto (recommended)",
+      "memembed_selected": "Selected — not running",
+      "media_host_label": "LAN address for speakers",
+      "media_host_hint": "The address speakers on your network (ESP32, Chromecast, Home Assistant media players) fetch Kåre's audio from. Empty = detected automatically (now: {{detected}}).",
+      "media_host_hint_docker": "The address speakers on your network (ESP32, Chromecast, Home Assistant media players) fetch Kåre's audio from. In Docker it cannot be detected — enter the LAN address of the machine KTSB runs on.",
+      "media_host_use": "Use {{host}}",
+      "media_host_not_applied": "Saved. The voice service did not answer — the address is used when it starts."
     },
     "nettsok": {
       "weather": {
@@ -557,13 +648,13 @@
       },
       "websearch": {
         "title": "Web search",
-        "description": "Choose search provider. DDG requires no configuration and is the default. SearXNG requires a running instance. Brave requires an API key. Stored in configs/services.yaml.",
+        "description": "Choose the search engine. SearXNG (self-hosted, no key) is the default and ships with Docker. Brave needs an API key. KTSB identifies itself honestly, obeys robots.txt and never fetches from internal addresses.",
         "provider_label": "Provider",
-        "provider_hint": "Primary search provider. DDG works without a key.",
+        "provider_hint": "Primary search engine. SearXNG works without a key (Docker: http://searxng:8080).",
         "fallback_label": "Fallback",
-        "fallback_hint": "Used automatically if the primary provider fails or returns 0 results.",
+        "fallback_hint": "Used automatically if the primary engine fails or returns 0 hits. \"None\" = no fallback.",
         "searxng_url_label": "SearXNG URL",
-        "searxng_url_hint": "URL to your SearXNG instance (e.g. http://localhost:8888).",
+        "searxng_url_hint": "Address of SearXNG. In Docker: http://searxng:8080 (bundled). Otherwise your own instance.",
         "fetch_count_label": "Results to fetch",
         "fetch_count_hint": "Total number of results to request from provider",
         "max_results_label": "Max sources used",
@@ -576,15 +667,62 @@
         "brave_lang_hint": "BCP 47 language code (no, en, de, …).",
         "brave_key_label": "Brave API key",
         "brave_key_unset_hint": "Not set — only required if Brave is chosen as provider",
-        "hot_reload_hint": "Run hot-reload in Maintenance for changes to take effect"
+        "hot_reload_hint": "Changes apply as soon as you save.",
+        "fallback_none": "None",
+        "total_timeout_label": "Max time per search (s)",
+        "total_timeout_hint": "The whole search — engine, page fetches and summary — is stopped after this, and Kåre is told.",
+        "fetch_timeout_label": "Timeout per page (s)",
+        "fetch_timeout_hint": "How long one web page may take to answer.",
+        "max_bytes_label": "Max page size (bytes)",
+        "max_bytes_hint": "Larger pages are refused. Only text/HTML is read.",
+        "host_interval_label": "Pause between calls to the same site (s)",
+        "host_interval_hint": "Politeness: at least this long between two requests to the same website.",
+        "cache_ttl_label": "Remember fetched pages (s)",
+        "cache_ttl_hint": "How long a fetched page is reused from memory before it is fetched again.",
+        "cache_max_label": "Max pages in memory",
+        "cache_max_hint": "Number of fetched pages remembered at once (RAM only, not disk).",
+        "trusted_slots_label": "Places for trusted sources",
+        "trusted_slots_hint": "Out of «Max sources used», trusted sources get this many places first; the open web fills the rest.",
+        "paid_calls_label": "Paid searches today (since last restart):",
+        "official_timeout_label": "Time for official site (s)",
+        "official_timeout_hint": "How long KTSB looks for the subject's official website (via Wikidata) before the search continues without it.",
+        "background_timeout_label": "Time for a work round (s)",
+        "background_timeout_hint": "How long a search Kåre sends off in the background may run. Kåre answers you at once and comes back with the result."
       },
       "trusted": {
         "title": "Whitelisted websites",
-        "description": "Only these domains are used when Kåre searches for information online. Stored in configs/trusted_sources.yaml. Requires hot-reload to activate.",
-        "hot_reload_hint": "Changes to whitelisted websites take effect by running 'Hot-reload' in the Maintenance tab.",
+        "description": "The domains below are the household's trusted sources — they get the places first and are labelled «trusted source». Choose what kind of source each domain is and how much you trust it. Changes apply immediately.",
+        "hot_reload_hint": "Changes apply as soon as you save — no hot-reload needed. Domains are stored without http://, www. and path.",
         "short_desc_placeholder": "Short description",
         "domain_format_hint": "Without http:// or www.",
-        "new_category_placeholder": "new_category_key"
+        "new_category_placeholder": "new_category_key",
+        "open_web_label": "Use the open web",
+        "open_web_hint": "On: results outside the list are used too, labelled «open web» and weighted lower. Off: only the domains below are used.",
+        "blocked_title": "Blocked websites",
+        "blocked_hint": "These domains are never used — neither in searches nor when Kåre opens a link. Saved immediately.",
+        "type_public_authority": "Public authority",
+        "type_encyclopedia": "Encyclopedia / reference",
+        "type_newsroom": "Newsroom",
+        "type_research": "Research / expert body",
+        "type_official": "Official site of something",
+        "type_other_serious": "Other serious website",
+        "trust_high": "High",
+        "trust_normal": "Normal",
+        "trust_low": "Low",
+        "caution_label": "How careful should Kåre be with what he finds?",
+        "caution_hint": "Careful: Kåre needs more before calling something «likely», and asks you to check yourself more often. Balanced: default. Open: slightly lower bar.",
+        "caution_careful": "Careful",
+        "caution_balanced": "Balanced",
+        "caution_open": "Open"
+      },
+      "law": {
+        "title": "Norwegian law (Lovdata)",
+        "description": "Current Norwegian laws and central regulations from Lovdata's open datasets (NLOD 2.0). Downloaded once per night and searched locally — KTSB never fetches pages from lovdata.no, as Lovdata asks. Kåre uses it when a question is about Norwegian law.",
+        "enabled_label": "Use Norwegian law",
+        "enabled_hint": "Switch on to download and search the laws. First download: press «Update now» (about 10 MB, a few seconds).",
+        "status": "Last updated {{date}} — {{docs}} documents, {{paras}} paragraphs.",
+        "status_none": "Not downloaded yet.",
+        "refresh": "Update now"
       }
     },
     "refleksjon": {
@@ -634,7 +772,7 @@
       },
       "selfimage": {
         "title": "Kåre's self-image",
-        "description": "Kåre can write observations about itself to personality_self.md — a file that shapes who it is over time. Here you control which users can influence this self-image. Takes effect immediately.",
+        "description": "Kåre can write observations about itself to its self-image — knowledge that shapes who it is over time. Here you control which users can influence this through conversation. Kåre's own autonomous observations (from reflection) are always allowed, regardless of this setting. Takes effect immediately.",
         "name_label": "Assistant name",
         "name_hint": "The name the assistant introduces itself with. Injected into system prompt on hot-reload.",
         "hotword_label": "Hotword",
@@ -667,6 +805,45 @@
           "admin_only_label": "Admin only",
           "admin_only_desc": "Only admin users can approve or reject proposals."
         }
+      },
+      "memory": {
+        "title": "Kåre's memory",
+        "description": "How Kåre's drawers (reminder list, observations, lessons, resolved topics) reach the prompt, and who can mark a topic resolved. Applies from the next message.",
+        "load_error": "Could not load the settings.",
+        "resolve_roles_label": "Who can mark a topic resolved",
+        "resolve_roles_hint": "When a topic is settled in a conversation, Kåre can mark it resolved. It is locked, and new observations about the same become echoes instead of new topics. Background loops can never do this.",
+        "roles": {
+          "admin": "Admin",
+          "adult": "Adult",
+          "young_adult": "Young adult",
+          "teen": "Teen",
+          "child": "Child"
+        },
+        "relevance_label": "«Relevant now»",
+        "relevance_hint": "Searches notes and knowledge for every message and attaches the most relevant ones in full text. Needs an embedding service: turn on the «BGE-M3 (Embeddings)» or «Semantic memory» card under Settings → LLM / Models. Without one only the index is shown.",
+        "relevance_inactive": "Inactive — no embedding service is on. Turn on «BGE-M3 (Embeddings)» or «Semantic memory» under Settings → LLM / Models.",
+        "top_k_label": "Number of relevant hits",
+        "top_k_hint": "How many notes are attached in full text (default 3).",
+        "lessons_max_chars_label": "Lessons (chars)",
+        "lessons_max_chars_hint": "Cap for the lessons block that is always in the prompt.",
+        "lessons_write_max_chars_label": "Length per lesson (chars)",
+        "lessons_write_max_chars_hint": "How long one lesson may be when Kåre writes it. A lesson is one rule, not a story.",
+        "core_facts_max_chars_label": "Core facts (chars)",
+        "core_facts_max_chars_hint": "Cap for the most important world facts and resolved topics shown as text; the rest is shown as an index.",
+        "index_max_chars_label": "Index (chars)",
+        "index_max_chars_hint": "Cap for the index of the other world facts.",
+        "min_score_label": "Hit threshold",
+        "min_score_hint": "How similar a note must be to the message to be attached (0–1, default 0.50).",
+        "echo_min_score_label": "Echo threshold",
+        "echo_min_score_hint": "How similar a new row must be to a resolved topic to count as an echo (default 0.60). Lower catches more but can hide real new faults.",
+        "kare_injection_max_chars_label": "Reminder list index (chars)",
+        "kare_injection_max_chars_hint": "Cap for the index of Kåre's reminder list in the prompt.",
+        "kare_note_prompt_chars_label": "Per note in the prompt (chars)",
+        "kare_note_prompt_chars_hint": "No single note can take more than this.",
+        "kare_write_max_chars_label": "Max reminder note length",
+        "kare_write_max_chars_hint": "Longer text is refused and Kåre is told to use observations, agenda or lessons (default 600).",
+        "kare_max_entries_label": "Max reminder notes",
+        "kare_max_entries_hint": "The oldest unpinned ones are cleared when the list is full."
       }
     },
     "integrasjoner": {
@@ -691,7 +868,7 @@
         "timeout_hint": "Max wait time per Plex call",
         "token_label": "Plex token",
         "token_placeholder": "Paste new Plex token",
-        "token_warning": "Service restart (kaare.service) required for new Plex token to activate."
+        "token_warning": "A new Plex token applies at once."
       }
     },
     "distribusjon": {
@@ -747,6 +924,7 @@
       "miss_kare": {
         "label": "Miss Kåre",
         "description": "Evaluator – sits on the sideline and comments on the conversation. Can look up facts from Miss Library.",
+        "locked_personality_hint": "Miss Kåre has one fixed personality, the same in chat, in the portrait night job and in the reflection meeting. It follows the language chosen for the user.",
         "roles": {
           "empatisk_label": "Empathic",
           "empatisk_desc": "Warm and caring – focus on the user's emotional life and human side. Default behaviour.",
@@ -772,7 +950,7 @@
         "søk_argus": "søk_argus",
         "søk_argus_desc": "Search the Argus event log (Qdrant).",
         "shell": "shell",
-        "shell_desc": "Run shell commands locally or on connected nodes. Enable only when needed.",
+        "shell_desc": "Mechanic can run read commands locally or on connected nodes — read only, never change, write or delete (chaining like ; && $( > is rejected). This is the only switch for shell. Every command is written to the audit log.",
         "hukommelse": "hukommelse",
         "hukommelse_desc": "Mechanic's personal memory – persists between meetings.",
         "spør_miss_library": "spør_miss_library",
@@ -825,7 +1003,13 @@
       "optional_badge": "Optional",
       "description": "Kåre works without all of these. Fill in what you have — or skip and configure via Settings → Integrations later.",
       "save_finish": "Save and finish",
-      "skip": "Skip"
+      "skip": "Skip",
+      "ha_token_label": "Home Assistant token (long-lived)",
+      "ha_token_hint": "Create it in Home Assistant: your profile → Security → Long-lived access tokens. With URL and token, Home Assistant is turned on.",
+      "network_title": "Network",
+      "subnet_label": "Your local network",
+      "subnet_hint": "Suggested from where you are connecting. Devices here count as «home». Empty = every 192.168.x.x network. Change it later in Settings → General → Network and access (Expert).",
+      "media_host_hint": "Only for speakers on your network (ESP32, Chromecast, Home Assistant). Suggested: the address you opened KTSB on. Change it under Settings → LLM → Piper."
     },
     "ferdig": {
       "title": "Kåre is ready!",
@@ -976,16 +1160,16 @@
       "cat_kaare_memory": "Kåre's personal memories (semantic search)",
       "cat_argus_events": "Argus log (system events — can be large)",
       "cat_personality": "Kåre's personality (personality_self, world model)",
-      "cat_user_profiles": "User profiles (observations, per-user data)",
-      "cat_notes_state": "Notes & state (notepad, timers, meeting topics)",
-      "cat_secrets": "Secrets (API keys & tokens)",
-      "cat_images": "Generated images (may be large)",
+      "cat_user_profiles": "User profiles (observations, per-user data, conversation archive)",
+      "cat_notes_state": "Notes and state (notepad, timers, lists, meeting topics, home mode, security corrections)",
+      "cat_secrets": "Secrets (API keys, tokens and VPN client keys)",
+      "cat_images": "Images (generated and uploaded — can be large)",
       "user_keys_required": "Required — auto-included with encrypted categories",
-      "secrets_warning": "This ZIP will contain API keys and tokens. Never share this file.",
+      "secrets_warning": "This ZIP file will contain API keys, tokens and VPN client keys. Never share this file.",
       "download_button": "Download backup",
       "downloading": "Building ZIP…",
       "restore_section": "Restore from backup",
-      "restore_warning": "This will overwrite current data. Kåre will restart automatically if memory is restored.",
+      "restore_warning": "This will overwrite current data. Kåre will restart automatically if memory is restored. The system key is never part of a backup: if you restore onto a new machine, each user has to log in with their PIN once before the background jobs (reflection, night job) can reach their data again.",
       "restore_button": "Restore",
       "restoring": "Restoring…",
       "restore_ok": "Restored: {{items}}",
@@ -1002,9 +1186,11 @@
       "max_reached": "Maximum of 5 backup points reached",
       "restore_point_button": "Restore",
       "restore_point_title": "Restore from backup point",
-      "restore_point_warning": "This will overwrite current data with backup point \"{{name}}\". Confirm with PIN.",
+      "restore_point_warning": "This will overwrite current data with backup point \"{{name}}\". Confirm with PIN. The system key is never part of a backup: if you restore onto a new machine, each user has to log in with their PIN once before the background jobs (reflection, night job) can reach their data again.",
       "delete_point_confirm": "Delete backup point \"{{name}}\"?",
-      "saving_point": "Saving backup point…"
+      "saving_point": "Saving backup point…",
+      "pre_update_name": "Before update to {{version}}",
+      "pre_update_tag": "automatic"
     },
     "github": {
       "title": "GitHub publishing",
@@ -1014,7 +1200,7 @@
       "title": "Hardware",
       "description": "Detected CPU, RAM, GPU and NPU. Run setup.sh on the host for full detection.",
       "button": "Detect hardware",
-      "refresh": "Refresh",
+      "refresh": "Detect hardware",
       "loading": "Detecting…",
       "detected_at": "Detected",
       "source_host": "Host script",
@@ -1030,40 +1216,6 @@
       "ram_gb": "{{gb}} GB",
       "note_gpu": "GPU detected — enable by adding COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml to .env and running setup.sh",
       "error": "Could not fetch hardware info"
-    },
-    "snapshots": {
-      "title": "Recovery Points",
-      "description": "Save named snapshots of all config files and restore them when needed.",
-      "name_placeholder": "Snapshot name…",
-      "save_button": "Save snapshot",
-      "saving": "Saving…",
-      "counter": "{{count}}/10 snapshots",
-      "max_reached": "Maximum 10 reached — delete one to save a new snapshot",
-      "empty": "No snapshots saved yet.",
-      "restore_button": "Restore",
-      "delete_button": "Delete",
-      "restore_confirm": "This will overwrite active config files with snapshot \"{{name}}\". Continue?",
-      "restore_ok": "Restored: {{files}}",
-      "restore_error": "Error restoring snapshot",
-      "delete_confirm": "Delete snapshot \"{{name}}\"?",
-      "delete_error": "Error deleting snapshot",
-      "save_error": "Error saving snapshot",
-      "name_required": "Enter a name",
-      "export_button": "Export",
-      "import_title": "Import snapshot",
-      "import_description": "Upload a previously exported config zip to restore it on a new installation.",
-      "import_name_placeholder": "Name for imported snapshot…",
-      "import_button": "Import zip",
-      "importing": "Importing…",
-      "import_ok": "Imported: {{count}} files",
-      "import_error": "Import failed",
-      "import_bad_zip": "Invalid zip file",
-      "import_no_yaml": "Zip contained no config files",
-      "export_current_button": "Export current config",
-      "install_button": "Install",
-      "download_button": "Download",
-      "select_hint": "Select a snapshot to install or download",
-      "choose_file": "Choose file"
     },
     "varsler": {
       "master": {
@@ -1086,6 +1238,58 @@
         "cameras_hint": "Empty = all configured cameras"
       },
       "events_link": "View events"
+    },
+    "update": {
+      "title": "Update KTSB",
+      "description": "Install a newer KTSB version from GitHub. A backup point is saved automatically first; if something does not start properly, the previous version is put back on its own.",
+      "loading": "Loading status…",
+      "not_docker": "Updating from the GUI is for Docker installs. This install runs directly on the machine and is updated outside the GUI.",
+      "unreachable": "The update service (kaare-updater) is not answering. Run «docker compose up -d» once in the install folder to start it.",
+      "running_version": "Running now",
+      "unknown_version": "unknown (built from source)",
+      "check_button": "Check for updates",
+      "check_failed": "Could not reach GitHub. Check the internet connection and try again.",
+      "up_to_date": "You have the latest version.",
+      "available": "New version: {{version}}",
+      "show_notes": "Show what's new",
+      "hide_notes": "Hide",
+      "update_button": "Update KTSB to {{version}}",
+      "confirm_title": "Update to {{version}}?",
+      "confirm_text": "KTSB saves a backup point, downloads the new version and restarts all services. Kåre is unavailable for a few minutes. If something goes wrong, the previous version is put back automatically. Enter your PIN to continue.",
+      "confirm_button": "Update",
+      "running": "Updating to {{version}} …",
+      "restarting": "KTSB is restarting — this page reconnects by itself.",
+      "done": "Updated to {{version}}.",
+      "reload": "Reload the page",
+      "rolled_back": "The update failed, and KTSB has been put back to {{version}}.",
+      "failed": "The update did not go ahead. Nothing was changed.",
+      "rollback_failed": "The update failed, and the previous version could not be started either. See logs/updater.log, or run «docker compose up -d» in the install folder.",
+      "cause": "Cause",
+      "data_hint": "Your data was not touched. The backup point from before the update is in the list below if you also want to restore it.",
+      "rollback_button": "Go back to {{version}}",
+      "rollback_confirm_title": "Go back to the previous version?",
+      "rollback_confirm_text": "KTSB restarts on {{version}}. Your data stays as it is now. Enter your PIN to continue.",
+      "err_night_sequence_running": "The night sequence is running. Try again when it has finished.",
+      "err_busy": "An update is already running.",
+      "err_no_home": "This install folder is not set up for updates from the GUI. Run setup.sh (Linux/macOS) or setup.ps1 (Windows) once in the install folder, then «docker compose up -d».",
+      "err_no_compose": "The update service cannot find the install folder. Run setup.sh / setup.ps1 once more, then «docker compose up -d».",
+      "err_no_docker_socket": "The update service has no access to Docker.",
+      "err_save_point_failed": "Could not save the backup point before the update. Nothing was changed.",
+      "err_updater_unreachable": "The update service is not answering.",
+      "err_nothing_to_roll_back_to": "There is no previous version to go back to.",
+      "err_generic": "Something went wrong.",
+      "phase": {
+        "preflight": "Checking that the update can run",
+        "download": "Downloading the install bundle",
+        "verify_bundle": "Checking signature and checksum",
+        "swap": "Keeping the current files and putting the new ones in place",
+        "pull": "Downloading new images (KTSB keeps running)",
+        "verify_images": "Checking that every image was signed by KTSB",
+        "start": "Starting KTSB on the new version",
+        "health": "Waiting for KTSB to answer",
+        "self_update": "Updating the update service itself",
+        "rollback": "Putting the previous version back"
+      }
     }
   },
   "dashboard": {
@@ -1114,7 +1318,9 @@
       "teen": "Teen",
       "young_adult": "Young adult",
       "adult": "Adult",
-      "admin": "Admin"
+      "admin": "Admin",
+      "household": "Household",
+      "stranger": "Stranger"
     }
   },
   "login": {
@@ -1259,7 +1465,8 @@
       "title": "Tool permissions per role",
       "description": "Control which tools Kåre can use per user role. Changes take effect immediately.",
       "col_tool": "Tool",
-      "always_included": "Always included (Kåre's own): self-image, world, user profile, read_inner_thoughts, read_thought_history",
+      "always_included": "Self-image, world and user profile are always included for regular users (locked ✓). For Household and Stranger they are off by default and can be switched on here.",
+      "admin_only": "Inner thoughts and thought history can contain other users' conversations and are for the administrator only (—).",
       "loading": "Loading tool permissions…",
       "save": "Save changes",
       "rollback": "Reset to defaults",
@@ -1291,8 +1498,29 @@
         "local_kommando": "Local command",
         "restart_docker_container": "Restart Docker",
         "household": "Home/away mode",
-        "write_reflex": "Approve automation proposals"
+        "write_reflex": "Approve automation proposals",
+        "world": "World (house facts)",
+        "self_image": "Self-image",
+        "user_profile": "User profile",
+        "inner_thoughts": "Inner thoughts",
+        "thought_history": "Thought history"
       }
+    },
+    "system": {
+      "global_user": {
+        "name": "Household (unrecognised voice)",
+        "desc": "A person inside the house who isn't recognised — most likely a household member. Gets what the house shares, but no individual's own data."
+      },
+      "unknown_user": {
+        "name": "Unknown person",
+        "desc": "A person we don't trust, e.g. at an outdoor or door node. Learns nothing about the house or the people there."
+      },
+      "no_actions": "System user: cannot log in or be deleted. Its tools are set in the table below.",
+      "admin_note": "Built-in administrator — only the PIN can be changed."
+    },
+    "groups": {
+      "default": "Default users",
+      "created": "Users"
     }
   },
   "user": {
@@ -1371,7 +1599,11 @@
       "default_user": "Default user (optional)",
       "cancel": "Cancel",
       "save": "Save",
-      "mic_enabled": "Microphone (mic input)"
+      "mic_enabled": "Microphone (mic input)",
+      "trust": "Who is speaking here when the voice isn't recognised?",
+      "trust_indoor": "Indoor — probably someone in the household (Household)",
+      "trust_outdoor": "Outdoor / at the door — a stranger (Unknown person)",
+      "trust_hint": "Only applies when neither voice recognition, a single default user nor a PIN/phrase says who it is."
     }
   },
   "tools": {
@@ -1514,7 +1746,7 @@
     "reflection_tab": "Reflection meeting",
     "dev_tab": "Dev meeting",
     "reflection_tab_sub": "04:00 · Miss Kåre",
-    "dev_tab_sub": "05:30 · Mechanic",
+    "dev_tab_sub": "After the reflection meeting · Janus + Kåre",
     "meetings_label": "Meetings",
     "no_dates": "None yet",
     "loading": "Loading…",
@@ -1563,7 +1795,44 @@
     "leder_preset_analytisk": "Analytical",
     "leder_preset_utfordrende": "Challenging",
     "leder_preset_egendefinert": "Custom",
-    "no_eligible_reflection_users": "Young adults and adults manage their reflections privately via the user interface."
+    "no_eligible_reflection_users": "Young adults and adults manage their reflections privately via the user interface.",
+    "devslot_step": "Step {{n}}/{{max}}: {{label}}",
+    "devslot_step_S0": "Collecting agenda, user traces and health check",
+    "devslot_step_janus": "Janus prioritises the topics",
+    "devslot_step_S1": "Kåre cleans up the agenda",
+    "devslot_step_S2": "Kåre reviews user turns",
+    "devslot_step_S3": "Kåre investigates problems (sources are checked)",
+    "devslot_step_S5": "Writing the morning report",
+    "settings_dev_slot_desc": "The dev slot runs every night right after the reflection meeting. Kåre cleans up his agenda, investigates problems with read-only tools, and only findings backed by the sources count as verified. The slot never changes anything itself.",
+    "night_title": "Night sequence",
+    "night_desc": "Once every night Kåre tidies his memory, fetches new law text from Lovdata (if switched on), writes user portraits, reviews his knowledge and holds the reflection meeting and the dev slot — in that order. Choose when it starts.",
+    "night_start_label": "Start time",
+    "night_start_hint": "Time of day in the household timezone ({{tz}}). Applies from the next night, no restart needed. If the machine is off at the start time, the night still runs if KTSB is back up within 6 hours.",
+    "night_last_run": "Last started: night of {{date}}",
+    "settings_dev_enabled": "Dev slot enabled",
+    "settings_time_budget": "Time budget (minutes)",
+    "settings_time_budget_hint": "Safety ceiling: the longest the slot may work per night. What it does not reach waits for the next night.",
+    "settings_max_traces": "Max user turns per night",
+    "settings_max_traces_hint": "How many of yesterday's conversations Kåre reviews. 0 = skip.",
+    "settings_round_cap": "Max tool rounds per topic",
+    "settings_round_cap_hint": "How many rounds Kåre gets to investigate one problem.",
+    "devslot_step_S6": "Summarising week/month/half-year/year",
+    "settings_topics_per_meeting": "Topics per meeting",
+    "settings_topics_per_meeting_hint": "How many problems Kåre investigates in depth per night. First one topic from each theme, then it fills up. Each topic takes a few minutes — raise the time budget along with this.",
+    "topic_theme": "Theme",
+    "topic_theme_auto": "Choose automatically",
+    "theme_answers": "Answers and conversations",
+    "theme_tools": "Tools and HA control",
+    "theme_memory": "Memory",
+    "theme_agents": "Agents",
+    "theme_house": "House, sensors and cameras",
+    "theme_system": "System, models and performance",
+    "theme_other": "Other",
+    "resolved_title": "Resolved topics ({{count}})",
+    "resolved_empty": "No topics are marked resolved yet. Kåre can do it in a conversation once a topic is settled.",
+    "resolved_meta": "Resolved {{date}} by {{by}} · {{echoes}} echoes since",
+    "settings_kare_tokens_hint": "Same as «Max tokens out» in the LLM tab, but only for Kåre's turns in the meeting. Thinking counts: the turn itself is short (about 100–600), the rest is thinking. Below about 3000 often gives empty replies. Recommended 6000–8192 (default 8192). Higher works, but a turn that loops then takes longer.",
+    "settings_miss_kare_tokens_hint": "Same as «Max tokens out» in the LLM tab, but only for Miss Kåre's turns. Without thinking (default) her replies are about 100–250 tokens, so 1000–1500 gives good margin (default 1500). Below about 300 a reply can be cut mid-sentence. If you turn thinking on for her, use the same values as for Kåre."
   },
   "user_sidebar": {
     "home": "{{name}}",
@@ -1752,7 +2021,9 @@
         "teen": "Teen — Internet access and more of Kåre, with some restrictions.",
         "young_adult": "Young adult — Full access except admin functions.",
         "adult": "Adult — Full access to all user features.",
-        "admin": "Admin — Controls the entire system, including settings and other users."
+        "admin": "Admin — Controls the entire system, including settings and other users.",
+        "household": "System role for «Household (unrecognised voice)»: a person inside the house who isn't recognised, most likely a household member. Sees what the house shares (who lives here, shared lists, whether the house is set to away) but no individual's profile, memory, chats or notes. Tools are set in the table under Users.",
+        "stranger": "System role for «Unknown person»: a person we don't trust, e.g. at an outdoor or door node, and anything that can't be tied to a known user. Learns nothing about the house or its people, only sees the conversation in progress, and has no HA control by default."
       },
       "vpn_intro": "VPN access level determines what the user can do from outside the home network:",
       "vpn": {
@@ -1779,16 +2050,13 @@
         "search_argus": "Search system log and event history",
         "read_meeting": "Read minutes from reflection meetings",
         "mechanic": "Delegate technical tasks to Mechanic",
-        "explore_code": "Read files and code on the system (admin only)",
-        "inspect_system": "Check services, logs and resource usage",
-        "ssh_command": "Run commands on other machines on the network",
-        "local_command": "Run commands directly on the AI PC",
+        "self_trace": "View own response history for self-improvement",
         "restart_docker_container": "Restart Docker containers",
         "household": "Set home/away mode for the household",
         "write_reflex": "Suggest, approve or reject Kåre's self-learned automations (who can actually approve/reject is governed separately under Settings → Kåre)"
       },
       "pin": "PIN is a numeric code that protects the account (minimum 6 digits). Used for login and to unlock private meeting minutes.",
-  "recovery_key": "The recovery key is a 24-word recovery phrase shown once at account creation. It lets a user recover access to encrypted data if the PIN is forgotten — without it, encrypted data is lost for good. Can be re-issued here.",
+      "recovery_key": "The recovery key is a 24-word recovery phrase shown once at account creation. It lets a user recover access to encrypted data if the PIN is forgotten — without it, encrypted data is lost for good. Can be re-issued here.",
       "voice_reg": "Voice registration lets Kåre recognise who is speaking. The user reads a few sentences and Kåre learns the voice profile.",
       "vpn_qr": "The VPN QR code contains all settings for connecting to the home network from outside. Scan it in the WireGuard app.",
       "warning_delete": "⚠ Deleting a user is irreversible — all history and profile disappear permanently.",
@@ -1802,7 +2070,8 @@
       "item_2": "Full restart — restarts the Kåre service. Takes 5–30 seconds.",
       "item_3": "System check — verifies that all services respond and connections work.",
       "item_4": "Memory compression — transfers short-term memory (STM) to long-term memory (LTM). Runs automatically each night.",
-      "item_5": "Backups — Create named backup points of the full installation (databases, memory, user keys and configuration). Restore from a saved point (PIN required) or download as ZIP. Max 5 points stored. ⚠ Factory reset restores everything to defaults — requires PIN confirmation."
+      "item_5": "Backups — Create named backup points of the full installation (databases, memory, user keys and configuration). Restore from a saved point (PIN required) or download as ZIP. Max 5 points stored. ⚠ Factory reset restores everything to defaults — requires PIN confirmation. The system key is never part of a backup: if you restore onto a new machine, each user has to log in with their PIN once before the background jobs (reflection, night job) can reach their data again.",
+      "item_6": "Update KTSB (Docker) — checks GitHub for newer versions and installs them with one click (PIN required). A backup point is saved automatically first (shown as «automatic» in the backup list, not counted against the 5). New images are checked against KTSB's signature before they are used. If something does not start properly, the previous version is put back on its own; an update never changes your data. Requires setup.sh / setup.ps1 to have been run in the install folder. Does not run while the night sequence is running."
     },
     "verktoy": {
       "title": "Tools",
@@ -1841,7 +2110,8 @@
         "fire_tv": "Fire TV — Amazon's TV platform (FireStick, Fire TV Cube)",
         "lg_tv": "LG TV — webOS, controlled via Home Assistant",
         "projector": "Projector — display only, no audio"
-      }
+      },
+      "trust": "Nodes with a microphone have a setting for who an unrecognised voice is. «Indoor» means probably someone in the household: Kåre answers as to «Household (unrecognised voice)», which gets what the house shares but no individual's own data. «Outdoor / at the door» means a stranger: Kåre answers as to «Unknown person», which learns nothing about the house and cannot control HA. A satellite that is not added here is treated as an unknown person."
     },
     "kameraer": {
       "title": "Cameras",
@@ -1860,7 +2130,7 @@
       "item_3": "Confidence — How much history Kåre has to base the deviation score on. Under roughly two weeks of data, the score isn't yet used in alert routing.",
       "item_4": "Correction — Mark an event as normal or unusual. The correction feeds into next night's baseline recomputation.",
       "item_5": "Home/away mode — When the household is set to \"away\", camera alerts escalate (especially unknown objects at perimeter cameras at night), and Kåre automatically detects when someone returns via GPS or local network presence.",
-  "item_6": "Undo and sorting — Click a column header to sort events within a group. After a correction (single or batch), a brief \"undo\" button appears and restores the previous state."
+      "item_6": "Undo and sorting — Click a column header to sort events within a group. After a correction (single or batch), a brief \"undo\" button appears and restores the previous state."
     },
     "agenter": {
       "title": "Agent Messages",
@@ -1876,11 +2146,13 @@
       "title": "Reflections",
       "summary": "Kåre's nightly meetings and self-development",
       "body": "Kåre holds two meetings every night. It is his way of learning from the day and growing as an assistant.",
-      "item_1": "Reflection meeting (04:00) — Kåre and Miss Kåre review the day's conversations. Kåre updates his self-description and world model.",
-      "item_2": "Developer meeting (05:30) — Technical review of system health, errors and improvement suggestions.",
+      "item_1": "Reflection meeting (nightly) — Kåre and Miss Kåre review the day's conversations. Kåre updates his self-description and world model.",
+      "item_2": "Dev slot (right after the reflection meeting) — Kåre goes through his agenda (things he noted himself as 'raise at the dev meeting'), Janus prioritises, Kåre investigates problems with read-only tools, and code plus a smaller model check that every finding has evidence. The morning report shows verified findings, suspicions and proposals. Every item gets a theme when it is written (by Kåre himself, or by fixed rules when he gives none), and the slot takes topics from all themes. Janus also sees resolved topics: when a new topic is the same as something already settled it is linked there as an echo; when new data contradicts the solution it becomes a reopen proposal you decide on.",
       "item_3": "PIN protection — Meeting minutes are locked with the user's PIN. Only you can read your own minutes.",
-      "item_4": "Topic field — You can suggest a topic for Kåre to address in the next nightly meeting.",
-      "item_5": "Miss Kåre portrait — Miss Kåre gradually builds a personal portrait of each user based on observations over time. The portrait is injected into meeting context for more personal analysis."
+      "item_4": "Topic field — You can suggest a topic for Kåre to address in the next nightly meeting. For the dev slot you also pick which theme it belongs to (or let it be chosen automatically).",
+      "item_5": "Miss Kåre portrait — Miss Kåre notes short, dated observations about each user: things they actually said or did, traceable to a conversation. No interpretation of feelings or motives. The notes are included in the meeting context.",
+      "item_6": "Proposals from the dev slot — The slot never changes anything itself. Proposals are numbered in the report; an admin confirms or rejects them in chat ('confirm dev proposal 2'), and a human makes the actual change.",
+      "item_7": "Consolidation — When a week, month, half-year or year has ended, code counts what happened and Janus writes a short summary. Items left open for more than 7 days leave the active agenda once their week is summarised — they are never deleted."
     },
     "innst_basic_expert": {
       "title": "Settings → Basic/Expert toggle",
@@ -1892,10 +2164,13 @@
     },
     "innst_generelt": {
       "title": "Settings → General",
-      "summary": "Location, time zone and language",
+      "summary": "Location, time zone, language and network, logs and data",
       "item_1": "Location — Home location used for weather, sunrise/sunset and geographic context. Stored locally.",
       "item_2": "Time zone — Kåre uses this to understand time and date correctly.",
-      "item_3": "Language — Kåre's response language and GUI language. Choose between Norwegian, English and German."
+      "item_3": "Language — Kåre's response language and GUI language. Choose between Norwegian, English and German.",
+      "item_4": "Network and access (Expert) — local and VPN subnets decide whether a user counts as at home. Trusted proxies are the only ones that may state the client's address; everything you set up yourself works, everything else is stopped. The API documentation (/docs) is off by default.",
+      "item_5": "Default local network — Without your own choice every 192.168.x.x address counts as home (not the Docker network 172.16–31.x and not the VPN subnet). The setup wizard suggests your own /24 from where you connect; you confirm or change it.",
+      "item_6": "Logs and data (Expert) — how often logs are written to disk (collected in memory; low = more I/O and SD-card wear, high = more can be lost in a power cut; 0 = at once) and how many days conversations, episodes and thought history are kept (0 = forever; older data is permanently deleted at night)."
     },
     "innst_ha": {
       "title": "Settings → Home Assistant",
@@ -1904,7 +2179,8 @@
       "item_1": "HA URL — The address of Home Assistant on the local network (e.g. http://192.168.0.x:8123).",
       "item_2": "Token — A one-time key you create in HA under Profile → Long-lived access tokens. Kåre uses this to authenticate.",
       "item_3": "Timeout — How long Kåre waits for a response from HA. Increase if the network is slow.",
-      "item_4": "Allowed actions — Checkbox list of the 11 actions Kåre can perform against HA (turn on/off, set level, color, temperature, etc). Lives under Expert level."
+      "item_4": "Allowed actions — Checkbox list of the 11 actions Kåre can perform against HA (turn on/off, set level, color, temperature, etc). Lives under Expert level.",
+      "item_5": "Home Assistant on/off — Off means Kåre controls no devices and reads no HA sensors. The setup wizard turns it on when URL and token are saved. A new URL or token takes effect immediately (the gateway reloads)."
     },
     "innst_mqtt": {
       "title": "Settings → MQTT / VPN",
@@ -1918,18 +2194,24 @@
       "title": "Settings → LLM / Models",
       "summary": "Kåre's AI brain and supporting models",
       "body": "LLM (Large Language Model) is the AI model that makes Kåre intelligent. Here you configure which models are used for what.",
-      "role_kare": "Kåre — The main model. Answers all questions. Runs locally on GPU.",
+      "role_kare": "Kåre — The main model. Answers every question. With 27B on a 24 GB+ GPU Kåre works as intended; with 9B or smaller (the default on a fresh install) it is basic mode — conversation works, tool use is unreliable. The card then shows a yellow note.",
       "role_miss_kare": "Miss Kåre — The evaluator model. Checks Kåre's responses. Runs on a dedicated GPU.",
       "role_library": "Miss Library — The library model. Searches wiki and the internet.",
       "role_mechanic": "Mechanic — Technical assistant. Shares hardware with Miss Kåre.",
       "role_fallback": "Fallback — Used if the main model is unavailable.",
       "role_sky": "Cloud — Cloud-based model (DeepSeek) as a safety net when local capacity is full.",
-      "item_1": "Whisper — The speech-to-text model. Converts your voice to text Kåre can understand.",
-      "item_2": "Embedding — Creates searchable memory. Used for semantic memory search.",
+      "item_1": "Whisper — Turns your voice into text. Norwegian uses the National Library's NB-Whisper, other languages OpenAI's Whisper. Pick Small/Medium/Large, «Download», then «Use this» — or enter another model (Hugging Face name or link). Runs on the CPU; OpenVINO (Intel iGPU) is a manual Expert option outside Docker. Expert: CPU threads (Auto = half the cores, at most 8).",
+      "item_2": "Embedding (BGE-M3) — Creates searchable vectors for the wiki and Argus. Can also serve as the «Large» model for semantic memory.",
       "item_3": "Local vs. cloud — Local models are faster and private. Cloud is a safety net if something fails.",
       "item_4": "num_ctx — The context window. How much of the conversation the model remembers in one run.",
       "item_5": "Piper (text-to-speech) — Kåre's voice. Three language sections (Norwegian/English/German) with different voice packs. Download, activate the desired voice and restart the service to apply it.",
-      "item_6": "Reason Freely tool — Kåre's own free-reasoning tool, shown nested inside the Kåre (main) card since it shares the same model. Lives under Expert level."
+      "item_6": "Reason Freely tool — Kåre's own free-reasoning tool, shown nested inside the Kåre (main) card since it shares the same model. Lives under Expert level.",
+      "item_7": "Agent pool — Fallback, Miss Kåre, Miss Library and Mechanic run on the same small model and share one set of settings (thinking, context and sampling). Changing them on one card changes them for all four. Only max answer length is set per role. This keeps the model from reloading between jobs.",
+      "item_8": "Model check — Every Ollama role is checked against the models actually downloaded. If the model is missing, a yellow warning shows on the card (and in the log at startup); the role won't work until the model is downloaded. «Can't reach» only means the instance didn't answer the check.",
+      "item_9": "vLLM restart — Sampling (temperature, top_p, presence_penalty …) applies from the next message after saving, no restart needed. Docker parameters (context length, KV cache, GPU memory) need «Restart Docker container». The button re-creates the container and waits until the model has loaded (a few minutes). If the new one fails to start, the previous one is restored automatically.",
+      "item_10": "Semantic memory — Lets Kåre find old conversations by meaning, also across Norwegian, English and German. Three sizes: Small (118 MB), Medium (1.1 GB, clearly better) and Large (uses the Embedding service). «Download», then «Use this»: memory search is rebuilt from stored conversations, nothing is deleted, and you can switch back.",
+      "item_11": "Model storage (Expert) — The folder KTSB downloads models to. Default /kaare/models (in Docker: the models/ folder next to docker-compose.yml).",
+      "item_12": "LAN address for speakers (Piper card) — The address speakers on your network fetch Kåre's audio from. Empty = detected automatically outside Docker; in Docker enter the machine's LAN address (the button suggests the address you opened KTSB on). Takes effect immediately."
     },
     "innst_refleksjon": {
       "title": "Settings → Reflection",
@@ -1937,16 +2219,24 @@
       "item_1": "Meeting leader style — The tone of the meetings: Standard, Strict, Exploratory or Custom.",
       "item_2": "Enabled/Disabled — Temporarily turn off reflection meetings.",
       "item_3": "Max rounds — Number of exchanges between Kåre and Miss Kåre per meeting.",
-      "item_4": "Jang interval — How often Jang sends thought messages to Kåre between meetings."
+      "item_4": "Jang interval — How often Jang sends thought messages to Kåre between meetings.",
+      "item_5": "Dev slot enabled — Turn the nightly dev slot on or off.",
+      "item_6": "Time budget — Safety ceiling for how many minutes the dev slot gets per night (default 25). What it does not reach is taken the next night.",
+      "item_7": "Max user turns — How many of yesterday's conversations Kåre reviews per night (default 20).",
+      "item_8": "Max tool rounds per topic — How thoroughly Kåre may investigate one problem (default 4).",
+      "item_9": "Night sequence → Start time — When the night work starts (default 03:00, household timezone). If the machine is off then, the night still runs if KTSB is back up within 6 hours. Applies from the next night.",
+      "item_10": "Topics per meeting — How many problems the dev slot investigates in depth per night (default 3). It first takes one topic from each theme (answers, tools, memory, agents, house, system, other) and then fills up, so one noisy area cannot take the whole meeting. Each topic takes a few minutes, so raise the time budget along with this.",
+      "item_11": "Max tokens (Kåre / Miss Kåre) — How much each may write per turn in the meeting. Applies to the meeting only; chat uses «Max tokens out» in the LLM tab. Thinking counts toward the cap, so Kåre needs far more than the turn itself: below about 3000 often gives empty replies, 6000–8192 is recommended. Miss Kåre does not think by default and manages with 1000–1500. Not the same as the context length (how much the model can read)."
     },
     "innst_nett": {
       "title": "Settings → Web Search & Weather",
       "summary": "Search provider, weather and local sensors",
-      "item_1": "Search provider — DuckDuckGo (default, no account), SearXNG (self-hosted) or Brave Search.",
+      "item_1": "Search engine — SearXNG (default, self-hosted, no key — ships with Docker) or Brave Search (API key). DuckDuckGo has been removed. Kåre can send a search off as a work round: he answers you at once and comes back in the chat with his own answer when the search is done (raw data is never shown directly and is not kept in short-term memory).",
       "item_2": "Weather provider — met.no, OpenWeatherMap, PirateWeather, WeatherAPI or local HA sensors.",
       "item_3": "Local HA sensors — Kåre can read indoor sensors (temperature, humidity) from Home Assistant.",
       "item_4": "Tide — Tide data from the Norwegian Mapping Authority (Norwegian coastal locations).",
-      "item_5": "Trusted sources — Domains Kåre prefers and filters in web searches."
+      "item_5": "Whitelisted websites — the household's trusted sources get the places first and are labelled «trusted source»; the open web (can be switched off) fills the rest and is labelled as such. Each domain has a type and a trust level. Blocked websites are never used. Regardless of the list, KTSB never fetches pages on internal addresses (localhost, home network, VPN), obeys robots.txt, and refuses large or non-text files. Kåre says how likely something is with fixed words (highly likely / likely / uncertain / unlikely), computed by code from the kind of sources and how many independent ones agree; «How careful» moves the bar.",
+      "item_6": "Norwegian law (Lovdata) — optional. Current laws and central regulations from Lovdata's open datasets (NLOD 2.0), downloaded once per night and searched locally; lovdata.no itself is never fetched (Lovdata blocks bots). Answers from the laws count as public authority and always credit Lovdata."
     },
     "innst_bilder": {
       "title": "Settings → Images",
@@ -1968,7 +2258,8 @@
       "item_7": "Complete — Uses all context: inner thoughts, self-image and world model.",
       "item_8": "Custom — You write Kåre's personality yourself.",
       "item_9": "Who influences Kåre — Choose which users can shape Kåre's personality through conversations.",
-      "item_10": "Kåre's self-learned automation — Choose who can approve or reject automation proposals Kåre suggests based on habits it notices around the home."
+      "item_10": "Kåre's self-learned automation — Choose who can approve or reject automation proposals Kåre suggests based on habits it notices around the home.",
+      "item_11": "Kåre's memory (Assistant settings) — «Who can mark a topic resolved» (default: admin only): a topic settled in a conversation is locked, and new observations about the same become echoes. In Expert: «Relevant now» (notes that fit the message are attached in full text), number of hits and thresholds, caps for lessons, core facts and index, length per lesson, and the reminder list caps (length per note, max count). «Relevant now» needs an embedding service (LLM / Models → «BGE-M3 (Embeddings)» or «Semantic memory»); the card shows «Inactive» when the switch is on without one."
     },
     "innst_integrasjoner": {
       "title": "Settings → Integrations",
@@ -1989,7 +2280,7 @@
       "title": "Settings → Agent Settings",
       "summary": "Configure Mechanic and Miss Kåre's permissions",
       "item_1": "Mechanic — Choose which tools Mechanic can use on behalf of Kåre.",
-      "item_2": "Miss Kåre — Choose whether and how Miss Kåre participates in reflection meetings.",
+      "item_2": "Miss Kåre — Turn on or off whether she can look up facts with Miss Library. She has one fixed personality (the same in chat, in the portrait night job and in the reflection meeting), and it follows the language chosen for the user.",
       "item_3": "Tool matrix — Adjust which tools are allowed per user role. Changes take effect immediately."
     },
     "innst_varsler": {
@@ -2044,7 +2335,7 @@
       "title": "SSH nodes",
       "body": "SSH nodes are machines on the network that Kåre can run commands on. Configure here, use via the «ssh_kommando» tool in chat.",
       "item_1": "Node type: Linux/standard SSH (port 22, optional user) or HA OS (port 2222, root, only ha-commands allowed).",
-      "item_2": "Allow sudo — Enable per node and list exactly which sudo commands are permitted. Only listed commands are accepted.",
+      "item_2": "Allow sudo — Enable per node and add exactly which sudo commands are allowed. Only listed commands are accepted. Without your own sudo commands Mechanic can only read; a sudo command you add here may run even if it changes something (but never chained with ; && $( >).",
       "item_3": "Test connection — Click the button to verify the SSH connection directly in the GUI."
     },
     "verktoy_timer": {

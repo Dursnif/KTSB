@@ -10,6 +10,7 @@ handles it correctly — this module generalizes that pattern for callers that
 also need the extracted think text itself (for think_cache logging), not just
 the cleaned answer.
 """
+
 import re
 
 _THINK_START_RE = re.compile(r"<think>", re.IGNORECASE)
@@ -36,10 +37,10 @@ def strip_think_block(text: str) -> tuple[str, str, bool]:
 
     end_m = _THINK_END_RE.search(text, start_m.end())
     if end_m:
-        think_content = text[start_m.end():end_m.start()].strip()
-        content = text[end_m.end():].strip()
+        think_content = text[start_m.end() : end_m.start()].strip()
+        content = text[end_m.end() :].strip()
         return content, think_content, True
 
-    think_content = text[start_m.end():].strip()
-    content = text[:start_m.start()].strip()
+    think_content = text[start_m.end() :].strip()
+    content = text[: start_m.start()].strip()
     return content, think_content, False

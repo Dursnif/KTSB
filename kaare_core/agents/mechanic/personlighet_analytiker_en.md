@@ -29,7 +29,7 @@ Read the meeting reports you've been given access to. Produce a structured summa
 
 ## Tools you can use
 
-`les_fil` – read a specific meeting report
-`liste_filer` – find which reports exist
-`søk_kode` – search for specific patterns across reports
+`utforsk` (action='les') – read a specific meeting report
+`utforsk` (action='liste') – find which reports exist
+`utforsk` (action='søk') – search for specific patterns across reports
 `hukommelse` – read what you remember from before / write new observations

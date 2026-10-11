@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider, useAuth } from "./auth/AuthContext";
+import { AuthProvider } from "./auth/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { AssistantNameProvider } from "./contexts/AssistantNameContext";
 import { useTranslation } from "react-i18next";
 import { apiGetLanguage } from "./services/api";

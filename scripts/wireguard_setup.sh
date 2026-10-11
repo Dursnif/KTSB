@@ -1,5 +1,5 @@
 #!/bin/bash
-# WireGuard server setup for Kåre AI-PC (192.168.0.232)
+# WireGuard server setup for the machine running KTSB
 # Run once as: sudo bash /kaare/scripts/wireguard_setup.sh
 
 set -e

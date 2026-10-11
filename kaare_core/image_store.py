@@ -18,9 +18,10 @@ them by scanning all user folders without a database index.
 """
 
 import base64
+import logging
+import re
 import time
 import uuid
-import logging
 from pathlib import Path
 from typing import Literal
 
@@ -32,14 +33,16 @@ _IMAGES_ROOT = Path("/kaare/state/images")
 _SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
 
 _DEFAULT_MAX_COUNT = 500
-_DEFAULT_MAX_MB    = 200
+_DEFAULT_MAX_MB = 200
 
 
 def _load_limits() -> tuple[int, float]:
     try:
         cfg = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
         img = cfg.get("images", {})
-        return int(img.get("max_per_user_count", _DEFAULT_MAX_COUNT)), float(img.get("max_per_user_mb", _DEFAULT_MAX_MB))
+        return int(img.get("max_per_user_count", _DEFAULT_MAX_COUNT)), float(
+            img.get("max_per_user_mb", _DEFAULT_MAX_MB)
+        )
     except Exception:
         return _DEFAULT_MAX_COUNT, float(_DEFAULT_MAX_MB)
 
@@ -52,7 +55,12 @@ def _user_dir(user_id: str) -> Path:
 def _all_files_sorted(user_id: str) -> list[Path]:
     """All image files for a user, sorted oldest-first by filename (timestamp prefix)."""
     d = _user_dir(user_id)
-    files = list(d.rglob("*.png")) + list(d.rglob("*.jpg")) + list(d.rglob("*.jpeg")) + list(d.rglob("*.webp"))
+    files = (
+        list(d.rglob("*.png"))
+        + list(d.rglob("*.jpg"))
+        + list(d.rglob("*.jpeg"))
+        + list(d.rglob("*.webp"))
+    )
     return sorted(files, key=lambda p: p.name)
 
 
@@ -97,8 +105,18 @@ def save_image(
     return image_id
 
 
+_IMAGE_ID_FOLDER_PREFIX_RE = re.compile(r"^(input|output)/")
+
+
 def find_image(image_id: str) -> Path | None:
-    """Search all user folders for an image by ID. Returns Path or None."""
+    """Search all user folders for an image by ID. Returns Path or None.
+
+    Accepts either a bare id or the "{folder}/{id}" form `list_images()` displays
+    back to the LLM (e.g. "input/1788688455_899b10ff") — without this, the `/`
+    survives filtering as part of the id (`isalnum()` drops it silently) and never
+    matches, costing a guaranteed extra tool-call round-trip (see BUG-log 2026-09-06).
+    """
+    image_id = _IMAGE_ID_FOLDER_PREFIX_RE.sub("", image_id)
     safe_id = "".join(c for c in image_id if c.isalnum() or c in "_-")
     for ext in ("png", "jpg", "jpeg", "webp"):
         for p in _IMAGES_ROOT.rglob(f"{safe_id}.{ext}"):
@@ -111,7 +129,9 @@ def find_image(image_id: str) -> Path | None:
     return None
 
 
-def list_images(user_id: str, folder: Literal["input", "output", "all"] = "all", limit: int = 20) -> list[dict]:
+def list_images(
+    user_id: str, folder: Literal["input", "output", "all"] = "all", limit: int = 20
+) -> list[dict]:
     """
     List images for a user. Returns list of dicts with id, folder, timestamp, size_kb.
     Sorted newest-first.
@@ -126,13 +146,15 @@ def list_images(user_id: str, folder: Literal["input", "output", "all"] = "all",
         for p in fdir.iterdir():
             if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
                 stem = p.stem  # e.g. "1746123456_ab12cd34"
-                result.append({
-                    "id": stem,
-                    "folder": f,
-                    "filename": p.name,
-                    "size_kb": round(p.stat().st_size / 1024, 1),
-                    "path": str(p),
-                })
+                result.append(
+                    {
+                        "id": stem,
+                        "folder": f,
+                        "filename": p.name,
+                        "size_kb": round(p.stat().st_size / 1024, 1),
+                        "path": str(p),
+                    }
+                )
     result.sort(key=lambda x: x["id"], reverse=True)
     return result[:limit]
 
@@ -152,8 +174,5 @@ def all_users_stats() -> list[dict]:
     """Return storage stats for all users."""
     if not _IMAGES_ROOT.exists():
         return []
-    result = []
-    for d in _IMAGES_ROOT.iterdir():
-        if d.is_dir():
-            result.append(storage_stats(d.name))
+    result = [storage_stats(d.name) for d in _IMAGES_ROOT.iterdir() if d.is_dir()]
     return sorted(result, key=lambda x: x["mb"], reverse=True)

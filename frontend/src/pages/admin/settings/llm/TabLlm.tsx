@@ -1,24 +1,27 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  apiGetLlmSettings, apiGetServices, apiGetDockerControl, apiGetInnerVoices, apiGetLanguage,
+  apiGetLlmSettings, apiGetLlmModelCheck, type LlmModelCheck, apiGetServices, apiGetDockerControl, apiGetInnerVoices, apiGetLanguage,
   type LlmRoleConfig, type DockerControlSettings, type InnerVoicesData,
 } from "@/services/api";
 import { LlmInfraCard } from "./LlmInfraCard";
 import { LlmRoleCard } from "./LlmRoleCard";
 import { ImageRoleCard } from "./ImageRoleCard";
+import { ToolOptionsCard } from "./ToolOptionsCard";
+import { ExpertOnly } from "../shared";
 import { WhisperCard, type VoiceServicesData } from "./WhisperCard";
 import { PiperCard } from "./PiperCard";
 import { EmbeddingCard, type EmbServicesData } from "./EmbeddingCard";
 import { MemoryEmbedCard, type MemoryEmbedData } from "./MemoryEmbedCard";
+import { ModelStorageCard } from "./ModelStorageCard";
 import { InnerVoicesCard } from "./InnerVoicesCard";
 
 export function TabLlm() {
   const { t } = useTranslation();
   const [configs, setConfigs] = useState<Record<string, LlmRoleConfig>>({});
   const [voiceData, setVoiceData] = useState<VoiceServicesData>({
-    stt_backend: "openvino", faster_whisper_model: "large-v3", compute_type: "int8",
-    stt_enabled: true, model_dir: "",
+    stt_backend: "openvino", faster_whisper_model: "", compute_type: "int8",
+    stt_enabled: true, model_dir: "", cpu_threads: 0,
   });
   const [kareLanguage, setKareLanguage] = useState("en");
   const [embData, setEmbData] = useState<EmbServicesData>({
@@ -32,6 +35,7 @@ export function TabLlm() {
     push_token: "",
   });
   const [loading, setLoading] = useState(true);
+  const [modelCheck, setModelCheck] = useState<Record<string, LlmModelCheck>>({});
   const [dockerControl, setDockerControl] = useState<DockerControlSettings>({
     allow_docker_control: false,
     socket_available: false,
@@ -50,10 +54,11 @@ export function TabLlm() {
       const s = svc as any; // eslint-disable-line @typescript-eslint/no-explicit-any
       setVoiceData({
         stt_backend:          s.voice?.stt_backend          ?? "openvino",
-        faster_whisper_model: s.voice?.faster_whisper_model ?? "large-v3",
+        faster_whisper_model: s.voice?.faster_whisper_model ?? "",
         compute_type:         s.voice?.compute_type         ?? "int8",
         stt_enabled:          s.voice?.stt_enabled          ?? true,
         model_dir:            s.voice?.model_dir            ?? "",
+        cpu_threads:          s.voice?.cpu_threads          ?? 0,
       });
       setKareLanguage(langSettings.kare_language || "en");
       setEmbData({
@@ -71,10 +76,13 @@ export function TabLlm() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  // Separate from load(): asks every Ollama instance, so a slow one must not delay the tab.
+  useEffect(() => { apiGetLlmModelCheck().then(setModelCheck).catch(() => {}); }, []);
 
   if (loading) return <div className="text-muted-foreground text-sm">{t("common.loading")}</div>;
 
   const roleOrder = ["default", "miss_kare", "mechanic", "library", "fallback", "cloud", "image_edit"];
+  const REASON_FREELY_FIELDS = ["max_tokens", "temperature", "top_p", "presence_penalty"] as const;
 
   return (
     <div className="space-y-4">
@@ -90,8 +98,20 @@ export function TabLlm() {
       {roleOrder.filter(r => r in configs).map(role => (
         role === "image_edit"
           ? <ImageRoleCard key={role} role={role} config={configs[role]} onSaved={load} />
-          : <LlmRoleCard   key={role} role={role} config={configs[role]} onSaved={load} allConfigs={configs} allowDockerControl={dockerControl.allow_docker_control} />
+          : <LlmRoleCard   key={role} role={role} config={configs[role]} onSaved={load} allConfigs={configs} allowDockerControl={dockerControl.allow_docker_control} modelCheck={modelCheck[role]} />
       ))}
+      {"reason_freely" in configs && (
+        <ExpertOnly>
+          <ToolOptionsCard
+            role="reason_freely"
+            titleKey="settings.llm.reason_freely_title"
+            descKey="settings.llm.reason_freely_desc"
+            fields={REASON_FREELY_FIELDS}
+            config={configs["reason_freely"]}
+          />
+        </ExpertOnly>
+      )}
+      <ExpertOnly><ModelStorageCard /></ExpertOnly>
       <WhisperCard        data={voiceData}       kareLanguage={kareLanguage} onSaved={load} />
       <PiperCard                               onSaved={load} />
       <EmbeddingCard      data={embData}        onSaved={load} />

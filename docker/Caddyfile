@@ -5,7 +5,14 @@
         reverse_proxy kaare-api:8000
     }
 
-    # Voice — STT/TTS (HTTP + WebSocket)
+    # Voice — browser mic (STT) and read-aloud (TTS) through the same origin (P127): an https page
+    # cannot call http://host:8011. /voice is stripped before kaare-voice sees the path.
+    # Without the full profile kaare-voice does not exist and these requests get 502 — Caddy still starts.
+    handle_path /voice/* {
+        reverse_proxy kaare-voice:8011
+    }
+
+    # Old frontend path (before P127), kept for one release
     handle /transcribe* {
         reverse_proxy kaare-voice:8011
     }

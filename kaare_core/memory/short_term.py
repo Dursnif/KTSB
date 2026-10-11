@@ -1,4 +1,4 @@
-# /mnt/ai_disk/kaare/kaare_core/memory/short_term.py
+# kaare_core/memory/short_term.py
 """
 Korttidsminne v1 (RAM) – GLOBALT, ingen persistens.
 
@@ -21,13 +21,14 @@ import base64
 import json as _json
 import threading
 import time
-from dataclasses import dataclass, field
 from collections import deque
-from datetime import datetime, timezone
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
-from typing import Any, Deque, Dict, List, Optional, Tuple
+from typing import Any
 
+from kaare_core.config import now_local
 from kaare_core.crypto import seal, unseal
 from kaare_core.session_keys import resolve_key_sync
 from kaare_core.tools.i18n import t as _t_i18n
@@ -35,7 +36,11 @@ from kaare_core.users.store import get_public_key_b64
 
 
 def _utc_ts() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+_PENDING_SYSTEM_NOTES_MAXLEN = 50
+_SESSION_GAP_MINUTES = 30  # gap after which a new request counts as a fresh "session"
 
 
 def _clip(s: str, max_len: int) -> str:
@@ -48,7 +53,7 @@ def _clip(s: str, max_len: int) -> str:
 @dataclass
 class DialogTurn:
     ts: str
-    role: str   # "user" | "assistant" | "system"
+    role: str  # "user" | "assistant" | "system"
     text: str
     user_id: str = "global"
 
@@ -61,7 +66,7 @@ class ActionEvent:
     ok: bool
     result: str = ""
     user_id: str = "global"
-    meta: Dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -70,7 +75,7 @@ class StateEntry:
     key: str
     value: Any
     source: str = "unknown"
-    meta: Dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 class ShortTermMemory:
@@ -115,14 +120,28 @@ class ShortTermMemory:
 
         self._lock = RLock()
 
-        self._dialog: Deque[DialogTurn] = deque(maxlen=self.dialog_max_turns)
-        self._actions: Deque[ActionEvent] = deque(maxlen=self.actions_max)
-        self._daily_summary: str = ""  # Loaded at startup from SQLite (yesterday's compressed context)
+        self._dialog: deque[DialogTurn] = deque(maxlen=self.dialog_max_turns)
+        self._actions: deque[ActionEvent] = deque(maxlen=self.actions_max)
+        self._daily_summary: str = (
+            ""  # Loaded at startup from SQLite (yesterday's compressed context)
+        )
+
+        # One-shot system notices (fallback state change, timer fired, tool summary) —
+        # delivered once via get_pending_system_notes()/ack_pending_system_notes(), never
+        # replayed as dialog history. Separate from _dialog's role="system" turns, which
+        # get_dialog_pairs() never surfaces to the model — see P105.
+        self._pending_system_notes: deque[tuple[str, str]] = deque(
+            maxlen=_PENDING_SYSTEM_NOTES_MAXLEN
+        )
+
+        # Bookkeeping only for mark_activity()'s session-gap detection — never shown to
+        # the model directly (unlike the "day_started"/"session_started" state keys it sets).
+        self._last_activity_ts: datetime | None = None
 
         # state: key -> StateEntry
-        self._state: Dict[str, StateEntry] = {}
+        self._state: dict[str, StateEntry] = {}
         # key insertion order for eviction
-        self._state_order: Deque[str] = deque()
+        self._state_order: deque[str] = deque()
 
         # True once load_snapshot() has successfully decrypted an .enc file this session.
         # save_snapshot() will not overwrite an existing .enc until this is set — prevents
@@ -130,7 +149,7 @@ class ShortTermMemory:
         self._enc_snapshot_loaded: bool = False
 
         # autosave
-        self._autosave_path: Optional[str] = None
+        self._autosave_path: str | None = None
         self._autosave_min_interval: float = 5.0
         self._autosave_last: float = 0.0
 
@@ -171,9 +190,76 @@ class ShortTermMemory:
             role = "system"
         with self._lock:
             self._dialog.append(
-                DialogTurn(ts=_utc_ts(), role=str(role), text=_clip(text, self.dialog_max_text), user_id=user_id)
+                DialogTurn(
+                    ts=_utc_ts(),
+                    role=str(role),
+                    text=_clip(text, self.dialog_max_text),
+                    user_id=user_id,
+                )
             )
         self._trigger_autosave()
+
+    def add_pending_system_note(self, text: str, user_id: str = "global") -> None:
+        """One-shot system notice — fallback state change, timer fired, tool summary.
+        Delivered exactly once via get_pending_system_notes(), then cleared by
+        ack_pending_system_notes(), mirroring the mechanic_note/pending_note convention
+        in router_generate.py. Not dialog history — never replayed on later turns."""
+        if not text:
+            return
+        with self._lock:
+            self._pending_system_notes.append((user_id, text))
+        self._trigger_autosave()
+
+    def get_pending_system_notes(self, user_id: str = "global") -> list[str]:
+        """Undelivered one-shot system notices for this user. Non-destructive — call
+        ack_pending_system_notes() once the result has been folded into the prompt."""
+        with self._lock:
+            return [text for uid, text in self._pending_system_notes if uid == user_id]
+
+    def ack_pending_system_notes(self, user_id: str = "global") -> None:
+        """Clear delivered system notices for this user."""
+        with self._lock:
+            self._pending_system_notes = deque(
+                ((uid, text) for uid, text in self._pending_system_notes if uid != user_id),
+                maxlen=_PENDING_SYSTEM_NOTES_MAXLEN,
+            )
+
+    def mark_activity(self) -> datetime | None:
+        """
+        Refresh "day_started" (calendar-day boundary) and "session_started" (session-gap
+        boundary — a new request after _SESSION_GAP_MINUTES of inactivity counts as a new
+        session) as ordinary `_state` entries.
+
+        Unlike plain dialog turns, `_state` entries are always shown in full in every
+        prompt — they don't compete for a spot in get_dialog_pairs()'s last-4-pairs replay
+        window. Without this, a long same-day conversation gives the model no signal at
+        all that older turns exist beyond what it currently sees, or that a session was
+        resumed after a real gap — exactly what caused Kåre to misidentify his own
+        conversation's opening turn (see BUG-log 2026-09-06 / P105).
+
+        Returns the previous activity time (UTC) before this call overwrote it, or None on
+        the very first activity. The caller uses it to tell the model how long ago the
+        replayed turns happened (P105 Phase 6, BUG-log 2026-09-28).
+        """
+        now = datetime.now(UTC)
+        local = now.astimezone(now_local().tzinfo)  # day and clock as the household sees them (N16)
+        today_str = local.date().isoformat()
+
+        with self._lock:
+            day_entry = self._state.get("day_started")
+            is_new_day = not day_entry or day_entry.value != today_str
+
+            previous = self._last_activity_ts
+            is_new_session = (
+                previous is None or (now - previous).total_seconds() / 60 > _SESSION_GAP_MINUTES
+            )
+            self._last_activity_ts = now
+
+        if is_new_day:
+            self.set_state("day_started", today_str, source="system")
+        if is_new_session:
+            self.set_state("session_started", local.strftime("%H:%M"), source="system")
+        return previous
 
     def record_action(
         self,
@@ -182,7 +268,7 @@ class ShortTermMemory:
         ok: bool,
         result: str = "",
         user_id: str = "global",
-        meta: Optional[Dict[str, Any]] = None,
+        meta: dict[str, Any] | None = None,
     ) -> None:
         """Logg en HA-handling (eller forsøkt handling) med utfall."""
         with self._lock:
@@ -204,7 +290,7 @@ class ShortTermMemory:
         key: str,
         value: Any,
         source: str = "unknown",
-        meta: Optional[Dict[str, Any]] = None,
+        meta: dict[str, Any] | None = None,
     ) -> None:
         """
         Sett en state key. Dette er "siste sannhet vinner".
@@ -215,7 +301,9 @@ class ShortTermMemory:
             return
 
         with self._lock:
-            entry = StateEntry(ts=_utc_ts(), key=k, value=value, source=source, meta=dict(meta or {}))
+            entry = StateEntry(
+                ts=_utc_ts(), key=k, value=value, source=source, meta=dict(meta or {})
+            )
             is_new = k not in self._state
             self._state[k] = entry
 
@@ -233,7 +321,7 @@ class ShortTermMemory:
         entity_id: str,
         state_value: Any,
         source: str = "ha",
-        meta: Optional[Dict[str, Any]] = None,
+        meta: dict[str, Any] | None = None,
     ) -> None:
         """
         Convenience: lagrer state for entity.
@@ -248,18 +336,18 @@ class ShortTermMemory:
     # Lesing / kontekstbygging
     # -------------------------
 
-    def last_action(self, user_id: str = "global") -> Optional[ActionEvent]:
+    def last_action(self, user_id: str = "global") -> ActionEvent | None:
         with self._lock:
             for ev in reversed(list(self._actions)):
                 if ev.user_id == user_id:
                     return ev
             return None
 
-    def get_state(self, key: str) -> Optional[StateEntry]:
+    def get_state(self, key: str) -> StateEntry | None:
         with self._lock:
             return self._state.get(key)
 
-    def snapshot_counts(self) -> Dict[str, int]:
+    def snapshot_counts(self) -> dict[str, int]:
         with self._lock:
             return {
                 "dialog_turns": len(self._dialog),
@@ -267,29 +355,102 @@ class ShortTermMemory:
                 "state_keys": len(self._state),
             }
 
-    def get_dialog_pairs(self, user_id: str = "global", n: int = 4) -> list:
+    def get_dialog_pairs_window(
+        self,
+        user_id: str,
+        *,
+        token_budget: int,
+        max_pairs: int,
+        prior_session_pairs: int,
+        session_gap_minutes: float,
+        chars_per_token: float,
+        now: datetime | None = None,
+    ) -> tuple[list, list]:
+        """
+        Dynamic replay window (P105 Phase 7 A) instead of a fixed n.
+
+        Walks the (user, assistant, user_ts) pairs newest-first. Pairs belong to the current
+        session while consecutive turns (and the newest turn vs. now) are less than
+        session_gap_minutes apart; they are taken until token_budget (estimated from
+        characters) or max_pairs is reached. Once a gap is crossed, at most
+        prior_session_pairs more are taken. Selection stops at the first pair that doesn't
+        fit, so the replayed turns are always one contiguous tail of the conversation.
+
+        Returns (included, omitted) — both oldest-first lists of 3-tuples. Pairing logic is
+        get_dialog_pairs() unchanged (P105 Decision 1).
+        """
+        all_pairs = self.get_dialog_pairs(user_id=user_id, n=len(self._dialog) or 1, with_ts=True)
+        now = now or datetime.now(UTC)
+        included: list = []
+        used_tokens = 0.0
+        prior_taken = 0
+        in_session = True
+        anchor = now
+        cut = len(all_pairs)
+        for idx in range(len(all_pairs) - 1, -1, -1):
+            u_text, a_text, u_ts = all_pairs[idx]
+            try:
+                ts = datetime.fromisoformat(u_ts)
+                ts = ts if ts.tzinfo else ts.replace(tzinfo=UTC)
+            except (TypeError, ValueError):
+                ts = None
+            if in_session and (
+                ts is None or (anchor - ts).total_seconds() / 60 >= session_gap_minutes
+            ):
+                in_session = False
+            cost = (len(u_text) + len(a_text)) / max(chars_per_token, 0.1)
+            if len(included) >= max_pairs or used_tokens + cost > token_budget:
+                break
+            if not in_session:
+                if prior_taken >= prior_session_pairs:
+                    break
+                prior_taken += 1
+            included.append(all_pairs[idx])
+            used_tokens += cost
+            cut = idx
+            if ts is not None:
+                anchor = ts
+        included.reverse()
+        return included, all_pairs[:cut]
+
+    def get_dialog_pairs(self, user_id: str = "global", n: int = 4, with_ts: bool = False) -> list:
         """
         Returns last n (user_text, assistant_text) pairs from dialog for this user.
         System turns are excluded. Returns list of (user, assistant) tuples, oldest first.
         Unpaired turns (no following assistant response) are skipped.
+
+        with_ts=True returns (user_text, assistant_text, user_ts) instead, user_ts being the
+        user turn's UTC ISO timestamp — so replayed turns can be dated (P105 Phase 6).
+        The pairing logic itself is identical either way (P105 Decision 1).
         """
         with self._lock:
-            relevant = [t for t in self._dialog
-                        if t.user_id == user_id and t.role in ("user", "assistant")]
+            relevant = [
+                t for t in self._dialog if t.user_id == user_id and t.role in ("user", "assistant")
+            ]
             pairs: list = []
             i = 0
             while i < len(relevant):
-                if (relevant[i].role == "user"
-                        and i + 1 < len(relevant)
-                        and relevant[i + 1].role == "assistant"):
-                    pairs.append((relevant[i].text, relevant[i + 1].text))
+                if (
+                    relevant[i].role == "user"
+                    and i + 1 < len(relevant)
+                    and relevant[i + 1].role == "assistant"
+                ):
+                    if with_ts:
+                        pairs.append((relevant[i].text, relevant[i + 1].text, relevant[i].ts))
+                    else:
+                        pairs.append((relevant[i].text, relevant[i + 1].text))
                     i += 2
                 else:
                     i += 1
             return pairs[-n:] if pairs else []
 
-    def build_prompt_context(self, user_text: str = "", user_id: str = "global",
-                              include_dialog: bool = True, lang: str = "nb") -> str:
+    def build_prompt_context(
+        self,
+        user_text: str = "",
+        user_id: str = "global",
+        include_dialog: bool = True,
+        lang: str = "nb",
+    ) -> str:
         """
         Bygger en kompakt kontekst-blokk. Dette er ment å prepends til prompt før LLM.
 
@@ -304,7 +465,7 @@ class ShortTermMemory:
         user_text_l = (user_text or "").lower().strip()
 
         with self._lock:
-            parts: List[str] = []
+            parts: list[str] = []
 
             # 0) Daily summary – compressed context from previous day
             if self._daily_summary:
@@ -316,32 +477,40 @@ class ShortTermMemory:
             if user_actions:
                 parts.append(_t_i18n("stm_last_actions", lang))
                 for ev in user_actions[-self.context_last_actions :]:
-                    status = _t_i18n("stm_action_ok", lang) if ev.ok else _t_i18n("stm_action_failed", lang)
+                    status = (
+                        _t_i18n("stm_action_ok", lang)
+                        if ev.ok
+                        else _t_i18n("stm_action_failed", lang)
+                    )
                     line = f"- [{ev.ts}] {status}: {ev.action} {ev.entity_id}"
                     if ev.result:
                         line += f" ({ev.result})"
                     parts.append(_clip(line, 500))
 
             # 2) State – velg keys
-            state_lines: List[str] = []
+            state_lines: list[str] = []
             if self._state:
                 keys_last = list(self._state_order)[-self.context_last_state_keys :]
-                keys_hit: List[str] = []
+                keys_hit: list[str] = []
                 if user_text_l:
                     # veldig enkel matching: entity_id/alias-ord dukker ofte opp direkte
-                    for k in self._state.keys():
-                        if user_text_l and (k.lower() in user_text_l or user_text_l in k.lower()):
-                            keys_hit.append(k)
+                    keys_hit.extend(
+                        k
+                        for k in self._state
+                        if k.lower() in user_text_l or user_text_l in k.lower()
+                    )
 
                     # også: hvis user skriver "taklys verksted" og vi har entity:...
                     # (dette er fortsatt bare substring; ingen NLP)
-                    for k in self._state.keys():
-                        if user_text_l and any(tok in k.lower() for tok in user_text_l.split()[:6]):
-                            keys_hit.append(k)
+                    keys_hit.extend(
+                        k
+                        for k in self._state
+                        if any(tok in k.lower() for tok in user_text_l.split()[:6])
+                    )
 
                 # unik + prioriter: hits først, så siste keys
                 seen = set()
-                keys: List[str] = []
+                keys: list[str] = []
                 for k in keys_hit + keys_last:
                     if k in self._state and k not in seen:
                         seen.add(k)
@@ -365,8 +534,10 @@ class ShortTermMemory:
                 user_dialog = [t for t in self._dialog if t.user_id == user_id]
                 if user_dialog:
                     parts.append(_t_i18n("stm_dialog_header", lang))
-                    for t in user_dialog[-self.context_last_dialog_turns :]:
-                        parts.append(f"- [{t.ts}] {t.role}: {_clip(t.text, 300)}")
+                    parts.extend(
+                        f"- [{turn.ts}] {turn.role}: {_clip(turn.text, 300)}"
+                        for turn in user_dialog[-self.context_last_dialog_turns :]
+                    )
 
             out = "\n".join(parts).strip()
 
@@ -395,7 +566,7 @@ class ShortTermMemory:
     # Serialisering / disk
     # -------------------------
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialiser heile STM til ein dict (JSON-kompatibel)."""
         with self._lock:
             return {
@@ -408,33 +579,59 @@ class ShortTermMemory:
                 ],
                 "actions": [
                     {
-                        "ts": a.ts, "action": a.action, "entity_id": a.entity_id,
-                        "ok": a.ok, "result": a.result, "user_id": a.user_id, "meta": a.meta,
+                        "ts": a.ts,
+                        "action": a.action,
+                        "entity_id": a.entity_id,
+                        "ok": a.ok,
+                        "result": a.result,
+                        "user_id": a.user_id,
+                        "meta": a.meta,
                     }
                     for a in self._actions
                 ],
                 "state": {
-                    k: {"ts": e.ts, "key": e.key, "value": e.value, "source": e.source, "meta": e.meta}
+                    k: {
+                        "ts": e.ts,
+                        "key": e.key,
+                        "value": e.value,
+                        "source": e.source,
+                        "meta": e.meta,
+                    }
                     for k, e in self._state.items()
                 },
+                "pending_system_notes": [
+                    {"user_id": uid, "text": text} for uid, text in self._pending_system_notes
+                ],
+                "last_activity_ts": self._last_activity_ts.isoformat()
+                if self._last_activity_ts
+                else None,
             }
 
-    def load_from_dict(self, data: Dict[str, Any]) -> None:
+    def load_from_dict(self, data: dict[str, Any]) -> None:
         """Gjenopprett STM frå ein serialisert dict. Eksisterande innhald vert erstatta."""
         with self._lock:
             self._dialog.clear()
             for t in data.get("dialog", []):
                 self._dialog.append(
-                    DialogTurn(ts=t["ts"], role=t["role"], text=t["text"], user_id=t.get("user_id", "global"))
+                    DialogTurn(
+                        ts=t["ts"],
+                        role=t["role"],
+                        text=t["text"],
+                        user_id=t.get("user_id", "global"),
+                    )
                 )
 
             self._actions.clear()
             for a in data.get("actions", []):
                 self._actions.append(
                     ActionEvent(
-                        ts=a["ts"], action=a["action"], entity_id=a["entity_id"],
-                        ok=a["ok"], result=a.get("result", ""),
-                        user_id=a.get("user_id", "global"), meta=a.get("meta", {}),
+                        ts=a["ts"],
+                        action=a["action"],
+                        entity_id=a["entity_id"],
+                        ok=a["ok"],
+                        result=a.get("result", ""),
+                        user_id=a.get("user_id", "global"),
+                        meta=a.get("meta", {}),
                     )
                 )
 
@@ -442,13 +639,23 @@ class ShortTermMemory:
             self._state_order.clear()
             for k, e in data.get("state", {}).items():
                 self._state[k] = StateEntry(
-                    ts=e["ts"], key=e["key"], value=e["value"],
-                    source=e.get("source", "unknown"), meta=e.get("meta", {}),
+                    ts=e["ts"],
+                    key=e["key"],
+                    value=e["value"],
+                    source=e.get("source", "unknown"),
+                    meta=e.get("meta", {}),
                 )
                 self._state_order.append(k)
 
             if "daily_summary" in data:
                 self._daily_summary = data["daily_summary"]
+
+            self._pending_system_notes.clear()
+            for n in data.get("pending_system_notes", []):
+                self._pending_system_notes.append((n.get("user_id", "global"), n.get("text", "")))
+
+            _last_ts = data.get("last_activity_ts")
+            self._last_activity_ts = datetime.fromisoformat(_last_ts) if _last_ts else None
 
     def save_snapshot(self, path: str) -> bool:
         """Lagre STM til disk. Returnerer True ved suksess.
@@ -483,6 +690,11 @@ class ShortTermMemory:
                 pub_bytes = base64.b64decode(pub_b64)
                 encrypted = seal(json_text, pub_bytes)
                 enc_path.write_text(encrypted, encoding="utf-8")
+                # This session wrote the file from its own full state, so later saves may
+                # overwrite it. Before (DT03 R7), only load_snapshot() set the flag: a brand-new
+                # user's first save created the .enc and Guard 1 then dropped every later save
+                # silently until the next restart + login — the user lost the rest of the session.
+                self._enc_snapshot_loaded = True
                 if p.exists() and p.suffix == ".json":
                     p.unlink()
             else:
@@ -540,14 +752,16 @@ class STMRegistry:
                 self._users[user_id] = stm
             return self._users[user_id]
 
-    def set_entity_state(self, entity_id: str, state_value: Any,
-                         source: str = "ha", meta: dict | None = None) -> None:
+    def set_entity_state(
+        self, entity_id: str, state_value: Any, source: str = "ha", meta: dict | None = None
+    ) -> None:
         with self._lock:
             for stm in self._users.values():
                 stm.set_entity_state(entity_id, state_value, source, meta)
 
-    def set_state(self, key: str, value: Any, source: str = "unknown",
-                  meta: dict | None = None) -> None:
+    def set_state(
+        self, key: str, value: Any, source: str = "unknown", meta: dict | None = None
+    ) -> None:
         with self._lock:
             for stm in self._users.values():
                 stm.set_state(key, value, source, meta)
@@ -574,7 +788,9 @@ class STMRegistry:
             with self._lock:
                 if uid not in self._users:
                     self._users[uid] = ShortTermMemory(user_id=uid, **self._kwargs)
-            self._users[uid].load_snapshot(str(p / f"{uid}.json"), allow_system_key=allow_system_key)
+            self._users[uid].load_snapshot(
+                str(p / f"{uid}.json"), allow_system_key=allow_system_key
+            )
 
     def migrate_legacy_snapshot(self, old_path: str, new_dir: str) -> bool:
         """Read old stm_snapshot.json and split into per-user files."""
@@ -600,9 +816,14 @@ class STMRegistry:
         p = Path(new_dir)
         p.mkdir(parents=True, exist_ok=True)
         for uid, udata in users.items():
-            payload = {"version": 1, "saved_at": _utc_ts(),
-                       "daily_summary": "", "dialog": udata["dialog"],
-                       "actions": udata["actions"], "state": udata["state"]}
+            payload = {
+                "version": 1,
+                "saved_at": _utc_ts(),
+                "daily_summary": "",
+                "dialog": udata["dialog"],
+                "actions": udata["actions"],
+                "state": udata["state"],
+            }
             (p / f"{uid}.json").write_text(
                 _json.dumps(payload, ensure_ascii=False), encoding="utf-8"
             )

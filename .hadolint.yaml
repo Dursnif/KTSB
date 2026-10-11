@@ -1,0 +1,5 @@
+# hadolint — Dockerfile lint standard for KTSB.
+ignored:
+  # Pin apt package versions: Debian mirrors drop old versions, so pinned installs break the
+  # build within weeks. The base image tag (python:3.12-slim) already pins the distro release.
+  - DL3008

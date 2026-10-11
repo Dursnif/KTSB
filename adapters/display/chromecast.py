@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Optional
 
 from adapters.display.base import BaseDisplayProvider
 
@@ -9,7 +8,9 @@ log = logging.getLogger(__name__)
 
 
 def _cast_image_sync(host: str, image_url: str, discovery_timeout: float) -> bool:
-    import pychromecast
+    # PLC0415: optional dependency — loaded only when this feature is used (rule 24)
+    import pychromecast  # noqa: PLC0415
+
     chromecasts, browser = pychromecast.get_listed_chromecasts(
         known_hosts=[host],
         discovery_timeout=discovery_timeout,
@@ -35,8 +36,8 @@ class ChromecastDisplayProvider(BaseDisplayProvider):
         node_config: dict,
         text: str,
         title: str = "Kåre",
-        image_path: Optional[str] = None,
-        image_b64: Optional[str] = None,
+        image_path: str | None = None,
+        image_b64: str | None = None,
         duration: int = 8,
         position: str = "bottom_right",
     ) -> dict:
@@ -44,7 +45,10 @@ class ChromecastDisplayProvider(BaseDisplayProvider):
         if not host:
             return {"ok": False, "error": "Chromecast: missing host"}
         if not image_path:
-            return {"ok": False, "error": "Chromecast: requires image (no text-only overlay support)"}
+            return {
+                "ok": False,
+                "error": "Chromecast: requires image (no text-only overlay support)",
+            }
 
         image_url = f"{self._media_base_url}/{Path(image_path).name}"
         try:

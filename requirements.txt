@@ -7,11 +7,12 @@ python-multipart>=0.0.9
 
 # ── HTTP clients ───────────────────────────────────────────────────────────────
 httpx>=0.27.0
-requests>=2.31.0
+jinja2>=3.1.0
 websockets>=11.0.0
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 pyyaml>=6.0
+ruamel.yaml>=0.19.1  # config store: comment-preserving YAML writes (P134)
 
 # ── Auth / crypto ──────────────────────────────────────────────────────────────
 PyJWT>=2.8.0
@@ -27,15 +28,17 @@ qdrant-client>=1.9.0
 aiomqtt>=2.0.0
 
 # ── Web search (lazy imports — optional at runtime) ────────────────────────────
-duckduckgo-search>=6.0.0
 trafilatura>=2.0.0
 
 # ── Data / utilities ───────────────────────────────────────────────────────────
+pillow>=10.0      # image resize before vLLM (adapters/llm_adapter.py) — was undeclared, missing in Docker (N20)
+psutil>=5.9       # CPU/RAM fastpath answers (kaare_api.py) — was undeclared, missing in Docker (N20)
 numpy>=1.26.0
 tqdm>=4.66.0
 
 # ── Testing ────────────────────────────────────────────────────────────────────
 pytest>=8.0.0
+pyflakes>=3.0   # tests/test_no_undefined_names.py — skipped silently without it (N22)
 
 # ── Semantic memory embedder (memory_embed_server) ─────────────────────────────
 onnxruntime>=1.17.0

@@ -11,9 +11,10 @@ Logged events:
   developer_tools   — shell command executed via developer_tools
   rate_limited      — request blocked by rate limiter
 """
+
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 _LOG_PATH = Path("/kaare/logs/audit.log")
@@ -31,7 +32,7 @@ def audit_log(
     Silently swallows all errors — audit logging must never crash the caller.
     """
     entry = {
-        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "ts": datetime.now(UTC).isoformat(timespec="seconds"),
         "event": event_type,
         "user": username,
         "detail": detail,

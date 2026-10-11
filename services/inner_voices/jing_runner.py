@@ -4,10 +4,10 @@ Runs every N minutes (from settings.yaml). Reads categorized recent events.
 Outputs 3 categorized sections: MENNESKER, ANDRE, ARGUS.
 Only data from the last INTERVAL+10 seconds is included (time filter).
 """
+
 import re
 import sys
 import time
-from pathlib import Path
 
 from common import (
     DIGEST,
@@ -87,11 +87,12 @@ def _read_digest_category(cutoff: float, category: str, lang: str) -> str:
         if category == "andre":
             if source == "frigate-mqtt" and "person" not in message.lower():
                 lines.append(line)
-        elif category == "argus":
-            if source in ("kaare-metrics", "ha-events"):
-                lines.append(line)
-            elif "error" in message.lower() or "feil" in message.lower():
-                lines.append(line)
+        elif category == "argus" and (
+            source in ("kaare-metrics", "ha-events")
+            or "error" in message.lower()
+            or "feil" in message.lower()
+        ):
+            lines.append(line)
     return "\n".join(lines) if lines else t("inner_none", lang)
 
 

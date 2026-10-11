@@ -1,0 +1,4 @@
+# codespell — typo check for KTSB. Run from the repo root: codespell
+[codespell]
+ignore-words = .codespell-ignore-words.txt
+skip = ./venv,*/venv,*/.venv,./backups,./state,./logs,./data,./runtime,./frontend/node_modules,./frontend/dist,./semantic_embed/venv,./services/voice/venv,./services/embedding/convert_venv,*/__pycache__,*.png,*.jpg,*.svg,*.ico,*.db,*.jsonl,*.lock,package-lock.json,*.pt,*.bin,*.onnx,*.xml,*.wav,*.mp3

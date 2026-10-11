@@ -10,7 +10,7 @@ Thread-safe via asyncio.Lock.
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from kaare_core import crypto as _crypto
 from kaare_core.users import store as _store

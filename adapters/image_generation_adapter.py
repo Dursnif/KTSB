@@ -8,15 +8,14 @@ API key is stored in configs/llm_keys.env under the variable named by api_key_en
 Generated images are saved to state/generated_images/ and served via /api/image/{id}.
 """
 
-import base64
-import time
-import uuid
-import httpx
 import logging
 from pathlib import Path
 from typing import Any
 
-from kaare_core.config import get_model, get_llm_config
+import httpx
+
+from kaare_core.config import get_llm_config, get_model
+from kaare_core.image_store import save_image as _store_save
 
 _log = logging.getLogger(__name__)
 
@@ -49,7 +48,7 @@ def _get_api_key(cfg: dict) -> str:
 
 def _save_image(b64_data: str, user_id: str = "global") -> str:
     """Decode base64 image, save via image_store, return image_id."""
-    from kaare_core.image_store import save_image as _store_save
+
     return _store_save(b64_data, user_id, "output")
 
 
@@ -71,13 +70,17 @@ def _extract_b64(data: dict) -> str:
 
 def _save_binary_image(raw: bytes, user_id: str = "global") -> str:
     """Save raw PNG/JPEG bytes via image_store, return image_id."""
-    from kaare_core.image_store import save_image as _store_save
+
     return _store_save(raw, user_id, "output")
 
 
 async def _call_huggingface(
-    cfg: dict, api_key: str, model: str,
-    prompt: str, negative_prompt: str = "", user_id: str = "global",
+    cfg: dict,
+    api_key: str,
+    model: str,
+    prompt: str,
+    negative_prompt: str = "",
+    user_id: str = "global",
 ) -> dict[str, Any]:
     """
     HuggingFace Inference API for text-to-image.
@@ -110,15 +113,24 @@ async def _call_huggingface(
         )
     if r.status_code >= 400:
         _log.error("hf image generate http %s: %s", r.status_code, r.text[:200])
-        return {"ok": False, "error": f"http_{r.status_code}", "detail": r.text[:300], "image_id": None}
+        return {
+            "ok": False,
+            "error": f"http_{r.status_code}",
+            "detail": r.text[:300],
+            "image_id": None,
+        }
 
     image_id = _save_binary_image(r.content, user_id)
     return {"ok": True, "image_id": image_id, "model": model}
 
 
 async def _call_openai_compat(
-    cfg: dict, api_key: str, model: str,
-    prompt: str, negative_prompt: str = "", user_id: str = "global",
+    cfg: dict,
+    api_key: str,
+    model: str,
+    prompt: str,
+    negative_prompt: str = "",
+    user_id: str = "global",
 ) -> dict[str, Any]:
     """
     OpenAI-compatible /v1/images/generations endpoint.
@@ -147,7 +159,12 @@ async def _call_openai_compat(
         )
     if r.status_code >= 400:
         _log.error("image generate http %s: %s", r.status_code, r.text[:200])
-        return {"ok": False, "error": f"http_{r.status_code}", "detail": r.text[:300], "image_id": None}
+        return {
+            "ok": False,
+            "error": f"http_{r.status_code}",
+            "detail": r.text[:300],
+            "image_id": None,
+        }
 
     b64 = _extract_b64(r.json())
     if not b64:
@@ -190,8 +207,13 @@ async def generate_image(
 
 
 async def _call_huggingface_edit(
-    cfg: dict, api_key: str, model: str,
-    image_b64: str, prompt: str, negative_prompt: str = "", user_id: str = "global",
+    cfg: dict,
+    api_key: str,
+    model: str,
+    image_b64: str,
+    prompt: str,
+    negative_prompt: str = "",
+    user_id: str = "global",
 ) -> dict[str, Any]:
     """
     HuggingFace Inference API for image-to-image.
@@ -223,7 +245,12 @@ async def _call_huggingface_edit(
         )
     if r.status_code >= 400:
         _log.error("hf image edit http %s: %s", r.status_code, r.text[:200])
-        return {"ok": False, "error": f"http_{r.status_code}", "detail": r.text[:300], "image_id": None}
+        return {
+            "ok": False,
+            "error": f"http_{r.status_code}",
+            "detail": r.text[:300],
+            "image_id": None,
+        }
 
     image_id = _save_binary_image(r.content, user_id)
     return {"ok": True, "image_id": image_id, "model": model}
@@ -256,7 +283,9 @@ async def edit_image(
 
     try:
         if provider == "huggingface":
-            return await _call_huggingface_edit(cfg, api_key, model, image_b64, prompt, negative_prompt, user_id)
+            return await _call_huggingface_edit(
+                cfg, api_key, model, image_b64, prompt, negative_prompt, user_id
+            )
 
         base_url = cfg.get("base_url", "").rstrip("/")
         timeout = float(cfg.get("timeout", 120))
@@ -282,7 +311,12 @@ async def edit_image(
             )
         if r.status_code >= 400:
             _log.error("image edit http %s: %s", r.status_code, r.text[:200])
-            return {"ok": False, "error": f"http_{r.status_code}", "detail": r.text[:300], "image_id": None}
+            return {
+                "ok": False,
+                "error": f"http_{r.status_code}",
+                "detail": r.text[:300],
+                "image_id": None,
+            }
 
         b64 = _extract_b64(r.json())
         if not b64:

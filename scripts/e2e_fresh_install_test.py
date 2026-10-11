@@ -15,8 +15,10 @@ with a real install on the same machine) — rewrites the frontend's hardcoded
 `{hostname}:8000` API calls to the real API port via Playwright request
 interception, so no app code needs to change for the test.
 
-Usage:
-  PYTHONPATH=/kaare /kaare/venv/bin/python scripts/e2e_fresh_install_test.py \\
+Setup: same Playwright environment as e2e_gui_test.py (requirements-dev.txt).
+
+Usage (that environment's python):
+  python scripts/e2e_fresh_install_test.py \\
       --frontend-url http://127.0.0.1:15173 --api-port 18000 \\
       --username admin --pin 1234 --new-pin <ny PIN, min 6 siffer>
 """
@@ -28,21 +30,30 @@ import sys
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, "/kaare/scripts")
-from e2e_gui_test import do_login, walk_onboarding, GREEN, RED, YELLOW, CYAN, BOLD, RESET, ok, err, warn, head  # noqa: E402
+from urllib.parse import urlparse
+
+from e2e_gui_test import do_login, err, head, ok, walk_onboarding, warn
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p.add_argument("--frontend-url", required=True)
-    p.add_argument("--api-port", type=int, required=True,
-                    help="Real host port the API container is published on (frontend code always calls :8000).")
+    p.add_argument(
+        "--api-port",
+        type=int,
+        required=True,
+        help="Real host port the API container is published on (frontend code always calls :8000).",
+    )
     p.add_argument("--username", default="admin")
     p.add_argument("--pin", required=True)
-    p.add_argument("--new-pin", default=None, help="Only needed on the very first login (forced PIN change).")
+    p.add_argument(
+        "--new-pin", default=None, help="Only needed on the very first login (forced PIN change)."
+    )
     p.add_argument("--headed", action="store_true")
     args = p.parse_args()
 
-    from urllib.parse import urlparse
     fe_host = urlparse(args.frontend_url).hostname
 
     with sync_playwright() as pw:
@@ -62,7 +73,11 @@ def main():
 
         page.route("**/*", rewrite)
 
-        print(head(f"Logging in as {args.username} @ {args.frontend_url} (API rewritten to :{args.api_port})"))
+        print(
+            head(
+                f"Logging in as {args.username} @ {args.frontend_url} (API rewritten to :{args.api_port})"
+            )
+        )
         state = do_login(page, args.frontend_url, args.username, args.pin, args.new_pin)
         print(f"Login result: {state}")
         if state not in ("admin", "onboarding"):
@@ -86,7 +101,11 @@ def main():
             print(ok(s["step"]) if s["ok"] else err(f"{s['step']}: {s.get('reason')}"))
         if result.get("created_test_user"):
             u = result["created_test_user"]
-            print(warn(f"Created test user '{u['username']}' (PIN {u['pin']}) inside the fresh instance."))
+            print(
+                warn(
+                    f"Created test user '{u['username']}' (PIN {u['pin']}) inside the fresh instance."
+                )
+            )
 
         browser.close()
         print(head("Result: PASS" if result["ok"] else "Result: FAIL"))

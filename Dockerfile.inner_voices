@@ -5,15 +5,15 @@ ARG PROVIDER=openvino
 
 WORKDIR /kaare/services/inner_voices
 
-COPY services/inner_voices/requirements.txt .
+COPY services/inner_voices/requirements.txt services/inner_voices/constraints.txt ./
 
-RUN pip install --no-cache-dir pyyaml && \
+RUN pip install --no-cache-dir pyyaml -c constraints.txt && \
     if [ "$PROVIDER" = "openvino" ]; then \
-        pip install --no-cache-dir "openvino-genai>=2025.0" "optimum-intel>=1.20.0"; \
+        pip install --no-cache-dir "openvino-genai>=2025.0" "optimum-intel>=1.20.0" -c constraints.txt; \
     elif [ "$PROVIDER" = "mlx" ]; then \
-        pip install --no-cache-dir mlx mlx-lm; \
+        pip install --no-cache-dir mlx mlx-lm -c constraints.txt; \
     elif [ "$PROVIDER" = "cpu" ]; then \
-        pip install --no-cache-dir torch transformers; \
+        pip install --no-cache-dir torch transformers -c constraints.txt; \
     fi
 
 COPY services/inner_voices/ .

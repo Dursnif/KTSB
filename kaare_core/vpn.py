@@ -7,9 +7,8 @@ Privileged wg operations are delegated to /usr/local/bin/kaare-wg-manage via sud
 
 import json
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -69,10 +68,10 @@ def _server_public_key() -> str:
 def _generate_keypair() -> tuple[str, str]:
     """Returns (private_key, public_key). wg genkey/pubkey do not need root."""
     private = subprocess.run(
-        ["wg", "genkey"], capture_output=True, text=True, check=True
+        ["wg", "genkey"], capture_output=True, text=True, check=True, timeout=5
     ).stdout.strip()
     public = subprocess.run(
-        ["wg", "pubkey"], input=private, capture_output=True, text=True, check=True
+        ["wg", "pubkey"], input=private, capture_output=True, text=True, check=True, timeout=5
     ).stdout.strip()
     return private, public
 
@@ -92,7 +91,9 @@ def create_client(username: str, device_name: str) -> dict:
 
     vpn = _vpn_settings()
     if not vpn["duckdns_host"]:
-        raise RuntimeError("VPN endpoint not configured. Set vpn.duckdns_host in configs/settings.yaml.")
+        raise RuntimeError(
+            "VPN endpoint not configured. Set vpn.duckdns_host in configs/settings.yaml."
+        )
 
     ip = _next_ip(clients)
     private_key, public_key = _generate_keypair()
@@ -120,7 +121,9 @@ def create_client(username: str, device_name: str) -> dict:
     # Add peer to running WireGuard (requires sudo)
     result = subprocess.run(
         ["sudo", WG_MANAGE, "add", public_key, ip, client_name],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     if result.returncode != 0:
         conf_path.unlink(missing_ok=True)
@@ -133,7 +136,7 @@ def create_client(username: str, device_name: str) -> dict:
         "device_name": device_name,
         "ip": ip,
         "public_key": public_key,
-        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     clients.append(entry)
     _save_index(clients)
@@ -141,7 +144,7 @@ def create_client(username: str, device_name: str) -> dict:
     return {**entry, "config": config_text}
 
 
-def list_clients(username: Optional[str] = None) -> list[dict]:
+def list_clients(username: str | None = None) -> list[dict]:
     """Returns all clients, optionally filtered by username."""
     clients = _load_index()
     if username:
@@ -159,7 +162,9 @@ def delete_client(client_name: str) -> None:
     # Remove peer from running WireGuard
     result = subprocess.run(
         ["sudo", WG_MANAGE, "remove", target["public_key"]],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     if result.returncode != 0:
         raise RuntimeError(f"Failed to remove WireGuard peer: {result.stderr.strip()}")
