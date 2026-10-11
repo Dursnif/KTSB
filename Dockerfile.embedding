@@ -2,11 +2,14 @@ FROM python:3.12-slim
 
 WORKDIR /kaare/services/embedding
 
-# torch CPU-only (~200 MB vs ~2 GB for the default CUDA build)
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+COPY services/embedding/requirements.txt services/embedding/constraints.txt ./
 
-COPY services/embedding/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# torch CPU-only (~200 MB vs ~2 GB for the default CUDA build)
+RUN pip install --no-cache-dir torch -c constraints.txt --index-url https://download.pytorch.org/whl/cpu
+
+# Separate layer on purpose: the large torch layer above stays cached when requirements change.
+# hadolint ignore=DL3059
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 COPY kaare_core/ /kaare/kaare_core/
 COPY configs_default/ /kaare/configs_default/

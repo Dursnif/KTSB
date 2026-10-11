@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import QRCode from "react-qr-code";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { copyText } from "@/lib/clipboard";
+import { BUILTIN_ADMIN, groupUsers, isSystemUser, userLabel } from "../../lib/systemUsers";
 import {
   apiListUsers, apiCreateUser, apiUpdateUser,
   apiUpdatePin, apiDeleteUser, apiListPersonalities,
@@ -10,6 +12,7 @@ import {
   apiGetToolPermissions, apiSaveToolPermissions, apiGenerateTempPin,
   type KaareUser, type Role, type VpnAccess, type VpnClient, type ToolPermissions,
 } from "../../services/api";
+import { apiErrorDetail } from "@/lib/apiError";
 
 const VPN_COLORS: Record<VpnAccess, string> = {
   local_only:  "#2a2a2a",
@@ -32,10 +35,12 @@ const S = {
   table: { width: "100%", borderCollapse: "collapse" as const },
   th: { color: "#888", fontSize: 12, textAlign: "left" as const, padding: "8px 12px", borderBottom: "1px solid #333" },
   td: { color: "#ddd", fontSize: 14, padding: "12px 12px", borderBottom: "1px solid #222", verticalAlign: "middle" as const },
+  groupHeader: { color: "#9aa", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, marginTop: 8 } as React.CSSProperties,
+  groupRow: { color: "#9aa", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, padding: "18px 12px 6px", borderBottom: "1px solid #333" } as React.CSSProperties,
   badge: (role: Role) => {
     const colors: Record<Role, string> = {
       child: "#1a4a8a", teen: "#1a6a4a", young_adult: "#4a4a1a",
-      adult: "#3a2a6a", admin: "#6a1a1a",
+      adult: "#3a2a6a", admin: "#6a1a1a", household: "#2a4a4a", stranger: "#3a3a3a",
     };
     return { background: colors[role], color: "#ddd", padding: "3px 10px", borderRadius: 12, fontSize: 12 };
   },
@@ -72,7 +77,7 @@ type Modal =
 
 // ── Tool permissions matrix ───────────────────────────────────────────────────
 
-const TOOL_ROWS: { key: string; indent?: boolean }[] = [
+const TOOL_ROWS: { key: string; indent?: boolean; always?: boolean; adminOnly?: boolean }[] = [
   { key: "ha_control" },
   { key: "ha_read" },
   { key: "timer" },
@@ -91,16 +96,20 @@ const TOOL_ROWS: { key: string; indent?: boolean }[] = [
   { key: "search_argus" },
   { key: "read_meeting" },
   { key: "mechanic" },
-  { key: "explore_code" },
-  { key: "inspect_system" },
-  { key: "ssh_command" },
-  { key: "local_command" },
+  { key: "self_trace" },
   { key: "restart_docker_container" },
   { key: "household" },
   { key: "write_reflex" },
+  // Always included for person roles; editable only for the system roles (P120)
+  { key: "world", always: true },
+  { key: "self_image", always: true },
+  { key: "user_profile", always: true },
+  // Admin only — they can contain other users' conversations; the backend enforces it
+  { key: "inner_thoughts", adminOnly: true },
+  { key: "thought_history", adminOnly: true },
 ];
 
-const PERM_ROLES: Role[] = ["child", "teen", "young_adult", "adult", "admin"];
+const PERM_ROLES: Role[] = ["child", "teen", "young_adult", "adult", "admin", "household", "stranger"];
 
 function ToolPermissionsMatrix() {
   const { t } = useTranslation();
@@ -191,17 +200,20 @@ function ToolPermissionsMatrix() {
           </tr>
         </thead>
         <tbody>
-          {TOOL_ROWS.map(({ key, indent }) => (
+          {TOOL_ROWS.map(({ key, indent, always, adminOnly }) => (
             <tr key={key} style={{ background: indent ? "#0d0d0d" : undefined }}>
               <td style={{ ...MS.tdLabel, paddingLeft: indent ? 28 : 12 }}>
                 {t(`users.tools.labels.${key}`, key)}
               </td>
               {PERM_ROLES.map(role => {
-                const locked = role === "admin";
+                const noAlways = (perms.no_always_included ?? ["household", "stranger"]).includes(role);
+                const locked = role === "admin" || (!!always && !noAlways);
                 const checked = isChecked(role, key);
                 return (
                   <td key={role} style={MS.td}>
-                    {locked ? (
+                    {adminOnly && role !== "admin" ? (
+                      <span style={MS.lock}>—</span>
+                    ) : locked ? (
                       <span style={MS.lock}>✓</span>
                     ) : (
                       <input
@@ -219,7 +231,7 @@ function ToolPermissionsMatrix() {
 
           <tr>
             <td colSpan={PERM_ROLES.length + 1} style={MS.internal}>
-              {t("users.tools.always_included")}
+              {t("users.tools.always_included")} {t("users.tools.admin_only")}
             </td>
           </tr>
         </tbody>
@@ -251,9 +263,13 @@ function UserCards({ users, onModal, setError }: {
 }) {
   const { t } = useTranslation();
 
+  const { defaults, created } = groupUsers(users);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {users.map(u => (
+      {([["default", defaults], ["created", created]] as const).map(([group, list]) => list.length > 0 && (
+      <Fragment key={group}>
+      <div style={S.groupHeader}>{t(`users.groups.${group}`)}</div>
+      {list.map(u => (
         <div key={u.username} style={{
           background: "#1a1a1a",
           borderRadius: 10,
@@ -264,7 +280,7 @@ function UserCards({ users, onModal, setError }: {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontSize: 22 }}>{u.avatar}</span>
-                <span style={{ color: "#fff", fontSize: 15, fontWeight: 600 }}>{u.display_name}</span>
+                <span style={{ color: "#fff", fontSize: 15, fontWeight: 600 }}>{userLabel(u, t)}</span>
               </div>
               <span style={S.badge(u.role)}>{t(`dashboard.roles.${u.role}`, u.role)}</span>
             </div>
@@ -283,6 +299,19 @@ function UserCards({ users, onModal, setError }: {
               </div>
             </div>
           </div>
+          {isSystemUser(u.username) ? (
+            <div style={{ padding: "10px 16px", color: "#888", fontSize: 12 }}>
+              {t(`users.system.${u.username}.desc`)} {t("users.system.no_actions")}
+            </div>
+          ) : u.username === BUILTIN_ADMIN ? (
+            <div style={{ padding: "10px 12px", display: "flex", gap: 8, alignItems: "center" }}>
+              <button style={{ ...S.btn("#2a3a2a"), flex: "0 0 auto" as const }}
+                onClick={() => { setError(""); onModal({ type: "pin", user: u }); }}>
+                {t("users.actions.pin")}
+              </button>
+              <span style={{ color: "#888", fontSize: 12 }}>{t("users.system.admin_note")}</span>
+            </div>
+          ) : (
           <div style={{ padding: "10px 12px", display: "flex", gap: 8, flexWrap: "wrap" as const }}>
             <button style={{ ...S.btn("#1a3a3a"), flex: 1 }}
               onClick={() => { setError(""); onModal({ type: "vpn", user: u }); }}>
@@ -305,7 +334,10 @@ function UserCards({ users, onModal, setError }: {
               {t("users.actions.delete")}
             </button>
           </div>
+          )}
         </div>
+      ))}
+      </Fragment>
       ))}
     </div>
   );
@@ -321,6 +353,7 @@ export default function Users() {
   const [error, setError] = useState("");
 
   const load = () => apiListUsers().then(setUsers).catch(() => {});
+  const grouped = groupUsers(users);
   useEffect(() => { load(); }, []);
 
   return (
@@ -354,9 +387,17 @@ export default function Users() {
             </tr>
           </thead>
           <tbody>
-            {users.map(u => (
+            {([["default", grouped.defaults], ["created", grouped.created]] as const).map(([group, list]) => list.length > 0 && (
+            <Fragment key={group}>
+            <tr><td colSpan={7} style={S.groupRow}>{t(`users.groups.${group}`)}</td></tr>
+            {list.map(u => (
               <tr key={u.username}>
-                <td style={S.td}>{u.avatar} {u.display_name}</td>
+                <td style={S.td}>
+                  {u.avatar} {userLabel(u, t)}
+                  {isSystemUser(u.username) && (
+                    <div style={{ color: "#777", fontSize: 11, marginTop: 2 }}>{t(`users.system.${u.username}.desc`)}</div>
+                  )}
+                </td>
                 <td style={S.td}><code style={{ color: "#888" }}>{u.username}</code></td>
                 <td style={S.td}>
                   <span style={S.badge(u.role)}>{t(`dashboard.roles.${u.role}`, u.role)}</span>
@@ -376,6 +417,14 @@ export default function Users() {
                   </span>
                 </td>
                 <td style={S.td}>
+                  {isSystemUser(u.username) ? (
+                    <span style={{ color: "#777", fontSize: 12 }}>{t("users.system.no_actions")}</span>
+                  ) : u.username === BUILTIN_ADMIN ? (
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <button style={S.btn("#2a3a2a")} onClick={() => { setError(""); setModal({ type: "pin", user: u }); }}>{t("users.actions.pin")}</button>
+                      <span style={{ color: "#777", fontSize: 12 }}>{t("users.system.admin_note")}</span>
+                    </div>
+                  ) : (
                   <div style={{ display: "flex", gap: 8 }}>
                     <button style={S.btn("#2a2a4a")} onClick={() => { setError(""); setModal({ type: "edit", user: u }); }}>{t("users.actions.edit")}</button>
                     <button style={S.btn("#2a3a2a")} onClick={() => { setError(""); setModal({ type: "pin", user: u }); }}>{t("users.actions.pin")}</button>
@@ -383,8 +432,11 @@ export default function Users() {
                     <button style={S.btn("#1a2a4a")} onClick={() => { setError(""); setModal({ type: "voice", user: u }); }}>{t("users.actions.voice")}</button>
                     <button style={S.btn("#3a1a1a")} onClick={() => { setError(""); setModal({ type: "delete", user: u }); }}>{t("users.actions.delete")}</button>
                   </div>
+                  )}
                 </td>
               </tr>
+            ))}
+            </Fragment>
             ))}
           </tbody>
         </table>
@@ -432,36 +484,12 @@ export function SeedModal({ seed, onClose }: { seed: string; onClose: () => void
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
 
-  const fallbackCopy = (): boolean => {
-    try {
-      const ta = document.createElement("textarea");
-      ta.value = seed;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      const ok = document.execCommand("copy");
-      document.body.removeChild(ta);
-      return ok;
-    } catch {
-      return false;
+  const copy = async () => {
+    if (await copyText(seed)) {
+      setCopied(true); setCopyFailed(false); setTimeout(() => setCopied(false), 2000);
+    } else {
+      setCopyFailed(true); setTimeout(() => setCopyFailed(false), 4000);
     }
-  };
-
-  const copy = () => {
-    navigator.clipboard.writeText(seed).then(
-      () => { setCopied(true); setCopyFailed(false); setTimeout(() => setCopied(false), 2000); },
-      () => {
-        // Clipboard API can reject silently (insecure context, denied permission,
-        // focus-loss quirk right as the button is clicked) — fall back before giving up.
-        if (fallbackCopy()) {
-          setCopied(true); setCopyFailed(false); setTimeout(() => setCopied(false), 2000);
-        } else {
-          setCopyFailed(true); setTimeout(() => setCopyFailed(false), 4000);
-        }
-      }
-    );
   };
 
   return (
@@ -500,14 +528,14 @@ function CreateModal({ onDone, onError, error }: { onDone: () => void; onError: 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const user = await apiCreateUser(f) as any;
+      const user = await apiCreateUser(f);
       if (user?.seed_phrase) {
         setSeedPhrase(user.seed_phrase);
       } else {
         onDone();
       }
-    } catch (err: any) {
-      onError(err?.response?.data?.detail ?? t("users.create.error_generic"));
+    } catch (err) {
+      onError(apiErrorDetail(err) ?? t("users.create.error_generic"));
     }
   };
 
@@ -615,8 +643,8 @@ function EditModal({ user, allUsers, onDone, onError, error }: {
         managed_children: f.is_parent ? JSON.stringify(f.managed_children_arr) : null,
       });
       onDone();
-    } catch (err: any) {
-      onError(err?.response?.data?.detail ?? t("users.edit.error_generic"));
+    } catch (err) {
+      onError(apiErrorDetail(err) ?? t("users.edit.error_generic"));
     }
   };
 
@@ -625,8 +653,8 @@ function EditModal({ user, allUsers, onDone, onError, error }: {
     try {
       const res = await apiGenerateTempPin(user.username);
       setTempPin(res.temp_pin);
-    } catch (err: any) {
-      onError(err?.response?.data?.detail ?? t("users.edit.pin_recovery_error"));
+    } catch (err) {
+      onError(apiErrorDetail(err) ?? t("users.edit.pin_recovery_error"));
     } finally {
       setPinLoading(false);
     }
@@ -783,8 +811,8 @@ function PinModal({ user, onDone, onError, error }: { user: KaareUser; onDone: (
     try {
       await apiUpdatePin(user.username, pin);
       onDone();
-    } catch (err: any) {
-      onError(err?.response?.data?.detail ?? t("users.pin_modal.error_generic"));
+    } catch (err) {
+      onError(apiErrorDetail(err) ?? t("users.pin_modal.error_generic"));
     }
   };
 
@@ -816,13 +844,13 @@ function VpnModal({ user, onDone, onError, error }: { user: KaareUser; onDone: (
   const [generatedName, setGeneratedName] = useState<string>("");
   const [loading, setLoading] = useState(false);
 
-  const loadClients = () => {
+  const loadClients = useCallback(() => {
     apiVpnListClients()
       .then(all => setClients(all.filter(c => c.username === user.username)))
       .catch(() => {});
-  };
+  }, [user.username]);
 
-  useEffect(() => { loadClients(); }, []);
+  useEffect(() => { loadClients(); }, [loadClients]);
 
   const generate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -835,8 +863,8 @@ function VpnModal({ user, onDone, onError, error }: { user: KaareUser; onDone: (
       setGeneratedName(result.name);
       setDeviceName("");
       loadClients();
-    } catch (err: any) {
-      onError(err?.response?.data?.detail ?? t("users.vpn_modal.error_generic"));
+    } catch (err) {
+      onError(apiErrorDetail(err) ?? t("users.vpn_modal.error_generic"));
     } finally {
       setLoading(false);
     }
@@ -848,8 +876,8 @@ function VpnModal({ user, onDone, onError, error }: { user: KaareUser; onDone: (
       await apiVpnDeleteClient(clientName);
       if (generatedName === clientName) setGeneratedConfig(null);
       loadClients();
-    } catch (err: any) {
-      onError(err?.response?.data?.detail ?? t("users.vpn_modal.error_remove"));
+    } catch (err) {
+      onError(apiErrorDetail(err) ?? t("users.vpn_modal.error_remove"));
     }
   };
 
@@ -973,9 +1001,9 @@ function VoiceModal({ user, onDone, onError, error }: { user: KaareUser; onDone:
   const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef   = useRef<MediaStream | null>(null);
 
-  const loadStatus = () => {
+  const loadStatus = useCallback(() => {
     apiVoiceStatus(user.username).then(r => setHasVoiceprint(r.has_voiceprint)).catch(() => setHasVoiceprint(false));
-  };
+  }, [user.username]);
 
   useEffect(() => {
     loadStatus();
@@ -983,7 +1011,7 @@ function VoiceModal({ user, onDone, onError, error }: { user: KaareUser; onDone:
       if (timerRef.current) clearInterval(timerRef.current);
       streamRef.current?.getTracks().forEach(tk => tk.stop());
     };
-  }, [user.username]);
+  }, [loadStatus]);
 
   const startRecording = async () => {
     onError("");
@@ -1130,8 +1158,8 @@ function DeleteModal({ user, onDone, onError, error }: { user: KaareUser; onDone
     try {
       await apiDeleteUser(user.username);
       onDone();
-    } catch (err: any) {
-      onError(err?.response?.data?.detail ?? t("users.delete_modal.error_generic"));
+    } catch (err) {
+      onError(apiErrorDetail(err) ?? t("users.delete_modal.error_generic"));
     }
   };
 

@@ -1,4 +1,6 @@
 import asyncio
+import json
+import re as _re
 from pathlib import Path
 
 import httpx
@@ -7,12 +9,26 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
 import kaare_core.app_state as app_state
-from kaare_core.users.auth import require_admin as _require_admin, require_auth as _require_auth, require_image_auth as _require_image_auth
+from adapters.llm_adapter import reload_config as _reload_llm_config
+from kaare_core import config_store
+from kaare_core.background import spawn
+from kaare_core.config import reload_config as _reload_core_config
+from kaare_core.image_store import all_users_stats, find_image
+from kaare_core.users.auth import require_admin as _require_admin
+from kaare_core.users.auth import require_auth as _require_auth
+from kaare_core.users.auth import require_image_auth as _require_image_auth
 
-_LLM_PATH      = Path("/kaare/configs/llm.yaml")
+_LLM_PATH = Path("/kaare/configs/llm.yaml")
 _SERVICES_PATH = Path("/kaare/configs/services.yaml")
 
-_OLLAMA_ROLE_KEYS    = {"kare", "miss_kare", "library", "mechanic", "fallback"}
+_OLLAMA_ROLE_KEYS = {
+    "default",
+    "reason_freely",
+    "miss_kare",
+    "library",
+    "mechanic",
+    "fallback",
+}  # llm.yaml keys — Kåre is "default"
 _SERVICES_OLLAMA_KEYS = {"kare", "library", "miss_kare", "proxy"}
 
 router = APIRouter()
@@ -26,28 +42,35 @@ def _ollama_base_url(role: str) -> str:
 
 
 async def _stream_ollama_pull(role: str, base_url: str, model: str) -> None:
-    import json
     try:
-        async with httpx.AsyncClient(timeout=600) as client:
-            async with client.stream("POST", f"{base_url}/api/pull", json={"model": model}) as resp:
-                async for line in resp.aiter_lines():
-                    if not line.strip():
-                        continue
-                    try:
-                        data = json.loads(line)
-                    except Exception:
-                        continue
-                    done = data.get("status") in ("success",)
-                    app_state._OLLAMA_PULL_STATUS[role] = {
-                        "pulling": not done,
-                        "status": data.get("status", ""),
-                        "completed": data.get("completed", 0),
-                        "total": data.get("total", 0),
-                        "error": None,
-                    }
+        async with (
+            httpx.AsyncClient(timeout=600) as client,
+            client.stream("POST", f"{base_url}/api/pull", json={"model": model}) as resp,
+        ):
+            async for line in resp.aiter_lines():
+                if not line.strip():
+                    continue
+                try:
+                    data = json.loads(line)
+                except Exception:
+                    continue
+                done = data.get("status") in ("success",)
+                app_state._OLLAMA_PULL_STATUS[role] = {
+                    "pulling": not done,
+                    "status": data.get("status", ""),
+                    "completed": data.get("completed", 0),
+                    "total": data.get("total", 0),
+                    "error": None,
+                }
         app_state._OLLAMA_PULL_STATUS[role]["pulling"] = False
     except Exception as e:
-        app_state._OLLAMA_PULL_STATUS[role] = {"pulling": False, "status": "", "completed": 0, "total": 0, "error": str(e)}
+        app_state._OLLAMA_PULL_STATUS[role] = {
+            "pulling": False,
+            "status": "",
+            "completed": 0,
+            "total": 0,
+            "error": str(e),
+        }
 
 
 @router.get("/api/ollama/models/{role}")
@@ -70,7 +93,9 @@ async def api_delete_ollama_model(role: str, model_name: str, _u=Depends(_requir
     base_url = _ollama_base_url(role)
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.request("DELETE", f"{base_url}/api/delete", json={"model": model_name})
+            resp = await client.request(
+                "DELETE", f"{base_url}/api/delete", json={"model": model_name}
+            )
             return {"ok": resp.status_code in (200, 204)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -83,22 +108,30 @@ async def api_ollama_pull(role: str, payload: dict, _u=Depends(_require_admin)):
     if not model:
         raise HTTPException(400, "model is required")
     base_url = _ollama_base_url(role)
-    app_state._OLLAMA_PULL_STATUS[role] = {"pulling": True, "status": "Starter nedlasting…", "completed": 0, "total": 0, "error": None}
-    asyncio.create_task(_stream_ollama_pull(role, base_url, model))
+    app_state._OLLAMA_PULL_STATUS[role] = {
+        "pulling": True,
+        "status": "Starter nedlasting…",
+        "completed": 0,
+        "total": 0,
+        "error": None,
+    }
+    spawn(_stream_ollama_pull(role, base_url, model))
     return {"ok": True}
 
 
 @router.get("/api/ollama/pull/status/{role}")
 async def api_ollama_pull_status(role: str, _u=Depends(_require_auth)):
     """Return current pull progress for a role."""
-    return app_state._OLLAMA_PULL_STATUS.get(role, {"pulling": False, "status": "", "completed": 0, "total": 0, "error": None})
+    return app_state._OLLAMA_PULL_STATUS.get(
+        role, {"pulling": False, "status": "", "completed": 0, "total": 0, "error": None}
+    )
 
 
 @router.get("/api/settings/ollama_source")
 async def api_get_ollama_source(_u=Depends(_require_auth)):
     data = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
     url = ""
-    for role in ("kare", "miss_kare", "library", "mechanic", "fallback"):
+    for role in ("default", "miss_kare", "library", "mechanic", "fallback"):
         role_data = data.get(role, {})
         if role_data.get("provider", "ollama") == "ollama" and role_data.get("base_url"):
             url = role_data["base_url"]
@@ -112,37 +145,45 @@ async def api_put_ollama_source(payload: dict, _u=Depends(_require_admin)):
     """Update Ollama base URL for all Ollama-backed roles in llm.yaml and services.yaml."""
     url = (payload.get("url") or "http://ollama:11434").rstrip("/")
 
-    llm = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
+    llm = config_store.load_for_update(_LLM_PATH)
     for role in _OLLAMA_ROLE_KEYS:
         if role in llm and llm[role].get("provider", "ollama") == "ollama":
             llm[role]["base_url"] = url
-    _LLM_PATH.write_text(yaml.dump(llm, allow_unicode=True, default_flow_style=False), encoding="utf-8")
+    config_store.write_yaml(_LLM_PATH, llm, "gui:put_ollama_source")
 
-    svc = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
+    svc = config_store.load_for_update(_SERVICES_PATH)
     if "ollama" not in svc:
         svc["ollama"] = {}
     for key in _SERVICES_OLLAMA_KEYS:
         svc["ollama"][key] = url
-    _SERVICES_PATH.write_text(yaml.dump(svc, allow_unicode=True, default_flow_style=False), encoding="utf-8")
+    config_store.write_yaml(_SERVICES_PATH, svc, "gui:put_ollama_source")
 
+    # Apply at once (rule 25) — same two reloads as the LLM tab's save. Before, the new address was
+    # only written to disk: choosing «own Ollama server» in onboarding did nothing until a restart,
+    # and the GUI did not say so (DT03 R3).
+    await asyncio.to_thread(_reload_core_config)
+    await asyncio.to_thread(_reload_llm_config)
     return {"ok": True, "url": url}
 
 
 @router.get("/api/image/{image_id}")
 async def api_serve_image(image_id: str, _u=Depends(_require_image_auth)):
-    from kaare_core.image_store import find_image
     safe_id = "".join(c for c in image_id if c.isalnum() or c in "_-")
     path = find_image(safe_id)
     if not path:
         raise HTTPException(404, "Image not found")
     suffix = path.suffix.lower()
-    media = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}.get(suffix.lstrip("."), "image/png")
+    media = {
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "webp": "image/webp",
+    }.get(suffix.lstrip("."), "image/png")
     return FileResponse(path, media_type=media)
 
 
 @router.get("/api/frigate_snapshot/{event_id:path}")
 async def api_serve_frigate_snapshot(event_id: str, _u=Depends(_require_image_auth)):
-    import re as _re
     safe = _re.sub(r"[^A-Za-z0-9._\-]", "", event_id)
     path = Path("/kaare/state/frigate_snapshots") / f"{safe}.jpg"
     if not path.is_file():
@@ -152,7 +193,6 @@ async def api_serve_frigate_snapshot(event_id: str, _u=Depends(_require_image_au
 
 @router.get("/api/admin/images/stats")
 async def api_image_stats(_user=Depends(_require_admin)):
-    from kaare_core.image_store import all_users_stats
     return all_users_stats()
 
 
@@ -169,11 +209,11 @@ async def api_get_image_settings(_user=Depends(_require_admin)):
 @router.put("/api/settings/images")
 async def api_put_image_settings(payload: dict, _user=Depends(_require_admin)):
     p = Path("/kaare/configs/settings.yaml")
-    cfg = yaml.safe_load(p.read_text()) or {}
+    cfg = config_store.load_for_update(p)
     img = cfg.setdefault("images", {})
     if "max_per_user_count" in payload:
         img["max_per_user_count"] = int(payload["max_per_user_count"])
     if "max_per_user_mb" in payload:
         img["max_per_user_mb"] = float(payload["max_per_user_mb"])
-    p.write_text(yaml.dump(cfg, allow_unicode=True, sort_keys=False))
+    config_store.write_yaml(p, cfg, "gui:put_image_settings")
     return {"ok": True}

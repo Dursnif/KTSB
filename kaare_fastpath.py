@@ -1,12 +1,12 @@
 import re
 import time
-import yaml
 from pathlib import Path
-from typing import Dict, Optional
+
+import yaml
 
 _RULES_PATH = Path("/kaare/configs/fastpath_rules.yaml")
 
-_cache: Optional[dict] = None
+_cache: dict | None = None
 _cache_ts: float = 0.0
 _CACHE_TTL: float = 30.0
 
@@ -42,7 +42,7 @@ def _matches(phrase: str, norm_input: str, match_mode: str) -> bool:
     return phrase_n in norm_input or norm_input in phrase_n
 
 
-def match_fastpath(prompt: str) -> Optional[Dict]:
+def match_fastpath(prompt: str) -> dict | None:
     """
     Returns a dispatch dict for the first matching active reflex, or None.
 

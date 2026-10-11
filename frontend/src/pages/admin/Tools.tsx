@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import {
+  API_BASE,
   apiGetTimerSettings, apiPutTimerSettings,
   apiGetSshNodes, apiPutSshNodes, apiTestSshNode,
   apiGetServices,
@@ -551,26 +552,26 @@ export default function Tools() {
   const [timerCounts, setTimerCounts] = useState<Record<string, number>>({});
   const [calls, setCalls] = useState<ToolCall[]>([]);
   const [loading, setLoading] = useState(true);
-  const [, setTick] = useState(0);
+  // Wall clock for the countdowns, refreshed every second (Date.now() must not run during render).
+  const [now, setNow] = useState(() => Date.now() / 1000);
 
   const [maxPerUser, setMaxPerUser] = useState<number>(20);
   const [maxInput, setMaxInput] = useState<string>("20");
   const [savingMax, setSavingMax] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
 
-  async function fetchData() {
-    try {
-      const r = await fetch(`http://${window.location.hostname}:8000/api/tools/recent?n=80`);
-      const data = await r.json();
-      setTimers(data.timers ?? []);
-      setTimerCounts(data.timer_counts ?? {});
-      setCalls(data.calls ?? []);
-    } catch {
-      // network error — retry next round
-    } finally {
-      setLoading(false);
-    }
-  }
+  const fetchData = useCallback(() =>
+    fetch(`${API_BASE}/api/tools/recent?n=80`, {
+      headers: { Authorization: `Bearer ${sessionStorage.getItem("kaare_token") ?? ""}` },   // admin-only (P120)
+    })
+      .then(r => r.json())
+      .then(data => {
+        setTimers(data.timers ?? []);
+        setTimerCounts(data.timer_counts ?? {});
+        setCalls(data.calls ?? []);
+      })
+      .catch(() => { /* network error — retry next round */ })
+      .finally(() => setLoading(false)), []);
 
   useEffect(() => {
     apiGetTimerSettings().then(s => {
@@ -597,19 +598,14 @@ export default function Tools() {
 
   useEffect(() => {
     fetchData();
-    const id = setInterval(() => {
-      fetchData();
-      setTick(tk => tk + 1);
-    }, 5000);
+    const id = setInterval(fetchData, 5000);
     return () => clearInterval(id);
-  }, []);
+  }, [fetchData]);
 
   useEffect(() => {
-    const id = setInterval(() => setTick(tk => tk + 1), 1000);
+    const id = setInterval(() => setNow(Date.now() / 1000), 1000);
     return () => clearInterval(id);
   }, []);
-
-  const now = Date.now() / 1000;
   const firingSoonLabel = t("tools.firing_soon");
   const unknownLabel = t("tools.unknown_event");
 

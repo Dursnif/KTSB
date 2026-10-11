@@ -1,12 +1,7 @@
 import json as _json
-import os
-from datetime import datetime
-from pathlib import Path
 
-from kaare_core.tools.i18n import t, get_lang
-
-_WORLD_PATH = Path("/kaare/state/world.md")
-_WORLD_VARS_PATH = Path("/kaare/state/world_vars.json")
+from kaare_core.memory import knowledge_store as ks
+from kaare_core.tools.i18n import get_lang, t
 
 WORLD_TOOLS = {
     "world",
@@ -18,188 +13,154 @@ WORLD_TOOLS = {
     "rediger_verden",
 }
 
-
-def _read_world_vars() -> dict:
-    if not _WORLD_VARS_PATH.exists():
-        return {}
-    try:
-        data = _json.loads(_WORLD_VARS_PATH.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+_DOMAIN = "world"
+_VAR_PREFIX = "var::"
 
 
-def _write_world_vars(data: dict) -> None:
-    tmp = _WORLD_VARS_PATH.with_suffix(".tmp")
-    tmp.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, _WORLD_VARS_PATH)
+# --- variables (world_vars.json -> knowledge_store, section='var::{key}') ---
+
+
+def _var_section(key: str) -> str:
+    return f"{_VAR_PREFIX}{key}"
+
+
+def _format_var_row(key: str, row: dict, lang: str) -> str:
+    data = _json.loads(row["content"])
+    value = data.get("value", "")
+    desc = (
+        "\n  " + t("world_var_desc_label", lang, desc=data["description"])
+        if data.get("description")
+        else ""
+    )
+    by = "\n  " + t(
+        "world_var_set_by_label",
+        lang,
+        by=row.get("source", "kare"),
+        date=(row.get("valid_from") or "")[:10],
+    )
+    return f"{key}: {value}{desc}{by}"
 
 
 def _world_get_var(key: str, lang: str = "nb") -> str:
-    vars_ = _read_world_vars()
     if not key.strip():
-        if not vars_:
-            return t("world_no_vars", lang)
-        lines = [t("world_all_vars", lang) + "\n"]
-        for k, v in sorted(vars_.items()):
-            value = v.get("verdi", "") if isinstance(v, dict) else v
-            desc = f" — {v['beskrivelse']}" if isinstance(v, dict) and v.get("beskrivelse") else ""
-            lines.append(f"  {k}: {value}{desc}")
-        return "\n".join(lines)
+        return _world_list_vars(lang)
     k = key.strip()
-    if k not in vars_:
+    row = ks.get_fact_by_section(_DOMAIN, _var_section(k))
+    if not row:
         return t("world_var_not_found", lang, key=k)
-    v = vars_[k]
-    if isinstance(v, dict):
-        desc = f"\n  Beskrivelse: {v['beskrivelse']}" if v.get("beskrivelse") else ""
-        by = f"\n  Satt av: {v['av']} ({v.get('satt', '')})" if v.get("av") else ""
-        return f"{k}: {v.get('verdi', '')}{desc}{by}"
-    return f"{k}: {v}"
+    return _format_var_row(k, row, lang)
 
 
 def _world_set_var(key: str, value: str, description: str = "", lang: str = "nb") -> str:
     if not key.strip() or not value.strip():
         return t("world_key_value_required", lang)
-    vars_ = _read_world_vars()
-    vars_[key.strip()] = {
-        "verdi": value.strip(),
-        "beskrivelse": description.strip(),
-        "satt": datetime.now().strftime("%Y-%m-%d"),
-        "av": "Kåre",
-    }
-    _write_world_vars(vars_)
-    return t("world_var_set", lang, key=key.strip(), value=value.strip())
+    k = key.strip()
+    content = _json.dumps({"value": value.strip(), "description": description.strip()})
+    section = _var_section(k)
+    existing = ks.get_fact_by_section(_DOMAIN, section)
+    if existing:
+        ks.update_fact(existing["id"], content=content)
+    else:
+        ks.add_fact(domain=_DOMAIN, section=section, content=content, source="kare")
+    return t("world_var_set", lang, key=k, value=value.strip())
 
 
 def _world_delete_var(key: str, lang: str = "nb") -> str:
     if not key.strip():
         return t("world_key_required", lang)
-    vars_ = _read_world_vars()
-    if key.strip() not in vars_:
+    k = key.strip()
+    row = ks.get_fact_by_section(_DOMAIN, _var_section(k))
+    if not row:
         return t("world_var_key_not_found", lang, key=key)
-    del vars_[key.strip()]
-    _write_world_vars(vars_)
+    ks.retire_fact(row["id"])
     return t("world_var_deleted", lang, key=key)
 
 
 def _world_list_vars(lang: str = "nb") -> str:
-    vars_ = _read_world_vars()
-    if not vars_:
+    rows = ks.find_by_section_prefix(_DOMAIN, _VAR_PREFIX)
+    if not rows:
         return t("world_no_vars", lang)
-    lines = [t("world_vars_header", lang, count=len(vars_)) + "\n"]
-    for k in sorted(vars_.keys()):
-        v = vars_[k]
-        value = v.get("verdi", "") if isinstance(v, dict) else v
-        lines.append(f"  {k}: {value}")
+    lines = [t("world_vars_header", lang, count=len(rows)) + "\n"]
+    for row in sorted(rows, key=lambda r: r["section"]):
+        k = row["section"][len(_VAR_PREFIX) :]
+        data = _json.loads(row["content"])
+        lines.append(f"  {k}: {data.get('value', '')}")
     return "\n".join(lines)
 
 
+# --- prose (world.md -> knowledge_store, section=category or 'category::field') ---
+
+
+def _field_section(category: str, field: str) -> str:
+    return f"{category.strip()}::{field.strip()}"
+
+
 def _read_world(lang: str = "nb") -> str:
-    try:
-        content = _WORLD_PATH.read_text(encoding="utf-8").strip()
-        return content if content else t("world_file_empty", lang)
-    except Exception as e:
-        return t("world_read_error", lang, error=e)
+    rows = ks.get_all_facts(_DOMAIN)
+    rows = [r for r in rows if not r["section"].startswith(_VAR_PREFIX)]
+    if not rows:
+        return t("world_file_empty", lang)
+    lines = []
+    last_cat = None
+    for row in rows:
+        section = row["section"] or "Notes"
+        cat = section.split("::", 1)[0]
+        if cat != last_cat:
+            lines.append(f"\n## {cat}")
+            last_cat = cat
+        content = row["content"]
+        if "::" in section:
+            field = section.split("::", 1)[1]
+            lines.append(f"- {field}: {content}")
+        else:
+            lines.append(content)
+    return "\n".join(lines).strip()
 
 
 def _update_world_field(category: str, field: str, value: str, lang: str = "nb") -> str:
     if not category.strip() or not field.strip():
         return t("world_cat_field_required", lang)
-    try:
-        lines = _WORLD_PATH.read_text(encoding="utf-8").splitlines(keepends=True)
-        cat_header = f"## {category.strip()}"
-        field_prefix = f"- {field.strip()}:"
-        new_line = f"- {field.strip()}: {value.strip()}\n"
-
-        cat_idx = next((i for i, l in enumerate(lines) if l.strip() == cat_header), None)
-
-        if cat_idx is None:
-            lines.append(f"\n{cat_header}\n")
-            lines.append(new_line)
-            _WORLD_PATH.write_text("".join(lines), encoding="utf-8")
-            return t("world_category_created", lang, category=category, field=field)
-
-        next_cat = next(
-            (i for i in range(cat_idx + 1, len(lines)) if lines[i].startswith("## ")),
-            len(lines),
-        )
-        field_idx = next(
-            (i for i in range(cat_idx + 1, next_cat) if lines[i].strip().startswith(field_prefix)),
-            None,
-        )
-
-        if field_idx is not None:
-            lines[field_idx] = new_line
-        else:
-            lines.insert(cat_idx + 1, new_line)
-
-        _WORLD_PATH.write_text("".join(lines), encoding="utf-8")
+    section = _field_section(category, field)
+    existing = ks.get_fact_by_section(_DOMAIN, section)
+    if existing:
+        ks.update_fact(existing["id"], content=value.strip())
         return t("world_field_updated", lang, field=field, value=value)
-    except Exception as e:
-        return t("world_update_error", lang, error=e)
+    ks.add_fact(domain=_DOMAIN, section=section, content=value.strip(), source="kare")
+    return t("world_field_updated", lang, field=field, value=value)
 
 
 def _add_to_world(category: str, text: str, lang: str = "nb") -> str:
     if not text.strip():
         return t("world_empty_text", lang)
-    cat = (category.strip() or "Notes")
-    try:
-        lines = _WORLD_PATH.read_text(encoding="utf-8").splitlines(keepends=True)
-        cat_header = f"## {cat}"
-        entry = f"{text.strip()}\n"
-
-        cat_idx = next((i for i, l in enumerate(lines) if l.strip() == cat_header), None)
-
-        if cat_idx is None:
-            lines.append(f"\n{cat_header}\n")
-            lines.append(entry)
-        else:
-            insert_at = next(
-                (i for i in range(cat_idx + 1, len(lines)) if lines[i].startswith("## ")),
-                len(lines),
-            )
-            lines.insert(insert_at, entry)
-
-        _WORLD_PATH.write_text("".join(lines), encoding="utf-8")
-        return t("world_added", lang)
-    except Exception as e:
-        return t("world_write_error", lang, error=e)
+    cat = category.strip() or "Notes"
+    ks.add_fact(domain=_DOMAIN, section=cat, content=text.strip(), source="kare")
+    return t("world_added", lang)
 
 
 def _delete_from_world(fragment: str, lang: str = "nb") -> str:
     if not fragment.strip():
         return t("world_empty_fragment", lang)
-    try:
-        lines = _WORLD_PATH.read_text(encoding="utf-8").splitlines(keepends=True)
-        remaining = [l for l in lines if fragment.lower() not in l.lower()]
-        count = len(lines) - len(remaining)
-        if count == 0:
-            return t("world_fragment_not_found", lang, fragment=fragment)
-        _WORLD_PATH.write_text("".join(remaining), encoding="utf-8")
-        return t("world_lines_deleted", lang, count=count)
-    except Exception as e:
-        return t("world_delete_error", lang, error=e)
+    matches = [
+        r for r in ks.find_facts(_DOMAIN, fragment) if not r["section"].startswith(_VAR_PREFIX)
+    ]
+    if not matches:
+        return t("world_fragment_not_found", lang, fragment=fragment)
+    for row in matches:
+        ks.retire_fact(row["id"])
+    return t("world_lines_deleted", lang, count=len(matches))
 
 
 def _edit_world(fragment: str, new_text: str, lang: str = "nb") -> str:
     if not fragment.strip() or not new_text.strip():
         return t("world_fragment_new_required", lang)
-    try:
-        lines = _WORLD_PATH.read_text(encoding="utf-8").splitlines(keepends=True)
-        result = []
-        changed = 0
-        for line in lines:
-            if fragment.lower() in line.lower():
-                result.append(f"{new_text.strip()}\n")
-                changed += 1
-            else:
-                result.append(line)
-        if changed == 0:
-            return t("world_fragment_not_found", lang, fragment=fragment)
-        _WORLD_PATH.write_text("".join(result), encoding="utf-8")
-        return t("world_lines_updated", lang, count=changed)
-    except Exception as e:
-        return t("world_edit_error", lang, error=e)
+    matches = [
+        r for r in ks.find_facts(_DOMAIN, fragment) if not r["section"].startswith(_VAR_PREFIX)
+    ]
+    if not matches:
+        return t("world_fragment_not_found", lang, fragment=fragment)
+    for row in matches:
+        ks.update_fact(row["id"], content=new_text.strip())
+    return t("world_lines_updated", lang, count=len(matches))
 
 
 async def dispatch(name: str, arguments: dict) -> str:
@@ -232,7 +193,7 @@ async def dispatch(name: str, arguments: dict) -> str:
             )
         if action == "read_var":
             return _world_get_var((arguments.get("key") or arguments.get("nokkel") or ""), lang)
-        if action == "sett_var":
+        if action in ("set_var", "sett_var"):  # sett_var = old name, kept for history replay
             return _world_set_var(
                 key=(arguments.get("key") or arguments.get("nokkel") or ""),
                 value=(arguments.get("value") or arguments.get("verdi") or ""),
@@ -243,7 +204,7 @@ async def dispatch(name: str, arguments: dict) -> str:
             return _world_delete_var((arguments.get("key") or arguments.get("nokkel") or ""), lang)
         if action == "list_vars":
             return _world_list_vars(lang)
-        return f"Unknown action for world: '{action}'. Valid: read, update_field, add, delete, edit, read_var, sett_var, delete_var, list_vars."
+        return f"Unknown action for world: '{action}'. Valid: read, update_field, add, delete, edit, read_var, set_var, delete_var, list_vars."
 
     if name == "les_verden":
         return _read_world(lang)

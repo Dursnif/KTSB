@@ -8,15 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { CheckCircle2, XCircle, Loader2, RotateCcw, ChevronDown, ChevronUp, Search } from "lucide-react";
 import {
-  apiPutLlmRole, apiRestartVllmDocker, apiGetGpus, apiGetOllamaModels,
+  apiPutLlmRole, apiRestartVllmDocker, apiGetVllmRestartStatus, apiGetGpus, apiGetOllamaModels,
   apiDeleteOllamaModel, apiPullModel, apiGetPullStatus, apiDiscoverOllama,
   apiGetWarmupStatus, apiTriggerWarmup, apiDiscoverContainers, apiRestartOllama,
   type LlmRoleConfig, type VllmDockerConfig, type OllamaPullStatus, type OllamaEnvConfig,
-  type WarmupStatus, type ContainerInfo, type GpuInfo,
-} from "@/services/api";
-import { PROVIDER_OPTIONS, LLM_ROLE_LABELS } from "./llm-constants";
-import { useSaveState, FieldRow, SaveFeedback, TestButton, MaskedInput, ExpertOnly } from "../shared";
-import { ReasonFreelyCard } from "./ReasonFreelyCard";
+  type WarmupStatus, type ContainerInfo, type GpuInfo, type LlmModelCheck } from "@/services/api";
+import { PROVIDER_OPTIONS, LLM_ROLE_LABELS, modelSizeB, FULL_MAIN_AGENT_MIN_B, endpointLabel } from "./llm-constants";
+import { FieldRow, SaveFeedback, TestButton, MaskedInput, ExpertOnly } from "../shared";
+import { useSaveState } from "../useSaveState";
 
 const THINK_OPTIONS = [
   { value: "__unset__", labelKey: "settings.llm.think_unset" },
@@ -26,12 +25,13 @@ const THINK_OPTIONS = [
 
 const AGENT_TOGGLEABLE = ["miss_kare", "mechanic", "library", "fallback", "cloud", "image_edit"];
 
-export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerControl }: {
+export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerControl, modelCheck }: {
   role: string;
   config: LlmRoleConfig;
   onSaved: () => void;
   allConfigs: Record<string, LlmRoleConfig>;
   allowDockerControl?: boolean;
+  modelCheck?: LlmModelCheck;
 }) {
   const { t } = useTranslation();
   const [local, setLocal] = useState<LlmRoleConfig>({ ...config });
@@ -40,7 +40,9 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
   const [collapsed, setCollapsed] = useState(true);
   const [apiKey, setApiKey] = useState("");
   const [dockerRestarting, setDockerRestarting] = useState(false);
-  const [dockerStatus, setDockerStatus] = useState<"idle" | "ok" | "error">("idle");
+  const [dockerStatus, setDockerStatus] = useState<"idle" | "ok" | "error" | "rolled_back">("idle");
+  const [dockerPhase, setDockerPhase] = useState<string>("");
+  const [dockerDetail, setDockerDetail] = useState<string>("");
   const [containerName, setContainerName] = useState(config.container ?? "");
   const [containerDiscovering, setContainerDiscovering] = useState(false);
   const [containerOptions, setContainerOptions] = useState<ContainerInfo[]>([]);
@@ -242,17 +244,36 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
   };
   const temperatureFieldKey = isOllama ? "ollama_fields" : isVllm ? "vllm_fields" : "cloud_fields";
 
+  // The backend only reports "ready" once vLLM answers /v1/models (model load takes minutes),
+  // so poll its status instead of trusting that the container was created.
   const restartDocker = async () => {
     setDockerRestarting(true);
     setDockerStatus("idle");
+    setDockerDetail("");
+    setDockerPhase("");
     try {
       const r = await apiRestartVllmDocker(role);
-      setDockerStatus(r.ok ? "ok" : "error");
+      if (!r.ok) {
+        setDockerStatus("error");
+        setDockerDetail(r.error ?? "");
+        return;
+      }
+      for (;;) {
+        await new Promise(res => setTimeout(res, 3000));
+        const s = await apiGetVllmRestartStatus(role);
+        setDockerPhase(s.status);
+        if (s.status === "ready") { setDockerStatus("ok"); break; }
+        if (s.status === "error") {
+          setDockerStatus(s.rolled_back ? "rolled_back" : "error");
+          setDockerDetail(s.detail ?? "");
+          break;
+        }
+      }
     } catch {
       setDockerStatus("error");
     } finally {
       setDockerRestarting(false);
-      setTimeout(() => setDockerStatus("idle"), 6000);
+      setDockerPhase("");
     }
   };
 
@@ -355,8 +376,24 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="text-base">{roleLabel}</CardTitle>
-            {info.port && <CardDescription className="text-xs">Port {info.port}</CardDescription>}
+            {(() => {
+              const ep = endpointLabel(shareWith ? allConfigs[shareWith]?.base_url : config.base_url);
+              return ep ? <CardDescription className="text-xs">{ep}</CardDescription>
+                : info.port ? <CardDescription className="text-xs">Port {info.port}</CardDescription> : null;
+            })()}
             {role === "fallback" && <p className="text-xs text-muted-foreground mt-0.5 italic">{t("settings.llm.role_fallback_desc")}</p>}
+            {role === "default" && (() => {
+              const size = modelSizeB(modelName);
+              return size !== null && size < FULL_MAIN_AGENT_MIN_B
+                ? <p className="text-xs text-amber-500 mt-0.5">{t("settings.llm.basic_mode_note")}</p>
+                : null;
+            })()}
+            {modelCheck?.status === "missing" && (
+              <p className="text-xs text-amber-500 mt-0.5">{t("settings.llm.model_missing", { model: modelCheck.model })}</p>
+            )}
+            {modelCheck?.status === "unreachable" && (
+              <p className="text-xs text-muted-foreground mt-0.5">{t("settings.llm.model_unreachable", { url: modelCheck.base_url })}</p>
+            )}
           </div>
           <div className="flex items-center gap-3">
             {isToggleable && (
@@ -528,7 +565,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
                   value={containerName}
                   onChange={e => setContainerName(e.target.value)}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm font-mono"
-                  placeholder="ollama-agents"
+                  placeholder="f.eks. kaare_agents2"
                   list="container-options"
                 />
                 <datalist id="container-options">
@@ -554,6 +591,13 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
             <>
               <Separator className="my-1" />
               <p className="text-xs text-muted-foreground py-2">{t("settings.llm.ollama_params")}</p>
+              {config.agent_pool_roles && (
+                <p className="text-xs text-amber-500 pb-2">
+                  {t("settings.llm.agent_pool_note", {
+                    roles: config.agent_pool_roles.map(r => t(`settings.llm.role_labels.${r}`, r)).join(", "),
+                  })}
+                </p>
+              )}
               {(["num_ctx", "num_predict", "presence_penalty", "top_k", "top_p"] as const).map((k) => {
                 const fieldKey = `settings.llm.ollama_fields.${k}`;
                 if (k === "num_ctx" && numCtxLocked && sharedWithRole) {
@@ -682,14 +726,6 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
           )}
           </></ExpertOnly>
         </div>
-
-        {/* ── Reason Freely Tool — nested, not a top-level role card ────── */}
-        {role === "default" && (
-          <ExpertOnly>
-            <Separator className="my-3" />
-            <ReasonFreelyCard config={allConfigs["reason_freely"]} />
-          </ExpertOnly>
-        )}
 
         {/* ── Administrer modell ─────────────────────────────────────────── */}
         {isLocal && (
@@ -911,12 +947,17 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
                   className="ml-2"
                 >
                   {dockerRestarting
-                    ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t("common.restarting")}</>
+                    ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{
+                        dockerPhase === "loading" ? t("common.vllm_loading")
+                        : dockerPhase === "rolling_back" ? t("common.vllm_rolling_back")
+                        : t("common.restarting")}</>
                     : <><RotateCcw className="mr-2 h-4 w-4" />{t("common.restart_docker")}</>
                   }
                 </Button>
                 {dockerStatus === "ok" && <span className="flex items-center gap-1 text-sm text-green-500"><CheckCircle2 className="h-4 w-4" /> {t("common.container_restarted")}</span>}
                 {dockerStatus === "error" && <span className="flex items-center gap-1 text-sm text-destructive"><XCircle className="h-4 w-4" /> {t("common.restart_failed")}</span>}
+                {dockerStatus === "rolled_back" && <span className="flex items-center gap-1 text-sm text-destructive"><XCircle className="h-4 w-4" /> {t("common.vllm_rolled_back")}</span>}
+                {dockerDetail && dockerStatus !== "ok" && <span className="w-full text-xs text-muted-foreground break-all">{dockerDetail}</span>}
               </></ExpertOnly>
             )}
           </div>

@@ -1,5 +1,5 @@
 import type React from "react";
-import { useAuth } from "../auth/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { readUserPrefs } from "../hooks/useUserPrefs";
 
 export type ThemeRole = "child" | "teen" | "young_adult" | "adult" | "admin";

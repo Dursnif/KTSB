@@ -4,27 +4,59 @@ import asyncio
 import base64
 import contextvars
 import fcntl
+import glob as _glob
 import io
 import json
 import logging
 import os
 import re
 import time
-import yaml
-import httpx
-from datetime import datetime, timezone, timedelta
-from zoneinfo import ZoneInfo
-from typing import List, Dict, Any
+from datetime import UTC, datetime
+from pathlib import Path
+from pathlib import Path as _Path
+from typing import Any
 
+import httpx
+import yaml
+from PIL import Image
+
+from kaare_core import log_buffer
+from kaare_core.config import apply_agent_pool, pool_call_options
+from kaare_core.config import filter_tools_by_tier_ceiling as _filter_tools_by_tier_ceiling
+from kaare_core.config import get_capability_map as _get_capability_map
+from kaare_core.config import get_local_tz as _get_local_tz
+from kaare_core.config import get_model as _get_model
+from kaare_core.config import get_tool_permissions as _get_tool_permissions
+from kaare_core.context_builder import build_situational_context as _build_situational_context
 from kaare_core.llm_fallback import (
-    is_fallback_active, activate_fallback, deactivate_fallback,
-    increment_turn, should_retry_main, update_last_failure,
+    activate_fallback,
+    deactivate_fallback,
+    increment_turn,
+    is_fallback_active,
+    should_retry_main,
+    update_last_failure,
 )
-from kaare_core.model_lock import lock_11445
+from kaare_core.memory import knowledge_store as _ks
+from kaare_core.memory import memory_prompt as _memory_prompt
+from kaare_core.model_lock import lock_agent_pool, pool_order
+from kaare_core.ollama_tool_rescue import post_chat
 from kaare_core.think_strip import strip_think_block
+from kaare_core.tools.agenda import agenda_prompt_line as _agenda_prompt_line
+from kaare_core.tools.household_state import household_mode_block as _household_mode_block
+from kaare_core.tools.i18n import get_lang, get_user_lang_override, t
+from kaare_core.tools.think_cache import extract_conclusion, log_think
+from kaare_core.users import store as _store
+from kaare_core.users.profile_manager import (
+    format_household_block,
+    get_all_household_visible,
+    get_display_name,
+    get_profile_prompt_top,
+    get_recent_observations,
+)
 
 logger = logging.getLogger(__name__)
 
+_LLM_CALLS_LOG = "/kaare/logs/llm_calls.log"
 GPU_LOCK_PATH = "/kaare/runtime/gpu.lock"
 
 # Serializes concurrent ask_llm / ask_llm_with_tools calls to vLLM.
@@ -56,7 +88,8 @@ async def _try_acquire_kare_lock_nowait() -> bool:
     await lock.acquire()
     return True
 
-_current_rid:    contextvars.ContextVar[str] = contextvars.ContextVar("current_rid",    default="")
+
+_current_rid: contextvars.ContextVar[str] = contextvars.ContextVar("current_rid", default="")
 _current_source: contextvars.ContextVar[str] = contextvars.ContextVar("current_source", default="")
 
 
@@ -67,29 +100,22 @@ def _kare_is_busy() -> bool:
     Fanger opp alle requests som går gjennom proxyen (inkl. Frigate via proxy).
     """
     try:
-        with open(GPU_LOCK_PATH, "r") as f:
+        with open(GPU_LOCK_PATH) as f:
             fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            return False   # Låsen var fri → kare er ledig
+            return False  # Låsen var fri → kare er ledig
     except FileNotFoundError:
-        return False       # Ingen lås-fil = ingen proxy kjører (f.eks. Docker) → ledig
-    except (IOError, OSError):
-        return True        # Låsen holdes → kare er opptatt
+        return False  # Ingen lås-fil = ingen proxy kjører (f.eks. Docker) → ledig
+    except OSError:
+        return True  # Låsen holdes → kare er opptatt
+
 
 # -------------------------------------------------
 # Config
 # -------------------------------------------------
 
 CFG_PATH = "/kaare/configs/llm.yaml"
-CFG = yaml.safe_load(open(CFG_PATH, "r", encoding="utf-8"))
+CFG = apply_agent_pool(yaml.safe_load(Path(CFG_PATH).read_text(encoding="utf-8")))
 
-_CAPABILITY_MAP_PATH = "/kaare/capability_map.yaml"
-try:
-    _CAPABILITY_MAP: dict = yaml.safe_load(open(_CAPABILITY_MAP_PATH, "r", encoding="utf-8")) or {}
-except Exception:
-    _CAPABILITY_MAP: dict = {}
-
-from kaare_core.config import get_model as _get_model, get_local_tz as _get_local_tz, get_tool_permissions as _get_tool_permissions, filter_tools_by_tier_ceiling as _filter_tools_by_tier_ceiling
-from kaare_core.tools.i18n import t, get_lang
 
 # -------------------------------------------------
 # Personlighet
@@ -98,15 +124,14 @@ from kaare_core.tools.i18n import t, get_lang
 # Rekkefølge: kjerne → adferd → lokasjon → tid → tekniske instruksjoner.
 # -------------------------------------------------
 
-import glob as _glob
-from kaare_core.context_builder import build_situational_context as _build_situational_context
 
 def _load_text(path: str) -> str:
     try:
-        with open(path, "r", encoding="utf-8") as _f:
+        with open(path, encoding="utf-8") as _f:
             return _f.read().strip()
     except Exception:
         return ""
+
 
 _PERSONALITY_CORES: dict[str, str] = {
     "nb": _load_text("/kaare/configs/personality_core.md"),
@@ -124,6 +149,7 @@ _PERSONALITY_CORES_MINIMAL: dict[str, str] = {
     "de": _load_text("/kaare/configs/personality_core_minimal_de.md"),
 }
 
+
 def _get_personality_core(lang: str, mode: str) -> str:
     lang_key = lang if lang in ("nb", "en", "de") else "en"
     if mode == "minimal":
@@ -132,8 +158,9 @@ def _get_personality_core(lang: str, mode: str) -> str:
         return _PERSONALITY_CORES_LETVEKT.get(lang_key) or _PERSONALITY_CORES_LETVEKT["en"]
     return _PERSONALITY_CORES.get(lang_key) or _PERSONALITY_CORES["en"]
 
-_PERSONALITY_MODE          = "standard"
-_PERSONALITY_CORE          = _PERSONALITY_CORES["nb"]
+
+_PERSONALITY_MODE = "standard"
+_PERSONALITY_CORE = _PERSONALITY_CORES["nb"]
 
 # Laster alle adferds-varianter fra configs/personalities/*.md ved oppstart
 _PERSONALITIES: dict[str, str] = {}
@@ -169,11 +196,11 @@ def _get_personality_variant(variant: str, lang: str) -> str:
         return _PERSONALITIES_DE.get(variant) or _PERSONALITIES.get(variant, "")
     return _PERSONALITIES.get(variant, "")
 
+
 _SETTINGS_PATH = "/kaare/configs/settings.yaml"
 _LOKASJON_BLOKK: dict[str, str] = {"nb": "", "en": "", "de": ""}
 _ASSISTANT_NAME_BLOKK: dict[str, str] = {"nb": "", "en": "", "de": ""}
 _LANGUAGE_BLOKK = ""
-_LOCAL_TZ: ZoneInfo = ZoneInfo("UTC")
 _KARE_REMINDERS_MAX_CHARS = 2000  # fail-closed default if settings.yaml is missing/invalid
 
 _KARE_LANGUAGE_MAP = {
@@ -195,11 +222,36 @@ _KARE_LANGUAGE_MAP = {
     "ar": "أجب دائماً باللغة العربية.",
 }
 
+_LANG_TAG_INSTRUCTION = (
+    " End every reply with a tag on its own new line: [LANG:xx] where xx is the ISO code "
+    "of the language you just replied in (e.g. [LANG:nb]). Never mention or explain this "
+    "tag — it is stripped before the user sees your reply."
+)
+
+
 def _kare_lang_instruction(lang: str) -> str:
-    return _KARE_LANGUAGE_MAP.get(lang.lower().strip(), f"Always reply in {lang}.")
+    base = _KARE_LANGUAGE_MAP.get(lang.lower().strip(), f"Always reply in {lang}.")
+    return base + _LANG_TAG_INSTRUCTION
+
+
+def _language_block_for(user_id: str = "") -> str:
+    """Reply-language instruction: the user's own language if set, else the installation's
+    kare_language (_LANGUAGE_BLOKK, any of the GUI languages)."""
+    override = get_user_lang_override(user_id)
+    return _kare_lang_instruction(override) if override else _LANGUAGE_BLOKK
+
+
+def _personality_core_for(user_id: str = "") -> str:
+    """Core personality in the user's own language if set — same mode as the installation. A custom
+    (egendefinert) core exists in one language only and is used as is."""
+    override = get_user_lang_override(user_id)
+    if not override or _PERSONALITY_MODE == "egendefinert":
+        return _PERSONALITY_CORE
+    return _get_personality_core(override, _PERSONALITY_MODE)
+
 
 try:
-    _settings = yaml.safe_load(open(_SETTINGS_PATH, "r", encoding="utf-8"))
+    _settings = yaml.safe_load(Path(_SETTINGS_PATH).read_text(encoding="utf-8"))
     _lok = _settings.get("location") or _settings.get("lokasjon", {})
     if _lok:
         _city = _lok.get("city") or _lok.get("sted", "")
@@ -209,7 +261,6 @@ try:
             _l: t("llm_location_block", _l, city=_city, postal=_postal, country=_country)
             for _l in ("nb", "en", "de")
         }
-        _LOCAL_TZ = _get_local_tz()
     _aname = _settings.get("assistant_name", "").strip()
     if _aname:
         _ASSISTANT_NAME_BLOKK = {
@@ -219,10 +270,14 @@ try:
     _LANGUAGE_BLOKK = _kare_lang_instruction(_lang)
     _PERSONALITY_MODE = _settings.get("personality_mode", "standard")
     if _PERSONALITY_MODE == "egendefinert":
-        _PERSONALITY_CORE = _load_text("/kaare/configs/personality_core_custom.md") or _get_personality_core(_lang, "standard")
+        _PERSONALITY_CORE = _load_text(
+            "/kaare/configs/personality_core_custom.md"
+        ) or _get_personality_core(_lang, "standard")
     else:
         _PERSONALITY_CORE = _get_personality_core(_lang, _PERSONALITY_MODE)
-    _KARE_REMINDERS_MAX_CHARS = int(_settings.get("kare_reminders", {}).get("injection_max_chars", 2000))
+    _KARE_REMINDERS_MAX_CHARS = int(
+        _settings.get("kare_reminders", {}).get("injection_max_chars", 2000)
+    )
 except Exception:
     pass
 
@@ -233,39 +288,100 @@ _WEEKDAYS: dict[str, list[str]] = {
     "de": ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"],
 }
 _MONTHS: dict[str, list[str]] = {
-    "nb": ["januar", "februar", "mars", "april", "mai", "juni",
-           "juli", "august", "september", "oktober", "november", "desember"],
-    "en": ["January", "February", "March", "April", "May", "June",
-           "July", "August", "September", "October", "November", "December"],
-    "de": ["Januar", "Februar", "März", "April", "Mai", "Juni",
-           "Juli", "August", "September", "Oktober", "November", "Dezember"],
+    "nb": [
+        "januar",
+        "februar",
+        "mars",
+        "april",
+        "mai",
+        "juni",
+        "juli",
+        "august",
+        "september",
+        "oktober",
+        "november",
+        "desember",
+    ],
+    "en": [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ],
+    "de": [
+        "Januar",
+        "Februar",
+        "März",
+        "April",
+        "Mai",
+        "Juni",
+        "Juli",
+        "August",
+        "September",
+        "Oktober",
+        "November",
+        "Dezember",
+    ],
 }
+
 
 def _time_block(lang: str = "nb") -> str:
     """Returns current date and time using the timezone from settings.yaml."""
-    now = datetime.now(tz=_LOCAL_TZ)
+    return time_block(lang)
+
+
+def time_block(lang: str = "nb") -> str:
+    """Current date and time block (public: the chat path places it right before the new
+    message instead of in the system prompt — P105 Phase 6b)."""
+    now = datetime.now(
+        tz=_get_local_tz()
+    )  # live, not the reload-time copy: a GUI change applies at once (N16)
     days = _WEEKDAYS.get(lang, _WEEKDAYS["nb"])
     months = _MONTHS.get(lang, _MONTHS["nb"])
     day_name = days[now.weekday()]
     date_str = f"{now.day}. {months[now.month - 1]} {now.year}"
     time_str = now.strftime("%H:%M")
-    return t("llm_time_header", lang) + "\n" + t("llm_time_now", lang, day=day_name, date=date_str, time=time_str)
+    return (
+        t("llm_time_header", lang)
+        + "\n"
+        + t("llm_time_now", lang, day=day_name, date=date_str, time=time_str)
+    )
 
 
 def _load_kare_reminders(lang: str = "nb") -> str:
-    """Kompakt, kappet injeksjon av Kåres huskeliste. Tom streng hvis listen er tom."""
+    """Kåre's own memory drawers for the prompt (P133 C3): lessons and resolved topics as prose
+    (D3/D7), the kare list as a title index (D2), plus one line with how many dev-meeting agenda
+    items are waiting (P118 T2-D18: agenda items themselves are never injected). Empty string
+    when all are empty."""
+    parts = []
+    for build in (
+        lambda: _memory_prompt.lessons_prompt(lang),
+        lambda: _memory_prompt.resolved_prompt(lang),
+        lambda: _memory_prompt.kare_index(_KARE_REMINDERS_MAX_CHARS, lang),
+    ):
+        try:
+            parts.append(build())
+        except Exception:
+            pass
     try:
-        from kaare_core.tools.lister import kare_les_for_injeksjon
-        return kare_les_for_injeksjon(max_chars=_KARE_REMINDERS_MAX_CHARS, lang=lang)
+        parts.append(_agenda_prompt_line(lang))
     except Exception:
-        return ""
+        pass
+    return "\n\n".join(p for p in parts if p)
 
 
 def _build_household_block() -> str:
     """Build the household members block from all users' household_visible sections.
     Loaded at startup and on reload. Returns empty string if no data."""
     try:
-        from kaare_core.users.profile_manager import get_all_household_visible, format_household_block
         all_visible = get_all_household_visible()
         return format_household_block(all_visible)
     except Exception:
@@ -274,20 +390,53 @@ def _build_household_block() -> str:
 
 _HOUSEHOLD_BLOCK = _build_household_block()
 
-_PERSONALITY_SELF_RAW = _load_text("/kaare/state/personality_self.md")
-_PERSONALITY_SELF_CAP = 3000  # chars — ~750 tokens, fits ~20 recent observations
+_PERSONALITY_SELF_LIMIT = 20  # rows — matches the old ~3000-char/~20-observation cap
 
-def _cap_personality_self(text: str) -> str:
-    """Keep only the most recent observations — newest are at the bottom."""
-    if len(text) <= _PERSONALITY_SELF_CAP:
-        return text
-    truncated = text[-_PERSONALITY_SELF_CAP:]
-    first_newline = truncated.find("\n")
-    if first_newline > 0:
-        truncated = truncated[first_newline + 1:]
-    return "[… eldre observasjoner ikke vist]\n\n" + truncated
 
-_PERSONALITY_SELF = _cap_personality_self(_PERSONALITY_SELF_RAW)
+def _load_personality_self_block() -> str:
+    """Ranked top-N self-observations from knowledge_store (P105 Fase 3 Step 3) —
+    replaces the old module-level cache of personality_self.md capped to its last
+    3000 chars. Queried fresh on every call instead of cached at import/reload
+    time: this incidentally fixes a real staleness bug the old cache had (a
+    self_image update via the tool never triggered reload_config(), so Kåre's own
+    context kept showing the pre-update text until an unrelated reload happened —
+    see P105 plan Phase log). SQLite reads here are sub-millisecond at this scale
+    (see P105 Research), so no caching is needed."""
+    rows = _ks.get_top_facts("personality", limit=_PERSONALITY_SELF_LIMIT)
+    if not rows:
+        return ""
+    return "\n".join(f"- {r['content']}" for r in rows)
+
+
+_WORLD_CTX_LIMIT = 40  # rows — bounded on purpose, unlike the old raw[:2000] byte
+# slice that cut world.md mid-content regardless of what
+# was actually important; ranking replaces truncation
+
+
+def _render_world_ctx() -> str:
+    """Ranked top-N world facts from knowledge_store (P105 Fase 3 Step 3) —
+    replaces the old `raw[:2000]` byte-offset slice of world.md, which only ever
+    showed the first ~17% of the file (2 of 16 sections) regardless of content.
+    Variable rows ('var::' section prefix) are excluded — they were never part
+    of this passive block even in the old world.md/world_vars.json split, only
+    reachable via the world tool's read_var/list_vars actions on demand."""
+    rows = _ks.get_top_facts("world", limit=_WORLD_CTX_LIMIT, exclude_section_prefixes=["var::"])
+    if not rows:
+        return ""
+    lines = []
+    last_cat = None
+    for row in rows:
+        section = row["section"] or "Notes"
+        cat = section.split("::", 1)[0]
+        if cat != last_cat:
+            lines.append(f"\n## {cat}")
+            last_cat = cat
+        if "::" in section:
+            field = section.split("::", 1)[1]
+            lines.append(f"- {field}: {row['content']}")
+        else:
+            lines.append(row["content"])
+    return "\n".join(lines).strip()
 
 
 def _load_user_obs(user_id: str, lang: str = "nb") -> str:
@@ -296,7 +445,7 @@ def _load_user_obs(user_id: str, lang: str = "nb") -> str:
     Alt over første '---'-linje = alltid inn. Ingen '---' = siste 14 dager.
     Myk grense: 1500 tegn — resten tilgjengelig via les_brukerprofil-tool.
     """
-    from pathlib import Path
+
     if not user_id or user_id == "global":
         return ""
     path = Path(f"/kaare/state/users/{user_id}/observations.md")
@@ -309,7 +458,6 @@ def _load_user_obs(user_id: str, lang: str = "nb") -> str:
         if "\n---\n" in content:
             top = content.split("\n---\n", 1)[0].strip()
         else:
-            from kaare_core.users.profile_manager import get_recent_observations
             top = get_recent_observations(user_id, days=14)
         if not top:
             return ""
@@ -325,7 +473,6 @@ def _load_user_profile_top(user_id: str) -> str:
     if not user_id or user_id == "global":
         return ""
     try:
-        from kaare_core.users.profile_manager import get_profile_prompt_top
         return get_profile_prompt_top(user_id)
     except Exception:
         return ""
@@ -336,7 +483,6 @@ def _current_user_block(user_id: str, lang: str = "nb") -> str:
     if not user_id or user_id == "global":
         return ""
     try:
-        from kaare_core.users.profile_manager import get_display_name
         name = get_display_name(user_id)
     except Exception:
         name = user_id
@@ -357,7 +503,6 @@ def _load_user_knowledge(user_id: str, lang: str = "nb") -> str:
     if not user_id or user_id == "global":
         return ""
     try:
-        from pathlib import Path as _Path
         path = _Path(f"/kaare/state/users/{user_id}/user_knowledge.md")
         if not path.exists():
             return ""
@@ -371,12 +516,26 @@ def _load_user_knowledge(user_id: str, lang: str = "nb") -> str:
         return ""
 
 
+def is_stranger(user_id: str) -> bool:
+    """True for the untrusted system identity (unknown_user, or any user with role «stranger»).
+    Made-up ids never reach here as themselves — /api/generate maps them to unknown_user
+    (store.resolve_request_user) — while Kåre's own ids («kare», «global») stay trusted (P120)."""
+    if user_id == "unknown_user":
+        return True
+    if not user_id or user_id in ("global", "kare"):
+        return False
+    try:
+        rec = _store.get_user(user_id)
+        return bool(rec and rec.get("role") == "stranger")
+    except Exception:
+        return False
+
+
 def _get_user_role(user_id: str) -> str:
     """Fetch role from users.db for system prompt injection. Returns 'adult' on any error."""
     if not user_id or user_id == "global":
         return "adult"
     try:
-        from kaare_core.users import store as _store
         rec = _store.get_user(user_id)
         return (rec or {}).get("role", "adult")
     except Exception:
@@ -389,8 +548,8 @@ def _build_disabled_modules_block(lang: str = "nb") -> str:
 
     _agent_labels = {
         "mechanic": "Mechanic",
-        "library":     "Miss Library",
-        "image_edit":  "bilderedigering",
+        "library": "Miss Library",
+        "image_edit": "bilderedigering",
     }
     for role, label in _agent_labels.items():
         if not CFG.get(role, {}).get("enabled", True):
@@ -398,10 +557,10 @@ def _build_disabled_modules_block(lang: str = "nb") -> str:
 
     _domain_labels = {
         "home_assistant": "hjemmeautomatisering (Home Assistant)",
-        "frigate":        "kamera / Frigate",
-        "weather":        "vær",
+        "frigate": "kamera / Frigate",
+        "weather": "vær",
     }
-    domains = _CAPABILITY_MAP.get("domains", {})
+    domains = _get_capability_map().get("domains", {})
     for key, label in _domain_labels.items():
         if not domains.get(key, {}).get("enabled", True):
             disabled.append(label)
@@ -410,7 +569,8 @@ def _build_disabled_modules_block(lang: str = "nb") -> str:
     if disabled:
         names = ", ".join(disabled)
         parts.append(
-            t("llm_disabled_modules_header", lang) + "\n"
+            t("llm_disabled_modules_header", lang)
+            + "\n"
             + t("llm_disabled_modules", lang, names=names)
         )
 
@@ -418,17 +578,20 @@ def _build_disabled_modules_block(lang: str = "nb") -> str:
     if CFG.get("mechanic", {}).get("enabled", True):
         ps_perms = _get_tool_permissions().get("agent_tools", {}).get("mechanic", {})
         _tool_labels = {
-            "utforsk":        "utforsk (lese filer/kode)",
-            "inspiser":       "inspiser (logger/tjenester/ressurser)",
-            "nettsøk":        "nettsøk",
+            "utforsk": "utforsk (lese filer/kode)",
+            "inspiser": "inspiser (logger/tjenester/ressurser)",
+            "nettsøk": "nettsøk",
             "søk_argus": "søk_argus (systemlogg)",
-            "shell":          "shell (kjøre kommandoer)",
-            "hukommelse":     "hukommelse",
+            "shell": "shell (kjøre kommandoer)",
+            "hukommelse": "hukommelse",
         }
-        disabled_tools = [label for key, label in _tool_labels.items() if ps_perms.get(key) is False]
+        disabled_tools = [
+            label for key, label in _tool_labels.items() if ps_perms.get(key) is False
+        ]
         if disabled_tools:
             parts.append(
-                t("llm_mechanic_disabled", lang) + "\n"
+                t("llm_mechanic_disabled", lang)
+                + "\n"
                 + t("llm_mechanic_cannot_use", lang, tools=", ".join(disabled_tools))
             )
 
@@ -443,7 +606,13 @@ def _resolve_lang_dict(value: str | dict, lang: str) -> str:
     return value or ""
 
 
-def _build_system(base: str | dict, personality: str = "standard", user_id: str = "") -> str:
+def _build_system(
+    base: str | dict,
+    personality: str = "standard",
+    user_id: str = "",
+    include_time: bool = True,
+    relevant: str = "",
+) -> str:
     """
     Kombiner kjerne, adferds-variant, lokasjon, nåværende tid og operasjonell
     system prompt fra llm.yaml.
@@ -451,27 +620,35 @@ def _build_system(base: str | dict, personality: str = "standard", user_id: str 
       minimal/letvekt  → kun kjerne, ingen behavior, ingen personality_self
       standard         → kjerne + personality_self
       full             → kjerne + behavior + personality_self
-      komplett         → kjerne + behavior + personality_self + world.md (maks 2000 tegn)
+      komplett         → kjerne + behavior + personality_self + world (topp-rangert, knowledge_store)
       egendefinert     → egendefinert kjerne + behavior + personality_self
     _time_block() sist — endres hvert minutt og ville ugyldiggjort KV-cache.
+    include_time=False: the caller places the time itself (chat path, P105 Phase 6b —
+    directly before the new message, after the replayed turns).
     """
     lang = get_lang(user_id)
     base = _resolve_lang_dict(base, lang)
+    # Knowledge boundary (P120): an untrusted stranger learns nothing about the house or its
+    # people — no self-image (it mentions people), Kåre's notes, household members, away
+    # status, live situation (presence, cameras, sensors), world facts or any profile.
+    _stranger = is_stranger(user_id)
 
     _include_behavior = _PERSONALITY_MODE in ("full", "komplett", "egendefinert")
-    _include_self     = _PERSONALITY_MODE not in ("minimal", "letvekt")
-    _include_world    = _PERSONALITY_MODE == "komplett"
+    _include_self = _PERSONALITY_MODE not in ("minimal", "letvekt")
+    _include_world = _PERSONALITY_MODE == "komplett"
 
-    behavior = (_get_personality_variant(personality, lang) or _get_personality_variant("standard", lang)) if _include_behavior else ""
-    personality_self = _PERSONALITY_SELF if _include_self else ""
+    behavior = (
+        (_get_personality_variant(personality, lang) or _get_personality_variant("standard", lang))
+        if _include_behavior
+        else ""
+    )
+    personality_self = _load_personality_self_block() if _include_self else ""
     if personality_self:
         _self_note = t("llm_personality_self_note", lang)
         if _self_note:
             personality_self = _self_note + "\n\n" + personality_self
-    world_ctx = ""
-    if _include_world:
-        raw = _load_text("/kaare/state/world.md")
-        world_ctx = raw[:2000] if raw else ""
+    # P133 C3: top-ranked world facts as prose, the rest as a title index (D2/D3).
+    world_ctx = _memory_prompt.world_prompt(lang) if _include_world else ""
 
     profile_top = _load_user_profile_top(user_id)
     user_obs = _load_user_obs(user_id, lang)
@@ -479,20 +656,44 @@ def _build_system(base: str | dict, personality: str = "standard", user_id: str 
     kare_reminders = _load_kare_reminders(lang)
     current_user = _current_user_block(user_id, lang)
     role_age = _build_role_age_block(_get_user_role(user_id), lang)
-    from kaare_core.tools.household_state import household_mode_block as _household_mode_block
+
     _household_mode = _household_mode_block()
     _situational = _build_situational_context(user_id, lang)
-    parts = [p for p in [
-        _ASSISTANT_NAME_BLOKK.get(lang) or _ASSISTANT_NAME_BLOKK.get("nb", ""),
-        _PERSONALITY_CORE, current_user, role_age, behavior,
-        _LOKASJON_BLOKK.get(lang) or _LOKASJON_BLOKK.get("nb", ""), _LANGUAGE_BLOKK, (base or "").strip(),
-        personality_self, kare_reminders, _HOUSEHOLD_BLOCK, _household_mode, _situational, profile_top, user_obs,
-        user_knowledge, world_ctx, _build_disabled_modules_block(lang), _time_block(lang)
-    ] if p]
+    household_block = _HOUSEHOLD_BLOCK
+    if _stranger:
+        personality_self = kare_reminders = household_block = _household_mode = ""
+        _situational = profile_top = user_obs = user_knowledge = world_ctx = current_user = ""
+        relevant = ""
+    parts = [
+        p
+        for p in [
+            _ASSISTANT_NAME_BLOKK.get(lang) or _ASSISTANT_NAME_BLOKK.get("nb", ""),
+            _personality_core_for(user_id),
+            current_user,
+            role_age,
+            behavior,
+            _LOKASJON_BLOKK.get(lang) or _LOKASJON_BLOKK.get("nb", ""),
+            _language_block_for(user_id),
+            (base or "").strip(),
+            personality_self,
+            kare_reminders,
+            household_block,
+            _household_mode,
+            _situational,
+            profile_top,
+            user_obs,
+            user_knowledge,
+            world_ctx,
+            relevant,  # P133 C3: «Relevant nå» — full text of the 2–3 entries this message needs
+            _build_disabled_modules_block(lang),
+            _time_block(lang) if include_time else "",
+        ]
+        if p
+    ]
     return "\n\n---\n\n".join(parts)
 
 
-def _build_system_fallback(user_id: str = "") -> str:
+def _build_system_fallback(user_id: str = "", include_time: bool = True) -> str:
     """
     Stripped system prompt for 9B fallback mode.
     Only core personality + fallback notice + current time.
@@ -502,7 +703,15 @@ def _build_system_fallback(user_id: str = "") -> str:
     """
     lang = get_lang(user_id) if user_id else get_lang()
     fallback_note = t("llm_fallback_note", lang)
-    parts = [p for p in [_PERSONALITY_CORE, fallback_note, _time_block(lang)] if p]
+    parts = [
+        p
+        for p in [
+            _personality_core_for(user_id),
+            fallback_note,
+            _time_block(lang) if include_time else "",
+        ]
+        if p
+    ]
     return "\n\n---\n\n".join(parts)
 
 
@@ -522,22 +731,24 @@ def _build_prompt_meta(system_prompt: str, user_id: str, is_fallback: bool = Fal
     _meta_lang = get_lang(user_id) if user_id else get_lang()
     static_parts = [
         _ASSISTANT_NAME_BLOKK.get(_meta_lang) or _ASSISTANT_NAME_BLOKK.get("nb", ""),
-        _PERSONALITY_CORE,
+        _personality_core_for(user_id),
         _PERSONALITIES.get("standard", ""),
-        _LOKASJON_BLOKK.get(_meta_lang) or _LOKASJON_BLOKK.get("nb", ""), _LANGUAGE_BLOKK, _HOUSEHOLD_BLOCK,
+        _LOKASJON_BLOKK.get(_meta_lang) or _LOKASJON_BLOKK.get("nb", ""),
+        _language_block_for(user_id),
+        _HOUSEHOLD_BLOCK,
     ]
     static_prefix_chars = sum(len(p) for p in static_parts if p)
     system_chars = len(system_prompt)
     has_user_obs = bool(_load_user_obs(user_id).strip()) if user_id else False
     return {
-        "mode":                 _PERSONALITY_MODE,
-        "system_chars":         system_chars,
-        "static_prefix_chars":  static_prefix_chars,
-        "dynamic_chars":        max(0, system_chars - static_prefix_chars),
-        "has_personality_self": bool(_PERSONALITY_SELF),
-        "has_world":            _PERSONALITY_MODE == "komplett",
-        "has_user_obs":         has_user_obs,
-        "is_fallback_prompt":   is_fallback,
+        "mode": _PERSONALITY_MODE,
+        "system_chars": system_chars,
+        "static_prefix_chars": static_prefix_chars,
+        "dynamic_chars": max(0, system_chars - static_prefix_chars),
+        "has_personality_self": bool(_load_personality_self_block()),
+        "has_world": _PERSONALITY_MODE == "komplett",
+        "has_user_obs": has_user_obs,
+        "is_fallback_prompt": is_fallback,
     }
 
 
@@ -545,7 +756,8 @@ def _build_prompt_meta(system_prompt: str, user_id: str, is_fallback: bool = Fal
 # Helpers
 # -------------------------------------------------
 
-def _extract_text(data: Dict[str, Any]) -> str:
+
+def _extract_text(data: dict[str, Any]) -> str:
     """
     Normaliserer alle kjente Ollama / VLM / OpenAI-lignende svar til ren tekst.
     """
@@ -611,21 +823,20 @@ def _parse_ollama_tool_calls(content: str, id_prefix: str = "call"):
     tool_calls = []
     for i, m in enumerate(matches):
         func_name = m.group(1)
-        arguments = {
-            pm.group(1): pm.group(2).strip()
-            for pm in _PARAM_RE.finditer(m.group(2))
-        }
-        tool_calls.append({
-            "id": f"{id_prefix}_{i}",
-            "function": {"name": func_name, "arguments": arguments},
-        })
+        arguments = {pm.group(1): pm.group(2).strip() for pm in _PARAM_RE.finditer(m.group(2))}
+        tool_calls.append(
+            {
+                "id": f"{id_prefix}_{i}",
+                "function": {"name": func_name, "arguments": arguments},
+            }
+        )
 
     cleaned = _TOOL_CALL_RE.sub("", content).strip()
     return tool_calls, cleaned
 
 
 _VLLM_VISUAL_TOKENS_PER_PIXEL = 1.0 / 966  # ~966 px per visual token (measured on Qwen3VL 27B)
-_VLLM_MAX_VISUAL_TOKENS = 2000             # stays safely below model's 2304 limit
+_VLLM_MAX_VISUAL_TOKENS = 2000  # stays safely below model's 2304 limit
 
 
 def _resize_image_for_vllm(data_uri: str, max_pixels: int) -> str:
@@ -633,7 +844,6 @@ def _resize_image_for_vllm(data_uri: str, max_pixels: int) -> str:
     Resize an image (given as a data URI) so it contains at most max_pixels pixels.
     Returns a data URI (JPEG) at the reduced size. No-ops if image is already small enough.
     """
-    from PIL import Image
 
     if data_uri.startswith("data:"):
         _header, _b64 = data_uri.split(",", 1)
@@ -657,7 +867,7 @@ def _resize_image_for_vllm(data_uri: str, max_pixels: int) -> str:
     return f"data:image/jpeg;base64,{b64_new}"
 
 
-def _ollama_images_to_openai_content(text: str, images: List[str]) -> List[Dict[str, Any]]:
+def _ollama_images_to_openai_content(text: str, images: list[str]) -> list[dict[str, Any]]:
     """
     Convert Ollama-style images list + text content to OpenAI multimodal content array.
     vLLM/OpenAI expects: [{"type":"text","text":"..."}, {"type":"image_url","image_url":{"url":"data:image/jpeg;base64,..."}}]
@@ -666,7 +876,7 @@ def _ollama_images_to_openai_content(text: str, images: List[str]) -> List[Dict[
     n = len(images)
     max_pixels_per_image = int(_VLLM_MAX_VISUAL_TOKENS / max(n, 1) / _VLLM_VISUAL_TOKENS_PER_PIXEL)
 
-    parts: List[Dict[str, Any]] = [{"type": "text", "text": text or ""}]
+    parts: list[dict[str, Any]] = [{"type": "text", "text": text or ""}]
     for img in images:
         url = img if img.startswith("data:") else f"data:image/jpeg;base64,{img}"
         url = _resize_image_for_vllm(url, max_pixels_per_image)
@@ -674,7 +884,7 @@ def _ollama_images_to_openai_content(text: str, images: List[str]) -> List[Dict[
     return parts
 
 
-def _normalise_messages_for_vllm(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _normalise_messages_for_vllm(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Convert Kåre's Ollama-style message history to OpenAI/vLLM format.
 
@@ -703,10 +913,12 @@ def _normalise_messages_for_vllm(messages: List[Dict[str, Any]]) -> List[Dict[st
 
         # User/system message with embedded Ollama-style images → OpenAI multimodal
         if imgs and role in ("user", "system", None) and tcs is None:
-            normalised.append({
-                "role": role or "user",
-                "content": _ollama_images_to_openai_content(msg.get("content", ""), imgs),
-            })
+            normalised.append(
+                {
+                    "role": role or "user",
+                    "content": _ollama_images_to_openai_content(msg.get("content", ""), imgs),
+                }
+            )
 
         # Assistant message (with or without explicit role)
         elif tcs is not None and role in (None, "assistant"):
@@ -718,28 +930,34 @@ def _normalise_messages_for_vllm(messages: List[Dict[str, Any]]) -> List[Dict[st
                 args = fn.get("arguments", {})
                 if isinstance(args, dict):
                     args = json.dumps(args, ensure_ascii=False)
-                fixed_tcs.append({
-                    "id": tc_id,
-                    "type": "function",
-                    "function": {"name": fn.get("name", ""), "arguments": args},
-                })
+                fixed_tcs.append(
+                    {
+                        "id": tc_id,
+                        "type": "function",
+                        "function": {"name": fn.get("name", ""), "arguments": args},
+                    }
+                )
                 pending_ids.append(tc_id)
-            normalised.append({
-                "role": "assistant",
-                "content": msg.get("content") or None,
-                "tool_calls": fixed_tcs,
-            })
+            normalised.append(
+                {
+                    "role": "assistant",
+                    "content": msg.get("content") or None,
+                    "tool_calls": fixed_tcs,
+                }
+            )
 
         # Tool result message — attach matching tool_call_id
         elif role == "tool":
             tc_id = msg.get("tool_call_id")
             if not tc_id and pending_ids:
                 tc_id = pending_ids.pop(0)
-            normalised.append({
-                "role": "tool",
-                "tool_call_id": tc_id or "call_0",
-                "content": msg.get("content", ""),
-            })
+            normalised.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc_id or "call_0",
+                    "content": msg.get("content", ""),
+                }
+            )
 
         else:
             normalised.append(msg)
@@ -747,7 +965,7 @@ def _normalise_messages_for_vllm(messages: List[Dict[str, Any]]) -> List[Dict[st
     return normalised
 
 
-def _denormalise_messages_for_ollama(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _denormalise_messages_for_ollama(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Convert OpenAI/vLLM-style tool-call messages back to Ollama format.
 
@@ -772,11 +990,13 @@ def _denormalise_messages_for_ollama(messages: List[Dict[str, Any]]) -> List[Dic
                     except json.JSONDecodeError:
                         args = {}
                 fixed_tcs.append({"function": {"name": fn.get("name", ""), "arguments": args}})
-            denormalised.append({
-                "role": "assistant",
-                "content": msg.get("content") or "",
-                "tool_calls": fixed_tcs,
-            })
+            denormalised.append(
+                {
+                    "role": "assistant",
+                    "content": msg.get("content") or "",
+                    "tool_calls": fixed_tcs,
+                }
+            )
         else:
             denormalised.append(msg)
     return denormalised
@@ -814,7 +1034,9 @@ async def get_model_size_b(model: str, base_url: str, provider: str = "ollama") 
         else:
             size_b = 7.0
     except Exception as exc:
-        logger.warning("get_model_size_b: could not detect size for %s (%s) — defaulting to 7.0B", model, exc)
+        logger.warning(
+            "get_model_size_b: could not detect size for %s (%s) — defaulting to 7.0B", model, exc
+        )
         size_b = 7.0
     _model_size_cache[cache_key] = size_b
     logger.info("get_model_size_b: %s = %.1fB", model, size_b)
@@ -834,14 +1056,14 @@ def _clean_ollama_options(options: dict) -> dict:
 def _build_vllm_options(options: dict) -> dict:
     """Convert Ollama-style options to OpenAI API top-level parameters."""
     mapping = {
-        "max_tokens":        "max_tokens",
-        "num_predict":       "max_tokens",
-        "temperature":       "temperature",
-        "top_p":             "top_p",
-        "presence_penalty":  "presence_penalty",
+        "max_tokens": "max_tokens",
+        "num_predict": "max_tokens",
+        "temperature": "temperature",
+        "top_p": "top_p",
+        "presence_penalty": "presence_penalty",
         "frequency_penalty": "frequency_penalty",
-        "top_k":             "top_k",
-        "min_p":             "min_p",
+        "top_k": "top_k",
+        "min_p": "min_p",
     }
     result = {}
     for src, dst in mapping.items():
@@ -855,12 +1077,12 @@ async def _call_vllm_chat(
     role: str,
     base_url: str,
     model: str,
-    messages: List[Dict[str, Any]],
-    tools: List[Dict[str, Any]] | None = None,
-    options: Dict[str, Any] | None = None,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+    options: dict[str, Any] | None = None,
     timeout: float | None = None,
     disable_thinking: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     OpenAI-compatible /v1/chat/completions call for vLLM.
 
@@ -872,7 +1094,7 @@ async def _call_vllm_chat(
     messages = _normalise_messages_for_vllm(messages)
 
     payload: dict = {
-        "model":  model,
+        "model": model,
         "messages": messages,
         "stream": False,
     }
@@ -895,6 +1117,7 @@ async def _call_vllm_chat(
         r.raise_for_status()
         data = r.json()
 
+    usage = data.get("usage") or {}
     choice = (data.get("choices") or [{}])[0]
     msg = choice.get("message", {})
     content = (msg.get("content") or "").strip()
@@ -909,7 +1132,9 @@ async def _call_vllm_chat(
     think_closed = True
     if "<think>" in content.lower():
         content, _extra_think, think_closed = strip_think_block(content)
-        think_content = (think_content + "\n\n" + _extra_think).strip() if think_content else _extra_think
+        think_content = (
+            (think_content + "\n\n" + _extra_think).strip() if think_content else _extra_think
+        )
 
     # Normalise tool_calls: OpenAI has arguments as a JSON string, we want dict
     raw_tool_calls = msg.get("tool_calls")
@@ -935,7 +1160,7 @@ async def _call_vllm_chat(
 
     # Build an OpenAI-compatible assistant message the router can append
     # directly to message history for the next round.
-    assistant_msg: Dict[str, Any] = {"role": "assistant", "content": content or None}
+    assistant_msg: dict[str, Any] = {"role": "assistant", "content": content or None}
     if tool_calls:
         assistant_msg["tool_calls"] = [
             {
@@ -952,13 +1177,14 @@ async def _call_vllm_chat(
         ]
 
     return {
-        "ok":           bool(content or tool_calls),
-        "text":         content,
-        "tool_calls":   tool_calls,
+        "ok": bool(content or tool_calls),
+        "text": content,
+        "tool_calls": tool_calls,
         "think_content": think_content,
         "think_closed": think_closed,
-        "message":      assistant_msg,
-        "meta":         {"role": role, "model": model, "base_url": base_url},
+        "message": assistant_msg,
+        "usage": usage,
+        "meta": {"role": role, "model": model, "base_url": base_url},
     }
 
 
@@ -968,14 +1194,14 @@ async def _call_ollama(
     base_url: str,
     model: str,
     prompt: str,
-    images: List[str] | None = None,
+    images: list[str] | None = None,
     stream: bool = False,
     think: bool | None = None,
-    options: Dict[str, Any] | None = None,
+    options: dict[str, Any] | None = None,
     system: str | None = None,
     keep_warm: bool = False,
     rid: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Lavnivå Ollama-kall. Antar at model allerede er resolvet.
     """
@@ -1023,7 +1249,6 @@ async def _call_ollama(
 
     if think_content:
         try:
-            from kaare_core.tools.think_cache import log_think
             log_think(
                 think_text=think_content,
                 response=content,
@@ -1052,13 +1277,14 @@ async def _call_ollama(
 # Public adapter API
 # -------------------------------------------------
 
+
 async def ask_llm(
     prompt: str,
     raw_prompt: str | None = None,
     allow_cloud: bool = False,
-    images: List[str] | None = None,
+    images: list[str] | None = None,
     rid: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Waterfall: kare (27B) → 9B fallback → cloud (if allow_cloud=True).
 
@@ -1067,12 +1293,12 @@ async def ask_llm(
     allow_cloud = True only for real chat calls, never for intent/split/repair
     rid         = optional request id, for correlation in llm_calls.log / think_cache.jsonl
     """
-    cfg         = CFG["default"]
-    kare_busy   = _kare_is_busy()
+    cfg = CFG["default"]
+    kare_busy = _kare_is_busy()
     in_fallback = is_fallback_active()
-    skip_main   = in_fallback and not should_retry_main()
+    skip_main = in_fallback and not should_retry_main()
 
-    backends: List[tuple] = []
+    backends: list[tuple] = []
     if not kare_busy and not skip_main:
         backends.append(("kare", cfg["base_url"]))
     if allow_cloud and CFG.get("cloud", {}).get("enabled", True):
@@ -1090,7 +1316,7 @@ async def ask_llm(
             elif cfg.get("provider") == "vllm":
                 _t0_simple = time.perf_counter()
                 system_text = _build_system(cfg.get("system", ""))
-                vllm_messages: List[Dict[str, Any]] = []
+                vllm_messages: list[dict[str, Any]] = []
                 if system_text:
                     vllm_messages.append({"role": "system", "content": system_text})
                 # Include images in OpenAI multimodal format if provided
@@ -1110,7 +1336,6 @@ async def ask_llm(
                 _think = result.get("think_content", "")
                 if _think:
                     try:
-                        from kaare_core.tools.think_cache import log_think
                         log_think(
                             think_text=_think,
                             response=result.get("text", ""),
@@ -1167,11 +1392,12 @@ async def ask_llm(
     # ── 9B fallback (generate endpoint) ──────────────────────────────────────
     if in_fallback and CFG.get("fallback", {}).get("enabled", True):
         cfg_fb = CFG.get("fallback", {})
+        fb_base_url = cfg_fb.get("base_url", "http://127.0.0.1:11445")
         try:
-            async with lock_11445("kare_fallback"):
+            async with lock_agent_pool(pool_order(fb_base_url), "kare_fallback") as fb_inst_url:
                 result = await _call_ollama(
                     role="llm_fallback",
-                    base_url=cfg_fb.get("base_url", "http://127.0.0.1:11445"),
+                    base_url=fb_inst_url,
                     model=_get_model(cfg_fb.get("model_role", "miss_kare")),
                     prompt=prompt,
                     images=images,
@@ -1184,31 +1410,61 @@ async def ask_llm(
                 )
             if result.get("ok"):
                 increment_turn()
-                result.setdefault("meta", {}).update({
-                    "instance":           "fallback_9b",
-                    "fallback_activated": _newly_activated,
-                })
+                result.setdefault("meta", {}).update(
+                    {
+                        "instance": "fallback_9b",
+                        "fallback_activated": _newly_activated,
+                    }
+                )
                 return result
         except Exception as e:
             logger.warning("llm_router: 9B fallback feilet (%s)", e)
 
     return {
-        "ok":   False,
+        "ok": False,
         "text": "Jeg får ikke kontakt med noen av systemene akkurat nå.",
         "meta": {"instance": "none"},
     }
 
 
+def _last_user_text(messages: list[dict[str, Any]]) -> str:
+    """Text of the newest user message (multimodal content: its text parts)."""
+    for m in reversed(messages or []):
+        if m.get("role") != "user":
+            continue
+        content = m.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return " ".join(
+                str(p.get("text", "")) for p in content if isinstance(p, dict) and p.get("type") == "text"
+            )
+    return ""
+
+
 async def ask_llm_with_tools(
-    messages: List[Dict[str, Any]],
-    tools: List[Dict[str, Any]],
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
     rid: str = "",
     personality: str = "standard",
     user_id: str = "",
     source: str = "user",
-) -> Dict[str, Any]:
+    time_in_messages: bool = False,
+    disable_thinking: bool = False,
+    relevance_query: str | None = None,
+) -> dict[str, Any]:
     """
     Tool-calling via Ollama /api/chat.
+
+    relevance_query: what «Relevant nå» searches for (P133 C3). None → the last user message;
+    the reflection loop passes Jang's thoughts instead of its whole instruction prompt.
+
+    disable_thinking=True: no reasoning block for this call (vLLM chat_template_kwargs /
+    Ollama think=False) — for structured background steps where thinking only burns the
+    output budget (P118 dev slot S1/S2).
+
+    time_in_messages=True: the caller already put the current time into `messages`
+    (chat path, P105 Phase 6b), so it is left out of the system prompt.
 
     Returns:
       tool_calls=None  → final answer, read 'text'
@@ -1223,19 +1479,35 @@ async def ask_llm_with_tools(
       fallback_deactivated True only on the first successful recovery call
       fallback_info        session dict from deactivate_fallback() when deactivated
     """
-    cfg         = CFG["default"]
-    kare_busy   = _kare_is_busy()
+    cfg = CFG["default"]
+    kare_busy = _kare_is_busy()
     in_fallback = is_fallback_active()
-    skip_main   = in_fallback and not should_retry_main()
+    skip_main = in_fallback and not should_retry_main()
 
-    backends: List[tuple] = []
+    backends: list[tuple] = []
     if not kare_busy and not skip_main:
         backends.append(("kare", cfg["base_url"]))
 
-    system = _build_system(cfg.get("system", ""), personality=personality, user_id=user_id)
-    full_messages = ([{"role": "system", "content": system}] + messages) if system else messages
+    relevant = ""
+    if not is_stranger(user_id):
+        try:
+            relevant = await _memory_prompt.relevant_block(
+                relevance_query if relevance_query is not None else _last_user_text(messages),
+                get_lang(user_id or "global"),
+                include_world=_PERSONALITY_MODE == "komplett",
+            )
+        except Exception as e:
+            logging.getLogger(__name__).warning("relevant block failed: %s", e)
+    system = _build_system(
+        cfg.get("system", ""),
+        personality=personality,
+        user_id=user_id,
+        include_time=not time_in_messages,
+        relevant=relevant,
+    )
+    full_messages = ([{"role": "system", "content": system}, *messages]) if system else messages
 
-    _newly_activated   = False
+    _newly_activated = False
     _newly_deactivated = False
     _fallback_info: dict | None = None
 
@@ -1247,16 +1519,16 @@ async def ask_llm_with_tools(
                 # meta.busy as "defer this cycle to the next tick," not a real failure.
                 if not await _try_acquire_kare_lock_nowait():
                     return {
-                        "ok":         False,
-                        "text":       "",
+                        "ok": False,
+                        "text": "",
                         "tool_calls": None,
-                        "message":    {},
+                        "message": {},
                         "meta": {
-                            "instance":             "none",
-                            "busy":                 True,
-                            "fallback_activated":   False,
+                            "instance": "none",
+                            "busy": True,
+                            "fallback_activated": False,
                             "fallback_deactivated": False,
-                            "fallback_info":        None,
+                            "fallback_info": None,
                         },
                     }
             else:
@@ -1272,37 +1544,41 @@ async def ask_llm_with_tools(
                     messages=full_messages,
                     tools=tools,
                     options=cfg.get("options"),
+                    disable_thinking=disable_thinking,
                 )
-                content       = vllm_result["text"]
-                tool_calls    = vllm_result["tool_calls"]
+                content = vllm_result["text"]
+                tool_calls = vllm_result["tool_calls"]
                 think_content = vllm_result["think_content"]
-                think_closed  = vllm_result["think_closed"]
-                msg           = vllm_result["message"]
+                think_closed = vllm_result["think_closed"]
+                msg = vllm_result["message"]
+                usage = vllm_result.get("usage") or {}
             else:
                 # Ollama /api/chat
-                think_val = cfg.get("think", False)
+                usage = {}
+                think_val = False if disable_thinking else cfg.get("think", False)
                 payload: dict = {
-                    "model":    _get_model(cfg["model_role"]),
+                    "model": _get_model(cfg["model_role"]),
                     "messages": full_messages,
-                    "tools":    tools,
-                    "stream":   False,
-                    "options":  _clean_ollama_options(cfg.get("options", {})),
-                    "think":    think_val,
+                    "tools": tools,
+                    "stream": False,
+                    "options": _clean_ollama_options(cfg.get("options", {})),
+                    "think": think_val,
                 }
                 if cfg.get("keep_warm"):
                     payload["keep_alive"] = -1
 
                 async with httpx.AsyncClient(timeout=None) as client:
-                    r = await client.post(
+                    data = await post_chat(
+                        client,
                         f"{base_url}/api/chat",
-                        json=payload,
+                        payload,
                         headers={"x-kaare-source": "kaare"},
+                        rid=rid,
+                        source="kaare",
                     )
-                    r.raise_for_status()
-                    data = r.json()
 
-                msg         = data.get("message", {})
-                tool_calls  = msg.get("tool_calls")
+                msg = data.get("message", {})
+                tool_calls = msg.get("tool_calls")
                 raw_content = (msg.get("content") or "").strip()
                 content, think_content, think_closed = strip_think_block(raw_content)
 
@@ -1322,13 +1598,14 @@ async def ask_llm_with_tools(
                         # model_enforcement retry loop asks for a real one.
                         think_truncated = True
                 try:
-                    from kaare_core.tools.think_cache import log_think, extract_conclusion
                     log_think(
                         think_text=think_content,
                         response=content,
                         role="kare",
                         model=_get_model(cfg["model_role"]),
-                        prompt_preview=(full_messages[-1].get("content", "") if full_messages else "")[:200],
+                        prompt_preview=(
+                            full_messages[-1].get("content", "") if full_messages else ""
+                        )[:200],
                         latency_ms=elapsed_ms,
                         recovered=recovered,
                         rid=rid,
@@ -1350,49 +1627,62 @@ async def ask_llm_with_tools(
 
             # Main model responded — deactivate fallback if we were in it
             if in_fallback:
-                _fallback_info     = deactivate_fallback()
+                _fallback_info = deactivate_fallback()
                 _newly_deactivated = True
 
             try:
                 _has_images = any(
-                    bool(m.get("images")) or (
-                        isinstance(m.get("content"), list) and
-                        any(isinstance(c, dict) and c.get("type") == "image_url" for c in m["content"])
+                    bool(m.get("images"))
+                    or (
+                        isinstance(m.get("content"), list)
+                        and any(
+                            isinstance(c, dict) and c.get("type") == "image_url"
+                            for c in m["content"]
+                        )
                     )
                     for m in messages
                 )
                 _sys = ""
                 if full_messages and full_messages[0].get("role") == "system":
                     _sys = full_messages[0].get("content", "")
-                os.makedirs("/kaare/logs", exist_ok=True)
-                with open("/kaare/logs/llm_calls.log", "a", encoding="utf-8") as _f:
-                    _f.write(json.dumps({
-                        "ts":          datetime.now(timezone.utc).isoformat(),
-                        "rid":         rid,
-                        "source":      source,
-                        "instance":    instance,
-                        "latency_ms":  elapsed_ms,
-                        "has_tools":   bool(tool_calls),
-                        "has_think":   bool(think_content),
-                        "has_images":  _has_images,
-                        "recovered":   recovered,
-                        "status":      "ok",
+                log_buffer.write(
+                    _LLM_CALLS_LOG,
+                    {
+                        "ts": datetime.now(UTC).isoformat(),
+                        "rid": rid,
+                        "source": source,
+                        "instance": instance,
+                        "model": _get_model(cfg["model_role"]),
+                        "latency_ms": elapsed_ms,
+                        "has_tools": bool(tool_calls),
+                        "has_think": bool(think_content),
+                        "has_images": _has_images,
+                        "recovered": recovered,
+                        "status": "ok",
+                        "prompt_tokens": usage.get("prompt_tokens"),
+                        "cached_tokens": (usage.get("prompt_tokens_details") or {}).get(
+                            "cached_tokens"
+                        ),
                         "prompt_meta": _build_prompt_meta(_sys, user_id, is_fallback=in_fallback),
-                    }, ensure_ascii=False) + "\n")
+                    },
+                )
             except Exception:
                 pass
 
             return {
-                "ok":         True,
-                "text":       content,
+                "ok": True,
+                "text": content,
                 "tool_calls": tool_calls,
-                "message":    msg,
+                "message": msg,
                 "meta": {
-                    "instance":             instance,
-                    "fallback_activated":   False,
+                    "instance": instance,
+                    "fallback_activated": False,
                     "fallback_deactivated": _newly_deactivated,
-                    "fallback_info":        _fallback_info,
-                    "think_truncated":      think_truncated,
+                    "fallback_info": _fallback_info,
+                    "think_truncated": think_truncated,
+                    # Real prompt size of this round (vLLM usage) — the router's token
+                    # guard builds the next round's estimate on it (P105 Phase 7).
+                    "prompt_tokens": usage.get("prompt_tokens"),
                 },
             }
 
@@ -1412,58 +1702,68 @@ async def ask_llm_with_tools(
 
     # ── 9B fallback (chat endpoint) ───────────────────────────────────────────
     if in_fallback:
-        cfg_fb      = CFG.get("fallback", {})
-        fb_url      = cfg_fb.get("base_url", "http://127.0.0.1:11445")
-        fb_model    = _get_model(cfg_fb.get("model_role", "miss_kare"))
-        fb_options  = cfg_fb.get("options", {})
-        fb_timeout  = float(cfg_fb.get("timeout", 60.0))
-        fb_system   = _build_system_fallback(user_id=user_id)
+        cfg_fb = CFG.get("fallback", {})
+        fb_url = cfg_fb.get("base_url", "http://127.0.0.1:11445")
+        fb_model = _get_model(cfg_fb.get("model_role", "miss_kare"))
+        fb_options = cfg_fb.get("options", {})
+        fb_timeout = float(cfg_fb.get("timeout", 60.0))
+        fb_system = _build_system_fallback(user_id=user_id, include_time=not time_in_messages)
         # Use the original conversation history with the stripped fallback system prompt
-        fb_messages = ([{"role": "system", "content": fb_system}] + messages) if fb_system else messages
+        fb_messages = (
+            ([{"role": "system", "content": fb_system}, *messages]) if fb_system else messages
+        )
         # Any assistant tool-call message produced by a prior vLLM round is still in
         # OpenAI format (JSON-string arguments, id/type fields) — Ollama rejects that.
         fb_messages = _denormalise_messages_for_ollama(fb_messages)
 
-        # Fallback tool budget: the 9B model shares the tool list built for the 27B
-        # main model, but num_ctx: 8192 can't hold all 29 tools (10,011 tokens alone).
+        # Fallback tool budget: kept at tier 0 by config (max_tool_tier). Originally
+        # driven by num_ctx: 8192 not fitting all 29 tools (10,011 tokens) — num_ctx is
+        # now 32768 (2026-09-02, matches kaare_agents2), so that constraint is gone;
+        # the tier-0 restriction is now a deliberate choice, not a context-size limit.
         # Fail-closed: missing/invalid config -> most restrictive ceiling (tier 0 only).
         try:
             fb_tool_ceiling = float(cfg_fb.get("max_tool_tier"))
         except (TypeError, ValueError):
-            logger.warning("ask_llm_with_tools: fallback max_tool_tier missing/invalid — defaulting to 0.0 (fail-closed)")
+            logger.warning(
+                "ask_llm_with_tools: fallback max_tool_tier missing/invalid — defaulting to 0.0 (fail-closed)"
+            )
             fb_tool_ceiling = 0.0
         tools_fb = _filter_tools_by_tier_ceiling(tools, fb_tool_ceiling)
 
         try:
-            async with lock_11445("kare_fallback"):
+            async with lock_agent_pool(pool_order(fb_url), "kare_fallback") as fb_inst_url:
                 payload_fb: dict = {
-                    "model":    fb_model,
+                    "model": fb_model,
                     "messages": fb_messages,
-                    "tools":    tools_fb,
-                    "stream":   cfg_fb.get("stream", False),
-                    "options":  _clean_ollama_options(fb_options),
-                    "think":    cfg_fb.get("think", False),
+                    "tools": tools_fb,
+                    "stream": cfg_fb.get("stream", False),
+                    "options": _clean_ollama_options(fb_options),
+                    "think": cfg_fb.get("think", False),
                 }
                 async with httpx.AsyncClient(timeout=fb_timeout) as client:
-                    r = await client.post(f"{fb_url}/api/chat", json=payload_fb)
-                    r.raise_for_status()
-                    data = r.json()
+                    data = await post_chat(
+                        client,
+                        f"{fb_inst_url}/api/chat",
+                        payload_fb,
+                        rid=rid,
+                        source="kare_fallback",
+                    )
 
-            msg        = data.get("message", {})
+            msg = data.get("message", {})
             tool_calls = msg.get("tool_calls")
-            content    = (msg.get("content") or "").strip()
+            content = (msg.get("content") or "").strip()
             increment_turn()
 
             return {
-                "ok":         True,
-                "text":       content,
+                "ok": True,
+                "text": content,
                 "tool_calls": tool_calls,
-                "message":    msg,
+                "message": msg,
                 "meta": {
-                    "instance":             "fallback_9b",
-                    "fallback_activated":   _newly_activated,
+                    "instance": "fallback_9b",
+                    "fallback_activated": _newly_activated,
                     "fallback_deactivated": False,
-                    "fallback_info":        None,
+                    "fallback_info": None,
                 },
             }
 
@@ -1471,20 +1771,38 @@ async def ask_llm_with_tools(
             logger.warning("ask_llm_with_tools: 9B fallback feilet (%s)", e)
 
     return {
-        "ok":         False,
-        "text":       "Jeg får ikke kontakt med noen av systemene akkurat nå.",
+        "ok": False,
+        "text": "Jeg får ikke kontakt med noen av systemene akkurat nå.",
         "tool_calls": None,
-        "message":    {},
+        "message": {},
         "meta": {
-            "instance":             "none",
-            "fallback_activated":   False,
+            "instance": "none",
+            "fallback_activated": False,
             "fallback_deactivated": False,
-            "fallback_info":        None,
+            "fallback_info": None,
         },
     }
 
 
-async def _call_cloud_brief(prompt: str) -> Dict[str, Any]:
+def _empty_reply_error(data: dict[str, Any], where: str) -> str:
+    """Error text for an OpenAI-compatible reply with no content. A reasoning model can spend
+    the whole max_tokens on reasoning and return HTTP 200 with empty content — without this
+    the callers only saw ok=False and logged «None» (P119 B6)."""
+    finish, reasoning = "?", None
+    try:
+        choice = (data.get("choices") or [{}])[0]
+        finish = choice.get("finish_reason") or "?"
+        details = (data.get("usage") or {}).get("completion_tokens_details") or {}
+        reasoning = details.get("reasoning_tokens")
+    except Exception:
+        pass
+    err = f"empty_content (finish_reason={finish}"
+    err += f", reasoning_tokens={reasoning})" if reasoning is not None else ")"
+    logger.warning("%s: %s", where, err)
+    return err
+
+
+async def _call_cloud_brief(prompt: str) -> dict[str, Any]:
     """
     Cloud-fallback with Kåre's system prompt and a hard token limit.
     Used only as last resort when the local kare model is down.
@@ -1500,7 +1818,7 @@ async def _call_cloud_brief(prompt: str) -> Dict[str, Any]:
 
     system = _build_system(cfg_default.get("system", ""))
 
-    messages: List[Dict[str, Any]] = []
+    messages: list[dict[str, Any]] = []
     if system:
         messages.append({"role": "system", "content": system.strip()})
     messages.append({"role": "user", "content": prompt})
@@ -1509,7 +1827,7 @@ async def _call_cloud_brief(prompt: str) -> Dict[str, Any]:
         "model": _get_model(cfg_cloud.get("model_role", "cloud")),
         "messages": messages,
         "temperature": 0.3,
-        "max_tokens": 300,   # hard limit — no essays in fallback mode
+        "max_tokens": 300,  # hard limit — no essays in fallback mode
         "stream": False,
     }
 
@@ -1531,11 +1849,14 @@ async def _call_cloud_brief(prompt: str) -> Dict[str, Any]:
         data = r.json()
 
     text = _extract_text(data)
-    return {
+    result = {
         "ok": bool(text),
         "text": text.strip(),
         "meta": {"role": "cloud_llm", "model": payload["model"]},
     }
+    if not text.strip():
+        result["error"] = _empty_reply_error(data, "_call_cloud_brief")
+    return result
 
 
 async def _call_huggingface_chat(
@@ -1543,11 +1864,11 @@ async def _call_huggingface_chat(
     role: str,
     base_url: str,
     model: str,
-    messages: List[Dict[str, Any]],
+    messages: list[dict[str, Any]],
     api_key_env: str = "CLOUD_API_KEY",
-    options: Dict[str, Any] | None = None,
+    options: dict[str, Any] | None = None,
     timeout: float | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     OpenAI-compatible /chat/completions call for the HuggingFace router (cloud role).
 
@@ -1582,20 +1903,23 @@ async def _call_huggingface_chat(
         data = r.json()
 
     text = _extract_text(data).strip()
-    return {
-        "ok":         bool(text),
-        "text":       text,
+    result = {
+        "ok": bool(text),
+        "text": text,
         "tool_calls": None,
-        "message":    {"role": "assistant", "content": text},
-        "meta":       {"role": role, "model": model, "base_url": base_url},
+        "message": {"role": "assistant", "content": text},
+        "meta": {"role": role, "model": model, "base_url": base_url},
     }
+    if not text:
+        result["error"] = _empty_reply_error(data, f"_call_huggingface_chat({role})")
+    return result
 
 
-def _load_env_file(path: str) -> Dict[str, str]:
+def _load_env_file(path: str) -> dict[str, str]:
     """Leser en enkel KEY=VALUE .env-fil."""
-    result: Dict[str, str] = {}
+    result: dict[str, str] = {}
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
@@ -1606,7 +1930,7 @@ def _load_env_file(path: str) -> Dict[str, str]:
     return result
 
 
-async def ask_llm_cloud(prompt: str) -> Dict[str, Any]:
+async def ask_llm_cloud(prompt: str) -> dict[str, Any]:
     """
     Query the configured cloud LLM (OpenAI-compatible API).
     Provider and URL come from configs/llm.yaml [cloud].
@@ -1624,7 +1948,7 @@ async def ask_llm_cloud(prompt: str) -> Dict[str, Any]:
     model = _get_model(cfg.get("model_role", "cloud"))
     system = cfg.get("system")
 
-    messages: List[Dict[str, Any]] = []
+    messages: list[dict[str, Any]] = []
     if system:
         messages.append({"role": "system", "content": system.strip()})
     messages.append({"role": "user", "content": prompt})
@@ -1652,54 +1976,77 @@ async def ask_llm_cloud(prompt: str) -> Dict[str, Any]:
         data = r.json()
 
     text = _extract_text(data)
-    return {
+    result = {
         "ok": bool(text),
         "text": text.strip(),
         "meta": {"role": "cloud_llm", "model": model},
     }
+    if not text.strip():
+        result["error"] = _empty_reply_error(data, "ask_llm_cloud")
+    return result
 
 
 def _log_llm_call_bg(
-    rid: str, source: str, role: str, model: str,
-    latency_ms: int, has_tools: bool, has_think: bool,
-    has_images: bool, recovered: bool, ok: bool,
+    rid: str,
+    source: str,
+    role: str,
+    model: str,
+    latency_ms: int,
+    has_tools: bool,
+    has_think: bool,
+    has_images: bool,
+    recovered: bool,
+    ok: bool,
+    usage: dict[str, Any] | None = None,
 ) -> None:
     """Log background-job LLM calls to llm_calls.log. Fire-and-forget."""
     try:
-        os.makedirs("/kaare/logs", exist_ok=True)
-        with open("/kaare/logs/llm_calls.log", "a", encoding="utf-8") as _f:
-            _f.write(json.dumps({
-                "ts":         datetime.now(timezone.utc).isoformat(),
-                "rid":        rid,
-                "source":     source,
-                "instance":   role,
-                "model":      model,
+        usage = usage or {}
+        log_buffer.write(
+            _LLM_CALLS_LOG,
+            {
+                "ts": datetime.now(UTC).isoformat(),
+                "rid": rid,
+                "source": source,
+                "instance": role,
+                "model": model,
                 "latency_ms": latency_ms,
-                "has_tools":  has_tools,
-                "has_think":  has_think,
+                "has_tools": has_tools,
+                "has_think": has_think,
                 "has_images": has_images,
-                "recovered":  recovered,
-                "status":     "ok" if ok else "error",
-            }, ensure_ascii=False) + "\n")
+                "recovered": recovered,
+                "status": "ok" if ok else "error",
+                "prompt_tokens": usage.get("prompt_tokens"),
+                "cached_tokens": (usage.get("prompt_tokens_details") or {}).get("cached_tokens"),
+            },
+        )
     except Exception:
         pass
 
 
 async def call_llm_chat(
     role: str,
-    messages: List[Dict[str, Any]],
-    tools: List[Dict[str, Any]] | None = None,
-    options: Dict[str, Any] | None = None,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+    options: dict[str, Any] | None = None,
     timeout: float | None = None,
     disable_thinking: bool = False,
     rid: str = "",
     source: str = "",
-) -> Dict[str, Any]:
+    base_url: str | None = None,
+    response_format: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
     Provider-agnostic multi-turn chat call for background jobs and agents.
 
     Unlike ask_llm(), does NOT inject a system prompt — caller controls messages
     entirely. Provider (vLLM / Ollama) is read from llm.yaml for the given role.
+
+    base_url overrides the role's configured URL — for agent-pool callers that have
+    already acquired an instance via lock_agent_pool() and must hit that exact one.
+
+    response_format (Ollama only): a JSON schema passed as `format` — grammar-constrained
+    output. Guarantees the shape, not the truth of the values.
 
     Returns {"ok": bool, "text": str, "tool_calls": ..., "message": ..., "meta": {...}}.
     """
@@ -1707,13 +2054,13 @@ async def call_llm_chat(
     if not cfg:
         return {"ok": False, "error": f"unknown_role:{role}", "text": "", "tool_calls": None}
 
-    effective_rid    = rid    or _current_rid.get()
+    effective_rid = rid or _current_rid.get()
     effective_source = source or _current_source.get() or "user"
     _t0 = time.perf_counter()
 
-    base_url = cfg["base_url"]
-    model    = _get_model(cfg["model_role"])
-    _opts    = options if options is not None else cfg.get("options")
+    base_url = base_url or cfg["base_url"]
+    model = _get_model(cfg["model_role"])
+    _opts = pool_call_options(cfg, options)
     _timeout = timeout if timeout is not None else cfg.get("timeout")
     provider = cfg.get("provider", "ollama")
 
@@ -1731,11 +2078,17 @@ async def call_llm_chat(
             )
             elapsed_ms = int((time.perf_counter() - _t0) * 1000)
             _log_llm_call_bg(
-                rid=effective_rid, source=effective_source, role=role, model=model,
+                rid=effective_rid,
+                source=effective_source,
+                role=role,
+                model=model,
                 latency_ms=elapsed_ms,
                 has_tools=bool(result.get("tool_calls")),
                 has_think=bool(result.get("think_content")),
-                has_images=False, recovered=False, ok=result.get("ok", False),
+                has_images=False,
+                recovered=False,
+                ok=result.get("ok", False),
+                usage=result.get("usage"),
             )
             return result
         except Exception as exc:
@@ -1755,10 +2108,16 @@ async def call_llm_chat(
             )
             elapsed_ms = int((time.perf_counter() - _t0) * 1000)
             _log_llm_call_bg(
-                rid=effective_rid, source=effective_source, role=role, model=model,
+                rid=effective_rid,
+                source=effective_source,
+                role=role,
+                model=model,
                 latency_ms=elapsed_ms,
-                has_tools=False, has_think=False,
-                has_images=False, recovered=False, ok=result.get("ok", False),
+                has_tools=False,
+                has_think=False,
+                has_images=False,
+                recovered=False,
+                ok=result.get("ok", False),
             )
             return result
         except Exception as exc:
@@ -1767,16 +2126,18 @@ async def call_llm_chat(
 
     # Ollama /api/chat
     payload: dict = {
-        "model":    model,
+        "model": model,
         "messages": messages,
-        "stream":   False,
-        "options":  _opts or {},
-        "think":    cfg.get("think", False),
+        "stream": False,
+        "options": _opts or {},
+        "think": cfg.get("think", False),
     }
     if cfg.get("keep_warm"):
         payload["keep_alive"] = -1
     if tools:
         payload["tools"] = tools
+    if response_format:
+        payload["format"] = response_format
     try:
         async with httpx.AsyncClient(timeout=_timeout) as client:
             r = await client.post(
@@ -1794,7 +2155,6 @@ async def call_llm_chat(
 
         if think_content:
             try:
-                from kaare_core.tools.think_cache import log_think
                 log_think(
                     think_text=think_content,
                     response=content,
@@ -1808,25 +2168,39 @@ async def call_llm_chat(
         tool_calls = msg.get("tool_calls")
         elapsed_ms = int((time.perf_counter() - _t0) * 1000)
         _log_llm_call_bg(
-            rid=effective_rid, source=source, role=role, model=model,
+            rid=effective_rid,
+            source=effective_source,
+            role=role,
+            model=model,
             latency_ms=elapsed_ms,
             has_tools=bool(tool_calls),
-            has_think=bool(think_content),
-            has_images=False, recovered=False, ok=bool(content or tool_calls),
+            has_think=bool(think_content or msg.get("thinking")),
+            has_images=False,
+            recovered=False,
+            ok=bool(content or tool_calls),
+            usage={"prompt_tokens": data.get("prompt_eval_count")},
         )
         return {
-            "ok":         bool(content or tool_calls),
-            "text":       content,
+            "ok": bool(content or tool_calls),
+            "text": content,
             "tool_calls": tool_calls,
-            "message":    msg,
-            "meta":       {"role": role, "model": model, "base_url": base_url, "think_truncated": think_truncated},
+            "message": msg,
+            "meta": {
+                "role": role,
+                "model": model,
+                "base_url": base_url,
+                "think_truncated": think_truncated,
+                "done_reason": data.get("done_reason"),
+            },
         }
     except Exception as exc:
         logger.warning("call_llm_chat(%s) feilet: %s", role, exc)
         return {"ok": False, "error": str(exc), "text": "", "tool_calls": None}
 
 
-async def ask_vlm(prompt: str, images: List[str], rid: str = "", user_id: str = "") -> Dict[str, Any]:
+async def ask_vlm(
+    prompt: str, images: list[str], rid: str = "", user_id: str = ""
+) -> dict[str, Any]:
     cfg = CFG["vision"]
     return await _call_ollama(
         role="vision",
@@ -1844,23 +2218,28 @@ async def ask_vlm(prompt: str, images: List[str], rid: str = "", user_id: str = 
 
 def reload_config() -> list[str]:
     """Hot-reload all file-based config caches without restarting the service."""
-    global CFG, _CAPABILITY_MAP, _LOKASJON_BLOKK, _ASSISTANT_NAME_BLOKK, _LANGUAGE_BLOKK, _LOCAL_TZ, _PERSONALITY_CORE, _PERSONALITY_MODE, _PERSONALITIES, _PERSONALITY_SELF, _HOUSEHOLD_BLOCK, _PERSONALITY_CORES, _PERSONALITY_CORES_LETVEKT, _PERSONALITY_CORES_MINIMAL
+    global \
+        CFG, \
+        _LOKASJON_BLOKK, \
+        _ASSISTANT_NAME_BLOKK, \
+        _LANGUAGE_BLOKK, \
+        _PERSONALITY_CORE, \
+        _PERSONALITY_MODE, \
+        _PERSONALITIES, \
+        _HOUSEHOLD_BLOCK, \
+        _PERSONALITY_CORES, \
+        _PERSONALITY_CORES_LETVEKT, \
+        _PERSONALITY_CORES_MINIMAL
     reloaded = []
 
     try:
-        CFG = yaml.safe_load(open(CFG_PATH, "r", encoding="utf-8"))
+        CFG = apply_agent_pool(yaml.safe_load(Path(CFG_PATH).read_text(encoding="utf-8")))
         reloaded.append("llm.yaml")
     except Exception:
         pass
 
     try:
-        _CAPABILITY_MAP = yaml.safe_load(open(_CAPABILITY_MAP_PATH, "r", encoding="utf-8")) or {}
-        reloaded.append("capability_map.yaml")
-    except Exception:
-        pass
-
-    try:
-        _s = yaml.safe_load(open(_SETTINGS_PATH, "r", encoding="utf-8")) or {}
+        _s = yaml.safe_load(Path(_SETTINGS_PATH).read_text(encoding="utf-8")) or {}
         _lok = _s.get("location") or _s.get("lokasjon", {})
         if _lok:
             _city = _lok.get("city") or _lok.get("sted", "")
@@ -1870,13 +2249,13 @@ def reload_config() -> list[str]:
                 _l: t("llm_location_block", _l, city=_city, postal=_postal, country=_country)
                 for _l in ("nb", "en", "de")
             }
-            _LOCAL_TZ = _get_local_tz()
         else:
             _LOKASJON_BLOKK = {"nb": "", "en": "", "de": ""}
         _aname = _s.get("assistant_name", "").strip()
         _ASSISTANT_NAME_BLOKK = (
             {_l: t("llm_assistant_name_block", _l, name=_aname) for _l in ("nb", "en", "de")}
-            if _aname else {"nb": "", "en": "", "de": ""}
+            if _aname
+            else {"nb": "", "en": "", "de": ""}
         )
         _lang = _s.get("kare_language") or _s.get("language", "nb")
         _LANGUAGE_BLOKK = _kare_lang_instruction(_lang)
@@ -1885,20 +2264,30 @@ def reload_config() -> list[str]:
         pass
 
     try:
-        _s2 = yaml.safe_load(open(_SETTINGS_PATH, "r", encoding="utf-8")) or {}
+        _s2 = yaml.safe_load(Path(_SETTINGS_PATH).read_text(encoding="utf-8")) or {}
         _PERSONALITY_MODE = _s2.get("personality_mode", "standard")
         _rl_lang = _s2.get("kare_language") or _s2.get("language", "nb")
         _PERSONALITY_CORES["nb"] = _load_text("/kaare/configs/personality_core.md")
         _PERSONALITY_CORES["en"] = _load_text("/kaare/configs/personality_core_en.md")
         _PERSONALITY_CORES["de"] = _load_text("/kaare/configs/personality_core_de.md")
         _PERSONALITY_CORES_LETVEKT["nb"] = _load_text("/kaare/configs/personality_core_letvekt.md")
-        _PERSONALITY_CORES_LETVEKT["en"] = _load_text("/kaare/configs/personality_core_letvekt_en.md")
-        _PERSONALITY_CORES_LETVEKT["de"] = _load_text("/kaare/configs/personality_core_letvekt_de.md")
+        _PERSONALITY_CORES_LETVEKT["en"] = _load_text(
+            "/kaare/configs/personality_core_letvekt_en.md"
+        )
+        _PERSONALITY_CORES_LETVEKT["de"] = _load_text(
+            "/kaare/configs/personality_core_letvekt_de.md"
+        )
         _PERSONALITY_CORES_MINIMAL["nb"] = _load_text("/kaare/configs/personality_core_minimal.md")
-        _PERSONALITY_CORES_MINIMAL["en"] = _load_text("/kaare/configs/personality_core_minimal_en.md")
-        _PERSONALITY_CORES_MINIMAL["de"] = _load_text("/kaare/configs/personality_core_minimal_de.md")
+        _PERSONALITY_CORES_MINIMAL["en"] = _load_text(
+            "/kaare/configs/personality_core_minimal_en.md"
+        )
+        _PERSONALITY_CORES_MINIMAL["de"] = _load_text(
+            "/kaare/configs/personality_core_minimal_de.md"
+        )
         if _PERSONALITY_MODE == "egendefinert":
-            _PERSONALITY_CORE = _load_text("/kaare/configs/personality_core_custom.md") or _get_personality_core(_rl_lang, "standard")
+            _PERSONALITY_CORE = _load_text(
+                "/kaare/configs/personality_core_custom.md"
+            ) or _get_personality_core(_rl_lang, "standard")
         else:
             _PERSONALITY_CORE = _get_personality_core(_rl_lang, _PERSONALITY_MODE)
         reloaded.append(f"personality_core ({_PERSONALITY_MODE}/{_rl_lang})")
@@ -1917,11 +2306,9 @@ def reload_config() -> list[str]:
     except Exception:
         pass
 
-    try:
-        _PERSONALITY_SELF = _cap_personality_self(_load_text("/kaare/state/personality_self.md"))
-        reloaded.append("personality_self.md")
-    except Exception:
-        pass
+    # personality_self and world context are read live from knowledge_store on
+    # every _build_system() call (P105 Fase 3 Step 3) — nothing to reload here
+    # anymore, which also removes the staleness class of bug the old cache had.
 
     try:
         _HOUSEHOLD_BLOCK = _build_household_block()

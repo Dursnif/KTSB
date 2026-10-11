@@ -16,12 +16,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
-from kaare_core.crypto import encrypt_text, decrypt_text
-from kaare_core.session_keys import resolve_key_sync, get_session_key_sync
+from kaare_core.crypto import decrypt_text, encrypt_text
+from kaare_core.session_keys import get_session_key_sync, resolve_key_sync
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +60,7 @@ def _dec(user_id: str, text: str, allow_system_key: bool = False) -> str:
         key = resolve_key_sync(user_id, allow_system_key=allow_system_key)
         if key is None:
             return "[kryptert]"
-        return decrypt_text(text[len(_ENC_PREFIX):], key)
+        return decrypt_text(text[len(_ENC_PREFIX) :], key)
     except Exception:
         logger.warning("LTM: decrypt failed for user %s", user_id)
         return "[kryptert]"
@@ -71,9 +70,10 @@ def _dec_row(row: dict, fields: list) -> dict:
     """Decrypt named fields in a result row using its own user_id."""
     uid = row.get("user_id", USER_GLOBAL)
     for f in fields:
-        if f in row and row[f]:
+        if row.get(f):
             row[f] = _dec(uid, row[f])
     return row
+
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS interactions (
@@ -90,10 +90,12 @@ CREATE TABLE IF NOT EXISTS interactions (
     feedback    TEXT    DEFAULT 'unknown',
     model_used  TEXT    DEFAULT '',
     repaired    INTEGER DEFAULT 0,
-    confidence  REAL    DEFAULT 0.5
+    confidence  REAL    DEFAULT 0.5,
+    rid         TEXT    NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_interactions_ts ON interactions(ts);
+CREATE INDEX IF NOT EXISTS idx_interactions_rid ON interactions(rid);
 CREATE INDEX IF NOT EXISTS idx_interactions_user_id ON interactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_interactions_intent ON interactions(intent);
 CREATE INDEX IF NOT EXISTS idx_interactions_feedback ON interactions(feedback);
@@ -180,19 +182,35 @@ CREATE INDEX IF NOT EXISTS idx_fallback_sessions_ts ON fallback_sessions(ts_star
 
 # Nøkkelord som tyder på at brukeren er misfornøyd
 _NEGATIVE_PHRASES = [
-    "nei", "feil", "ikke det", "galt", "feil enhet", "stopp",
-    "ikke riktig", "det var ikke", "mener ikke", "mente ikke",
+    "nei",
+    "feil",
+    "ikke det",
+    "galt",
+    "feil enhet",
+    "stopp",
+    "ikke riktig",
+    "det var ikke",
+    "mener ikke",
+    "mente ikke",
 ]
 
 # Nøkkelord som tyder på at brukeren er fornøyd
 _POSITIVE_PHRASES = [
-    "takk", "perfekt", "bra", "supert", "riktig", "akkurat", "ja takk",
-    "stemmer", "korrekt", "flott",
+    "takk",
+    "perfekt",
+    "bra",
+    "supert",
+    "riktig",
+    "akkurat",
+    "ja takk",
+    "stemmer",
+    "korrekt",
+    "flott",
 ]
 
 
 def _utc_ts() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -206,18 +224,25 @@ def _get_conn() -> sqlite3.Connection:
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """Legg til nye kolonner og fiks constraints i eksisterende database uten å miste data."""
+
     def cols(table: str) -> set:
         return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
 
     def table_exists(name: str) -> bool:
-        return bool(conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,)
-        ).fetchone())
+        return bool(
+            conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,)
+            ).fetchone()
+        )
 
     changed = False
     existing_int = cols("interactions")
     if existing_int and "user_id" not in existing_int:
         conn.execute("ALTER TABLE interactions ADD COLUMN user_id TEXT NOT NULL DEFAULT 'global'")
+        changed = True
+    # P118 B0: request id, so an interaction row can be joined to its trace (get_trace(rid)).
+    if existing_int and "rid" not in existing_int:
+        conn.execute("ALTER TABLE interactions ADD COLUMN rid TEXT NOT NULL DEFAULT ''")
         changed = True
 
     existing_ver = cols("verifications")
@@ -232,7 +257,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
     # Migrate stm_daily_summary: UNIQUE(date) → UNIQUE(date, user_id)
     if table_exists("stm_daily_summary"):
-        indexes = {row[1] for row in conn.execute("PRAGMA index_list(stm_daily_summary)").fetchall()}
+        indexes = {
+            row[1] for row in conn.execute("PRAGMA index_list(stm_daily_summary)").fetchall()
+        }
         if "idx_stm_daily_summary_user_date" not in indexes:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS stm_daily_summary_new (
@@ -262,7 +289,7 @@ def _init_db() -> None:
     """Oppretter tabeller hvis de ikke finnes, og kjører migration."""
     conn = _get_conn()
     try:
-        _migrate(conn)          # legg til manglende kolonner FØR schema-script
+        _migrate(conn)  # legg til manglende kolonner FØR schema-script
         conn.executescript(_SCHEMA)
         conn.commit()
     finally:
@@ -284,8 +311,8 @@ class LongTermMemory:
 
     def __init__(self) -> None:
         _init_db()
-        self._last_id: dict[str, Optional[int]] = {}   # per user_id
-        self._last_prompt: dict[str, str] = {}          # per user_id
+        self._last_id: dict[str, int | None] = {}  # per user_id
+        self._last_prompt: dict[str, str] = {}  # per user_id
 
     # -----------------------------------------------------------------------
     # Skriving (asynkron, fire-and-forget)
@@ -301,7 +328,8 @@ class LongTermMemory:
         entity_id: str = "",
         action: str = "",
         model_used: str = "",
-    ) -> Optional[int]:
+        rid: str = "",
+    ) -> int | None:
         """
         Logger en ny interaksjon. Returnerer interaction_id.
         Skrives asynkront – kast ikke bort tid på å vente.
@@ -310,7 +338,14 @@ class LongTermMemory:
             interaction_id = await asyncio.get_event_loop().run_in_executor(
                 None,
                 self._write_interaction,
-                prompt, user_id, source, intent, entity_id, action, model_used,
+                prompt,
+                user_id,
+                source,
+                intent,
+                entity_id,
+                action,
+                model_used,
+                rid,
             )
             self._last_id[user_id] = interaction_id
             self._last_prompt[user_id] = prompt
@@ -328,25 +363,33 @@ class LongTermMemory:
         entity_id: str,
         action: str,
         model_used: str,
+        rid: str = "",
     ) -> int:
         uid = user_id or USER_GLOBAL
         conn = _get_conn()
         try:
             cur = conn.execute(
                 """INSERT INTO interactions
-                   (ts, user_id, prompt, source, intent, entity_id, action, model_used, outcome, feedback)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unknown')""",
-                (_utc_ts(), uid, _enc(uid, prompt or ""), source or "",
-                 intent or "", entity_id or "", action or "", model_used or ""),
+                   (ts, user_id, prompt, source, intent, entity_id, action, model_used, outcome, feedback, rid)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unknown', ?)""",
+                (
+                    _utc_ts(),
+                    uid,
+                    _enc(uid, prompt or ""),
+                    source or "",
+                    intent or "",
+                    entity_id or "",
+                    action or "",
+                    model_used or "",
+                    rid or "",
+                ),
             )
             conn.commit()
             return cur.lastrowid
         finally:
             conn.close()
 
-    def mark_interactions(
-        self, ids: list[int], verdict: str, user_id: str = USER_GLOBAL
-    ) -> int:
+    def mark_interactions(self, ids: list[int], verdict: str, user_id: str = USER_GLOBAL) -> int:
         """
         Sets feedback and confidence on specific interactions.
         verdict: 'verified' | 'denied' | 'test'
@@ -373,10 +416,10 @@ class LongTermMemory:
 
     async def update_response(
         self,
-        interaction_id: Optional[int],
+        interaction_id: int | None,
         *,
         response: str,
-        outcome: str,          # 'success' | 'error' | 'clarification' | 'llm_fallback' | 'vlm' | 'test'
+        outcome: str,  # 'success' | 'error' | 'clarification' | 'llm_fallback' | 'vlm' | 'test'
         intent: str = "",
         entity_id: str = "",
         action: str = "",
@@ -390,7 +433,14 @@ class LongTermMemory:
             await asyncio.get_event_loop().run_in_executor(
                 None,
                 self._write_response,
-                interaction_id, response, outcome, intent, entity_id, action, repaired, model_used,
+                interaction_id,
+                response,
+                outcome,
+                intent,
+                entity_id,
+                action,
+                repaired,
+                model_used,
             )
         except Exception as e:
             logger.warning("LTM: update_response feilet: %s", e)
@@ -408,7 +458,9 @@ class LongTermMemory:
     ) -> None:
         conn = _get_conn()
         try:
-            row = conn.execute("SELECT user_id FROM interactions WHERE id=?", (interaction_id,)).fetchone()
+            row = conn.execute(
+                "SELECT user_id FROM interactions WHERE id=?", (interaction_id,)
+            ).fetchone()
             uid = row[0] if row else USER_GLOBAL
             conn.execute(
                 """UPDATE interactions SET
@@ -417,8 +469,16 @@ class LongTermMemory:
                    action=COALESCE(NULLIF(?, ''), action),
                    repaired=?, model_used=COALESCE(NULLIF(?, ''), model_used)
                    WHERE id=?""",
-                (_enc(uid, response or ""), outcome or "unknown", intent or "", entity_id or "", action or "",
-                 1 if repaired else 0, model_used or "", interaction_id),
+                (
+                    _enc(uid, response or ""),
+                    outcome or "unknown",
+                    intent or "",
+                    entity_id or "",
+                    action or "",
+                    1 if repaired else 0,
+                    model_used or "",
+                    interaction_id,
+                ),
             )
             conn.commit()
         finally:
@@ -434,7 +494,11 @@ class LongTermMemory:
         """Log a completed 9B fallback session to LTM (fire-and-forget)."""
         try:
             await asyncio.get_event_loop().run_in_executor(
-                None, self._write_fallback_session, ts_start, ts_end, turn_count,
+                None,
+                self._write_fallback_session,
+                ts_start,
+                ts_end,
+                turn_count,
             )
         except Exception as e:
             logger.warning("LTM: log_fallback_session feilet: %s", e)
@@ -452,16 +516,19 @@ class LongTermMemory:
 
     async def update_feedback(
         self,
-        interaction_id: Optional[int],
+        interaction_id: int | None,
         *,
-        feedback: str,   # 'positive' | 'negative' | 'neutral'
+        feedback: str,  # 'positive' | 'negative' | 'neutral'
     ) -> None:
         """Oppdaterer feedback-felt på en eksisterende interaksjon."""
         if interaction_id is None:
             return
         try:
             await asyncio.get_event_loop().run_in_executor(
-                None, self._write_feedback, interaction_id, feedback,
+                None,
+                self._write_feedback,
+                interaction_id,
+                feedback,
             )
         except Exception as e:
             logger.warning("LTM: update_feedback feilet: %s", e)
@@ -481,7 +548,7 @@ class LongTermMemory:
     # Feedback-deteksjon
     # -----------------------------------------------------------------------
 
-    def detect_verification_response(self, prompt: str) -> Optional[str]:
+    def detect_verification_response(self, prompt: str) -> str | None:
         """
         Sjekker om prompten er et svar på en verifikasjonsforespørsel.
         Bruker konkrete fraser som ikke kan misforstås som action-feedback.
@@ -492,8 +559,21 @@ class LongTermMemory:
             return None
         p = prompt.lower().strip()
 
-        _confirmed = ["det virker", "det er riktig", "det er sant", "stemmer bra", "fungerer bra", "ja det stemmer"]
-        _denied    = ["ikke helt", "nei faktisk", "stemmer ikke", "det stemmer ikke", "fungerer ikke bra"]
+        _confirmed = [
+            "det virker",
+            "det er riktig",
+            "det er sant",
+            "stemmer bra",
+            "fungerer bra",
+            "ja det stemmer",
+        ]
+        _denied = [
+            "ikke helt",
+            "nei faktisk",
+            "stemmer ikke",
+            "det stemmer ikke",
+            "fungerer ikke bra",
+        ]
 
         if any(phrase in p for phrase in _denied):
             return "denied"
@@ -501,7 +581,7 @@ class LongTermMemory:
             return "confirmed"
         return None
 
-    def detect_feedback_signal(self, prompt: str, user_id: str = USER_GLOBAL) -> Optional[str]:
+    def detect_feedback_signal(self, prompt: str, user_id: str = USER_GLOBAL) -> str | None:
         """
         Sjekker om en ny prompt inneholder signal om forrige svar.
         Returnerer 'positive', 'negative', eller None.
@@ -540,58 +620,102 @@ class LongTermMemory:
     # -----------------------------------------------------------------------
 
     def search_interactions(
-        self, query: str, limit: int = 8, user_id: Optional[str] = None
+        self, query: str, limit: int = 8, user_id: str | None = None
     ) -> list[dict]:
         """
-        Søker i interaksjonshistorikk etter relevante episoder.
-        Matcher på tvers av prompt, response, entity_id og action.
-        Returnerer de N mest relevante, nyeste først.
-        Enkel nøkkelord-matching — Qdrant tar over i semantisk lag.
-        user_id=None søker på tvers av alle brukere.
+        Keyword search in interaction history. See search_interactions_ranked().
+        user_id=None searches across all users (admin endpoint only).
+        """
+        return self.search_interactions_ranked(query, limit=limit, user_id=user_id)["hits"]
+
+    def search_interactions_ranked(
+        self,
+        query: str,
+        limit: int = 8,
+        user_id: str | None = None,
+        allow_system_key: bool = False,
+    ) -> dict:
+        """
+        Keyword search over prompt, response, entity_id and action.
+
+        Rows are decrypted BEFORE matching — most user rows are stored as ENC:<blob>, so
+        filtering in SQL would only ever see ciphertext (N18). A row matches if at least one
+        keyword is found; hits are ranked by number of distinct keywords matched, then newest.
+
+        user_id given → only that user's rows + global rows. user_id=None → all users
+        (admin endpoint only). Rows whose key is not available stay '[kryptert]' and
+        never match.
+
+        Returns {"hits": [...], "total": <number of matching rows>}.
         """
         if not query or not query.strip():
-            return []
+            return {"hits": [], "total": 0}
 
-        keywords = [w.strip().lower() for w in query.split() if len(w.strip()) > 2]
+        keywords = list(
+            dict.fromkeys(w.strip().lower() for w in query.split() if len(w.strip()) > 2)
+        )
         if not keywords:
-            return []
+            return {"hits": [], "total": 0}
 
         conn = _get_conn()
         try:
-            conditions = []
-            params: list = []
-
-            if user_id is not None:
-                conditions.append("user_id = ?")
-                params.append(user_id)
-
-            for kw in keywords:
-                pattern = f"%{kw}%"
-                conditions.append(
-                    "(LOWER(prompt) LIKE ? OR LOWER(response) LIKE ? "
-                    "OR LOWER(entity_id) LIKE ? OR LOWER(action) LIKE ?)"
-                )
-                params.extend([pattern, pattern, pattern, pattern])
-
-            where = " AND ".join(conditions) if conditions else "1=1"
-            params.append(limit)
-
-            cur = conn.execute(
-                f"""SELECT id, ts, user_id, prompt, intent, entity_id, action,
-                           response, outcome, feedback, confidence
-                    FROM interactions
-                    WHERE {where}
-                    ORDER BY id DESC
-                    LIMIT ?""",
-                params,
+            sql = (
+                "SELECT id, ts, user_id, prompt, intent, entity_id, action, "
+                "response, outcome, feedback, confidence FROM interactions"
             )
+            params: list = []
+            if user_id is not None:
+                sql += " WHERE user_id IN (?, ?)"
+                params.extend([user_id, USER_GLOBAL])
+            sql += " ORDER BY id DESC"
+            cur = conn.execute(sql, params)
             cols = [c[0] for c in cur.description]
-            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
-            return [_dec_row(r, ["prompt", "response"]) for r in rows]
+            raw_rows = cur.fetchall()
         finally:
             conn.close()
 
-    def get_recent(self, limit: int = 20, user_id: Optional[str] = None) -> list[dict]:
+        # Resolve each user's key once per search — a missing key would otherwise mean one
+        # failed attempt + warning per row (thousands per search).
+        keys: dict[str, bytes | None] = {}
+        failed = 0
+
+        def dec(uid: str, text: str) -> str:
+            nonlocal failed
+            if not text.startswith(_ENC_PREFIX):
+                return text
+            if uid not in keys:
+                try:
+                    keys[uid] = resolve_key_sync(uid, allow_system_key=allow_system_key)
+                except Exception:
+                    keys[uid] = None
+            if keys[uid] is None:
+                return "[kryptert]"
+            try:
+                return decrypt_text(text[len(_ENC_PREFIX) :], keys[uid])
+            except Exception:
+                failed += 1
+                return "[kryptert]"
+
+        scored: list[tuple[int, int, dict]] = []
+        for raw in raw_rows:
+            row = dict(zip(cols, raw, strict=False))
+            uid = row.get("user_id") or USER_GLOBAL
+            for f in ("prompt", "response"):
+                row[f] = dec(uid, row[f] or "")
+            haystack = " ".join(
+                (row.get(f) or "") for f in ("prompt", "response", "entity_id", "action")
+            ).lower()
+            score = sum(1 for kw in keywords if kw in haystack)
+            if score:
+                row["matched_keywords"] = score
+                scored.append((score, row["id"], row))
+
+        if failed:
+            logger.warning("LTM search: %d encrypted fields could not be decrypted", failed)
+        scored.sort(key=lambda s: (s[0], s[1]), reverse=True)
+        return {"hits": [s[2] for s in scored[:limit]], "total": len(scored)}
+
+    def get_recent(self, limit: int = 20, user_id: str | None = None) -> list[dict]:
         """
         Henter siste N interaksjoner.
         user_id=None returnerer alle brukere.
@@ -611,7 +735,7 @@ class LongTermMemory:
                     (limit,),
                 )
             cols = [c[0] for c in cur.description]
-            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+            rows = [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
             return [_dec_row(r, ["prompt", "response"]) for r in rows]
         finally:
             conn.close()
@@ -630,7 +754,12 @@ class LongTermMemory:
             await asyncio.get_event_loop().run_in_executor(
                 None,
                 self._write_agent_message,
-                from_agent, to_agent, query, response, rid, user_id,
+                from_agent,
+                to_agent,
+                query,
+                response,
+                rid,
+                user_id,
             )
         except Exception as e:
             logger.warning("LTM: log_agent_message feilet: %s", e)
@@ -651,24 +780,31 @@ class LongTermMemory:
                 """INSERT INTO agent_messages
                    (ts, rid, user_id, from_agent, to_agent, query, response)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (_utc_ts(), rid or "", uid,
-                 from_agent or "", to_agent or "", _enc(uid, query or ""), _enc(uid, response or "")),
+                (
+                    _utc_ts(),
+                    rid or "",
+                    uid,
+                    from_agent or "",
+                    to_agent or "",
+                    _enc(uid, query or ""),
+                    _enc(uid, response or ""),
+                ),
             )
             conn.commit()
         finally:
             conn.close()
 
     def get_agent_messages(self, limit: int = 50) -> list[dict]:
+        """Structural log only — no query/response content (privacy: N07)."""
         conn = _get_conn()
         try:
             cur = conn.execute(
-                """SELECT id, ts, rid, user_id, from_agent, to_agent, query, response
+                """SELECT id, ts, rid, user_id, from_agent, to_agent
                    FROM agent_messages ORDER BY id DESC LIMIT ?""",
                 (limit,),
             )
             cols = [c[0] for c in cur.description]
-            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
-            return [_dec_row(r, ["query", "response"]) for r in rows]
+            return [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
         finally:
             conn.close()
 
@@ -720,7 +856,9 @@ class LongTermMemory:
         finally:
             conn.close()
 
-    def open_verification(self, from_id: int, to_id: int, count: int, user_id: str = USER_GLOBAL) -> Optional[int]:
+    def open_verification(
+        self, from_id: int, to_id: int, count: int, user_id: str = USER_GLOBAL
+    ) -> int | None:
         """
         Oppretter en verifikasjonsrad med verdict='pending'.
         Returnerer verifikasjons-ID.
@@ -740,9 +878,7 @@ class LongTermMemory:
         finally:
             conn.close()
 
-    def close_verification(
-        self, verification_id: int, verdict: str, user_text: str = ""
-    ) -> None:
+    def close_verification(self, verification_id: int, verdict: str, user_text: str = "") -> None:
         """
         Oppdaterer verifikasjonsvinduet med brukerens svar.
         verdict: 'confirmed' | 'denied'
@@ -750,7 +886,9 @@ class LongTermMemory:
         """
         conn = _get_conn()
         try:
-            uid_row = conn.execute("SELECT user_id FROM verifications WHERE id=?", (verification_id,)).fetchone()
+            uid_row = conn.execute(
+                "SELECT user_id FROM verifications WHERE id=?", (verification_id,)
+            ).fetchone()
             uid = uid_row[0] if uid_row else USER_GLOBAL
             conn.execute(
                 """UPDATE verifications
@@ -783,7 +921,7 @@ class LongTermMemory:
         finally:
             conn.close()
 
-    def get_pending_verification(self, user_id: str = USER_GLOBAL) -> Optional[dict]:
+    def get_pending_verification(self, user_id: str = USER_GLOBAL) -> dict | None:
         """Returnerer åpent verifikasjonsvindu for denne brukeren, eller None."""
         conn = _get_conn()
         try:
@@ -796,25 +934,47 @@ class LongTermMemory:
             if not row:
                 return None
             return {
-                "id": row[0], "ts_asked": row[1],
-                "from_id": row[2], "to_id": row[3], "count": row[4],
+                "id": row[0],
+                "ts_asked": row[1],
+                "from_id": row[2],
+                "to_id": row[3],
+                "count": row[4],
             }
         finally:
             conn.close()
 
+    def count_unverified(self, user_id: str = USER_GLOBAL) -> dict:
+        """Total unverified interactions for a user plus the timestamp span they cover."""
+        conn = _get_conn()
+        try:
+            n, first_ts, last_ts = conn.execute(
+                """SELECT COUNT(*), MIN(ts), MAX(ts) FROM interactions
+                   WHERE user_id = ? AND outcome = 'success' AND feedback = 'unknown'""",
+                (user_id,),
+            ).fetchone()
+            return {"total": n or 0, "first_ts": first_ts or "", "last_ts": last_ts or ""}
+        finally:
+            conn.close()
+
     def get_unverified_interactions(
-        self, user_id: str = USER_GLOBAL, limit: int = 10, offset: int = 0
+        self,
+        user_id: str = USER_GLOBAL,
+        limit: int = 10,
+        offset: int = 0,
+        newest_first: bool = False,
     ) -> list[dict]:
         """
         Returns unverified interactions (feedback='unknown', outcome='success').
-        Ordered oldest first so reviews progress chronologically.
+        Default oldest first so reviews progress chronologically; the memory tool passes
+        newest_first=True so Kåre sees recent turns first (N18).
         """
+        order = "DESC" if newest_first else "ASC"
         conn = _get_conn()
         try:
             rows = conn.execute(
-                """SELECT id, ts, prompt, response FROM interactions
+                f"""SELECT id, ts, prompt, response FROM interactions
                    WHERE user_id = ? AND outcome = 'success' AND feedback = 'unknown'
-                   ORDER BY id ASC
+                   ORDER BY id {order}
                    LIMIT ? OFFSET ?""",
                 (user_id, limit, offset),
             ).fetchall()
@@ -835,9 +995,11 @@ class LongTermMemory:
         conn = _get_conn()
         try:
             total = conn.execute("SELECT COUNT(*) FROM verifications").fetchone()[0]
-            by_verdict = dict(conn.execute(
-                "SELECT verdict, COUNT(*) FROM verifications GROUP BY verdict"
-            ).fetchall())
+            by_verdict = dict(
+                conn.execute(
+                    "SELECT verdict, COUNT(*) FROM verifications GROUP BY verdict"
+                ).fetchall()
+            )
             avg_confidence = conn.execute(
                 "SELECT AVG(confidence) FROM interactions WHERE confidence != 0.5"
             ).fetchone()[0]
@@ -851,7 +1013,7 @@ class LongTermMemory:
 
 
 # Singleton – deles av hele prosessen
-_ltm: Optional[LongTermMemory] = None
+_ltm: LongTermMemory | None = None
 
 
 def get_ltm() -> LongTermMemory:
@@ -865,16 +1027,27 @@ def get_ltm() -> LongTermMemory:
 # STM daily summary – standalone helpers (used by nightjob + api startup)
 # ---------------------------------------------------------------------------
 
-def save_daily_summary(date: str, summary: str, interaction_count: int, user_id: str = USER_GLOBAL,
-                        allow_system_key: bool = False) -> None:
+
+def save_daily_summary(
+    date: str,
+    summary: str,
+    interaction_count: int,
+    user_id: str = USER_GLOBAL,
+    allow_system_key: bool = False,
+) -> None:
     """Save a daily STM summary. Called by the nightjob at 03:00 (unattended — pass allow_system_key=True)."""
     conn = _get_conn()
     try:
         conn.execute(
             """INSERT OR REPLACE INTO stm_daily_summary (date, user_id, summary, interaction_count, ts_created)
                VALUES (?, ?, ?, ?, ?)""",
-            (date, user_id, _enc(user_id, summary, allow_system_key=allow_system_key), interaction_count,
-             datetime.now(timezone.utc).isoformat(timespec="seconds")),
+            (
+                date,
+                user_id,
+                _enc(user_id, summary, allow_system_key=allow_system_key),
+                interaction_count,
+                datetime.now(UTC).isoformat(timespec="seconds"),
+            ),
         )
         conn.commit()
     except Exception as e:
@@ -912,7 +1085,14 @@ def load_recent_daily_summaries(days: int = 3, allow_system_key: bool = False) -
                ORDER BY date DESC LIMIT ?""",
             (days,),
         ).fetchall()
-        return [{"date": r[0], "summary": _dec(r[1], r[2], allow_system_key=allow_system_key), "count": r[3]} for r in rows]
+        return [
+            {
+                "date": r[0],
+                "summary": _dec(r[1], r[2], allow_system_key=allow_system_key),
+                "count": r[3],
+            }
+            for r in rows
+        ]
     except Exception as e:
         logger.warning("load_recent_daily_summaries failed: %s", e)
         return []
@@ -941,11 +1121,19 @@ def migrate_user_ltm(user_id: str) -> int:
         for row_id, prompt, response in conn.execute(
             "SELECT id, prompt, response FROM interactions WHERE user_id=?", (user_id,)
         ).fetchall():
-            new_prompt = _enc(user_id, prompt) if prompt and not prompt.startswith(_ENC_PREFIX) else prompt
-            new_resp = _enc(user_id, response) if response and not response.startswith(_ENC_PREFIX) else response
+            new_prompt = (
+                _enc(user_id, prompt) if prompt and not prompt.startswith(_ENC_PREFIX) else prompt
+            )
+            new_resp = (
+                _enc(user_id, response)
+                if response and not response.startswith(_ENC_PREFIX)
+                else response
+            )
             if new_prompt != prompt or new_resp != response:
-                conn.execute("UPDATE interactions SET prompt=?, response=? WHERE id=?",
-                             (new_prompt, new_resp, row_id))
+                conn.execute(
+                    "UPDATE interactions SET prompt=?, response=? WHERE id=?",
+                    (new_prompt, new_resp, row_id),
+                )
                 count += 1
 
         # agent_messages: query + response
@@ -953,10 +1141,16 @@ def migrate_user_ltm(user_id: str) -> int:
             "SELECT id, query, response FROM agent_messages WHERE user_id=?", (user_id,)
         ).fetchall():
             new_q = _enc(user_id, query) if query and not query.startswith(_ENC_PREFIX) else query
-            new_r = _enc(user_id, response) if response and not response.startswith(_ENC_PREFIX) else response
+            new_r = (
+                _enc(user_id, response)
+                if response and not response.startswith(_ENC_PREFIX)
+                else response
+            )
             if new_q != query or new_r != response:
-                conn.execute("UPDATE agent_messages SET query=?, response=? WHERE id=?",
-                             (new_q, new_r, row_id))
+                conn.execute(
+                    "UPDATE agent_messages SET query=?, response=? WHERE id=?",
+                    (new_q, new_r, row_id),
+                )
                 count += 1
 
         # stm_daily_summary: summary
@@ -964,8 +1158,10 @@ def migrate_user_ltm(user_id: str) -> int:
             "SELECT id, summary FROM stm_daily_summary WHERE user_id=?", (user_id,)
         ).fetchall():
             if summary and not summary.startswith(_ENC_PREFIX):
-                conn.execute("UPDATE stm_daily_summary SET summary=? WHERE id=?",
-                             (_enc(user_id, summary), row_id))
+                conn.execute(
+                    "UPDATE stm_daily_summary SET summary=? WHERE id=?",
+                    (_enc(user_id, summary), row_id),
+                )
                 count += 1
 
         # verifications: user_text
@@ -973,19 +1169,28 @@ def migrate_user_ltm(user_id: str) -> int:
             "SELECT id, user_text FROM verifications WHERE user_id=?", (user_id,)
         ).fetchall():
             if user_text and not user_text.startswith(_ENC_PREFIX):
-                conn.execute("UPDATE verifications SET user_text=? WHERE id=?",
-                             (_enc(user_id, user_text), row_id))
+                conn.execute(
+                    "UPDATE verifications SET user_text=? WHERE id=?",
+                    (_enc(user_id, user_text), row_id),
+                )
                 count += 1
 
         # episodes: narrative + topics (written by nightjob but encrypted here for completeness)
         for row_id, narrative, topics in conn.execute(
             "SELECT id, narrative, topics FROM episodes WHERE user_id=?", (user_id,)
         ).fetchall():
-            new_n = _enc(user_id, narrative) if narrative and not narrative.startswith(_ENC_PREFIX) else narrative
-            new_t = _enc(user_id, topics) if topics and not topics.startswith(_ENC_PREFIX) else topics
+            new_n = (
+                _enc(user_id, narrative)
+                if narrative and not narrative.startswith(_ENC_PREFIX)
+                else narrative
+            )
+            new_t = (
+                _enc(user_id, topics) if topics and not topics.startswith(_ENC_PREFIX) else topics
+            )
             if new_n != narrative or new_t != topics:
-                conn.execute("UPDATE episodes SET narrative=?, topics=? WHERE id=?",
-                             (new_n, new_t, row_id))
+                conn.execute(
+                    "UPDATE episodes SET narrative=?, topics=? WHERE id=?", (new_n, new_t, row_id)
+                )
                 count += 1
 
         conn.commit()

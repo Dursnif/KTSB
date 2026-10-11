@@ -17,25 +17,36 @@ import importlib
 import json
 import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
 
 import yaml
 
 # ── ANSI colours ────────────────────────────────────────────────────────────
 
-GREEN  = "\033[92m"
-RED    = "\033[91m"
+GREEN = "\033[92m"
+RED = "\033[91m"
 YELLOW = "\033[93m"
-CYAN   = "\033[96m"
-BOLD   = "\033[1m"
-RESET  = "\033[0m"
+CYAN = "\033[96m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
 
-def ok(msg: str)   -> str: return f"{GREEN}✓{RESET} {msg}"
-def err(msg: str)  -> str: return f"{RED}✗{RESET} {msg}"
-def warn(msg: str) -> str: return f"{YELLOW}~{RESET} {msg}"
-def head(msg: str) -> str: return f"\n{BOLD}{CYAN}{msg}{RESET}"
+
+def ok(msg: str) -> str:
+    return f"{GREEN}✓{RESET} {msg}"
+
+
+def err(msg: str) -> str:
+    return f"{RED}✗{RESET} {msg}"
+
+
+def warn(msg: str) -> str:
+    return f"{YELLOW}~{RESET} {msg}"
+
+
+def head(msg: str) -> str:
+    return f"\n{BOLD}{CYAN}{msg}{RESET}"
 
 
 # ── Modules to import-check ──────────────────────────────────────────────────
@@ -47,8 +58,8 @@ def head(msg: str) -> str: return f"\n{BOLD}{CYAN}{msg}{RESET}"
 VOICE_VENV = {
     # These modules import packages only installed in services/voice/venv/:
     # wyoming, pychromecast, pyatv, aioesphomeapi, async-upnp-client
-    "kaare_core.voice.registry",          # imports all providers (including DLNA)
-    "kaare_core.voice.wyoming_server",    # imports wyoming.*
+    "kaare_core.voice.registry",  # imports all providers (including DLNA)
+    "kaare_core.voice.wyoming_server",  # imports wyoming.*
     "kaare_core.voice.providers.chromecast",
     "kaare_core.voice.providers.airplay",
     "kaare_core.voice.providers.dlna",
@@ -129,43 +140,56 @@ MODULES = [
 # A key path like "default.provider" means cfg["default"]["provider"] must exist.
 
 CONFIG_RULES = [
-    ("llm.yaml", [
-        "default",
-        "default.provider",
-        "default.base_url",
-        "default.model_role",
-        "default.options",
-        "cloud",
-        "cloud.provider",
-    ]),
-    ("models.yaml", [
-        "kare",
-        "miss_kare",
-        "library",
-        "embed",
-    ]),
-    ("services.yaml", [
-        "home_assistant",
-        "internal",
-        "storage",
-        "embedding",
-    ]),
-    ("settings.yaml", [
-        "assistant_name",
-        "location",
-    ]),
-    ("aliases.yaml",          []),
-    ("lang_normalize.yaml",   []),
-    ("nodes.yaml",            []),
-    ("radio_stations.yaml",   []),
+    (
+        "llm.yaml",
+        [
+            "default",
+            "default.provider",
+            "default.base_url",
+            "default.model_role",
+            "default.options",
+            "cloud",
+            "cloud.provider",
+        ],
+    ),
+    (
+        "models.yaml",
+        [
+            "kare",
+            "miss_kare",
+            "library",
+            "embed",
+        ],
+    ),
+    (
+        "services.yaml",
+        [
+            "home_assistant",
+            "internal",
+            "storage",
+            "embedding",
+        ],
+    ),
+    (
+        "settings.yaml",
+        [
+            "assistant_name",
+            "location",
+        ],
+    ),
+    ("aliases.yaml", []),
+    ("lang_normalize.yaml", []),
+    ("nodes.yaml", []),
+    ("radio_stations.yaml", []),
     ("tool_permissions.yaml", []),
-    ("trusted_sources.yaml",  []),
-    ("voice_providers.yaml",  []),
+    ("trusted_sources.yaml", []),
+    ("voice_providers.yaml", []),
     ("gateway_settings.yaml", []),
 ]
 
 
 # ── Live service endpoints ────────────────────────────────────────────────────
+
 
 def _build_services() -> list[tuple[str, str]]:
     """Build service URL list from services.yaml + llm.yaml.
@@ -182,28 +206,28 @@ def _build_services() -> list[tuple[str, str]]:
         llm = {}
 
     internal = svc.get("internal", {})
-    ollama   = svc.get("ollama", {})
-    storage  = svc.get("storage", {})
+    ollama = svc.get("ollama", {})
+    storage = svc.get("storage", {})
 
     def _u(val: str | None, fallback: str) -> str:
         return (val or fallback).rstrip("/")
 
-    kaare_api    = _u(internal.get("kaare_api"),    "http://127.0.0.1:8000")
-    ha_gateway   = _u(internal.get("ha_gateway"),   "http://127.0.0.1:8002")
-    sem_embed    = _u(internal.get("semantic_embed"),"http://127.0.0.1:11500")
-    embed        = _u(ollama.get("embed"),            "http://127.0.0.1:11446")
-    qdrant       = _u(storage.get("qdrant"),          "http://127.0.0.1:6333")
-    ollama_kare  = _u(ollama.get("kare"),             "http://127.0.0.1:11434")
-    ollama_miss  = _u(ollama.get("miss_kare"),        "http://127.0.0.1:11445")
-    ollama_lib   = _u(ollama.get("library"),          "http://127.0.0.1:11447")
+    kaare_api = _u(internal.get("kaare_api"), "http://127.0.0.1:8000")
+    ha_gateway = _u(internal.get("ha_gateway"), "http://127.0.0.1:8002")
+    sem_embed = _u(internal.get("semantic_embed"), "http://127.0.0.1:11500")
+    embed = _u(ollama.get("embed"), "http://127.0.0.1:11446")
+    qdrant = _u(storage.get("qdrant"), "http://127.0.0.1:6333")
+    ollama_kare = _u(ollama.get("kare"), "http://127.0.0.1:11434")
+    ollama_miss = _u(ollama.get("miss_kare"), "http://127.0.0.1:11445")
+    ollama_lib = _u(ollama.get("library"), "http://127.0.0.1:11447")
 
     mem_embed_enabled = svc.get("memory_embed", {}).get("enabled", False)
     bge_embed_enabled = svc.get("embedding", {}).get("enabled", True)
 
     services = [
-        ("Main API",       kaare_api  + "/"),
-        ("HA gateway",     ha_gateway + "/"),
-        ("Qdrant",         qdrant     + "/"),
+        ("Main API", kaare_api + "/"),
+        ("HA gateway", ha_gateway + "/"),
+        ("Qdrant", qdrant + "/"),
     ]
     if mem_embed_enabled:
         services.append(("Semantic embed", sem_embed + "/"))
@@ -225,6 +249,7 @@ def _build_services() -> list[tuple[str, str]]:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _get_nested(data: dict, dotted_key: str):
     """Return value at 'a.b.c' path, or raise KeyError."""
@@ -256,6 +281,7 @@ def _check_url(url: str, timeout: float = 3.0) -> tuple[bool, str]:
 
 
 # ── Check functions ───────────────────────────────────────────────────────────
+
 
 def check_imports() -> tuple[int, int, int, list[dict]]:
     """Returns (passed, failed, skipped, error_list)."""
@@ -365,7 +391,9 @@ def _run_human(no_live: bool) -> int:
 
     total_err = imp_err + cfg_err + svc_err
     print(f"\n{BOLD}{'─' * 52}{RESET}")
-    print(f"  Imports  : {GREEN}{imp_ok} ok{RESET}  {RED}{imp_err} failed{RESET}  {YELLOW}{imp_skip} skipped{RESET}")
+    print(
+        f"  Imports  : {GREEN}{imp_ok} ok{RESET}  {RED}{imp_err} failed{RESET}  {YELLOW}{imp_skip} skipped{RESET}"
+    )
     print(f"  Configs  : {GREEN}{cfg_ok} ok{RESET}  {RED}{cfg_err} failed{RESET}")
     if not no_live:
         print(f"  Services : {GREEN}{svc_ok} ok{RESET}  {RED}{svc_err} failed{RESET}")
@@ -381,7 +409,7 @@ def _run_human(no_live: bool) -> int:
 def _run_json(no_live: bool) -> int:
     """Machine-readable JSON output for the API endpoint."""
     imp_ok, imp_err, imp_skip, imp_errors = check_imports()
-    cfg_ok, cfg_err, cfg_errors           = check_configs()
+    cfg_ok, cfg_err, cfg_errors = check_configs()
 
     if no_live:
         svc_ok = svc_err = 0
@@ -417,6 +445,7 @@ def _run_json(no_live: bool) -> int:
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Kåre system health check")

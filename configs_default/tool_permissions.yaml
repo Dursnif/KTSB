@@ -1,3 +1,7 @@
+# Roles that do NOT get the always_included tools (knowledge boundary, P120).
+no_always_included:
+- household
+- stranger
 always_included:
 - self_image
 - world
@@ -63,6 +67,25 @@ roles:
   - memory
   - camera
   - household
+  # System identities (P120). household = an unrecognised person inside the house, most likely
+  # a household member (user global_user). stranger = an untrusted person, e.g. at an outdoor
+  # or door node (user unknown_user). Editable like the other roles; neither gets the
+  # always_included tools (see no_always_included).
+  household:
+  - ha_control
+  - ha_read
+  - timer
+  - get_weather
+  - library
+  - media
+  - note
+  - announce
+  - world
+  - self_image
+  stranger:
+  - get_weather
+  - library
+  - announce
   admin:
   - all
 agent_tools:

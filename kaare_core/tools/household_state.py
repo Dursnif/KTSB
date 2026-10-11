@@ -4,9 +4,10 @@ Household-level state (home/away mode). Never per-user.
 """
 
 import os
-import yaml
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+
+import yaml
 
 _STATE_PATH = Path("/kaare/state/household_state.yaml")
 
@@ -31,7 +32,7 @@ def read_household_state() -> dict:
 
 
 def write_household_state(data: dict) -> None:
-    data["last_updated"] = datetime.now(timezone.utc).isoformat()
+    data["last_updated"] = datetime.now(UTC).isoformat()
     tmp = _STATE_PATH.with_suffix(".tmp")
     tmp.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False), encoding="utf-8")
     os.replace(tmp, _STATE_PATH)
@@ -40,7 +41,7 @@ def write_household_state(data: dict) -> None:
 def set_away(reason: str | None = None, expected_return: str | None = None) -> None:
     state = read_household_state()
     state["mode"] = "away"
-    state["away_since"] = datetime.now(timezone.utc).isoformat()
+    state["away_since"] = datetime.now(UTC).isoformat()
     state["away_reason"] = reason or None
     state["expected_return"] = expected_return or None
     write_household_state(state)

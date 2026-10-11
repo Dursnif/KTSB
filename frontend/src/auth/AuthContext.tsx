@@ -1,38 +1,36 @@
-import React, { createContext, useContext, useMemo, useState, useEffect, useRef, useCallback } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import type { KaareUser } from "../services/api";
+import { apiLogout } from "../services/api";
+import { AuthContext } from "../hooks/useAuth";
 
 const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
-type AuthContextValue = {
-  user: KaareUser | null;
-  loading: boolean;
-  login: (user: KaareUser, token: string) => void;
-  logout: () => void;
-};
-
-const AuthContext = createContext<AuthContextValue | null>(null);
+// Restore the session from sessionStorage on reload.
+function restoreUser(): KaareUser | null {
+  const raw = sessionStorage.getItem("kaare_user");
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as KaareUser;
+  } catch {
+    sessionStorage.clear();
+    return null;
+  }
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<KaareUser | null>(null);
-  // True until the sessionStorage restore below has run once. Route guards
-  // (RequireAuth/RequireAdmin) must wait for this instead of redirecting on
-  // the first render, where `user` is always still null — otherwise every
-  // full page load/refresh of an authenticated route bounces to /login even
-  // with a valid session, because their read of `user` races ahead of this
-  // effect.
-  const [loading, setLoading] = useState(true);
+  // Read synchronously in the initial state, so the very first render already has the
+  // restored user — route guards (RequireAuth/RequireAdmin) never see a false "logged out"
+  // and never bounce a valid session to /login. `loading` stays in the context for the
+  // guards' API but is always false now.
+  const [user, setUser] = useState<KaareUser | null>(restoreUser);
+  const loading = false;
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Gjenopprett sesjon fra sessionStorage ved reload
-  useEffect(() => {
-    const raw = sessionStorage.getItem("kaare_user");
-    if (raw) {
-      try { setUser(JSON.parse(raw)); } catch { sessionStorage.clear(); }
-    }
-    setLoading(false);
-  }, []);
-
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    // Await before clearing storage — axios interceptors run as a microtask in the
+    // promise chain, not synchronously, so removing the token first would race ahead
+    // of the request interceptor reading it and send the call with no Authorization header.
+    await apiLogout().catch(() => {});
     sessionStorage.removeItem("kaare_token");
     sessionStorage.removeItem("kaare_user");
     setUser(null);
@@ -67,10 +65,4 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(() => ({ user, loading, login, logout }), [user, loading, login, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
 }

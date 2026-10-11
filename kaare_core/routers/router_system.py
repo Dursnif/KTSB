@@ -1,51 +1,73 @@
 import asyncio
-import io
+import base64
 import json
+import logging as _logging
 import os
+import platform
 import re
 import shlex
-import shutil
 import signal
 import subprocess
 import sys
 import time
-import base64
-import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
 import yaml
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Response,
+)
 from pydantic import BaseModel
 
 import kaare_core.app_state as app_state
+from adapters.frigate_adapter import get_cameras as _get_cameras
+from adapters.mqtt_adapter import get_status as mqtt_status
+from kaare_core import config_store
 from kaare_core.audit import read_recent as _audit_read
+from kaare_core.config import CAPABILITY_MAP_PATH as _CAPMAP_PATH
 from kaare_core.config import get_model, get_service
-from kaare_core.users.auth import require_admin as _require_admin, require_auth as _require_auth
+from kaare_core.config import get_service as _svc
+from kaare_core.domain.frigate_responder import (
+    _cfg,
+    _write_analysis_log,
+    analyze_event,
+    load_camera_config,
+)
+from kaare_core.memory.memory_embed_models import active_model
 from kaare_core.normalcy import (
-    get_recent_anomalies as _get_anomalies,
     add_correction as _add_correction,
+)
+from kaare_core.normalcy import (
     delete_correction as _delete_correction,
 )
+from kaare_core.normalcy import (
+    get_recent_anomalies as _get_anomalies,
+)
+from kaare_core.users.auth import require_admin as _require_admin
+from kaare_core.users.auth import require_auth as _require_auth
+from kaare_core.vpn import create_client, delete_client, list_clients
 
 router = APIRouter()
 
-_SETTINGS_PATH  = Path("/kaare/configs/settings.yaml")
-_SERVICES_PATH  = Path("/kaare/configs/services.yaml")
-_LLM_PATH       = Path("/kaare/configs/llm.yaml")
-_CAPMAP_PATH    = Path("/kaare/capability_map.yaml")
+_SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
+_SERVICES_PATH = Path("/kaare/configs/services.yaml")
+_LLM_PATH = Path("/kaare/configs/llm.yaml")
 _FRIGATE_CAMERAS_PATH = Path("/kaare/configs/frigate_cameras.yaml")
 
 _RESTARTABLE_SERVICES = {
-    "kaare":          "kaare.service",
-    "gateway":        "kaare_ha_gateway.service",
+    "kaare": "kaare.service",
+    "gateway": "kaare_ha_gateway.service",
     "semantic_embed": "kaare-semantic-embed.service",
-    "embedding":      "kaare-embedding.service",
-    "argus":     "kaare-argus.service",
-    "voice":          "kaare-voice-bridge.service",
-    "frontend":       "kaare-frontend.service",
-    "ha-log-bridge":  "kaare-ha-log-bridge.service",
+    "embedding": "kaare-embedding.service",
+    "argus": "kaare-argus.service",
+    "voice": "kaare-voice-bridge.service",
+    "frontend": "kaare-frontend.service",
+    "ha-log-bridge": "kaare-ha-log-bridge.service",
 }
 
 _IN_DOCKER = os.path.exists("/.dockerenv")
@@ -55,14 +77,14 @@ _IN_DOCKER = os.path.exists("/.dockerenv")
 # name, which is whatever directory the user cloned into — matching on the
 # com.docker.compose.service label instead is robust regardless of that.
 _DOCKER_COMPOSE_SERVICE = {
-    "kaare":          "kaare-api",
-    "gateway":        "kaare-ha-gateway",
+    "kaare": "kaare-api",
+    "gateway": "kaare-ha-gateway",
     "semantic_embed": "kaare-semantic-embed",
-    "embedding":      "kaare-embedding",
-    "argus":          "kaare-argus",
-    "voice":          "kaare-voice",
-    "frontend":       "kaare-frontend",
-    "ha-log-bridge":  "kaare-ha-log-bridge",
+    "embedding": "kaare-embedding",
+    "argus": "kaare-argus",
+    "voice": "kaare-voice",
+    "frontend": "kaare-frontend",
+    "ha-log-bridge": "kaare-ha-log-bridge",
 }
 
 _docker_http_client: httpx.Client | None = None
@@ -87,10 +109,13 @@ def _docker_find_container(compose_service: str) -> dict | None:
     """The container's Docker API JSON for a compose service, matched via
     its com.docker.compose.service label, or None if it was never created
     (e.g. gated behind a COMPOSE_PROFILES that isn't active)."""
-    r = _docker_socket_client().get("/containers/json", params={
-        "all": "true",
-        "filters": json.dumps({"label": [f"com.docker.compose.service={compose_service}"]}),
-    })
+    r = _docker_socket_client().get(
+        "/containers/json",
+        params={
+            "all": "true",
+            "filters": json.dumps({"label": [f"com.docker.compose.service={compose_service}"]}),
+        },
+    )
     r.raise_for_status()
     containers = r.json()
     return containers[0] if containers else None
@@ -147,11 +172,24 @@ async def api_run_tests(_u=Depends(_require_admin)):
             ),
         )
         if not result.stdout.strip():
-            return {"ok": False, "passed": 0, "failed": 0, "total": 0, "failures": [],
-                    "error": f"rc={result.returncode} stderr={result.stderr[:300]!r}"}
+            return {
+                "ok": False,
+                "passed": 0,
+                "failed": 0,
+                "total": 0,
+                "failures": [],
+                "error": f"rc={result.returncode} stderr={result.stderr[:300]!r}",
+            }
         return json.loads(result.stdout)
     except subprocess.TimeoutExpired:
-        return {"ok": False, "passed": 0, "failed": 0, "total": 0, "failures": [], "error": "Timed out (>60s)"}
+        return {
+            "ok": False,
+            "passed": 0,
+            "failed": 0,
+            "total": 0,
+            "failures": [],
+            "error": "Timed out (>60s)",
+        }
     except Exception as e:
         return {"ok": False, "passed": 0, "failed": 0, "total": 0, "failures": [], "error": str(e)}
 
@@ -162,7 +200,6 @@ async def api_get_cameras(_u=Depends(_require_admin)):
     Returns camera config merged with live Frigate camera+label discovery.
     Cameras known to Frigate but not in config appear with analyze: false defaults.
     """
-    from kaare_core.domain.frigate_responder import _cfg
 
     cfg = _cfg()
     saved_cameras: dict = cfg.get("cameras", {})
@@ -172,7 +209,6 @@ async def api_get_cameras(_u=Depends(_require_admin)):
     available_labels: list[str] = []
     frigate_cameras: list[str] = []
     try:
-        from adapters.frigate_adapter import get_cameras as _get_cameras
         frigate_cam_list = await _get_cameras()
         frigate_cameras = [c["api_name"] for c in frigate_cam_list]
     except Exception:
@@ -192,7 +228,9 @@ async def api_get_cameras(_u=Depends(_require_admin)):
         available_labels = ["person", "car", "postnord", "deer", "dog", "cat"]
 
     merged_cameras = {}
-    all_cam_ids = list(saved_cameras.keys()) + [c for c in frigate_cameras if c not in saved_cameras]
+    all_cam_ids = list(saved_cameras.keys()) + [
+        c for c in frigate_cameras if c not in saved_cameras
+    ]
     for cam_id in all_cam_ids:
         if cam_id in saved_cameras:
             merged_cameras[cam_id] = saved_cameras[cam_id]
@@ -200,7 +238,10 @@ async def api_get_cameras(_u=Depends(_require_admin)):
             merged_cameras[cam_id] = {
                 "display_name": svc_cam_names.get(cam_id, cam_id),
                 "role": "road_facing",
-                "labels": {lbl: {"analyze": False, "min_confidence": 0.65, "announce": False} for lbl in available_labels},
+                "labels": {
+                    lbl: {"analyze": False, "min_confidence": 0.65, "announce": False}
+                    for lbl in available_labels
+                },
             }
         merged_cameras[cam_id]["_id"] = cam_id
 
@@ -228,7 +269,9 @@ async def api_get_cameras_storage_usage(_u=Depends(_require_admin)):
     snap_dir = Path("/kaare/state/frigate_snapshots")
     log_file = Path("/kaare/logs/frigate_analysis.log")
     try:
-        snap_mb = round(sum(f.stat().st_size for f in snap_dir.iterdir() if f.is_file()) / 1_048_576, 1)
+        snap_mb = round(
+            sum(f.stat().st_size for f in snap_dir.iterdir() if f.is_file()) / 1_048_576, 1
+        )
     except Exception:
         snap_mb = 0.0
     try:
@@ -244,10 +287,7 @@ _FAILED_ANALYSIS_PATTERNS = ["ikke kontakt", "kontakt med noen"]
 def _is_failed_analysis(text: str) -> bool:
     if not text or len(text.strip()) < 20:
         return True
-    for pat in _FAILED_ANALYSIS_PATTERNS:
-        if pat in text:
-            return True
-    return False
+    return any(pat in text for pat in _FAILED_ANALYSIS_PATTERNS)
 
 
 @router.get("/api/settings/cameras/_analysis_log")
@@ -279,22 +319,24 @@ async def api_get_analysis_log(limit: int = 40, _u=Depends(_require_admin)):
     for e in entries:
         eid = e.get("event_id", "")
         analysis = e.get("analysis", "")
-        result.append({
-            "ts": e.get("ts", ""),
-            "camera": e.get("camera", ""),
-            "display_name": e.get("display_name") or e.get("camera", ""),
-            "role": e.get("role", ""),
-            "label": e.get("label", ""),
-            "score": e.get("score", 0),
-            "top_score": e.get("top_score", e.get("score", 0)),
-            "duration": e.get("duration", 0),
-            "sub_label": e.get("sub_label"),
-            "zones": e.get("zones", []),
-            "event_id": eid,
-            "analysis": analysis,
-            "failed": _is_failed_analysis(analysis),
-            "has_snapshot": bool(eid and (snap_dir / f"{eid}.jpg").is_file()),
-        })
+        result.append(
+            {
+                "ts": e.get("ts", ""),
+                "camera": e.get("camera", ""),
+                "display_name": e.get("display_name") or e.get("camera", ""),
+                "role": e.get("role", ""),
+                "label": e.get("label", ""),
+                "score": e.get("score", 0),
+                "top_score": e.get("top_score", e.get("score", 0)),
+                "duration": e.get("duration", 0),
+                "sub_label": e.get("sub_label"),
+                "zones": e.get("zones", []),
+                "event_id": eid,
+                "analysis": analysis,
+                "failed": _is_failed_analysis(analysis),
+                "has_snapshot": bool(eid and (snap_dir / f"{eid}.jpg").is_file()),
+            }
+        )
 
     return {"entries": result}
 
@@ -314,8 +356,6 @@ class RetryAnalysisRequest(BaseModel):
 @router.post("/api/settings/cameras/_retry_analysis")
 async def api_retry_analysis(req: RetryAnalysisRequest, _u=Depends(_require_admin)):
     """Re-runs VLM analysis for a given event. Uses local snapshot if available."""
-    import logging as _logging
-    from kaare_core.domain.frigate_responder import analyze_event, _write_analysis_log, _cfg
 
     argus_log = _logging.getLogger("frigate_responder")
     snap_dir = Path("/kaare/state/frigate_snapshots")
@@ -344,10 +384,12 @@ async def api_retry_analysis(req: RetryAnalysisRequest, _u=Depends(_require_admi
         result = await analyze_event(event_dict, img_b64_override=img_b64_override)
     except Exception as e:
         argus_log.error("retry_analysis: analyze_event raised for %s: %s", req.event_id, e)
-        raise HTTPException(500, f"Analysis failed: {e}")
+        raise HTTPException(500, f"Analysis failed: {e}") from e
 
     if not result:
-        argus_log.error("retry_analysis: no result for event %s (no snapshot or VLM unreachable)", req.event_id)
+        argus_log.error(
+            "retry_analysis: no result for event %s (no snapshot or VLM unreachable)", req.event_id
+        )
         raise HTTPException(500, "Analysis failed — no snapshot available or VLM unreachable")
 
     analysis_text = result.get("analysis", "").strip()
@@ -355,7 +397,7 @@ async def api_retry_analysis(req: RetryAnalysisRequest, _u=Depends(_require_admi
     cfg = _cfg()
     cam_cfg = cfg.get("cameras", {}).get(req.camera, {})
     entry = {
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "camera": req.camera,
         "display_name": cam_cfg.get("display_name") or req.camera,
         "role": cam_cfg.get("role", ""),
@@ -377,17 +419,13 @@ async def api_retry_analysis(req: RetryAnalysisRequest, _u=Depends(_require_admi
 async def api_put_cameras_global(payload: dict, _u=Depends(_require_admin)):
     """Toggle global enabled flag for all automatic Frigate event analysis."""
     try:
-        raw = yaml.safe_load(_FRIGATE_CAMERAS_PATH.read_text(encoding="utf-8")) or {}
+        raw = config_store.load_for_update(_FRIGATE_CAMERAS_PATH)
     except Exception:
         raw = {"enabled": True, "cameras": {}, "roles": {}}
 
     raw["enabled"] = bool(payload.get("enabled", True))
-    _FRIGATE_CAMERAS_PATH.write_text(
-        yaml.dump(raw, allow_unicode=True, default_flow_style=False, sort_keys=False),
-        encoding="utf-8",
-    )
+    config_store.write_yaml(_FRIGATE_CAMERAS_PATH, raw, "gui:put_cameras_global")
 
-    from kaare_core.domain.frigate_responder import load_camera_config
     load_camera_config()
     return {"ok": True, "enabled": raw["enabled"]}
 
@@ -396,7 +434,7 @@ async def api_put_cameras_global(payload: dict, _u=Depends(_require_admin)):
 async def api_put_cameras_storage(payload: dict, _u=Depends(_require_admin)):
     """Update storage size limits. Values are clamped: 0=disabled, snapshots 100–10000 MB, log 10–1000 MB."""
     try:
-        raw = yaml.safe_load(_FRIGATE_CAMERAS_PATH.read_text(encoding="utf-8")) or {}
+        raw = config_store.load_for_update(_FRIGATE_CAMERAS_PATH)
     except Exception:
         raw = {"enabled": True, "cameras": {}, "roles": {}}
 
@@ -410,12 +448,8 @@ async def api_put_cameras_storage(payload: dict, _u=Depends(_require_admin)):
         val = int(payload["log_max_mb"])
         storage["log_max_mb"] = 0 if val == 0 else max(10, min(val, 1_000))
 
-    _FRIGATE_CAMERAS_PATH.write_text(
-        yaml.dump(raw, allow_unicode=True, default_flow_style=False, sort_keys=False),
-        encoding="utf-8",
-    )
+    config_store.write_yaml(_FRIGATE_CAMERAS_PATH, raw, "gui:put_cameras_storage")
 
-    from kaare_core.domain.frigate_responder import load_camera_config
     load_camera_config()
     return {"ok": True, "storage": storage}
 
@@ -424,7 +458,7 @@ async def api_put_cameras_storage(payload: dict, _u=Depends(_require_admin)):
 async def api_put_cameras_away_mode(payload: dict, _u=Depends(_require_admin)):
     """Update away-mode threat assessment settings for Frigate events."""
     try:
-        raw = yaml.safe_load(_FRIGATE_CAMERAS_PATH.read_text(encoding="utf-8")) or {}
+        raw = config_store.load_for_update(_FRIGATE_CAMERAS_PATH)
     except Exception:
         raw = {"enabled": True, "cameras": {}, "roles": {}}
 
@@ -439,12 +473,8 @@ async def api_put_cameras_away_mode(payload: dict, _u=Depends(_require_admin)):
     if "unknown_night_high" in payload:
         am["unknown_night_high"] = bool(payload["unknown_night_high"])
 
-    _FRIGATE_CAMERAS_PATH.write_text(
-        yaml.dump(raw, allow_unicode=True, default_flow_style=False, sort_keys=False),
-        encoding="utf-8",
-    )
+    config_store.write_yaml(_FRIGATE_CAMERAS_PATH, raw, "gui:put_cameras_away_mode")
 
-    from kaare_core.domain.frigate_responder import load_camera_config
     load_camera_config()
     return {"ok": True, "away_mode": am}
 
@@ -453,7 +483,7 @@ async def api_put_cameras_away_mode(payload: dict, _u=Depends(_require_admin)):
 async def api_put_camera(camera_id: str, payload: dict, _u=Depends(_require_admin)):
     """Update config for one camera. Writes to frigate_cameras.yaml and hot-reloads."""
     try:
-        raw = yaml.safe_load(_FRIGATE_CAMERAS_PATH.read_text(encoding="utf-8")) or {}
+        raw = config_store.load_for_update(_FRIGATE_CAMERAS_PATH)
     except Exception:
         raw = {"enabled": True, "cameras": {}, "roles": {}}
 
@@ -464,12 +494,8 @@ async def api_put_camera(camera_id: str, payload: dict, _u=Depends(_require_admi
     payload.pop("_id", None)
     raw["cameras"][camera_id] = payload
 
-    _FRIGATE_CAMERAS_PATH.write_text(
-        yaml.dump(raw, allow_unicode=True, default_flow_style=False, sort_keys=False),
-        encoding="utf-8",
-    )
+    config_store.write_yaml(_FRIGATE_CAMERAS_PATH, raw, "gui:put_camera")
 
-    from kaare_core.domain.frigate_responder import load_camera_config
     load_camera_config()
     return {"ok": True, "camera_id": camera_id}
 
@@ -482,36 +508,36 @@ class VpnCreateRequest(BaseModel):
 @router.get("/api/vpn/clients")
 async def api_vpn_list(payload: dict = Depends(_require_admin)):
     """Lists all WireGuard VPN clients."""
-    from kaare_core.vpn import list_clients
+
     try:
         return list_clients()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/api/vpn/clients", status_code=201)
 async def api_vpn_create(req: VpnCreateRequest, payload: dict = Depends(_require_admin)):
     """Creates a new WireGuard client. Returns config text for QR rendering."""
-    from kaare_core.vpn import create_client
+
     try:
         return create_client(req.username, req.device_name)
     except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=409, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.delete("/api/vpn/clients/{client_name}")
 async def api_vpn_delete(client_name: str, payload: dict = Depends(_require_admin)):
     """Removes a WireGuard client by name."""
-    from kaare_core.vpn import delete_client
+
     try:
         delete_client(client_name)
         return {"ok": True}
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/api/settings/vpn")
@@ -533,11 +559,11 @@ async def api_put_vpn_settings(payload: dict, _u=Depends(_require_admin)):
     if unknown:
         raise HTTPException(400, f"Unknown fields: {unknown}")
     try:
-        data = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
+        data = config_store.load_for_update(_SETTINGS_PATH)
         data.setdefault("vpn", {}).update(payload)
-        _SETTINGS_PATH.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False), encoding="utf-8")
+        config_store.write_yaml(_SETTINGS_PATH, data, "gui:put_vpn_settings")
     except Exception as e:
-        raise HTTPException(500, f"Could not write settings.yaml: {e}")
+        raise HTTPException(500, f"Could not write settings.yaml: {e}") from e
     return {"ok": True}
 
 
@@ -570,7 +596,6 @@ def api_system_status(_u=Depends(_require_auth)):
     frigate_enabled = frigate_domain_on and bool(frigate_url)
 
     try:
-        from adapters.mqtt_adapter import get_status as mqtt_status
         mqtt = mqtt_status()
         mqtt_enabled = mqtt.get("connected", False)
     except Exception:
@@ -598,8 +623,8 @@ def _build_service_catalog() -> list[dict]:
     except Exception:
         _cap_cfg = {}
 
-    _embed_device   = _svc_cfg.get("embedding", {}).get("device", "CPU")
-    _embed_enabled  = _cap_cfg.get("services", {}).get("embedding", {}).get("enabled", True)
+    _embed_device = _svc_cfg.get("embedding", {}).get("device", "CPU")
+    _embed_enabled = _cap_cfg.get("services", {}).get("embedding", {}).get("enabled", True)
     _memory_enabled = _svc_cfg.get("memory_embed", {}).get("enabled", True)
 
     _embed_uses = ["wiki"]
@@ -614,30 +639,77 @@ def _build_service_catalog() -> list[dict]:
         _qdrant_parts.append("events")
     _qdrant_desc = "Vector database — " + (", ".join(_qdrant_parts) if _qdrant_parts else "—")
 
+    _mem_model = active_model()
     _semembed_desc = (
-        "384-dim semantic memory embedding" if _memory_enabled
-        else "384-dim embedding (memory disabled)"
+        f"{_mem_model['dim']}-dim semantic memory embedding ({_mem_model['key']})"
+        if _memory_enabled
+        else "semantic memory embedding (disabled)"
     )
 
     return [
-        {"key": "kaare_api",      "name": "Kåre",           "description": "Main orchestrator API",
-         "color": "#646cff",      "check_url": get_service("internal", "kaare_api") + "/"},
-        {"key": "ha_gateway",     "name": "HA Gateway",     "description": "Home Assistant command executor",
-         "color": "#facc15",      "check_url": get_service("internal", "ha_gateway") + "/"},
-        {"key": "semantic_embed", "name": "Semantic Embed", "description": _semembed_desc,
-         "color": "#60a5fa",      "check_url": get_service("internal", "semantic_embed") + "/"},
-        {"key": "voice_bridge",   "name": "Voice Bridge",   "description": "Piper TTS + Whisper STT",
-         "color": "#a78bfa",      "check_url": get_service("internal", "voice_bridge") + "/"},
-        {"key": "embedding",      "name": "Embedding",      "description": _embed_desc,
-         "color": "#c2f8da",      "check_url": get_service("ollama", "embed") + "/health"},
-        {"key": "qdrant",         "name": "Qdrant",         "description": _qdrant_desc,
-         "color": "#16a34a",      "check_url": get_service("storage", "qdrant") + "/readyz"},
-        {"key": "argus",          "name": "Argus",          "description": "System log monitor and alerter",
-         "color": "#fb7185",      "check_url": "file:///kaare/state/argus/report.json:600"},
-        {"key": "jing_svc",       "name": "Jing",           "description": "Fast inner voice service",
-         "color": "#e879f9",      "check_url": "file:///kaare/state/jing_thoughts.txt:600"},
-        {"key": "jang_svc",       "name": "Jang",           "description": "Slow inner voice service",
-         "color": "#f472b6",      "check_url": "file:///kaare/state/inner_thoughts.txt:2100"},
+        {
+            "key": "kaare_api",
+            "name": "Kåre",
+            "description": "Main orchestrator API",
+            "color": "#646cff",
+            "check_url": get_service("internal", "kaare_api") + "/",
+        },
+        {
+            "key": "ha_gateway",
+            "name": "HA Gateway",
+            "description": "Home Assistant command executor",
+            "color": "#facc15",
+            "check_url": get_service("internal", "ha_gateway") + "/",
+        },
+        {
+            "key": "semantic_embed",
+            "name": "Semantic Embed",
+            "description": _semembed_desc,
+            "color": "#60a5fa",
+            "check_url": get_service("internal", "semantic_embed") + "/",
+        },
+        {
+            "key": "voice_bridge",
+            "name": "Voice Bridge",
+            "description": "Piper TTS + Whisper STT",
+            "color": "#a78bfa",
+            "check_url": get_service("internal", "voice_bridge") + "/",
+        },
+        {
+            "key": "embedding",
+            "name": "Embedding",
+            "description": _embed_desc,
+            "color": "#c2f8da",
+            "check_url": get_service("ollama", "embed") + "/health",
+        },
+        {
+            "key": "qdrant",
+            "name": "Qdrant",
+            "description": _qdrant_desc,
+            "color": "#16a34a",
+            "check_url": get_service("storage", "qdrant") + "/readyz",
+        },
+        {
+            "key": "argus",
+            "name": "Argus",
+            "description": "System log monitor and alerter",
+            "color": "#fb7185",
+            "check_url": "file:///kaare/state/argus/report.json:600",
+        },
+        {
+            "key": "jing_svc",
+            "name": "Jing",
+            "description": "Fast inner voice service",
+            "color": "#e879f9",
+            "check_url": "file:///kaare/state/jing_thoughts.txt:600",
+        },
+        {
+            "key": "jang_svc",
+            "name": "Jang",
+            "description": "Slow inner voice service",
+            "color": "#f472b6",
+            "check_url": "file:///kaare/state/inner_thoughts.txt:2100",
+        },
     ]
 
 
@@ -650,10 +722,10 @@ def _build_model_catalog() -> list[dict]:
         _llm = {}
     try:
         _svc = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
-        _embed_model  = _svc.get("embedding", {}).get("hf_model") or get_model("embed")
+        _embed_model = _svc.get("embedding", {}).get("hf_model") or get_model("embed")
         _embed_device = _svc.get("embedding", {}).get("device", "CPU")
     except Exception:
-        _embed_model  = get_model("embed")
+        _embed_model = get_model("embed")
         _embed_device = "CPU"
 
     def _platform(llm_key: str) -> str:
@@ -692,34 +764,74 @@ def _build_model_catalog() -> list[dict]:
         return f"ollama-model://{host_port}|{_model(model_key or llm_key)}"
 
     return [
-        {"key": "llm_kare",      "name": "Kåre",               "model": _model("kare"),
-         "platform": _platform("default"),    "color": "#646cff",
-         "check_url": _check_url_for("default", "kare")},
-        {"key": "llm_miss_kare", "name": "Miss Kåre / Mechanic", "model": _model("miss_kare"),
-         "platform": _platform("miss_kare"), "color": "#fde047",
-         "check_url": _check_url_for("miss_kare")},
-        {"key": "llm_library",   "name": "Library",            "model": _model("library"),
-         "platform": _platform("library"),   "color": "#4ade80",
-         "check_url": _check_url_for("library")},
-        {"key": "llm_jing",      "name": "Jing",                "model": Path(_svc.get('jing', {}).get('model_path', '')).name or "unknown",
-         "platform": f"{_svc.get('inner_voices', {}).get('node_label', 'Local')} ({_svc.get('jing', {}).get('provider', 'openvino')})",
-         "color": "#e879f9",
-         "check_url": "file:///kaare/state/jing_thoughts.txt:600"},
-        {"key": "llm_jang",      "name": "Jang",                "model": Path(_svc.get('jang', {}).get('model_path', '')).name or "unknown",
-         "platform": f"{_svc.get('inner_voices', {}).get('node_label', 'Local')} ({_svc.get('jang', {}).get('provider', 'openvino')})",
-         "color": "#f472b6",
-         "check_url": "file:///kaare/state/inner_thoughts.txt:2100"},
-        {"key": "whisper",       "name": "Whisper STT",         "model": "nb-whisper-large",
-         "platform": "Voice Bridge",         "color": "#a78bfa",
-         "check_url": get_service("internal", "voice_bridge") + "/"},
-        {"key": "piper",         "name": "Piper TTS",
-         "model": Path(_svc.get("voice", {}).get("tts", {}).get("tts_models", {}).get("nb")
-                       or _svc.get("voice", {}).get("tts", {}).get("voice", "")).stem or "no_NO-talesyntese-medium",
-         "platform": "Voice Bridge",         "color": "#a78bfa",
-         "check_url": get_service("internal", "voice_bridge") + "/"},
-        {"key": "bge_m3",        "name": _embed_model.split("/")[-1], "model": _embed_model,
-         "platform": f"Embedding ({_embed_device})",  "color": "#4ade80",
-         "check_url": get_service("ollama", "embed") + "/health"},
+        {
+            "key": "llm_kare",
+            "name": "Kåre",
+            "model": _model("kare"),
+            "platform": _platform("default"),
+            "color": "#646cff",
+            "check_url": _check_url_for("default", "kare"),
+        },
+        {
+            "key": "llm_miss_kare",
+            "name": "Miss Kåre / Mechanic",
+            "model": _model("miss_kare"),
+            "platform": _platform("miss_kare"),
+            "color": "#fde047",
+            "check_url": _check_url_for("miss_kare"),
+        },
+        {
+            "key": "llm_library",
+            "name": "Library",
+            "model": _model("library"),
+            "platform": _platform("library"),
+            "color": "#4ade80",
+            "check_url": _check_url_for("library"),
+        },
+        {
+            "key": "llm_jing",
+            "name": "Jing",
+            "model": Path(_svc.get("jing", {}).get("model_path", "")).name or "unknown",
+            "platform": f"{_svc.get('inner_voices', {}).get('node_label', 'Local')} ({_svc.get('jing', {}).get('provider', 'openvino')})",
+            "color": "#e879f9",
+            "check_url": "file:///kaare/state/jing_thoughts.txt:600",
+        },
+        {
+            "key": "llm_jang",
+            "name": "Jang",
+            "model": Path(_svc.get("jang", {}).get("model_path", "")).name or "unknown",
+            "platform": f"{_svc.get('inner_voices', {}).get('node_label', 'Local')} ({_svc.get('jang', {}).get('provider', 'openvino')})",
+            "color": "#f472b6",
+            "check_url": "file:///kaare/state/inner_thoughts.txt:2100",
+        },
+        {
+            "key": "whisper",
+            "name": "Whisper STT",
+            "model": "nb-whisper-large",
+            "platform": "Voice Bridge",
+            "color": "#a78bfa",
+            "check_url": get_service("internal", "voice_bridge") + "/",
+        },
+        {
+            "key": "piper",
+            "name": "Piper TTS",
+            "model": Path(
+                _svc.get("voice", {}).get("tts", {}).get("tts_models", {}).get("nb")
+                or _svc.get("voice", {}).get("tts", {}).get("voice", "")
+            ).stem
+            or "no_NO-talesyntese-medium",
+            "platform": "Voice Bridge",
+            "color": "#a78bfa",
+            "check_url": get_service("internal", "voice_bridge") + "/",
+        },
+        {
+            "key": "bge_m3",
+            "name": _embed_model.split("/")[-1],
+            "model": _embed_model,
+            "platform": f"Embedding ({_embed_device})",
+            "color": "#4ade80",
+            "check_url": get_service("ollama", "embed") + "/health",
+        },
     ]
 
 
@@ -727,16 +839,25 @@ def _build_model_catalog() -> list[dict]:
 async def api_get_gpus(_u=Depends(_require_auth)):
     """List available GPUs via nvidia-smi. Returns empty list if not available."""
     try:
-        result = subprocess.run(
+        result = await asyncio.to_thread(
+            subprocess.run,
             ["nvidia-smi", "--query-gpu=index,name,memory.total", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         gpus = []
         if result.returncode == 0:
             for line in result.stdout.strip().splitlines():
                 parts = [p.strip() for p in line.split(",")]
                 if len(parts) == 3:
-                    gpus.append({"id": int(parts[0]), "name": parts[1], "vram_gb": round(int(parts[2]) / 1024, 1)})
+                    gpus.append(
+                        {
+                            "id": int(parts[0]),
+                            "name": parts[1],
+                            "vram_gb": round(int(parts[2]) / 1024, 1),
+                        }
+                    )
         return {"gpus": gpus}
     except Exception:
         return {"gpus": []}
@@ -745,7 +866,11 @@ async def api_get_gpus(_u=Depends(_require_auth)):
 @router.get("/api/system/hardware")
 async def api_get_hardware(refresh: bool = False, _u=Depends(_require_auth)):
     """Detect host hardware (CPU, RAM, GPU, NPU) and cache result in state/hardware.json."""
-    import platform
+    return await asyncio.to_thread(_detect_hardware, refresh)
+
+
+def _detect_hardware(refresh: bool) -> dict:
+    """Blocking hardware probe (/proc, sysfs, nvidia-smi) — runs in a worker thread."""
 
     hw_path = Path("/kaare/state/hardware.json")
 
@@ -769,9 +894,16 @@ async def api_get_hardware(refresh: bool = False, _u=Depends(_require_auth)):
     try:
         with open("/proc/cpuinfo") as f:
             cpuinfo = f.read()
-        model_lines = [l.split(":", 1)[1].strip() for l in cpuinfo.splitlines() if l.startswith("model name")]
+        model_lines = [
+            ln.split(":", 1)[1].strip()
+            for ln in cpuinfo.splitlines()
+            if ln.startswith("model name")
+        ]
         cores = cpuinfo.count("processor\t:")
-        result["cpu"] = {"model": model_lines[0] if model_lines else platform.processor() or "unknown", "cores": cores or (os.cpu_count() or 0)}
+        result["cpu"] = {
+            "model": model_lines[0] if model_lines else platform.processor() or "unknown",
+            "cores": cores or (os.cpu_count() or 0),
+        }
     except Exception:
         result["cpu"] = {"model": platform.processor() or "unknown", "cores": os.cpu_count() or 0}
 
@@ -789,24 +921,40 @@ async def api_get_hardware(refresh: bool = False, _u=Depends(_require_auth)):
     try:
         r = subprocess.run(
             ["nvidia-smi", "--query-gpu=index,name,memory.total", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if r.returncode == 0:
             for line in r.stdout.strip().splitlines():
                 parts = [p.strip() for p in line.split(",")]
                 if len(parts) == 3:
-                    result["gpus"].append({"type": "nvidia", "id": int(parts[0]), "name": parts[1], "vram_gb": round(int(parts[2]) / 1024, 1)})
+                    result["gpus"].append(
+                        {
+                            "type": "nvidia",
+                            "id": int(parts[0]),
+                            "name": parts[1],
+                            "vram_gb": round(int(parts[2]) / 1024, 1),
+                        }
+                    )
     except Exception:
         pass
 
     # AMD GPU (rocm-smi)
     if not result["gpus"]:
         try:
-            r = subprocess.run(["rocm-smi", "--showproductname", "--csv"], capture_output=True, text=True, timeout=10)
+            r = subprocess.run(
+                ["rocm-smi", "--showproductname", "--csv"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
             if r.returncode == 0:
                 for i, line in enumerate(r.stdout.strip().splitlines()):
                     if line and not line.lower().startswith("device"):
-                        result["gpus"].append({"type": "amd", "id": i, "name": line.strip(), "vram_gb": None})
+                        result["gpus"].append(
+                            {"type": "amd", "id": i, "name": line.strip(), "vram_gb": None}
+                        )
         except Exception:
             pass
 
@@ -840,7 +988,12 @@ async def api_get_hardware(refresh: bool = False, _u=Depends(_require_auth)):
                 gpu_type = "intel-igpu" if is_integrated else "intel-arc"
                 name = "Intel iGPU" if is_integrated else "Intel Arc GPU"
                 try:
-                    r = subprocess.run(["lspci", "-mm", "-s", pci_addr], capture_output=True, text=True, timeout=5)
+                    r = subprocess.run(
+                        ["lspci", "-mm", "-s", pci_addr],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
                     if r.returncode == 0 and r.stdout.strip():
                         fields = shlex.split(r.stdout.strip())
                         if len(fields) >= 4:
@@ -848,7 +1001,9 @@ async def api_get_hardware(refresh: bool = False, _u=Depends(_require_auth)):
                 except Exception:
                     pass
 
-                result["gpus"].append({"type": gpu_type, "id": len(result["gpus"]), "name": name, "vram_gb": None})
+                result["gpus"].append(
+                    {"type": gpu_type, "id": len(result["gpus"]), "name": name, "vram_gb": None}
+                )
     except Exception:
         pass
 
@@ -872,7 +1027,9 @@ async def api_get_hardware(refresh: bool = False, _u=Depends(_require_auth)):
 
 
 @router.post("/api/admin/restart/{service_key}")
-async def api_restart_service(service_key: str, background_tasks: BackgroundTasks, _u=Depends(_require_admin)):
+async def api_restart_service(
+    service_key: str, background_tasks: BackgroundTasks, _u=Depends(_require_admin)
+):
     if service_key not in _RESTARTABLE_SERVICES:
         raise HTTPException(400, f"Unknown service: {service_key}")
     unit = _RESTARTABLE_SERVICES[service_key]
@@ -883,41 +1040,68 @@ async def api_restart_service(service_key: str, background_tasks: BackgroundTask
             def _docker_self_restart():
                 time.sleep(0.8)
                 os.kill(os.getpid(), signal.SIGTERM)
+
             background_tasks.add_task(_docker_self_restart)
             return {"ok": True, "unit": unit, "docker": True}
 
+        return restart_service_blocking(service_key)
+
+    # Bare-metal / systemd path
+    if service_key == "kaare":
+
+        def _self_restart():
+            time.sleep(0.6)
+            subprocess.run(
+                ["sudo", "/bin/systemctl", "restart", unit], capture_output=True, timeout=15
+            )
+
+        background_tasks.add_task(_self_restart)
+        return {"ok": True, "unit": unit}
+
+    return restart_service_blocking(service_key)
+
+
+def restart_service_blocking(service_key: str) -> dict:
+    """Restart one sibling service (not the API itself) — Docker container or systemd unit.
+
+    Blocks until the restart has completed (up to ~30 s); call it from a worker thread when
+    used inside async code. Also used by the semantic-memory model switch (P126)."""
+    unit = _RESTARTABLE_SERVICES.get(service_key)
+    if unit is None or service_key == "kaare":
+        return {"ok": False, "error": f"Not restartable this way: {service_key}"}
+
+    if _IN_DOCKER:
         compose_service = _DOCKER_COMPOSE_SERVICE.get(service_key)
         if not compose_service:
             return {"ok": False, "docker": True, "error": f"No Docker mapping for '{service_key}'"}
         try:
             container = _docker_find_container(compose_service)
             if container is None:
-                return {"ok": False, "docker": True,
-                         "error": f"Container for '{compose_service}' doesn't exist — not part of the active distribution profile?"}
+                return {
+                    "ok": False,
+                    "docker": True,
+                    "error": f"Container for '{compose_service}' doesn't exist — not part of the active distribution profile?",
+                }
             # Docker waits up to t=10s for a graceful stop before force-killing,
             # and the HTTP call doesn't return until the whole restart (stop +
             # start) completes — needs headroom above the client's default
             # timeout, not just the stop grace period itself.
             r = _docker_socket_client().post(
-                f"/containers/{container['Id']}/restart", params={"t": 10}, timeout=30.0,
+                f"/containers/{container['Id']}/restart",
+                params={"t": 10},
+                timeout=30.0,
             )
             r.raise_for_status()
             return {"ok": True, "unit": unit, "docker": True}
         except Exception as e:
             return {"ok": False, "docker": True, "error": f"Docker restart failed: {e}"}
 
-    # Bare-metal / systemd path
-    if service_key == "kaare":
-        def _self_restart():
-            time.sleep(0.6)
-            subprocess.run(["sudo", "/bin/systemctl", "restart", unit], capture_output=True)
-        background_tasks.add_task(_self_restart)
-        return {"ok": True, "unit": unit}
-
     try:
         result = subprocess.run(
             ["sudo", "/bin/systemctl", "restart", unit],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         if result.returncode != 0:
             return {"ok": False, "error": result.stderr.strip() or "systemctl failed"}
@@ -928,199 +1112,23 @@ async def api_restart_service(service_key: str, background_tasks: BackgroundTask
 
 @router.post("/api/admin/settings/rollback")
 async def api_settings_rollback(_u=Depends(_require_admin)):
-    """Restore all *.yaml files in configs/ from configs_default/."""
-    defaults_dir = Path("/kaare/configs_default")
-    configs_dir  = Path("/kaare/configs")
+    """Restore all *.yaml files in configs/ from configs_default/. The current configs/ is snapshotted first
+    (configs/.history/_snapshots/<ts>_pre-reset-to-default), so a reset can be undone by hand (P134)."""
+    defaults_dir = config_store.DEFAULT_DIR
+    configs_dir = config_store.CONFIG_DIR
     restored, errors = [], []
+    try:
+        snap = config_store.snapshot("pre-reset-to-default", configs_dir)
+    except Exception as e:
+        return {"ok": False, "restored": [], "errors": [f"snapshot failed, nothing reset: {e}"]}
     for src in sorted(defaults_dir.glob("*.yaml")):
         dst = configs_dir / src.name
         try:
-            dst.write_bytes(src.read_bytes())
+            config_store.write_bytes(dst, src.read_bytes(), "reset-to-default")
             restored.append(src.name)
         except Exception as e:
             errors.append(f"{src.name}: {e}")
-    return {"ok": len(errors) == 0, "restored": restored, "errors": errors}
-
-
-# ── Config snapshots ──────────────────────────────────────────────────────────
-
-_CONFIGS_DIR    = Path("/kaare/configs")
-_SNAPSHOTS_DIR  = Path("/kaare/backups/configs")
-_MAX_SNAPSHOTS  = 10
-_SNAPSHOT_ID_RE = re.compile(r"^\d{8}_\d{6}$")
-
-
-class SnapshotSaveRequest(BaseModel):
-    name: str
-
-
-def _list_snapshots() -> list[dict]:
-    if not _SNAPSHOTS_DIR.exists():
-        return []
-    result = []
-    for d in sorted(_SNAPSHOTS_DIR.iterdir(), reverse=True):
-        meta_path = d / "meta.json"
-        if d.is_dir() and meta_path.exists():
-            try:
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                result.append({"id": d.name, **meta})
-            except Exception:
-                pass
-    return result
-
-
-@router.post("/api/admin/config-snapshot")
-async def api_save_config_snapshot(payload: SnapshotSaveRequest, _u=Depends(_require_admin)):
-    existing = _list_snapshots()
-    if len(existing) >= _MAX_SNAPSHOTS:
-        return {"ok": False, "error": "max_reached", "count": len(existing)}
-
-    snapshot_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    snapshot_dir = _SNAPSHOTS_DIR / snapshot_id
-    snapshot_dir.mkdir(parents=True, exist_ok=True)
-
-    files_saved = []
-    for src in sorted(_CONFIGS_DIR.glob("*.yaml")):
-        dst = snapshot_dir / src.name
-        dst.write_bytes(src.read_bytes())
-        files_saved.append(src.name)
-
-    meta = {
-        "name": payload.name.strip()[:80],
-        "created": datetime.now(timezone.utc).isoformat(),
-        "files": files_saved,
-    }
-    (snapshot_dir / "meta.json").write_text(
-        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    return {"ok": True, "id": snapshot_id, "file_count": len(files_saved)}
-
-
-@router.get("/api/admin/config-snapshots")
-async def api_list_config_snapshots(_u=Depends(_require_admin)):
-    return {"snapshots": _list_snapshots()}
-
-
-@router.post("/api/admin/config-snapshot/{snapshot_id}/restore")
-async def api_restore_config_snapshot(snapshot_id: str, _u=Depends(_require_admin)):
-    if not _SNAPSHOT_ID_RE.match(snapshot_id):
-        raise HTTPException(status_code=400, detail="Invalid snapshot ID")
-    snapshot_dir = _SNAPSHOTS_DIR / snapshot_id
-    if not snapshot_dir.exists():
-        raise HTTPException(status_code=404, detail="Snapshot not found")
-
-    restored, errors = [], []
-    for src in sorted(snapshot_dir.glob("*.yaml")):
-        dst = _CONFIGS_DIR / src.name
-        try:
-            dst.write_bytes(src.read_bytes())
-            restored.append(src.name)
-        except Exception as e:
-            errors.append(f"{src.name}: {e}")
-    return {"ok": len(errors) == 0, "restored": restored, "errors": errors}
-
-
-@router.delete("/api/admin/config-snapshot/{snapshot_id}")
-async def api_delete_config_snapshot(snapshot_id: str, _u=Depends(_require_admin)):
-    if not _SNAPSHOT_ID_RE.match(snapshot_id):
-        raise HTTPException(status_code=400, detail="Invalid snapshot ID")
-    snapshot_dir = _SNAPSHOTS_DIR / snapshot_id
-    if not snapshot_dir.exists():
-        raise HTTPException(status_code=404, detail="Snapshot not found")
-    shutil.rmtree(snapshot_dir)
-    return {"ok": True}
-
-
-@router.get("/api/admin/config-snapshot/{snapshot_id}/export")
-async def api_export_config_snapshot(snapshot_id: str, _u=Depends(_require_admin)):
-    if not _SNAPSHOT_ID_RE.match(snapshot_id):
-        raise HTTPException(status_code=400, detail="Invalid snapshot ID")
-    snapshot_dir = _SNAPSHOTS_DIR / snapshot_id
-    if not snapshot_dir.exists():
-        raise HTTPException(status_code=404, detail="Snapshot not found")
-
-    meta_path = snapshot_dir / "meta.json"
-    try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        name_slug = re.sub(r"[^a-zA-Z0-9_-]", "_", meta.get("name", snapshot_id))[:40]
-    except Exception:
-        name_slug = snapshot_id
-
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for f in sorted(snapshot_dir.glob("*.yaml")):
-            zf.write(f, arcname=f.name)
-
-    filename = f"ktsb-config-{name_slug}-{snapshot_id}.zip"
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-@router.get("/api/admin/config/export")
-async def api_export_current_config(_u=Depends(_require_admin)):
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for f in sorted(_CONFIGS_DIR.glob("*.yaml")):
-            zf.write(f, arcname=f.name)
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"ktsb-config-current-{ts}.zip"
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-@router.post("/api/admin/config-snapshot/import")
-async def api_import_config_snapshot(
-    name: str = Form(...),
-    file: UploadFile = File(...),
-    _u=Depends(_require_admin),
-):
-    if not (file.filename or "").endswith(".zip"):
-        raise HTTPException(status_code=400, detail="Only .zip files accepted")
-
-    existing = _list_snapshots()
-    if len(existing) >= _MAX_SNAPSHOTS:
-        return {"ok": False, "error": "max_reached", "count": len(existing)}
-
-    content = await file.read()
-
-    snapshot_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    snapshot_dir = _SNAPSHOTS_DIR / snapshot_id
-    snapshot_dir.mkdir(parents=True, exist_ok=True)
-
-    files_saved = []
-    try:
-        with zipfile.ZipFile(io.BytesIO(content)) as zf:
-            for member in zf.namelist():
-                fname = Path(member).name
-                # Only plain *.yaml files — no subdirectories, no path traversal
-                if not fname.endswith(".yaml") or "/" in member or "\\" in member or fname != member:
-                    continue
-                (snapshot_dir / fname).write_bytes(zf.read(member))
-                files_saved.append(fname)
-    except zipfile.BadZipFile:
-        shutil.rmtree(snapshot_dir, ignore_errors=True)
-        raise HTTPException(status_code=400, detail="Invalid zip file")
-
-    if not files_saved:
-        shutil.rmtree(snapshot_dir, ignore_errors=True)
-        return {"ok": False, "error": "no_yaml_files"}
-
-    meta = {
-        "name": name.strip()[:80],
-        "created": datetime.now(timezone.utc).isoformat(),
-        "files": files_saved,
-        "imported": True,
-    }
-    (snapshot_dir / "meta.json").write_text(
-        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    return {"ok": True, "id": snapshot_id, "file_count": len(files_saved)}
+    return {"ok": len(errors) == 0, "restored": restored, "errors": errors, "snapshot": str(snap)}
 
 
 @router.get("/api/admin/services")
@@ -1133,14 +1141,23 @@ async def api_admin_services(_u=Depends(_require_auth)):
         for key, unit in _RESTARTABLE_SERVICES.items():
             state, reason = _docker_service_state(key)
             statuses[key] = {
-                "unit": unit, "active": state == "running", "docker": True,
-                "state": state, "reason": reason,
+                "unit": unit,
+                "active": state == "running",
+                "docker": True,
+                "state": state,
+                "reason": reason,
             }
         return statuses
 
     for key, unit in _RESTARTABLE_SERVICES.items():
         try:
-            r = subprocess.run(["systemctl", "is-active", unit], capture_output=True, text=True, timeout=3)
+            r = await asyncio.to_thread(
+                subprocess.run,
+                ["systemctl", "is-active", unit],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
             statuses[key] = {"unit": unit, "active": r.stdout.strip() == "active"}
         except Exception:
             statuses[key] = {"unit": unit, "active": False}
@@ -1168,7 +1185,7 @@ async def _check_url(url: str | None) -> bool:
         except Exception:
             return False
     if url.startswith("ollama-model://"):
-        rest = url[len("ollama-model://"):]
+        rest = url[len("ollama-model://") :]
         host_port, _, model_name = rest.partition("|")
         if not model_name or not host_port:
             return False
@@ -1181,7 +1198,9 @@ async def _check_url(url: str | None) -> bool:
                 if ":" in model_name:
                     return model_name in available
                 else:
-                    return any(av == model_name or av.startswith(model_name + ":") for av in available)
+                    return any(
+                        av == model_name or av.startswith(model_name + ":") for av in available
+                    )
         except Exception:
             return False
     try:
@@ -1199,10 +1218,10 @@ def api_audit_recent(limit: int = 200, payload: dict = Depends(_require_admin)):
 
 
 @router.get("/api/system/overview")
-async def api_system_overview():
+async def api_system_overview(_u=Depends(_require_admin)):
     """Returns live status of all system services and LLM/ML models."""
     services = _build_service_catalog()
-    models   = _build_model_catalog()
+    models = _build_model_catalog()
 
     svc_results, mdl_results = await asyncio.gather(
         asyncio.gather(*[_check_url(s["check_url"]) for s in services]),
@@ -1210,25 +1229,32 @@ async def api_system_overview():
     )
 
     return {
-        "services": [{**s, "online": ok, "check_url": None} for s, ok in zip(services, svc_results)],
-        "models":   [{**m, "online": ok, "check_url": None} for m, ok in zip(models,   mdl_results)],
+        "services": [
+            {**s, "online": ok, "check_url": None}
+            for s, ok in zip(services, svc_results, strict=False)
+        ],
+        "models": [
+            {**m, "online": ok, "check_url": None}
+            for m, ok in zip(models, mdl_results, strict=False)
+        ],
     }
 
 
 # ── Normalcy / anomaly event feed ─────────────────────────────────────────────
 
+
 class _CorrectionBody(BaseModel):
-    source_key:  str
+    source_key: str
     hour_bucket: str
-    weekday:     str
-    verdict:     str           # "normal" | "suspicious"
-    comment:     str = ""
+    weekday: str
+    verdict: str  # "normal" | "suspicious"
+    comment: str = ""
 
 
 class _CorrectionKeyBody(BaseModel):
-    source_key:  str
+    source_key: str
     hour_bucket: str
-    weekday:     str
+    weekday: str
 
 
 @router.get("/api/normalcy/events")
@@ -1242,7 +1268,6 @@ async def api_normalcy_events(
 ):
     """Return recent Frigate events with high deviation scores for admin review."""
     try:
-        from kaare_core.config import get_service as _svc
         svc = _svc("notifications") or {}
         cameras: list[str] = svc.get("normalcy_cameras") or []
         labels = [label.strip()] if label.strip() else None
@@ -1256,7 +1281,7 @@ async def api_normalcy_events(
         )
         return {"ok": True, "events": events}
     except Exception as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(500, str(e)) from e
 
 
 @router.post("/api/normalcy/correct")
@@ -1267,12 +1292,16 @@ async def api_normalcy_correct(body: _CorrectionBody, u=Depends(_require_admin))
     try:
         username = u.get("username", "admin") if isinstance(u, dict) else "admin"
         _add_correction(
-            body.source_key, body.hour_bucket, body.weekday,
-            body.verdict, body.comment, by=username,
+            body.source_key,
+            body.hour_bucket,
+            body.weekday,
+            body.verdict,
+            body.comment,
+            by=username,
         )
         return {"ok": True}
     except Exception as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(500, str(e)) from e
 
 
 @router.delete("/api/normalcy/correct")
@@ -1282,7 +1311,7 @@ async def api_normalcy_uncorrect(body: _CorrectionKeyBody, u=Depends(_require_ad
         removed = _delete_correction(body.source_key, body.hour_bucket, body.weekday)
         return {"ok": True, "removed": removed}
     except Exception as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(500, str(e)) from e
 
 
 @router.get("/api/normalcy/snapshot/{event_id}")
@@ -1292,8 +1321,10 @@ async def api_normalcy_snapshot(event_id: str, u=Depends(_require_admin)):
         svc_cfg = yaml.safe_load(Path("/kaare/configs/services.yaml").read_text()) or {}
         frigate_url = (svc_cfg.get("frigate") or {}).get("url", "http://localhost:5000")
         async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{frigate_url}/api/events/{event_id}/snapshot.jpg",
-                                 params={"crop": 1, "quality": 70})
+            r = await client.get(
+                f"{frigate_url}/api/events/{event_id}/snapshot.jpg",
+                params={"crop": 1, "quality": 70},
+            )
         if r.status_code == 404:
             raise HTTPException(404, "snapshot not found")
         if r.status_code != 200:
@@ -1302,4 +1333,4 @@ async def api_normalcy_snapshot(event_id: str, u=Depends(_require_admin)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(500, str(e)) from e

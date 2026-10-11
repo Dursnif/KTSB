@@ -1,0 +1,23 @@
+[Unit]
+Description=KTSB night runner – starts the night sequence at the GUI start time (Settings → Reflection)
+After=network.target kaare.service
+Wants=kaare-warmup.service
+
+[Service]
+UMask=0002
+User=kaare
+WorkingDirectory=/kaare
+EnvironmentFile=-/kaare/configs/kare_llm.env
+Environment=PYTHONPATH=/kaare
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/kaare/venv/bin/python3 /kaare/kaare_night_runner.py
+Restart=always
+RestartSec=10
+# Restarting the runner must not kill a night sequence that is already running: it keeps its
+# lock and the restarted runner sees the night recorded as started.
+KillMode=process
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

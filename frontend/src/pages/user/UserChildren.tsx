@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useAuth } from "../../auth/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import {
   apiGetUserSummary,
   apiReflectionDates,
@@ -10,6 +10,7 @@ import {
   type UserSummary,
 } from "../../services/api";
 import { useTheme } from "../../theme";
+import { apiErrorStatus } from "@/lib/apiError";
 
 const AGENT_LABELS: Record<string, string> = {
   "**[Kåre]**":      "KÅRE",
@@ -130,6 +131,16 @@ function PinModal({
   );
 }
 
+function parseChildNames(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 function CommentBox({
   child, date, pin, accent,
 }: { child: UserSummary; date: string; pin: string; accent: string }) {
@@ -139,8 +150,8 @@ function CommentBox({
   const [saving, setSaving]   = useState(false);
   const [err, setErr]         = useState(false);
 
+  // Remounted per child+date+pin (key at the call site), so no state reset is needed here.
   useEffect(() => {
-    setSaved(false); setErr(false); setComment("");
     apiGetReflectionComment(child.username, date, pin)
       .then(r => setComment(r.comment))
       .catch(() => {});
@@ -224,29 +235,35 @@ export default function UserChildren() {
     return result;
   });
 
+  // managed_children is a JSON string; depend on the string itself (stable between renders).
+  const managedChildren = user?.managed_children ?? null;
+  const hasChildren = parseChildNames(managedChildren).length > 0;
+
   // Load child summaries on mount
   useEffect(() => {
-    if (!user?.managed_children) { setLoadingChildren(false); return; }
-    let children: string[] = [];
-    try { children = JSON.parse(user.managed_children); } catch { /* empty */ }
-    if (!children.length) { setLoadingChildren(false); return; }
-
-    Promise.allSettled(children.map(u => apiGetUserSummary(u)))
+    const childNames = parseChildNames(managedChildren);
+    if (!childNames.length) return;
+    let cancelled = false;
+    Promise.allSettled(childNames.map(u => apiGetUserSummary(u)))
       .then(results => {
+        if (cancelled) return;
         setChildSummaries(
           results.flatMap(r => r.status === "fulfilled" ? [r.value] : [])
         );
       })
-      .finally(() => setLoadingChildren(false));
-  }, [user]);
+      .finally(() => { if (!cancelled) setLoadingChildren(false); });
+    return () => { cancelled = true; };
+  }, [managedChildren]);
 
-  // Load reflection dates when child changes
+  // Load reflection dates when the child changes (handleChildSelect clears the old ones).
+  // The cancel flag stops a slow reply for a previous child from showing its dates.
   useEffect(() => {
-    setDates([]); setSelectedDate(null); setContent("");
     if (!selectedChild) return;
+    let cancelled = false;
     apiReflectionDates(selectedChild.username)
-      .then(setDates)
+      .then(d => { if (!cancelled) setDates(d); })
       .catch(() => {});
+    return () => { cancelled = true; };
   }, [selectedChild]);
 
   const cachedPin = selectedChild ? pins[selectedChild.username] : null;
@@ -262,8 +279,8 @@ export default function UserChildren() {
       setContent(r.content);
       setSelectedDate(date);
       setPinTarget(null);
-    } catch (e: any) {
-      if (e?.response?.status === 403) {
+    } catch (e) {
+      if (apiErrorStatus(e) === 403) {
         setPinError(true);
       } else {
         setContent("");
@@ -289,6 +306,7 @@ export default function UserChildren() {
 
   const handleChildSelect = (child: UserSummary) => {
     setSelectedChild(child);
+    setDates([]);
     setSelectedDate(null);
     setContent("");
     setPinTarget(null);
@@ -316,7 +334,7 @@ export default function UserChildren() {
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: "8px 8px" }}>
-          {loadingChildren ? (
+          {loadingChildren && hasChildren ? (
             <div style={{ color: "#555", fontSize: 12, padding: "12px 8px" }}>{t("children_page.loading")}</div>
           ) : noChildren ? (
             <div style={{ color: "#444", fontSize: 12, padding: "12px 8px", lineHeight: 1.5 }}>
@@ -408,6 +426,7 @@ export default function UserChildren() {
               {renderContent(content)}
               {selectedDate && cachedPin && (
                 <CommentBox
+                  key={`${selectedChild.username}:${selectedDate}:${cachedPin}`}
                   child={selectedChild}
                   date={selectedDate}
                   pin={cachedPin}

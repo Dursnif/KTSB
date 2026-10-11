@@ -1,14 +1,24 @@
 import asyncio
-import yaml
-from datetime import datetime
 from pathlib import Path
 
-from kaare_core.config import get_service as _svc
-from kaare_core.memory.long_term import get_ltm, USER_GLOBAL
-from kaare_core.tools.i18n import t, get_lang
+from adapters.llm_adapter import reload_config
+from kaare_core.config import today_local
+from kaare_core.memory import knowledge_store as ks
+from kaare_core.memory.long_term import USER_GLOBAL, get_ltm
+from kaare_core.tools.i18n import get_lang, t
+from kaare_core.users.contributors import contributor_allowed
+from kaare_core.users.profile_manager import (
+    add_observation,
+    delete_observation_fragment,
+    edit_observation_fragment,
+    get_recent_observations,
+    read_profile_yaml_as_text,
+    update_household_visible,
+    update_nested_profile_field,
+)
 
 _SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
-_PERSONALITY_SELF_PATH = Path("/kaare/state/personality_self.md")
+_PERSONALITY_DOMAIN = "personality"
 
 PERSONALITY_TOOLS = {
     "self_image",
@@ -35,75 +45,64 @@ def _load_personality_core() -> str:
     except Exception:
         return ""
 
+
 PERSONALITY_CORE_TEXT = _load_personality_core()
 
 
 def _is_allowed_self_contributor(user_id: str) -> bool:
-    try:
-        s = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
-        ps = s.get("personality_self", {})
-        mode = ps.get("contributors", "all")
-        if mode == "all":
-            return True
-        if mode == "admin_only":
-            from kaare_core.users.store import get_user
-            u = get_user(user_id)
-            return bool(u and u.get("role") == "admin")
-        if mode == "selected":
-            return user_id in ps.get("allowed_users", [])
-        return True
-    except Exception:
-        return True
+    """Gate on which HUMAN user's chat influence may steer Kåre's self-image.
+
+    Deliberately does not apply to Kåre's own autonomous updates (user_id=="kare",
+    used by reflection_loop.py's Jang loop when it calls Kåre's tools with no real
+    user in the loop — see kaare_core/reflection_loop.py:151). The contributors/
+    allowed_users setting exists to stop OTHER PEOPLE from steering Kåre's sense
+    of self via conversation; it was never meant to gate Kåre's own introspection,
+    which has no "user's context" to check against in the first place. Found and
+    fixed 2026-09-07 (BUG-log) — autonomous self_image updates were silently
+    failing this check, so background self-reflection never actually saved.
+    """
+    return contributor_allowed("personality_self", "all", user_id)
 
 
 def _update_self_image(observation: str, lang: str = "nb") -> str:
     if not observation.strip():
         return t("pers_empty_observation", lang)
-    try:
-        date = datetime.now().strftime("%Y-%m-%d")
-        entry = f"\n- [{date}] {observation.strip()}"
-        with open(_PERSONALITY_SELF_PATH, "a", encoding="utf-8") as f:
-            f.write(entry + "\n")
-        return t("pers_noted", lang)
-    except Exception as e:
-        return t("pers_self_write_error", lang, error=e)
+    date = today_local()
+    content = f"[{date}] {observation.strip()}"
+    fact_id = ks.add_fact(domain=_PERSONALITY_DOMAIN, content=content, source="kare")
+    if fact_id is None:
+        return t("pers_self_write_error", lang, error="knowledge_store write failed")
+    return t("pers_noted", lang)
 
 
 def _delete_from_self_image(fragment: str, lang: str = "nb") -> str:
     if not fragment.strip():
         return t("pers_empty_observation", lang)
-    try:
-        lines = _PERSONALITY_SELF_PATH.read_text(encoding="utf-8").splitlines(keepends=True)
-        remaining = [l for l in lines if fragment.lower() not in l.lower()]
-        count = len(lines) - len(remaining)
-        if count == 0:
-            return t("pers_fragment_not_found", lang, fragment=fragment)
-        _PERSONALITY_SELF_PATH.write_text("".join(remaining), encoding="utf-8")
-        return t("pers_lines_deleted", lang, count=count)
-    except Exception as e:
-        return t("pers_delete_error", lang, error=e)
+    matches = ks.find_facts(_PERSONALITY_DOMAIN, fragment)
+    if not matches:
+        return t("pers_fragment_not_found", lang, fragment=fragment)
+    for row in matches:
+        ks.retire_fact(row["id"])
+    return t("pers_lines_deleted", lang, count=len(matches))
 
 
 def _edit_self_image(fragment: str, new_text: str, lang: str = "nb") -> str:
     if not fragment.strip() or not new_text.strip():
         return t("pers_fragment_new_required", lang)
-    try:
-        lines = _PERSONALITY_SELF_PATH.read_text(encoding="utf-8").splitlines(keepends=True)
-        result = []
-        changed = 0
-        date = datetime.now().strftime("%Y-%m-%d")
-        for line in lines:
-            if fragment.lower() in line.lower():
-                result.append(f"- [{date}] {new_text.strip()}\n")
-                changed += 1
-            else:
-                result.append(line)
-        if changed == 0:
-            return t("pers_fragment_not_found", lang, fragment=fragment)
-        _PERSONALITY_SELF_PATH.write_text("".join(result), encoding="utf-8")
-        return t("pers_lines_updated", lang, count=changed)
-    except Exception as e:
-        return t("pers_edit_error", lang, error=e)
+    matches = ks.find_facts(_PERSONALITY_DOMAIN, fragment)
+    if not matches:
+        return t("pers_fragment_not_found", lang, fragment=fragment)
+    date = today_local()
+    for row in matches:
+        ks.update_fact(row["id"], content=f"[{date}] {new_text.strip()}")
+    return t("pers_lines_updated", lang, count=len(matches))
+
+
+def _read_self_image(lang: str) -> str:
+    rows = ks.get_all_facts(_PERSONALITY_DOMAIN)
+    if not rows:
+        return t("pers_self_empty", lang)
+    return "\n".join(f"- {r['content']}" for r in rows)
 
 
 def _update_curiosity(curiosity: str, user_id: str, lang: str = "nb") -> str:
@@ -112,7 +111,6 @@ def _update_curiosity(curiosity: str, user_id: str, lang: str = "nb") -> str:
     if not curiosity.strip():
         return t("pers_empty_curiosity", lang)
     try:
-        from kaare_core.users.profile_manager import update_nested_profile_field
         update_nested_profile_field(user_id, "prompt_top", "curiosity", curiosity.strip())
         return t("pers_curiosity_updated", lang)
     except Exception as e:
@@ -125,7 +123,6 @@ def _update_user_profile(observation: str, user_id: str, lang: str = "nb") -> st
     if not user_id or user_id == "global":
         return t("pers_no_user_observation", lang)
     try:
-        from kaare_core.users.profile_manager import add_observation
         add_observation(user_id, observation.strip())
         return t("pers_noted", lang)
     except Exception as e:
@@ -138,7 +135,6 @@ def _set_profile_field(section: str, field: str, value: str, user_id: str, lang:
     if not section.strip() or not field.strip():
         return t("pers_section_field_required", lang)
     try:
-        from kaare_core.users.profile_manager import update_nested_profile_field
         return update_nested_profile_field(user_id, section.strip(), field.strip(), value)
     except Exception as e:
         return t("pers_profile_field_error", lang, error=e)
@@ -148,7 +144,6 @@ def _read_user_profile(user_id: str, lang: str = "nb") -> str:
     if not user_id or user_id == "global":
         return t("pers_no_user", lang)
     try:
-        from kaare_core.users.profile_manager import read_profile_yaml_as_text, get_recent_observations
         yaml_content = read_profile_yaml_as_text(user_id)
     except Exception:
         yaml_content = ""
@@ -159,11 +154,11 @@ def _read_user_profile(user_id: str, lang: str = "nb") -> str:
         pass
     parts = []
     if yaml_content and yaml_content != t("prof_no_data", lang):
-        parts.append(f"=== PROFIL (profile.yaml) ===\n{yaml_content}")
+        parts.append(f"{t('pers_profile_section', lang)}\n{yaml_content}")
     if obs_content:
         if len(obs_content) > 6000:
-            obs_content = obs_content[:6000] + "\n\n[… resten er kuttet]"
-        parts.append(f"=== OBSERVASJONER (observations.md) ===\n{obs_content}")
+            obs_content = obs_content[:6000] + "\n\n" + t("mem_truncated", lang)
+        parts.append(f"{t('pers_observations_section', lang)}\n{obs_content}")
     return "\n\n".join(parts) if parts else t("pers_no_profile_data", lang)
 
 
@@ -173,7 +168,6 @@ def _delete_from_user_profile(fragment: str, user_id: str, lang: str = "nb") -> 
     if not user_id or user_id == "global":
         return t("pers_no_user", lang)
     try:
-        from kaare_core.users.profile_manager import delete_observation_fragment
         found, count = delete_observation_fragment(user_id, fragment)
         if not found:
             return t("pers_fragment_not_found", lang, fragment=fragment)
@@ -188,7 +182,6 @@ def _edit_user_profile(fragment: str, new_text: str, user_id: str, lang: str = "
     if not user_id or user_id == "global":
         return t("pers_no_user", lang)
     try:
-        from kaare_core.users.profile_manager import edit_observation_fragment
         found, count = edit_observation_fragment(user_id, fragment, new_text)
         if not found:
             return t("pers_fragment_not_found", lang, fragment=fragment)
@@ -204,14 +197,12 @@ async def dispatch(name: str, arguments: dict) -> str:
     if name in ("self_image", "selvbilde"):
         action = arguments.get("action", "")
         if action == "read":
-            try:
-                content = _PERSONALITY_SELF_PATH.read_text(encoding="utf-8").strip()
-                return content if content else t("pers_self_empty", lang)
-            except Exception as e:
-                return t("pers_self_read_error", lang, error=e)
+            return _read_self_image(lang)
         if action == "update":
             if _is_allowed_self_contributor(user_id):
-                return _update_self_image((arguments.get("observation") or arguments.get("observasjon") or ""), lang)
+                return _update_self_image(
+                    (arguments.get("observation") or arguments.get("observasjon") or ""), lang
+                )
             return t("pers_noted", lang)
         if action == "edit":
             if _is_allowed_self_contributor(user_id):
@@ -265,15 +256,13 @@ async def dispatch(name: str, arguments: dict) -> str:
                 lang=lang,
             )
         if action == "update_house":
-            field = (arguments.get("field") or arguments.get("felt") or "")
-            value = (arguments.get("value") or arguments.get("verdi") or "")
+            field = arguments.get("field") or arguments.get("felt") or ""
+            value = arguments.get("value") or arguments.get("verdi") or ""
             if not field or not value:
                 return t("pers_house_update_required", lang)
             try:
-                from kaare_core.users.profile_manager import update_household_visible
                 result = update_household_visible(user_id=user_id, field=field, value=value)
                 try:
-                    from adapters.llm_adapter import reload_config
                     reload_config()
                 except Exception:
                     pass
@@ -285,7 +274,7 @@ async def dispatch(name: str, arguments: dict) -> str:
                             user_id=USER_GLOBAL,
                             prompt=summary,
                             source="update_house",
-                            response=result,
+                            rid=arguments.get("_rid", ""),
                         )
                     )
                 except Exception:
@@ -296,11 +285,7 @@ async def dispatch(name: str, arguments: dict) -> str:
         return f"Unknown action for user_profile: '{action}'. Valid: read, update, update_house, set_field, edit, delete, curiosity."
 
     if name == "les_selvbilde":
-        try:
-            content = _PERSONALITY_SELF_PATH.read_text(encoding="utf-8").strip()
-            return content if content else t("pers_self_empty", lang)
-        except Exception as e:
-            return t("pers_self_read_error", lang, error=e)
+        return _read_self_image(lang)
 
     if name == "slett_fra_selvbilde":
         if _is_allowed_self_contributor(user_id):
@@ -318,7 +303,9 @@ async def dispatch(name: str, arguments: dict) -> str:
 
     if name == "oppdater_selvbilde":
         if _is_allowed_self_contributor(user_id):
-            return _update_self_image((arguments.get("observation") or arguments.get("observasjon") or ""), lang)
+            return _update_self_image(
+                (arguments.get("observation") or arguments.get("observasjon") or ""), lang
+            )
         return t("pers_noted", lang)
 
     if name == "oppdater_nysgjerrighet":

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 kaare_argus.py  v3.0  –  Async logg-daemon
 -------------------------------------------------
@@ -24,30 +23,30 @@ import logging
 import sys
 import uuid
 from collections import deque
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams, PayloadSchemaType
+from qdrant_client.models import Distance, PayloadSchemaType, PointStruct, VectorParams
 
 sys.path.insert(0, "/kaare")
 import yaml
-from kaare_core.config import get_service as _svc, get_qdrant_api_key as _qdrant_key
-from kaare_core.tools.i18n import t, get_lang
+
+from kaare_core.config import get_local_tz
+from kaare_core.config import get_qdrant_api_key as _qdrant_key
+from kaare_core.config import get_service as _svc
+from kaare_core.tools.i18n import get_lang, t
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Konfigurasjon
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _load_local_tz() -> ZoneInfo:
-    try:
-        cfg = yaml.safe_load(Path("/kaare/configs/settings.yaml").read_text())
-        loc = cfg.get("location") or cfg.get("lokasjon", {})
-        return ZoneInfo(loc.get("timezone") or loc.get("tidssone", "Europe/Oslo"))
-    except Exception:
-        return ZoneInfo("Europe/Oslo")
+    # Cached config, no disk read; legacy lokasjon.tidssone fallback; UTC when unset (P116 B19)
+    return get_local_tz()
 
 
 def _load_face_events_cfg() -> tuple[int, int]:
@@ -77,44 +76,61 @@ def _load_embedding_enabled() -> bool:
         return True
 
 
-LOCAL_TZ             = _load_local_tz()
-QDRANT_URL           = _svc("storage", "qdrant")
-EMBED_URL            = _svc("ollama", "embed") + "/api/embed"
+LOCAL_TZ = _load_local_tz()
+QDRANT_URL = _svc("storage", "qdrant")
+EMBED_URL = _svc("ollama", "embed") + "/api/embed"
 ARGUS_COLLECTION = "argus_events"
-VECTOR_DIM           = 1024
+VECTOR_DIM = 1024
 
 FACE_SESSION_TIMEOUT_S, FACE_EVENTS_RETENTION_H = _load_face_events_cfg()
 _CAMERA_NAMES: dict[str, str] = _load_camera_names()
 EMBEDDING_ENABLED: bool = _load_embedding_enabled()
-POLL_INTERVAL     = 5.0    # sekunder mellom fil-sjekk
-REPORT_INTERVAL   = 60.0   # sekunder mellom rapport-skriving
-BATCH_SIZE        = 50     # maks dokumenter per Qdrant-upsert
-MAX_ACTIVE_RIDS   = 20_000
-RID_TIMEOUT_SECS  = 30
-RAW_MAX_LEN       = 2000   # tegn – avkorter store JSON-linjer i 'raw'-feltet
+POLL_INTERVAL = 5.0  # sekunder mellom fil-sjekk
+REPORT_INTERVAL = 60.0  # sekunder mellom rapport-skriving
+BATCH_SIZE = 50  # maks dokumenter per Qdrant-upsert
+MAX_ACTIVE_RIDS = 20_000
+RID_TIMEOUT_SECS = 30
+RAW_MAX_LEN = 2000  # tegn – avkorter store JSON-linjer i 'raw'-feltet
 
-STATE_PATH        = Path("/kaare/state/argus/state.json")
-REPORT_PATH       = Path("/kaare/state/argus/report.json")
-DIGEST_PATH       = Path("/kaare/state/argus/digest.txt")
-FACE_EVENTS_PATH  = Path("/kaare/state/argus/face_events.txt")
-IDS_DIR           = Path("/kaare/state/argus/ids")  # én .txt per måned med doc_ids
-DIGEST_MAX        = 200  # events kept in rolling digest for Jing
+STATE_PATH = Path("/kaare/state/argus/state.json")
+REPORT_PATH = Path("/kaare/state/argus/report.json")
+DIGEST_PATH = Path("/kaare/state/argus/digest.txt")
+FACE_EVENTS_PATH = Path("/kaare/state/argus/face_events.txt")
+IDS_DIR = Path("/kaare/state/argus/ids")  # én .txt per måned med doc_ids
+DIGEST_MAX = 200  # events kept in rolling digest for Jing
 
 # Logfiler med kilde-tag og standard subsystem
 LOG_SOURCES = [
-    {"path": Path("/kaare/logs/route_decisions.log"),   "source": "kaare",            "subsystem": "routing"},
-    {"path": Path("/kaare/logs/llm_calls.log"),         "source": "kaare-llm",        "subsystem": "llm"},
-    {"path": Path("/kaare/logs/kaare_ha_gateway.log"),  "source": "kaare-ha-gateway", "subsystem": "ha"},
-    {"path": Path("/kaare/logs/kaare_tts_route.log"),   "source": "kaare-tts",        "subsystem": "stt"},
-    {"path": Path("/kaare/logs/metrics_requests.log"),  "source": "kaare-metrics",    "subsystem": "metrics"},
-    {"path": Path("/kaare/logs/frigate_mqtt.log"),      "source": "frigate-mqtt",     "subsystem": "frigate"},
-    {"path": Path("/kaare/logs/ha_events.log"),         "source": "ha-events",        "subsystem": "home"},
+    {"path": Path("/kaare/logs/route_decisions.log"), "source": "kaare", "subsystem": "routing"},
+    {"path": Path("/kaare/logs/llm_calls.log"), "source": "kaare-llm", "subsystem": "llm"},
+    {
+        "path": Path("/kaare/logs/kaare_ha_gateway.log"),
+        "source": "kaare-ha-gateway",
+        "subsystem": "ha",
+    },
+    {"path": Path("/kaare/logs/kaare_tts_route.log"), "source": "kaare-tts", "subsystem": "stt"},
+    {
+        "path": Path("/kaare/logs/metrics_requests.log"),
+        "source": "kaare-metrics",
+        "subsystem": "metrics",
+    },
+    {
+        "path": Path("/kaare/logs/frigate_mqtt.log"),
+        "source": "frigate-mqtt",
+        "subsystem": "frigate",
+    },
+    {"path": Path("/kaare/logs/ha_events.log"), "source": "ha-events", "subsystem": "home"},
 ]
 
 # Stages som betyr at HA-pipelinen faktisk er i gang (brukes til stall-deteksjon)
 PROGRESS_STAGES = {
-    "intent_to_ha_in", "intent_parsed", "alias_lookup",
-    "alias_applied", "ha_gateway_return", "intent_to_ha_return", "ha_handled_done",
+    "intent_to_ha_in",
+    "intent_parsed",
+    "alias_lookup",
+    "alias_applied",
+    "ha_gateway_return",
+    "intent_to_ha_return",
+    "ha_handled_done",
 }
 
 logging.basicConfig(
@@ -131,8 +147,9 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 # Hjelpefunksjoner
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def parse_iso(ts: str) -> datetime | None:
@@ -149,7 +166,7 @@ def parse_iso(ts: str) -> datetime | None:
             s = s[:-1] + "+00:00"
         dt = datetime.fromisoformat(s)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt
     except Exception:
         return None
@@ -221,17 +238,16 @@ def record_doc_ids(doc_ids: list[str], period: str) -> None:
 # Støyfilter – linjer som IKKE skal indekseres
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def is_noise(ev: dict, source: str) -> bool:
     """Returner True hvis linjen skal droppes (ikke sendes til Qdrant)."""
-    if source == "kaare-metrics":
-        # Heartbeats og favicon
-        if ev.get("endpoint") in ("/", "/favicon.ico"):
-            return True
+    # kaare-metrics: heartbeats and favicon
+    if source == "kaare-metrics" and ev.get("endpoint") in ("/", "/favicon.ico"):
+        return True
 
-    if source == "kaare":
-        # fastpath-miss alene er ikke interessant
-        if ev.get("stage") == "fastpath_check" and ev.get("hit") is False:
-            return True
+    # kaare: a fastpath miss on its own is not interesting
+    if source == "kaare" and ev.get("stage") == "fastpath_check" and ev.get("hit") is False:
+        return True
 
     if source == "kaare-ha-gateway":
         event = ev.get("event", "")
@@ -242,11 +258,14 @@ def is_noise(ev: dict, source: str) -> bool:
         if event == "forward":
             return True
 
-    if source == "frigate-mqtt":
-        # detection_update = same object confirmed frame-by-frame — pure noise.
-        # Exception: keep updates where a face has been recognized (sub_label set).
-        if ev.get("stage") == "detection_update" and not ev.get("sub_label"):
-            return True
+    # frigate-mqtt: detection_update = same object confirmed frame-by-frame — pure noise.
+    # Exception: keep updates where a face has been recognized (sub_label set).
+    if (
+        source == "frigate-mqtt"
+        and ev.get("stage") == "detection_update"
+        and not ev.get("sub_label")
+    ):
+        return True
 
     if source == "ha-events":
         stage = ev.get("stage", "")
@@ -263,23 +282,42 @@ def is_noise(ev: dict, source: str) -> bool:
     return False
 
 
+def _localize_ha_state(value: str) -> str:
+    """HA reports timestamp-valued states (image/button/scene/event/input_button) as UTC ISO strings.
+    Convert those to local time so Jang/Kåre never see UTC next to local-time labels.
+    Non-timestamp states are returned unchanged."""
+    if not isinstance(value, str) or "T" not in value or not value[:4].isdigit():
+        return value
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    if dt.tzinfo is None:
+        return value
+    local = dt.astimezone(LOCAL_TZ)
+    if local.date() == datetime.now(LOCAL_TZ).date():
+        return local.strftime("%H:%M:%S")
+    return local.strftime("%d.%m %H:%M")
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Meldings-generator – lager lesbar tekst for hvert event
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def make_message(ev: dict, source: str) -> str:
     """Returnerer en kort, menneskelig lesbar oppsummering av eventet."""
     stage = ev.get("stage") or ev.get("event") or ""
 
     if source == "kaare-llm":
-        model   = ev.get("model", "?")
+        model = ev.get("model", "?")
         latency = ev.get("latency_ms", "?")
-        status  = ev.get("status", "?")
+        status = ev.get("status", "?")
         return f"LLM: {model} {latency}ms status={status}"
 
     if source == "kaare-metrics":
         endpoint = ev.get("endpoint", "?")
-        status   = ev.get("status", "?")
+        status = ev.get("status", "?")
         duration = ev.get("duration_ms", "?")
         return f"API: {endpoint} {status} ({duration}ms)"
 
@@ -288,9 +326,7 @@ def make_message(ev: dict, source: str) -> str:
             result = ev.get("result", "?")
             # Hent entity_id(er) fra HA-svaret hvis tilgjengelig
             details = (ev.get("mini_kaareha_resp") or {}).get("details", [])
-            entities = ", ".join(
-                d.get("entity_id", "") for d in details if d.get("entity_id")
-            )
+            entities = ", ".join(d.get("entity_id", "") for d in details if d.get("entity_id"))
             if entities:
                 return f"HA: {result} — {entities}"
             return f"HA gateway: {result} rid={ev.get('rid', '')}"
@@ -299,15 +335,15 @@ def make_message(ev: dict, source: str) -> str:
     if source == "ha-events":
         if stage == "state_changed":
             entity = ev.get("entity_id", "?")
-            fr     = ev.get("from", "?")
-            to     = ev.get("to", "?")
-            user   = ev.get("user_id", "")
+            fr = _localize_ha_state(ev.get("from", "?"))
+            to = _localize_ha_state(ev.get("to", "?"))
+            user = ev.get("user_id", "")
             suffix = f" (bruker: {user})" if user else ""
             return f"HA: {entity} {fr} → {to}{suffix}"
         if stage == "call_service":
-            domain  = ev.get("domain", "?")
+            domain = ev.get("domain", "?")
             service = ev.get("service", "?")
-            entity  = ev.get("entity_id", "")
+            entity = ev.get("entity_id", "")
             if entity:
                 return f"HA service: {domain}.{service} → {entity}"
             return f"HA service: {domain}.{service}"
@@ -315,10 +351,10 @@ def make_message(ev: dict, source: str) -> str:
 
     if source == "kaare-tts":
         if stage == "infer_done":
-            return f"STT: ferdig {ev.get('latency_ms','?')}ms ({ev.get('language','?')})"
+            return f"STT: ferdig {ev.get('latency_ms', '?')}ms ({ev.get('language', '?')})"
         if stage == "device_failed":
             err = str(ev.get("error", ""))[:80]
-            return f"STT FEIL: {ev.get('device','?')} — {err}"
+            return f"STT FEIL: {ev.get('device', '?')} — {err}"
         return f"STT: {stage}"
 
     if source == "frigate-mqtt":
@@ -330,7 +366,15 @@ def make_message(ev: dict, source: str) -> str:
         if name:
             sl_score = ev.get("sub_label_score")
             sl_pct = f" {int(float(sl_score) * 100)}%" if sl_score is not None else ""
-            return t("argus_face_event", get_lang("global"), name=name, pct=sl_pct, cam=cam, label=lbl, score=pct)
+            return t(
+                "argus_face_event",
+                get_lang("global"),
+                name=name,
+                pct=sl_pct,
+                cam=cam,
+                label=lbl,
+                score=pct,
+            )
         return t("argus_motion_event", get_lang("global"), label=lbl, cam=cam, pct=pct)
 
     # route_decisions.log (source == "kaare")
@@ -339,16 +383,20 @@ def make_message(ev: dict, source: str) -> str:
         preview = "; ".join(str(m) for m in mismatches)[:200]
         return t("argus_tool_config_mismatch", get_lang("global"), preview=preview)
     if stage == "ha_handled_done":
-        return f"HA: {ev.get('action','?')} {ev.get('entity_id','?')}"
+        return f"HA: {ev.get('action', '?')} {ev.get('entity_id', '?')}"
     if stage == "ha_gateway_return":
-        ok = t("argus_status_ok", get_lang("global")) if ev.get("status") == "ok" else t("argus_status_fail", get_lang("global"))
+        ok = (
+            t("argus_status_ok", get_lang("global"))
+            if ev.get("status") == "ok"
+            else t("argus_status_fail", get_lang("global"))
+        )
         return f"HA gateway: {ok} {ev.get('rid', '')}"
     if stage == "fastpath_match":
-        return f"Fastpath: {ev.get('route','?')}"
+        return f"Fastpath: {ev.get('route', '?')}"
     if stage == "intent_parsed":
-        return f"Intent: {ev.get('intent','?')}"
+        return f"Intent: {ev.get('intent', '?')}"
     if stage == "routing.stalled":
-        return f"STALL: rid {ev.get('rid','?')} stoppet etter {ev.get('stage','?')}"
+        return f"STALL: rid {ev.get('rid', '?')} stoppet etter {ev.get('stage', '?')}"
     if stage == "generate_in":
         preview = ev.get("prompt_preview", "")[:60]
         return f"Inn: {preview}"
@@ -386,11 +434,11 @@ def _friendly_cam(api_name: str) -> str:
 
 def _flush_face_session(name: str, session: dict) -> None:
     """Write a completed face session as one line to face_events.txt."""
-    first_dt = parse_iso(session["first_ts"]) or datetime.now(timezone.utc)
-    last_dt  = parse_iso(session["last_ts"])  or first_dt
+    first_dt = parse_iso(session["first_ts"]) or datetime.now(UTC)
+    last_dt = parse_iso(session["last_ts"]) or first_dt
 
     first_local = first_dt.astimezone(LOCAL_TZ)
-    last_local  = last_dt.astimezone(LOCAL_TZ)
+    last_local = last_dt.astimezone(LOCAL_TZ)
 
     first_str = first_local.strftime("%Y-%m-%d %H:%M")
     gap_s = (last_dt - first_dt).total_seconds()
@@ -399,15 +447,26 @@ def _flush_face_session(name: str, session: dict) -> None:
     else:
         time_str = first_str
 
-    cameras   = session["cameras"]
-    cam_strs  = ", ".join(_friendly_cam(c) for c in cameras)
-    n_cams    = len(cameras)
-    pct       = int(session["max_score"] * 100)
+    cameras = session["cameras"]
+    cam_strs = ", ".join(_friendly_cam(c) for c in cameras)
+    n_cams = len(cameras)
+    pct = int(session["max_score"] * 100)
 
-    lang       = get_lang("global")
-    label_type = t("argus_label_person" if session["label"] == "person" else "argus_label_vehicle", lang)
-    cam_word   = t("argus_cam_word_s" if n_cams == 1 else "argus_cam_word_p", lang, n=n_cams)
-    line       = t("argus_face_session", lang, time=time_str, label=label_type, name=name, cam_word=cam_word, cams=cam_strs, pct=pct)
+    lang = get_lang("global")
+    label_type = t(
+        "argus_label_person" if session["label"] == "person" else "argus_label_vehicle", lang
+    )
+    cam_word = t("argus_cam_word_s" if n_cams == 1 else "argus_cam_word_p", lang, n=n_cams)
+    line = t(
+        "argus_face_session",
+        lang,
+        time=time_str,
+        label=label_type,
+        name=name,
+        cam_word=cam_word,
+        cams=cam_strs,
+        pct=pct,
+    )
     best_event_id = session.get("best_event_id", "")
     if best_event_id:
         line += f" [event_id: {best_event_id}]"
@@ -438,12 +497,12 @@ def process_face_event(ev: dict) -> None:
     if not name:
         return
 
-    camera   = ev.get("camera", "?")
-    score    = float(sub_label_score or ev.get("score") or 0)
-    label    = ev.get("label", "person")
-    ts_raw   = ev.get("ts", "")
+    camera = ev.get("camera", "?")
+    score = float(sub_label_score or ev.get("score") or 0)
+    label = ev.get("label", "person")
+    ts_raw = ev.get("ts", "")
     event_id = ev.get("event_id", "")
-    dt       = parse_iso(str(ts_raw)) if ts_raw else datetime.now(timezone.utc)
+    dt = parse_iso(str(ts_raw)) if ts_raw else datetime.now(UTC)
 
     session = _face_sessions.get(name)
     if session is not None:
@@ -462,12 +521,12 @@ def process_face_event(ev: dict) -> None:
         _flush_face_session(name, session)
 
     _face_sessions[name] = {
-        "name":     name,
-        "label":    label,
+        "name": name,
+        "label": label,
         "first_ts": dt.isoformat(),
-        "last_ts":  dt.isoformat(),
-        "cameras":  [camera],
-        "count":    1,
+        "last_ts": dt.isoformat(),
+        "cameras": [camera],
+        "count": 1,
         "max_score": score,
         "best_event_id": event_id,
     }
@@ -475,7 +534,7 @@ def process_face_event(ev: dict) -> None:
 
 def flush_stale_face_sessions() -> None:
     """Flush sessions not updated in more than FACE_SESSION_TIMEOUT_S seconds."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for name in list(_face_sessions):
         session = _face_sessions.get(name)
         if session is None:
@@ -491,8 +550,8 @@ def trim_face_events_file() -> None:
         return
     try:
         cutoff = datetime.now(LOCAL_TZ) - timedelta(hours=FACE_EVENTS_RETENTION_H)
-        lines  = FACE_EVENTS_PATH.read_text(encoding="utf-8").splitlines()
-        kept   = []
+        lines = FACE_EVENTS_PATH.read_text(encoding="utf-8").splitlines()
+        kept = []
         for line in lines:
             if not line.strip():
                 continue
@@ -589,7 +648,7 @@ async def qdrant_upsert_batch(http: httpx.AsyncClient, docs: list[dict]) -> int:
                 vector=vec,
                 payload=doc["fields"],
             )
-            for doc, vec in zip(docs, dense_vecs)
+            for doc, vec in zip(docs, dense_vecs, strict=False)
         ]
         _qdrant_client().upsert(collection_name=ARGUS_COLLECTION, points=points)
         return len(points)
@@ -601,6 +660,7 @@ async def qdrant_upsert_batch(http: httpx.AsyncClient, docs: list[dict]) -> int:
 # ──────────────────────────────────────────────────────────────────────────────
 # Fil-tailing – leser nye linjer siden sist
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def read_new_lines(path: Path, file_state: dict) -> tuple[list[str], dict]:
     """
@@ -646,8 +706,9 @@ def read_new_lines(path: Path, file_state: dict) -> tuple[list[str], dict]:
 # Stall-deteksjon (fra v0.4, kun for route_decisions.log)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def update_stall_tracking(ev: dict, active_rids: dict, counters: dict) -> None:
-    rid   = ev.get("rid")
+    rid = ev.get("rid")
     stage = ev.get("stage")
     ts_raw = ev.get("ts")
     if not rid or not stage or not ts_raw:
@@ -659,8 +720,12 @@ def update_stall_tracking(ev: dict, active_rids: dict, counters: dict) -> None:
 
     r = active_rids.get(rid)
     if not r:
-        r = {"first_ts": dt.isoformat(), "last_ts": dt.isoformat(),
-             "closed": False, "progress": False}
+        r = {
+            "first_ts": dt.isoformat(),
+            "last_ts": dt.isoformat(),
+            "closed": False,
+            "progress": False,
+        }
         active_rids[rid] = r
     else:
         r["last_ts"] = dt.isoformat()
@@ -688,7 +753,7 @@ def update_stall_tracking(ev: dict, active_rids: dict, counters: dict) -> None:
 
 def expire_stalled_rids(active_rids: dict, counters: dict) -> None:
     """Rydder opp lukkede og tidsutgåtte RIDs; teller stalls."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     for rid in list(active_rids):
         rr = active_rids.get(rid)
@@ -707,7 +772,7 @@ def expire_stalled_rids(active_rids: dict, counters: dict) -> None:
     if len(active_rids) > MAX_ACTIVE_RIDS:
         items = sorted(
             active_rids.items(),
-            key=lambda x: parse_iso(x[1].get("last_ts", "")) or datetime.min.replace(tzinfo=timezone.utc),
+            key=lambda x: parse_iso(x[1].get("last_ts", "")) or datetime.min.replace(tzinfo=UTC),
             reverse=True,
         )
         keep = {rid for rid, _ in items[:MAX_ACTIVE_RIDS]}
@@ -717,26 +782,26 @@ def expire_stalled_rids(active_rids: dict, counters: dict) -> None:
 
 
 def build_report(counters: dict, active_rids: dict) -> dict:
-    success      = int(counters.get("rid.closed_success", 0))
-    gw_err       = int(counters.get("ha.gateway_error", 0))
-    stalled      = int(counters.get("routing.stalled", 0))
-    fp_hit       = int(counters.get("fastpath.hit", 0))
-    fp_miss      = int(counters.get("fastpath.miss", 0))
-    fp_total     = fp_hit + fp_miss
+    success = int(counters.get("rid.closed_success", 0))
+    gw_err = int(counters.get("ha.gateway_error", 0))
+    stalled = int(counters.get("routing.stalled", 0))
+    fp_hit = int(counters.get("fastpath.hit", 0))
+    fp_miss = int(counters.get("fastpath.miss", 0))
+    fp_total = fp_hit + fp_miss
     closed_total = success + gw_err + stalled
 
     return {
-        "timestamp":  utc_now_iso(),
-        "counters":   counters,
+        "timestamp": utc_now_iso(),
+        "counters": counters,
         "active_rids": len(active_rids),
         "rates": {
-            "rid.success_rate":  round(success / closed_total, 3) if closed_total else None,
-            "rid.stall_rate":    round(stalled / closed_total, 3) if closed_total else None,
-            "rid.error_rate":    round(gw_err  / closed_total, 3) if closed_total else None,
-            "fastpath.hit_rate": round(fp_hit  / fp_total,     3) if fp_total     else None,
+            "rid.success_rate": round(success / closed_total, 3) if closed_total else None,
+            "rid.stall_rate": round(stalled / closed_total, 3) if closed_total else None,
+            "rid.error_rate": round(gw_err / closed_total, 3) if closed_total else None,
+            "fastpath.hit_rate": round(fp_hit / fp_total, 3) if fp_total else None,
         },
         "qdrant": {
-            "indexed":       int(counters.get("qdrant.indexed", 0)),
+            "indexed": int(counters.get("qdrant.indexed", 0)),
             "dropped_noise": int(counters.get("qdrant.dropped_noise", 0)),
         },
     }
@@ -745,6 +810,7 @@ def build_report(counters: dict, active_rids: dict) -> dict:
 # ──────────────────────────────────────────────────────────────────────────────
 # Hoved-daemon-løkke
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 async def daemon():
     state = safe_load_json(STATE_PATH)
@@ -767,7 +833,7 @@ async def daemon():
     if "counters" not in state or not isinstance(state["counters"], dict):
         state["counters"] = {}
 
-    counters    = state["counters"]
+    counters = state["counters"]
     active_rids = state["active_rids"]
 
     digest_buffer: deque = deque(maxlen=DIGEST_MAX)
@@ -784,10 +850,10 @@ async def daemon():
             period_ids: dict[str, list[str]] = {}
 
             for src in LOG_SOURCES:
-                path      = src["path"]
-                source    = src["source"]
+                path = src["path"]
+                source = src["source"]
                 subsystem = src["subsystem"]
-                key       = str(path)
+                key = str(path)
 
                 lines, new_fstate = read_new_lines(path, state["files"][key])
                 state["files"][key] = new_fstate
@@ -813,7 +879,7 @@ async def daemon():
 
                     # Normalisering til felles event-schema
                     ts_raw = ev.get("ts", "")
-                    dt     = parse_iso(str(ts_raw)) if ts_raw else None
+                    dt = parse_iso(str(ts_raw)) if ts_raw else None
                     ts_iso = dt.isoformat() if dt else utc_now_iso()
                     period = ts_iso[:7]  # "YYYY-MM"
 
@@ -821,19 +887,19 @@ async def daemon():
                     doc = {
                         "id": did,
                         "fields": {
-                            "message":    make_message(ev, source),
-                            "raw":        raw_line[:RAW_MAX_LEN],
-                            "source":     source,
-                            "subsystem":  ev.get("subsystem") or subsystem,
+                            "message": make_message(ev, source),
+                            "raw": raw_line[:RAW_MAX_LEN],
+                            "source": source,
+                            "subsystem": ev.get("subsystem") or subsystem,
                             "event_type": ev.get("stage") or ev.get("event") or "",
-                            "level":      get_level(ev),
-                            "ts":         ts_iso,
-                            "rid":        ev.get("rid") or "",
-                            "entity_id":  ev.get("entity_id") or "",
+                            "level": get_level(ev),
+                            "ts": ts_iso,
+                            "rid": ev.get("rid") or "",
+                            "entity_id": ev.get("entity_id") or "",
                         },
                     }
                     batch.append(doc)
-                    local_ts = (dt or datetime.now(timezone.utc)).astimezone(LOCAL_TZ)
+                    local_ts = (dt or datetime.now(UTC)).astimezone(LOCAL_TZ)
                     digest_buffer.append(
                         f"{local_ts.strftime('%m-%d %H:%M')} | {doc['fields']['source']} | {doc['fields']['message']}"
                     )
@@ -865,7 +931,7 @@ async def daemon():
             # Lagre fil-offset/tilstand hver runde (ikke bare ved rapport-intervallet) —
             # slik at en restart midt i en stor innhentingsjobb ikke mister fremgangen og
             # må starte helt på nytt. Se FIX-log 2026-08-28.
-            state["counters"]    = counters
+            state["counters"] = counters
             state["active_rids"] = active_rids
             safe_write_json(STATE_PATH, state)
 

@@ -3,12 +3,14 @@ fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 httpx>=0.25.0
 pyyaml>=6.0
+ruamel.yaml>=0.19.1  # config store: comment-preserving YAML writes (P134)
 python-multipart>=0.0.9
 
 # ── Audio I/O ──────────────────────────────────────────────────────────────────
-numpy>=1.24.0,<2.0
+numpy>=1.24.0
 sounddevice>=0.4.6
 soundfile>=0.12.1
+scipy>=1.11.0  # resample_poly — imported at voice_bridge start (was missing: Docker voice never started)
 
 # ── STT: faster-whisper (CPU — universal) ─────────────────────────────────────
 faster-whisper>=1.0.0

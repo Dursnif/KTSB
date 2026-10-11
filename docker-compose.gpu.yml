@@ -11,7 +11,8 @@
 #
 # Requirements:
 #   - NVIDIA driver installed on the host
-#   - nvidia-container-toolkit installed (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+#   - nvidia-container-toolkit installed:
+#     https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
 #   - On Windows/WSL2: WSL2 CUDA driver from https://developer.nvidia.com/cuda/wsl
 
 services:

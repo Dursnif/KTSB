@@ -7,6 +7,7 @@ address to configs/trusted_sources.yaml and call _fetch_content() directly.
 
 Usage: python3 dummy_websites_server.py [port]  (default port: 8899)
 """
+
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -23,7 +24,7 @@ PAGES = {
         NAO-indeksen (Nord-Atlanteren-oscillasjonen), som styrer hvor lavtrykkbanene
         legger seg gjennom vintersesongen.</p>
         </article>
-        </body></html>"""
+        </body></html>""",
     ),
     "/artikkel-2": (
         "Test: Hjemmeautomasjon",
@@ -36,7 +37,7 @@ PAGES = {
         <p>Lokal styring, uten avhengighet til internett, regnes av mange som et
         viktig prinsipp for palitelighet og personvern.</p>
         </article>
-        </body></html>"""
+        </body></html>""",
     ),
 }
 

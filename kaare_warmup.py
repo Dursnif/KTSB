@@ -19,6 +19,7 @@ import httpx
 import yaml
 
 sys.path.insert(0, "/kaare")
+from kaare_core.config import apply_agent_pool
 from kaare_core.config import get_model as _get_model
 
 logging.basicConfig(
@@ -40,7 +41,7 @@ def _build_warmup_list() -> list[dict]:
     """Read llm.yaml and return all roles with keep_warm=true and an Ollama provider."""
     try:
         with open(_LLM_YAML, encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
+            cfg = apply_agent_pool(yaml.safe_load(f) or {})
     except Exception as e:
         log.error("Could not read llm.yaml: %s", e)
         return []
@@ -70,14 +71,16 @@ def _build_warmup_list() -> list[dict]:
         num_ctx = (s.get("options") or {}).get("num_ctx")
         raw_timeout = s.get("timeout", 300)
         timeout = max(float(raw_timeout), 300.0) if isinstance(raw_timeout, (int, float)) else 300.0
-        warmup.append({
-            "role":    role,
-            "name":    f"{role} ({model})",
-            "base":    base_url,
-            "model":   model,
-            "timeout": timeout,
-            "num_ctx": num_ctx,
-        })
+        warmup.append(
+            {
+                "role": role,
+                "name": f"{role} ({model})",
+                "base": base_url,
+                "model": model,
+                "timeout": timeout,
+                "num_ctx": num_ctx,
+            }
+        )
     return warmup
 
 
@@ -112,9 +115,9 @@ async def _check_vram(base: str, model: str, name: str) -> int:
 
 
 async def _load_model(m: dict) -> bool:
-    name    = m["name"]
-    base    = m["base"]
-    model   = m["model"]
+    name = m["name"]
+    base = m["base"]
+    model = m["model"]
     timeout = m["timeout"]
 
     if not await _wait_for_container(base, name):
@@ -127,18 +130,25 @@ async def _load_model(m: dict) -> bool:
             opts: dict = {"num_predict": 1}
             if m.get("num_ctx"):
                 opts["num_ctx"] = m["num_ctx"]
-            r = await client.post(f"{base}/api/generate", json={
-                "model":      model,
-                "prompt":     "",
-                "keep_alive": -1,
-                "stream":     False,
-                "options":    opts,
-            })
+            r = await client.post(
+                f"{base}/api/generate",
+                json={
+                    "model": model,
+                    "prompt": "",
+                    "keep_alive": -1,
+                    "stream": False,
+                    "options": opts,
+                },
+            )
             r.raise_for_status()
         elapsed = time.monotonic() - t0
         vram = await _check_vram(base, model, name)
         if vram == 0:
-            log.warning("[%s] Running on CPU (size_vram=0) — GPU unavailable or VRAM full? (%.1fs)", name, elapsed)
+            log.warning(
+                "[%s] Running on CPU (size_vram=0) — GPU unavailable or VRAM full? (%.1fs)",
+                name,
+                elapsed,
+            )
         else:
             log.info("[%s] Ready in %.1fs (VRAM: %.1f GiB)", name, elapsed, vram / 1e9)
         return True
@@ -150,10 +160,7 @@ async def _load_model(m: dict) -> bool:
 
 async def _load_group(group: list[dict]) -> list[bool]:
     """Load models for one Ollama instance sequentially."""
-    results = []
-    for m in group:
-        results.append(await _load_model(m))
-    return results
+    return [await _load_model(m) for m in group]  # one at a time, in order
 
 
 async def main() -> None:
@@ -169,7 +176,8 @@ async def main() -> None:
 
     log.info(
         "=== Kåre warmup: %d model(s) across %d Ollama instance(s) ===",
-        len(models), len(by_base),
+        len(models),
+        len(by_base),
     )
     t0 = time.monotonic()
 

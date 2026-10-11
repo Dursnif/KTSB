@@ -1,0 +1,14 @@
+# yamllint — YAML standard for KTSB (configs_default/, docker-compose files).
+extends: default
+rules:
+  line-length:
+    max: 120            # long comments/URLs in config templates; 80 is too tight for them
+  document-start: disable   # KTSB YAML files don't use a leading '---'
+  truthy:
+    check-keys: false   # docker-compose uses 'on:' style keys
+  indentation:
+    spaces: consistent
+    indent-sequences: whatever  # KTSB rewrites configs with PyYAML, which does not indent lists
+  colons:
+    max-spaces-after: -1        # aligned values in hand-written templates (aliases.yaml) are on purpose
+  comments-indentation: disable  # commented-out examples in templates keep the indentation of real entries

@@ -4,7 +4,6 @@ Receives (user_msg, kare_response, user_id), queries Miss Kåre's LLM,
 and returns [STILLE] or a short comment.
 """
 
-import asyncio
 import difflib
 import json
 import logging
@@ -12,10 +11,19 @@ from pathlib import Path
 
 import httpx
 
-from kaare_core.model_lock import lock_11445, LockTimeout
-from kaare_core.config import get_model as _cfg_model, get_llm_config as _llm, is_agent_tool_enabled
+from kaare_core.agents.miss_kare.personality import load_personality
+from kaare_core.background import spawn
+from kaare_core.config import get_llm_config as _llm
+from kaare_core.config import get_model as _cfg_model
+from kaare_core.config import is_agent_tool_enabled
+from kaare_core.crypto import read_user_text_file
 from kaare_core.llm_fallback import is_fallback_active
+from kaare_core.memory.long_term import get_ltm
+from kaare_core.model_lock import LockTimeout, lock_agent_pool, pool_order, role_url
 from kaare_core.think_strip import strip_think_block
+from kaare_core.tools.executor_library import _ask_library_wiki
+from kaare_core.tools.i18n import get_lang, t
+from kaare_core.tools.think_cache import log_think
 from kaare_core.users.profile_manager import (
     get_display_name,
     get_section_fields,
@@ -24,25 +32,34 @@ from kaare_core.users.profile_manager import (
     vault_or_update_nested_field,
 )
 
-MISS_KARE_URL    = _llm("miss_kare")["base_url"] + "/api/chat"
-MISS_KARE_MODEL  = _cfg_model("miss_kare")
-TIMEOUT          = _llm("miss_kare")["timeout"]
-MAX_TOKENS       = 200  # evaluator deliberately uses shorter responses than general miss_kare
+MISS_KARE_MODEL = _cfg_model("miss_kare")
+TIMEOUT = _llm("miss_kare")["timeout"]
+MAX_TOKENS = 200  # evaluator deliberately uses shorter responses than general miss_kare
 
 log = logging.getLogger("miss_kare")
 
-_PERSONALITY_PATH = Path(__file__).parent / "personlighet.md"
+# Protocol tokens are fixed in every language (like Kåre's [LANG:xx]); the variants a 9B
+# tends to translate them into are accepted too, so a translated token never leaks to the user.
+_SILENT_TOKENS = ("[STILLE]", "[SILENT]", "[SILENCE]", "[STILL]", "[STUMM]")
+_LOOKUP_PREFIXES = ("[SJEKK:", "[CHECK:", "[PRÜFEN:", "[PRÜFE:")
 
-def _load_personality() -> str:
-    if _PERSONALITY_PATH.exists():
-        return _PERSONALITY_PATH.read_text(encoding="utf-8")
-    return "Du er Miss Kåre – varm, moderlig, jordnær."
+
+def _is_silent(reply: str) -> bool:
+    return not reply or reply.strip().upper() in _SILENT_TOKENS
+
+
+def _lookup_query(reply: str) -> str | None:
+    """Question for Miss Library if the reply is a lookup request, else None."""
+    head = reply.lstrip()
+    for prefix in _LOOKUP_PREFIXES:
+        if head.upper().startswith(prefix) and "]" in head:
+            return head[len(prefix) : head.index("]")].strip()
+    return None
 
 
 def _load_portrait(user_id: str) -> str:
     if not user_id or user_id == "global":
         return ""
-    from kaare_core.crypto import read_user_text_file
     path = Path(f"/kaare/state/users/{user_id}/miss_kare_portrait.md")
     # allow_system_key=True (P87): Miss Kåre is explicitly named in the plan's Background
     # as an entity that should always have access to a user's own data "under the hood" —
@@ -55,18 +72,20 @@ async def _ask_library(query: str, user_id: str = "global") -> str:
     if not _llm("library").get("enabled", True):
         return ""
     try:
-        from kaare_core.tools.executor_library import _ask_library_wiki
-        from kaare_core.memory.long_term import get_ltm
-        svar = await _ask_library_wiki(query)
+        # Miss Library's answer contract follows the user's language, same as Kåre's own
+        # library path — without it she was always held to Norwegian.
+        svar = await _ask_library_wiki(query, get_lang(user_id))
         try:
-            asyncio.create_task(get_ltm().log_agent_message(
-                from_agent="miss_kare",
-                to_agent="miss_library",
-                query=query,
-                response=svar,
-                rid="",
-                user_id=user_id,
-            ))
+            spawn(
+                get_ltm().log_agent_message(
+                    from_agent="miss_kare",
+                    to_agent="miss_library",
+                    query=query,
+                    response=svar,
+                    rid="",
+                    user_id=user_id,
+                )
+            )
         except Exception:
             pass
         return svar
@@ -75,7 +94,7 @@ async def _ask_library(query: str, user_id: str = "global") -> str:
         return ""
 
 
-async def _llm_call(messages: list, max_tokens: int = MAX_TOKENS) -> str:
+async def _llm_call(messages: list, base_url: str, max_tokens: int = MAX_TOKENS) -> str:
     _cfg = _llm("miss_kare")
     payload = {
         "model": MISS_KARE_MODEL,
@@ -86,14 +105,13 @@ async def _llm_call(messages: list, max_tokens: int = MAX_TOKENS) -> str:
     if "think" in _cfg:
         payload["think"] = _cfg["think"]
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        r = await client.post(MISS_KARE_URL, json=payload)
+        r = await client.post(base_url + "/api/chat", json=payload)
         r.raise_for_status()
         raw_content = (r.json().get("message", {}).get("content") or "").strip()
 
     content, think_content, think_closed = strip_think_block(raw_content)
     if think_content:
         try:
-            from kaare_core.tools.think_cache import log_think
             log_think(
                 think_text=think_content,
                 response=content,
@@ -104,7 +122,9 @@ async def _llm_call(messages: list, max_tokens: int = MAX_TOKENS) -> str:
         except Exception:
             pass
         if not think_closed:
-            log.info("[Miss Kare] truncated <think> block, discarding fragment (was never a real answer)")
+            log.info(
+                "[Miss Kare] truncated <think> block, discarding fragment (was never a real answer)"
+            )
     return content
 
 
@@ -129,70 +149,66 @@ async def evaluate(
     if is_fallback_active():
         return "[STILLE]"
 
-    if addressed_directly:
-        situation = (
-            "Brukeren henvendte seg direkte til deg — de startet meldingen sin med 'Miss Kåre'. "
-            "Du er blitt talt til. Svar varmt og direkte til brukeren. "
-            "Kåres kommentar (hvis han sa noe) kan du gjerne forholde deg til, men du er ikke nødt.\n\n"
-        )
-    else:
-        situation = (
-            "Du har nettopp lest en samtale mellom brukeren og Kåre. "
-            "Avgjør om du har noe å si – noe som berørte deg, som fortjener en reaksjon.\n\n"
-            "Hvis du ikke har noe å tilføye: svar kun med [STILLE]\n"
-        )
+    lang = get_lang(user_id)
+    situation = t(
+        "mk_eval_situation_direct" if addressed_directly else "mk_eval_situation_observe", lang
+    )
 
     user_name = get_display_name(user_id) if user_id and user_id != "global" else None
-    user_block = f"# Nåværende bruker\nDu snakker nå med **{user_name}**. Bruk alltid dette navnet — aldri et annet.\n\n---\n\n" if user_name else ""
+    user_block = t("mk_eval_user_block", lang, name=user_name) if user_name else ""
 
     portrait = _load_portrait(user_id)
     portrait_block = (
-        f"\n\n---\n\n# Dine tidligere observasjoner om {user_name}\n{portrait}\n"
-        if portrait and user_name else ""
+        f"\n\n---\n\n{t('mk_eval_portrait_header', lang, name=user_name)}\n{portrait}\n"
+        if portrait and user_name
+        else ""
     )
 
-    system = _load_personality() + portrait_block + (
-        "\n\n---\n\n"
-        + user_block
-        + situation
-        + "Hvis du vil slå opp noe faktisk i wikien til Miss Library, svar kun med:\n"
-        "[SJEKK: <presist spørsmål til Miss Library>]\n\n"
-        "Hvis du vil si noe direkte: si det varmt, maks 3 setninger. Ingen innledning."
+    system = (
+        load_personality(lang)
+        + portrait_block
+        + ("\n\n---\n\n" + user_block + situation + t("mk_eval_tail", lang))
     )
 
-    user_content = (
-        f"Brukeren sa:\n{user_msg}\n\n"
-        f"Kåre svarte:\n{kare_response}"
-    )
+    user_content = t("mk_eval_user_content", lang, user_msg=user_msg, kare_response=kare_response)
 
     messages = [
-        {"role": "system", "content": f"/no_think\n{system}"},
-        {"role": "user",   "content": user_content},
+        {"role": "system", "content": system},
+        {"role": "user", "content": user_content},
     ]
 
     try:
         # Round 1: first LLM call
-        async with lock_11445("miss_kare", max_wait=60):
-            reply = await _llm_call(messages)
+        async with lock_agent_pool(
+            pool_order(role_url("miss_kare")), "miss_kare", max_wait=60
+        ) as inst_url:
+            reply = await _llm_call(messages, inst_url)
         log.info("[Miss Kare] first reply: %s", reply[:100])
 
         # Check if Miss Kare wants to look something up in Miss Library (direct call — no lock)
-        if reply.startswith("[SJEKK:") and "]" in reply and is_agent_tool_enabled("miss_kare", "spør_miss_library", default=True):
-            query = reply[7:reply.index("]")].strip()
+        query = _lookup_query(reply)
+        if query and is_agent_tool_enabled("miss_kare", "spør_miss_library", default=True):
             log.info("[Miss Kare] asking Miss Library: %s", query)
             bibliotek_svar = await _ask_library(query, user_id)
             if bibliotek_svar:
                 messages.append({"role": "assistant", "content": reply})
-                messages.append({"role": "user", "content": (
-                    f"Miss Library svarte:\n{bibliotek_svar}\n\n"
-                    "Bruk dette til å si noe varmt og konkret til brukeren. Maks 3 setninger."
-                )})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": t("mk_eval_library_followup", lang, answer=bibliotek_svar),
+                    }
+                )
                 # Round 2: second LLM call with library response
-                async with lock_11445("miss_kare", max_wait=60):
-                    reply = await _llm_call(messages)
+                async with lock_agent_pool(
+                    pool_order(role_url("miss_kare")), "miss_kare", max_wait=60
+                ) as inst_url:
+                    reply = await _llm_call(messages, inst_url)
                 log.info("[Miss Kare] reply after library lookup: %s", reply[:100])
 
-        return reply if reply and reply != "[STILLE]" else "[STILLE]"
+        # A lookup request that could not be answered must not reach the user as raw text.
+        if _is_silent(reply) or _lookup_query(reply) is not None:
+            return "[STILLE]"
+        return reply
 
     except LockTimeout:
         log.warning("[Miss Kare] lock timeout — Mechanic holds the model, skipping evaluation")
@@ -203,8 +219,8 @@ async def evaluate(
 
 
 _NOVELTY_THRESHOLD = 0.75  # matches the kare_huske.json dedup threshold (P82)
-# Generous despite the tiny JSON output: abliterated Qwen3 models emit thinking tokens
-# even with /no_think (documented limitation, CLAUDE.md), and num_predict caps the total —
+# Generous despite the tiny JSON output: Qwen3.5 ignores /no_think entirely (only
+# `think: false` in llm.yaml disables thinking — P111), and num_predict caps the total —
 # too small a budget truncates before any content is produced at all.
 _EXTRACT_MAX_TOKENS = 400
 
@@ -221,7 +237,9 @@ def _is_near_duplicate(existing, value: str) -> bool:
     )
 
 
-async def _extract_fact_json(exchange_text: str, situation_hint: str) -> dict | None:
+async def _extract_fact_json(
+    exchange_text: str, situation_hint: str, lang: str = "nb"
+) -> dict | None:
     """
     Shared low-level step: ask the 9B model for at most one {section, field, value}
     biographical fact from a piece of text, validated against the real
@@ -237,25 +255,17 @@ async def _extract_fact_json(exchange_text: str, situation_hint: str) -> dict | 
 
     sections = get_writable_sections()
     catalog = "\n".join(f"- {sec}: {', '.join(get_section_fields(sec))}" for sec in sections)
-    system = (
-        f"Du er Miss Kåre. {situation_hint}\n"
-        "Avgjør om teksten inneholder ETT konkret, biografisk faktum verdt å huske "
-        "(f.eks. bursdag, jobb, hobby, forhold, religion, bosted) — ikke stemning, "
-        "mening om Kåre, eller noe teknisk.\n\n"
-        "Du MÅ velge feltnavn fra denne listen — finn ikke på nye feltnavn:\n"
-        f"{catalog}\n\n"
-        "Svar KUN med JSON, ingen annen tekst:\n"
-        '{"section": "<seksjonsnavn fra listen>", "field": "<feltnavn fra listen>", "value": "<verdien>"}\n'
-        'Hvis ingenting konkret ble sagt, eller ingen felt passer: {"section": null}'
-    )
+    system = t("mk_extract_system", lang, hint=situation_hint, catalog=catalog)
     messages = [
-        {"role": "system", "content": f"/no_think\n{system}"},
+        {"role": "system", "content": system},
         {"role": "user", "content": exchange_text},
     ]
 
     try:
-        async with lock_11445("miss_kare_extract", max_wait=30):
-            raw = (await _llm_call(messages, max_tokens=_EXTRACT_MAX_TOKENS)).strip()
+        async with lock_agent_pool(
+            pool_order(role_url("miss_kare")), "miss_kare_extract", max_wait=30
+        ) as inst_url:
+            raw = (await _llm_call(messages, inst_url, max_tokens=_EXTRACT_MAX_TOKENS)).strip()
     except LockTimeout:
         log.info("[Miss Kare] extract: lock timeout, skipping")
         return None
@@ -295,7 +305,11 @@ def _write_fact_if_novel(user_id: str, section: str, field: str, value: str) -> 
     profile = load_profile(user_id)
     current = (profile.get(section) or {}).get(field)
     if _is_near_duplicate(current, value):
-        log.info("[Miss Kare] extract: '%s.%s' near-duplicate of existing value, skipping", section, field)
+        log.info(
+            "[Miss Kare] extract: '%s.%s' near-duplicate of existing value, skipping",
+            section,
+            field,
+        )
         return
     result = vault_or_update_nested_field(user_id, section, field, value)
     log.info("[Miss Kare] extract: wrote %s.%s for %s (%s)", section, field, user_id, result)
@@ -312,8 +326,9 @@ async def extract_and_store_fact(user_id: str, prior_question: str, user_reply: 
     """
     if not user_id or user_id == "global" or not prior_question or not user_reply.strip():
         return
-    exchange_text = f"Du spurte: {prior_question}\nBrukeren svarte: {user_reply}"
-    fact = await _extract_fact_json(exchange_text, "Du stilte nettopp et spørsmål, og brukeren svarte.")
+    lang = get_lang(user_id)
+    exchange_text = t("mk_extract_exchange", lang, question=prior_question, reply=user_reply)
+    fact = await _extract_fact_json(exchange_text, t("mk_extract_hint_reply", lang), lang)
     if fact:
         _write_fact_if_novel(user_id, fact["section"], fact["field"], fact["value"])
 
@@ -330,9 +345,7 @@ async def extract_facts_from_meeting(user_id: str, kare_closing: str) -> None:
     """
     if not user_id or user_id == "global" or not kare_closing.strip():
         return
-    fact = await _extract_fact_json(
-        kare_closing.strip(),
-        "Dette er Kåres avsluttende oppsummering av kveldens refleksjonsmøte om brukeren.",
-    )
+    lang = get_lang(user_id)
+    fact = await _extract_fact_json(kare_closing.strip(), t("mk_extract_hint_meeting", lang), lang)
     if fact:
         _write_fact_if_novel(user_id, fact["section"], fact["field"], fact["value"])

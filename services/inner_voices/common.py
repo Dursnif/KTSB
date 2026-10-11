@@ -2,6 +2,7 @@
 Shared utilities for Jing and Jang runners:
 path constants, config loaders, think-block stripper.
 """
+
 import re
 from pathlib import Path
 
@@ -47,7 +48,7 @@ def get_pipe_lang() -> str:
 
     Standalone duplicate of kaare_core.tools.i18n.get_lang()'s collapse logic (household-level
     only, no per-user override — Jing/Jang have no concept of a single active user) rather than
-    an import of kaare_core: this module runs in its own OpenVINO venv on ainuc, reachable from
+    an import of kaare_core: this module runs in its own OpenVINO venv on the inner-voice node, reachable from
     /kaare only via the SSHFS mount that already backs load_behavior_config()/load_service_config()
     above — importing the full kaare_core package would add fragile cross-environment coupling
     for a five-line function (P100 Phase 8).
@@ -140,4 +141,3 @@ _T: dict = {
         "de": "=== Kåres Persönlichkeit ===",
     },
 }
-

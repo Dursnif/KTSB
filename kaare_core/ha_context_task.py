@@ -15,22 +15,23 @@ All errors are non-fatal.
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+
+from kaare_core.config import get_service
 
 logger = logging.getLogger("ha_context_task")
 
-_HA_EVENTS_LOG   = Path("/kaare/logs/ha_events.log")
+_HA_EVENTS_LOG = Path("/kaare/logs/ha_events.log")
 _HA_CONTEXT_PATH = Path("/kaare/state/ha_context.json")
-_POLL_INTERVAL   = 2.0      # seconds between file checks
-_SEED_BYTES      = 200_000  # bytes to read on startup for state reconstruction
-_AUTO_MAX        = 5        # max recent automations to keep
-_AUTO_TTL_HOURS  = 2        # only keep automations from last N hours
+_POLL_INTERVAL = 2.0  # seconds between file checks
+_SEED_BYTES = 200_000  # bytes to read on startup for state reconstruction
+_AUTO_MAX = 5  # max recent automations to keep
+_AUTO_TTL_HOURS = 2  # only keep automations from last N hours
 
 
 def _load_awareness_entities() -> list[str]:
     try:
-        from kaare_core.config import get_service
         entities = get_service("home_assistant", "awareness_entities") or []
         return [str(e) for e in entities if e]
     except Exception:
@@ -62,9 +63,9 @@ def _seed_state(entities: set[str], file_bytes: bytes) -> tuple[dict, list]:
       automations   = [{"name": str, "entity_id": str, "ts": str}, ...]
     """
     entity_states: dict[str, dict] = {}
-    automations:   list[dict] = []
+    automations: list[dict] = []
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     cutoff_ts = now_utc.timestamp() - _AUTO_TTL_HOURS * 3600
 
     text = file_bytes.decode("utf-8", errors="replace")
@@ -84,17 +85,36 @@ def _seed_state(entities: set[str], file_bytes: bytes) -> tuple[dict, list]:
             try:
                 ts_dt = datetime.fromisoformat(ev["ts"].replace("Z", "+00:00"))
                 if ts_dt.timestamp() >= cutoff_ts:
-                    automations.append({
-                        "name":      ev.get("name", ""),
-                        "entity_id": ev.get("entity_id", ""),
-                        "ts":        ev.get("ts", ""),
-                    })
+                    automations.append(
+                        {
+                            "name": ev.get("name", ""),
+                            "entity_id": ev.get("entity_id", ""),
+                            "ts": ev.get("ts", ""),
+                        }
+                    )
             except Exception:
                 pass
 
     # Keep only the most recent _AUTO_MAX automations
     automations = sorted(automations, key=lambda x: x.get("ts", ""), reverse=True)[:_AUTO_MAX]
     return entity_states, automations
+
+
+def _read_tail(path: Path, max_bytes: int) -> tuple[bytes, int]:
+    """Last max_bytes of the file and the file size (blocking — run in a thread)."""
+    with path.open("rb") as fh:
+        fh.seek(0, 2)
+        size = fh.tell()
+        fh.seek(max(0, size - max_bytes))
+        return fh.read(), size
+
+
+def _read_from(path: Path, pos: int) -> tuple[bytes, int]:
+    """Everything after pos and the new position (blocking — run in a thread)."""
+    with path.open("rb") as fh:
+        fh.seek(pos)
+        data = fh.read()
+        return data, fh.tell()
 
 
 async def start_ha_context_task() -> None:
@@ -113,12 +133,7 @@ async def start_ha_context_task() -> None:
 
     # Seed state from last _SEED_BYTES of log
     try:
-        with _HA_EVENTS_LOG.open("rb") as fh:
-            fh.seek(0, 2)
-            size = fh.tell()
-            fh.seek(max(0, size - _SEED_BYTES))
-            seed_bytes = fh.read()
-        file_pos = size
+        seed_bytes, file_pos = await asyncio.to_thread(_read_tail, _HA_EVENTS_LOG, _SEED_BYTES)
     except Exception as e:
         logger.warning("[ha_context] Failed to seed from log: %s", e)
         file_pos = _HA_EVENTS_LOG.stat().st_size if _HA_EVENTS_LOG.exists() else 0
@@ -127,10 +142,12 @@ async def start_ha_context_task() -> None:
     entity_states, automations = _seed_state(entities, seed_bytes)
     state = {"entities": entity_states, "recent_automations": automations}
     _write_context(state)
-    logger.info("[ha_context] Seeded %d entities, %d automations", len(entity_states), len(automations))
+    logger.info(
+        "[ha_context] Seeded %d entities, %d automations", len(entity_states), len(automations)
+    )
 
     # Tail loop
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     cutoff_ts = now_utc.timestamp() - _AUTO_TTL_HOURS * 3600
 
     while True:
@@ -147,10 +164,7 @@ async def start_ha_context_task() -> None:
                     file_pos = 0
                 continue
 
-            with _HA_EVENTS_LOG.open("rb") as fh:
-                fh.seek(file_pos)
-                new_bytes = fh.read()
-                file_pos = fh.tell()
+            new_bytes, file_pos = await asyncio.to_thread(_read_from, _HA_EVENTS_LOG, file_pos)
 
             changed = False
             for line in new_bytes.decode("utf-8", errors="replace").splitlines():
@@ -169,20 +183,25 @@ async def start_ha_context_task() -> None:
                 elif stage == "automation_triggered":
                     try:
                         ts_dt = datetime.fromisoformat(ev["ts"].replace("Z", "+00:00"))
-                        now_ts = datetime.now(timezone.utc).timestamp()
+                        now_ts = datetime.now(UTC).timestamp()
                         cutoff_ts = now_ts - _AUTO_TTL_HOURS * 3600
                         if ts_dt.timestamp() >= cutoff_ts:
-                            automations.insert(0, {
-                                "name":      ev.get("name", ""),
-                                "entity_id": ev.get("entity_id", ""),
-                                "ts":        ev.get("ts", ""),
-                            })
+                            automations.insert(
+                                0,
+                                {
+                                    "name": ev.get("name", ""),
+                                    "entity_id": ev.get("entity_id", ""),
+                                    "ts": ev.get("ts", ""),
+                                },
+                            )
                             # Trim old and excess entries
                             automations = [
-                                a for a in automations
+                                a
+                                for a in automations
                                 if datetime.fromisoformat(
                                     a["ts"].replace("Z", "+00:00")
-                                ).timestamp() >= cutoff_ts
+                                ).timestamp()
+                                >= cutoff_ts
                             ][:_AUTO_MAX]
                             changed = True
                     except Exception:

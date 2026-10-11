@@ -1,19 +1,22 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, RotateCcw, ShieldCheck, Cpu, Save, Trash2, Download, Upload, FlaskConical, HardDrive } from "lucide-react";
+import { Loader2, RefreshCw, RotateCcw, ShieldCheck, Cpu, Save, Trash2, Download, Upload, FlaskConical, HardDrive, ArrowUpCircle } from "lucide-react";
 import axios from "axios";
 import i18n from "@/i18n";
-import { useAuth } from "@/auth/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import {
+  API_BASE,
   apiAdminServices, apiRestartService, apiSettingsRollback,
   apiVerifyPin,
   apiExportBackup, apiRestoreBackup,
   apiSaveBackupPoint, apiListBackupPoints, apiRestoreBackupPoint, apiDeleteBackupPoint, apiDownloadBackupPoint,
+  apiUpdateStatus, apiUpdateCheck, apiUpdateStart, apiUpdateRollback,
   type ServiceKey, type AdminServiceStatus, type BackupPoint, type RestoreResult,
+  type UpdateStatus, type UpdateCheck,
 } from "@/services/api";
+import { toggled } from "@/lib/collections";
 
-const BASE = `http://${window.location.hostname}:8000`;
 const token = () => sessionStorage.getItem("kaare_token");
 
 type ReloadResult = { reloaded: string[]; errors: string[]; aliases_count: number };
@@ -136,24 +139,22 @@ type HardwareInfo = {
 
 function HardwareCard() {
   const { t } = useTranslation();
-  const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  // Starts in "loading": the hardware probe runs on mount.
+  const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("loading");
   const [hw, setHw] = useState<HardwareInfo | null>(null);
 
-  const detect = useCallback(async (refresh = false) => {
-    setStatus("loading");
-    try {
-      const r = await axios.get<HardwareInfo>(
-        `${BASE}/api/system/hardware${refresh ? "?refresh=true" : ""}`,
-        { headers: { Authorization: `Bearer ${token()}` } },
-      );
-      setHw(r.data);
-      setStatus("done");
-    } catch {
-      setStatus("error");
-    }
-  }, []);
+  const detect = useCallback((refresh: boolean) =>
+    axios.get<HardwareInfo>(
+      `${API_BASE}/api/system/hardware${refresh ? "?refresh=true" : ""}`,
+      { headers: { Authorization: `Bearer ${token()}` } },
+    ).then(
+      r => { setHw(r.data); setStatus("done"); },
+      () => setStatus("error"),
+    ), []);
 
   useEffect(() => { detect(false); }, [detect]);
+
+  const redetect = () => { setStatus("loading"); detect(true); };
 
   const gpuTypeLabels: Record<string, string> = {
     nvidia: "NVIDIA",
@@ -185,7 +186,7 @@ function HardwareCard() {
       <p style={{ color: "#666", fontSize: 13, marginBottom: 16 }}>{t("system.hardware.description")}</p>
 
       <Button
-        onClick={() => detect(true)}
+        onClick={redetect}
         disabled={status === "loading"}
         variant="outline"
         className="gap-2"
@@ -230,7 +231,7 @@ function HealthCheckCard() {
     setStatus("loading");
     setResult(null);
     try {
-      const r = await axios.get<HealthCheckResult>(`${BASE}/api/health_check`, {
+      const r = await axios.get<HealthCheckResult>(`${API_BASE}/api/health_check`, {
         headers: { Authorization: `Bearer ${token()}` },
       });
       setResult(r.data);
@@ -341,7 +342,7 @@ function TestRunCard() {
     setStatus("loading");
     setResult(null);
     try {
-      const r = await axios.get(`${BASE}/api/run_tests`, {
+      const r = await axios.get(`${API_BASE}/api/run_tests`, {
         headers: { Authorization: `Bearer ${token()}` },
         timeout: 60000,
       });
@@ -491,6 +492,256 @@ function RollbackCard() {
   );
 }
 
+// ── UpdateCard (P57) ───────────────────────────────────────────────────────────
+// «Oppdater KTSB»: the kaare-updater container does the work; this card checks for a release, asks for the admin's
+// PIN, starts the update and follows it — also while the API itself is being replaced (requests fail for a while).
+
+const UPDATE_ACTIVE = new Set(["preflight", "download", "verify_bundle", "swap", "pull", "verify_images", "start", "health", "rollback", "self_update"]);
+const KNOWN_UPDATE_ERRORS = new Set(["night_sequence_running", "busy", "no_home", "no_compose", "no_docker_socket", "save_point_failed", "updater_unreachable", "nothing to roll back to"]);
+
+// No answer at all (or a gateway error) = the API is being replaced during an update; a real HTTP answer such as
+// 404 means this API simply has no updater endpoints, which is not "restarting".
+const apiIsDown = (e: unknown) => !axios.isAxiosError(e) || !e.response || e.response.status >= 502;
+const UPDATER_UNREACHABLE: UpdateStatus = { docker: true, running_version: "", reachable: false };
+
+function UpdateCard() {
+  const { t } = useTranslation();
+  const { user } = useAuth();
+  const [status, setStatus] = useState<UpdateStatus | null>(null);
+  const [check, setCheck] = useState<UpdateCheck | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [lostContact, setLostContact] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [modal, setModal] = useState<null | "update" | "rollback">(null);
+  const [pin, setPin] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [working, setWorking] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const phase = status?.state?.phase ?? "idle";
+  const active = !!status?.busy || UPDATE_ACTIVE.has(phase);
+
+  const errorText = (detail: string) =>
+    KNOWN_UPDATE_ERRORS.has(detail) ? t(`system.update.err_${detail.replace(/ /g, "_")}`) : (detail || t("system.update.err_generic"));
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const s = await apiUpdateStatus();
+      setStatus(s);
+      setLostContact(false);
+      return s;
+    } catch (e) {
+      if (apiIsDown(e)) setLostContact(true);
+      else { setStatus(UPDATER_UNREACHABLE); setLostContact(false); }
+      return null;
+    }
+  }, []);
+
+  const doCheck = useCallback(async (force: boolean) => {
+    setChecking(true);
+    try { setCheck(await apiUpdateCheck(force)); }
+    catch { setCheck({ ok: false, current: "", error: "unreachable" }); }
+    finally { setChecking(false); }
+  }, []);
+
+  useEffect(() => {
+    apiUpdateStatus().then(
+      s => {
+        setStatus(s);
+        if (s.reachable && !s.problem) void doCheck(false);
+      },
+      e => { if (apiIsDown(e)) setLostContact(true); else setStatus(UPDATER_UNREACHABLE); },
+    );
+  }, [doCheck]);
+
+  // Follow a running update (and keep trying while the API restarts).
+  useEffect(() => {
+    if (!active && !lostContact) return;
+    const id = setInterval(() => { void loadStatus(); }, 3000);
+    return () => clearInterval(id);
+  }, [active, lostContact, loadStatus]);
+
+  const openModal = (kind: "update" | "rollback") => { setModal(kind); setPin(""); setPinError(""); setMsg(null); };
+  const closeModal = () => { setModal(null); setPin(""); setPinError(""); };
+
+  const confirmModal = async () => {
+    if (!pin.trim() || !modal) return;
+    setWorking(true); setPinError("");
+    const ok = await apiVerifyPin(user?.username ?? "", pin);
+    if (!ok) { setPinError(t("system.rollback.pin_error")); setWorking(false); return; }
+    const kind = modal;
+    closeModal();
+    try {
+      if (kind === "update" && check?.latest) await apiUpdateStart(check.latest.version);
+      else await apiUpdateRollback();
+      await loadStatus();
+    } catch (e: unknown) {
+      const detail = axios.isAxiosError(e) ? String(e.response?.data?.detail ?? "") : "";
+      setMsg({ ok: false, text: errorText(detail) });
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const running = status?.current || status?.running_version || "";
+  const st = status?.state;
+  const steps = st?.steps ?? [];
+
+  let body: React.ReactNode;
+  if (!status && !lostContact) {
+    body = <p style={{ color: "#666", fontSize: 13 }}><Loader2 className="h-3 w-3 animate-spin" style={{ display: "inline" }} /> {t("system.update.loading")}</p>;
+  } else if (status && !status.docker) {
+    body = <p style={{ color: "#888", fontSize: 13 }}>{t("system.update.not_docker")}</p>;
+  } else if (status && !status.reachable && !lostContact) {
+    body = <p style={{ color: "#f59e0b", fontSize: 13 }}>{t("system.update.unreachable")}</p>;
+  } else if (status?.problem) {
+    body = <p style={{ color: "#f59e0b", fontSize: 13 }}>{errorText(status.problem)}</p>;
+  } else {
+    body = (
+      <>
+        {/* Running an update: live steps */}
+        {(active || lostContact) && (
+          <div style={{ marginBottom: 12 }}>
+            <p style={{ color: "#a78bfa", fontSize: 13, marginBottom: 8 }}>
+              <Loader2 className="h-3 w-3 animate-spin" style={{ display: "inline", marginRight: 6 }} />
+              {lostContact ? t("system.update.restarting") : t("system.update.running", { version: st?.target ?? "" })}
+            </p>
+            <ol style={{ margin: 0, paddingLeft: 18, color: "#888", fontSize: 12, lineHeight: 1.8, overflowWrap: "anywhere" }}>
+              {steps.map((s, i) => (
+                <li key={i} style={{ color: i === steps.length - 1 ? "#ddd" : "#666" }}>{t(`system.update.phase.${s.phase}`, { defaultValue: s.phase })}</li>
+              ))}
+            </ol>
+          </div>
+        )}
+
+        {/* Result of the last update */}
+        {!active && !lostContact && st?.result === "updated" && (
+          <p style={{ color: "#4caf50", fontSize: 13, marginBottom: 12 }}>
+            ✓ {t("system.update.done", { version: st.target ?? "" })}{" "}
+            <button type="button" onClick={() => window.location.reload()} style={{ color: "#a78bfa", textDecoration: "underline", background: "none", border: 0, cursor: "pointer", fontSize: 13 }}>{t("system.update.reload")}</button>
+          </p>
+        )}
+        {!active && !lostContact && st?.result === "rolled_back" && (
+          <div style={{ marginBottom: 12 }}>
+            <p style={{ color: "#f59e0b", fontSize: 13 }}>{t("system.update.rolled_back", { version: st.from_version || "—" })}</p>
+            <p style={{ color: "#666", fontSize: 12, marginTop: 4 }}>{t("system.update.cause")}: <span style={{ fontFamily: "monospace" }}>{st.error}</span></p>
+            <p style={{ color: "#666", fontSize: 12, marginTop: 4 }}>{t("system.update.data_hint")}</p>
+          </div>
+        )}
+        {!active && !lostContact && st?.result === "failed" && (
+          <div style={{ marginBottom: 12 }}>
+            <p style={{ color: "#f87171", fontSize: 13 }}>{t("system.update.failed")}</p>
+            <p style={{ color: "#666", fontSize: 12, marginTop: 4 }}>{t("system.update.cause")}: <span style={{ fontFamily: "monospace" }}>{st.error}</span></p>
+          </div>
+        )}
+        {!active && !lostContact && st?.result === "rollback_failed" && (
+          <div style={{ marginBottom: 12 }}>
+            <p style={{ color: "#f87171", fontSize: 13, fontWeight: 600 }}>{t("system.update.rollback_failed")}</p>
+            <p style={{ color: "#666", fontSize: 12, marginTop: 4, fontFamily: "monospace" }}>{st.error}</p>
+          </div>
+        )}
+
+        {/* Version and check */}
+        {!active && !lostContact && (
+          <>
+            <p style={{ color: "#aaa", fontSize: 13, marginBottom: 10 }}>
+              {t("system.update.running_version")}: <span style={{ color: "#ddd", fontWeight: 600 }}>{running || t("system.update.unknown_version")}</span>
+            </p>
+            {check?.ok === false && <p style={{ color: "#f87171", fontSize: 12, marginBottom: 8 }}>{t("system.update.check_failed")}</p>}
+            {check?.ok && check.available && check.latest && (
+              <div style={{ background: "#111", border: "1px solid #a78bfa44", borderRadius: 8, padding: "10px 14px", marginBottom: 10 }}>
+                <p style={{ color: "#ddd", fontSize: 13, fontWeight: 600 }}>
+                  {t("system.update.available", { version: check.latest.version })}
+                  {check.latest.published && <span style={{ color: "#555", fontWeight: 400, marginLeft: 8, fontSize: 11 }}>{new Date(check.latest.published).toLocaleDateString(i18n.language === "nb" ? "nb-NO" : i18n.language)}</span>}
+                </p>
+                {check.latest.notes && (
+                  <>
+                    <button type="button" onClick={() => setNotesOpen(o => !o)} style={{ color: "#a78bfa", background: "none", border: 0, padding: 0, cursor: "pointer", fontSize: 12, marginTop: 4 }}>
+                      {notesOpen ? t("system.update.hide_notes") : t("system.update.show_notes")}
+                    </button>
+                    {notesOpen && (
+                      <pre style={{ whiteSpace: "pre-wrap", color: "#999", fontSize: 12, marginTop: 8, maxHeight: 240, overflowY: "auto", fontFamily: "inherit" }}>{check.latest.notes}</pre>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+            {check?.ok && !check.available && <p style={{ color: "#4caf50", fontSize: 12, marginBottom: 10 }}>✓ {t("system.update.up_to_date")}</p>}
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Button size="sm" variant="outline" onClick={() => doCheck(true)} disabled={checking || working} className="gap-2">
+                {checking ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                {t("system.update.check_button")}
+              </Button>
+              {check?.ok && check.available && check.latest && (
+                <Button size="sm" onClick={() => openModal("update")} disabled={working} className="gap-2" style={{ background: "#7c3aed", color: "#fff" }}>
+                  <ArrowUpCircle className="h-4 w-4" />
+                  {t("system.update.update_button", { version: check.latest.version })}
+                </Button>
+              )}
+              {status?.can_rollback && st?.result === "updated" && (
+                <Button size="sm" variant="outline" onClick={() => openModal("rollback")} disabled={working} className="gap-2" style={{ borderColor: "#f59e0b", color: "#f59e0b" }}>
+                  <RotateCcw className="h-3 w-3" />
+                  {t("system.update.rollback_button", { version: st.from_version || "" })}
+                </Button>
+              )}
+            </div>
+          </>
+        )}
+        {msg && <p style={{ fontSize: 12, marginTop: 10, color: msg.ok ? "#4caf50" : "#f87171" }}>{msg.text}</p>}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {modal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "#1a1a1a", border: "1px solid #a78bfa55", borderRadius: 12, padding: "28px 32px", maxWidth: 440, width: "90%" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <ArrowUpCircle size={15} style={{ color: "#a78bfa" }} />
+              <span style={{ color: "#ddd", fontSize: 15, fontWeight: 600 }}>
+                {modal === "update" ? t("system.update.confirm_title", { version: check?.latest?.version ?? "" }) : t("system.update.rollback_confirm_title")}
+              </span>
+            </div>
+            <p style={{ color: "#999", fontSize: 13, marginBottom: 18, lineHeight: 1.6 }}>
+              {modal === "update" ? t("system.update.confirm_text") : t("system.update.rollback_confirm_text", { version: st?.from_version ?? "" })}
+            </p>
+            <input
+              type="password"
+              inputMode="numeric"
+              value={pin}
+              onChange={e => setPin(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && confirmModal()}
+              placeholder={t("system.rollback.pin_placeholder")}
+              autoFocus
+              style={{ width: "100%", background: "#111", border: "1px solid #555", borderRadius: 6, padding: "8px 12px", color: "#ddd", fontSize: 14, marginBottom: 8, boxSizing: "border-box" }}
+            />
+            {pinError && <p style={{ color: "#f87171", fontSize: 12, marginBottom: 8 }}>{pinError}</p>}
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <Button size="sm" onClick={confirmModal} disabled={working || !pin.trim()} className="gap-2" style={{ flex: 1, background: "#7c3aed", color: "#fff" }}>
+                {working ? <><Loader2 className="h-3 w-3 animate-spin" /> {t("system.rollback.verifying")}</> : t("system.update.confirm_button")}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={closeModal} disabled={working} style={{ flex: 1 }}>
+                {t("system.rollback.pin_cancel")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="admin-card" style={{ borderRadius: 12, padding: "20px 24px", border: "1px solid #a78bfa33" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <ArrowUpCircle size={15} style={{ color: "#a78bfa", flexShrink: 0 }} />
+          <span style={{ color: "#ddd", fontSize: 15, fontWeight: 600 }}>{t("system.update.title")}</span>
+        </div>
+        <p style={{ color: "#666", fontSize: 13, marginBottom: 16 }}>{t("system.update.description")}</p>
+        {body}
+      </div>
+    </>
+  );
+}
+
 // ── BackupRestoreCard ──────────────────────────────────────────────────────────
 
 const ALL_CATEGORIES = [
@@ -545,19 +796,16 @@ function BackupRestoreCard() {
 
   const toggleCat = (cat: BackupCat) => {
     if (cat === "user_keys") return;
-    setCats(prev => { const n = new Set(prev); n.has(cat) ? n.delete(cat) : n.add(cat); return n; });
+    setCats(prev => toggled(prev, cat));
   };
 
-  const loadPoints = useCallback(async () => {
-    try {
-      const r = await apiListBackupPoints();
-      setPoints(r.points);
-    } catch { /* ignore */ }
-  }, []);
+  const loadPoints = useCallback(() =>
+    apiListBackupPoints().then(r => setPoints(r.points)).catch(() => { /* ignore */ }), []);
 
   useEffect(() => { loadPoints(); }, [loadPoints]);
 
-  const atMax = points.length >= 5;
+  const ownPoints = points.filter(p => p.kind !== "pre_update");
+  const atMax = ownPoints.length >= 5;
 
   const formatDate = (iso: string) => {
     try {
@@ -758,7 +1006,7 @@ function BackupRestoreCard() {
         <div style={{ borderTop: "1px solid #1e1e1e", marginTop: 6, paddingTop: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
             <span style={{ color: "#aaa", fontSize: 13, fontWeight: 600 }}>{t("system.backup.saved_points_title")}</span>
-            <span style={{ fontSize: 11, color: atMax ? "#f87171" : "#555" }}>{points.length}/5</span>
+            <span style={{ fontSize: 11, color: atMax ? "#f87171" : "#555" }}>{ownPoints.length}/5</span>
           </div>
 
           <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
@@ -787,7 +1035,10 @@ function BackupRestoreCard() {
               {points.map(pt => (
                 <div key={pt.id} style={{ background: "#111", border: "1px solid #222", borderRadius: 8, padding: "10px 14px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <span style={{ color: "#ddd", fontSize: 13, fontWeight: 500, flex: 1, minWidth: 80 }}>{pt.name}</span>
+                    <span style={{ color: "#ddd", fontSize: 13, fontWeight: 500, flex: 1, minWidth: 80 }}>
+                      {pt.kind === "pre_update" ? t("system.backup.pre_update_name", { version: pt.to_version ?? "" }) : pt.name}
+                      {pt.kind === "pre_update" && <span style={{ fontSize: 10, color: "#a78bfa", marginLeft: 8, border: "1px solid #a78bfa55", borderRadius: 4, padding: "0 5px" }}>{t("system.backup.pre_update_tag")}</span>}
+                    </span>
                     <span style={{ color: "#555", fontSize: 11 }}>{formatDate(pt.created)}</span>
                     <span style={{ color: "#444", fontSize: 11 }}>{formatSize(pt.size_bytes)}</span>
                     <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
@@ -875,7 +1126,7 @@ function BackupRestoreCard() {
                 {(["user_keys", ...ALL_CATEGORIES] as BackupCat[]).map(cat => (
                   <label key={cat} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
                     <input type="checkbox" checked={restoreCats.has(cat)} onChange={() => {
-                      setRestoreCats(prev => { const n = new Set(prev); n.has(cat) ? n.delete(cat) : n.add(cat); return n; });
+                      setRestoreCats(prev => toggled(prev, cat));
                     }} />
                     <span style={{ fontSize: 12, color: "#bbb" }}>{t(`system.backup.cat_${cat}`)}</span>
                   </label>
@@ -930,7 +1181,7 @@ export default function System() {
     let active = true;
     const poll = () => {
       if (!active) return;
-      axios.get<CompressStatus>(`${BASE}/api/memory/compress/status`, { headers: { Authorization: `Bearer ${token()}` } })
+      axios.get<CompressStatus>(`${API_BASE}/api/memory/compress/status`, { headers: { Authorization: `Bearer ${token()}` } })
         .then(r => { if (active) setCompress(r.data); })
         .catch(() => {});
     };
@@ -943,7 +1194,7 @@ export default function System() {
     setReloadStatus("loading");
     setReloadResult(null);
     try {
-      const r = await axios.post<ReloadResult>(`${BASE}/api/reload`, {}, { headers: { Authorization: `Bearer ${token()}` } });
+      const r = await axios.post<ReloadResult>(`${API_BASE}/api/reload`, {}, { headers: { Authorization: `Bearer ${token()}` } });
       setReloadResult(r.data);
       setReloadStatus("ok");
       setTimeout(() => setReloadStatus("idle"), 6000);
@@ -956,7 +1207,7 @@ export default function System() {
   const startCompress = async () => {
     setCompressStarting(true);
     try {
-      await axios.post(`${BASE}/api/memory/compress`, {}, { headers: { Authorization: `Bearer ${token()}` } });
+      await axios.post(`${API_BASE}/api/memory/compress`, {}, { headers: { Authorization: `Bearer ${token()}` } });
     } catch { /* polling handles it */ }
     setCompressStarting(false);
   };
@@ -1071,17 +1322,14 @@ export default function System() {
           )}
         </div>
 
+        {/* In-app update (P57) — next to backup/restore: an update takes a save point first */}
+        <UpdateCard />
+
         {/* Backup & restore */}
         <BackupRestoreCard />
 
         {/* Rollback */}
         <RollbackCard />
-
-        {/* GitHub note */}
-        <div className="admin-card" style={{ borderRadius: 12, padding: "20px 24px", border: "1px solid #f59e0b33" }}>
-          <div style={{ color: "#f59e0b", fontSize: 13, fontWeight: 600, marginBottom: 10 }}>{t("system.github.title")}</div>
-          <p style={{ color: "#666", fontSize: 13, lineHeight: 1.6 }}>{t("system.github.description")}</p>
-        </div>
 
       </div>
     </div>

@@ -34,14 +34,14 @@ class SnapcastProvider(BaseVoiceProvider):
             return
 
         try:
-            _, writer = await asyncio.wait_for(
-                asyncio.open_connection(host, port), timeout=5.0
-            )
-        except (OSError, asyncio.TimeoutError) as exc:
+            _, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=5.0)
+        except (TimeoutError, OSError) as exc:
             log.error(
                 "Snapcast: kan ikke koble til %s:%s — %s. "
                 "Sjekk at snapserver.conf har TCP-kilde på denne porten.",
-                host, port, exc,
+                host,
+                port,
+                exc,
             )
             return
 
@@ -53,9 +53,15 @@ class SnapcastProvider(BaseVoiceProvider):
                 log.info(
                     "Snapcast %s:%s <- %s (%dHz %dbit %dch) — "
                     "snapserver.conf må ha sampleformat=%d:%d:%d",
-                    host, port, wav_path.name,
-                    rate, width * 8, channels,
-                    rate, width * 8, channels,
+                    host,
+                    port,
+                    wav_path.name,
+                    rate,
+                    width * 8,
+                    channels,
+                    rate,
+                    width * 8,
+                    channels,
                 )
                 frames_per_chunk = _SEND_CHUNK // (width * channels)
                 while True:

@@ -8,7 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { apiGetKareSettings, apiPutKareSettings, type ContributorMode, type PersonalityMode } from "@/services/api";
 import { BASE, token } from "./constants";
-import { useSaveState, FieldRow, SaveFeedback, RadioOption, ExpertOnly } from "./shared";
+import { FieldRow, SaveFeedback, RadioOption, ExpertOnly } from "./shared";
+import { useSaveState } from "./useSaveState";
+import MemoryCard from "./MemoryCard";
+import { userLabel } from "../../../lib/systemUsers";
 
 type UserEntry = { username: string; display_name: string; role: string };
 
@@ -250,7 +253,7 @@ export default function TabKareInnstillinger() {
                           </svg>
                         )}
                       </span>
-                      {u.display_name || u.username}
+                      {userLabel(u, t)}
                     </button>
                   );
                 })}
@@ -331,7 +334,7 @@ export default function TabKareInnstillinger() {
                           </svg>
                         )}
                       </span>
-                      {u.display_name || u.username}
+                      {userLabel(u, t)}
                     </button>
                   );
                 })}
@@ -351,6 +354,7 @@ export default function TabKareInnstillinger() {
         </CardContent>
       </Card>
       </div>
+      <MemoryCard />
     </div>
   );
 }

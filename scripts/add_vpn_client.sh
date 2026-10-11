@@ -42,7 +42,7 @@ CLIENT_IP="10.0.0.${NEXT_IP}"
 echo "Tildeler IP: ${CLIENT_IP} til klient '${CLIENT_NAME}'"
 
 # Read VPN endpoint from settings.yaml
-WG_ENDPOINT=$(python3 -c "
+if ! WG_ENDPOINT=$(python3 -c "
 import yaml, sys
 d = yaml.safe_load(open('/kaare/configs/settings.yaml'))
 vpn = d.get('vpn', {})
@@ -52,8 +52,7 @@ if not host:
     print('FEIL: vpn.duckdns_host er ikke satt i configs/settings.yaml', file=sys.stderr)
     sys.exit(1)
 print(f'{host}:{port}')
-")
-if [ $? -ne 0 ]; then
+"); then
     exit 1
 fi
 

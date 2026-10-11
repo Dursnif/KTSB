@@ -33,6 +33,10 @@ models/
 *.safetensors
 *.pt
 
+# Jing/Jang OpenVINO model cache — they run on ainuc via systemd, not in this image
+services/inner_voices/ov_cache/
+ov_cache/
+
 # Development and CI artifacts
 .git/
 .gitignore

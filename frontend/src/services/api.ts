@@ -2,11 +2,11 @@ import axios from "axios";
 
 // HTTPS (Caddy): use same origin — Caddy routes /api/* to kaare-api
 // HTTP (direct): use port 8000 directly
-const BASE = window.location.protocol === "https:"
+export const API_BASE = window.location.protocol === "https:"
     ? window.location.origin
     : `http://${window.location.hostname}:8000`;
 
-export const api = axios.create({ baseURL: BASE });
+export const api = axios.create({ baseURL: API_BASE });
 
 api.interceptors.request.use((config) => {
   const token = sessionStorage.getItem("kaare_token");
@@ -27,6 +27,10 @@ export async function apiGenerate(prompt: string, images?: string[]) {
 
 export async function apiPing() {
   await api.get("/api/ping");
+}
+
+export async function apiLogout() {
+  await api.post("/api/auth/logout");
 }
 
 export type PendingNotification = {
@@ -162,7 +166,7 @@ export async function apiDeleteUser(username: string) {
 
 export async function apiRecover(username: string, seed_phrase: string, new_pin: string) {
   const { data } = await api.post("/api/users/recover", { username, seed_phrase, new_pin });
-  return data as { token: string; user: { username: string; role: string; display_name: string; avatar: string } };
+  return data as { token: string; user: KaareUser };
 }
 
 export async function apiReissueSeedPhrase(username: string) {
@@ -226,7 +230,7 @@ export type KaareUser = {
   seed_phrase?: string; // present only once, when a keypair was just generated (create or first login)
 };
 
-export type Role = "child" | "teen" | "young_adult" | "adult" | "admin";
+export type Role = "child" | "teen" | "young_adult" | "adult" | "admin" | "household" | "stranger";
 
 export type CreateUserPayload = {
   username: string;
@@ -323,8 +327,28 @@ export async function apiGetMeetingTopic(type: "reflection" | "dev") {
   return data as { topic: string };
 }
 
-export async function apiSetMeetingTopic(type: "reflection" | "dev", topic: string) {
-  await api.post(`/api/meetings/topic/${type}`, { topic });
+// P118 B8: the dev slot's agenda themes (keys match kaare_core/memory/agenda_themes.py THEMES).
+export const AGENDA_THEMES = ["answers", "tools", "memory", "agents", "house", "system", "other"] as const;
+
+// P133 C6: topics marked resolved in a conversation (dev slot / Kåre's memory).
+export type ResolvedTopic = {
+  id: number;
+  label: string;
+  kind: string;
+  theme: string;
+  conclusion: string;
+  resolved_at: string;
+  resolved_by: string;
+  echoes: number;
+};
+
+export async function apiGetResolvedTopics(): Promise<ResolvedTopic[]> {
+  const { data } = await api.get("/api/meetings/resolved");
+  return (data?.topics ?? []) as ResolvedTopic[];
+}
+
+export async function apiSetMeetingTopic(type: "reflection" | "dev", topic: string, theme = "") {
+  await api.post(`/api/meetings/topic/${type}`, theme ? { topic, theme } : { topic });
 }
 
 export async function apiGetMeetingComment(type: "reflection" | "dev", date: string) {
@@ -350,6 +374,13 @@ export interface ReflectionMeetingSettings {
 }
 
 export interface DevMeetingSettings {
+  // Dev slot (P118) — shown in the GUI
+  enabled: boolean;
+  time_budget_minutes: number;
+  topics_per_meeting: number;
+  max_user_traces: number;
+  round_cap_per_topic: number;
+  // Old persona-meeting settings — still returned by the API, no longer shown
   max_rounds: number;
   max_invest_rounds: number;
   kare_max_tokens: number;
@@ -383,6 +414,8 @@ export const ROLE_LABELS: Record<Role, string> = {
   young_adult: "Ung voksen",
   adult: "Voksen",
   admin: "Administrator",
+  household: "Husstand",
+  stranger: "Fremmed",
 };
 
 // ── Settings: LLM ─────────────────────────────────────────────────────────────
@@ -435,10 +468,19 @@ export type LlmRoleConfig = {
   ollama_env?: OllamaEnvConfig;
   container?: string | null;
   share_with?: string | null;
+  // Set when this role belongs to the shared agent pool (llm.yaml agent_pool:)
+  agent_pool_roles?: string[];
 };
 
 export async function apiGetLlmSettings(): Promise<Record<string, LlmRoleConfig>> {
   const { data } = await api.get("/api/settings/llm");
+  return data;
+}
+
+export type LlmModelCheck = { model: string; base_url: string; status: "ok" | "missing" | "unreachable" };
+
+export async function apiGetLlmModelCheck(): Promise<Record<string, LlmModelCheck>> {
+  const { data } = await api.get("/api/settings/llm/model_check");
   return data;
 }
 
@@ -450,6 +492,18 @@ export async function apiPutLlmRole(role: string, payload: Partial<LlmRoleConfig
 export async function apiRestartVllmDocker(role: string) {
   const { data } = await api.post(`/api/settings/llm/${role}/restart_docker`);
   return data as { ok: boolean; container?: string; error?: string };
+}
+
+export type VllmRestartStatus = {
+  status: "idle" | "inspecting" | "stopping" | "starting" | "loading" | "ready" | "rolling_back" | "error";
+  detail?: string;
+  rolled_back?: boolean;
+  restored?: boolean;
+};
+
+export async function apiGetVllmRestartStatus(role: string) {
+  const { data } = await api.get(`/api/settings/llm/${role}/restart_docker_status`);
+  return data as VllmRestartStatus;
 }
 
 // ── Ollama model management ───────────────────────────────────────────────────
@@ -536,7 +590,7 @@ export async function apiRestartOllama(role: string): Promise<{ ok: boolean; con
 // ── Settings: Services ────────────────────────────────────────────────────────
 
 export type ServicesConfig = {
-  home_assistant: { url: string; timeout: number };
+  home_assistant: { url: string; timeout: number; enabled: boolean };
   mqtt: {
     host: string;
     port: number;
@@ -548,6 +602,7 @@ export type ServicesConfig = {
   };
   frigate: { url: string; timeout: number; snapshot_timeout: number; enabled: boolean };
   plex: { url: string; timeout: number };
+  voice?: { stt_enabled?: boolean };
 };
 
 export async function apiGetServices(): Promise<ServicesConfig> {
@@ -555,7 +610,7 @@ export async function apiGetServices(): Promise<ServicesConfig> {
   return data;
 }
 
-export async function apiPutHa(payload: { url?: string; timeout?: number }) {
+export async function apiPutHa(payload: { url?: string; timeout?: number; enabled?: boolean }) {
   const { data } = await api.put("/api/settings/services/ha", payload);
   return data as { ok: boolean };
 }
@@ -612,7 +667,98 @@ export async function apiPutMemoryEmbedBackend(payload: {
   return data as { ok: boolean };
 }
 
+export type MemoryEmbedModel = {
+  key: string;
+  tier: "small" | "medium" | "large" | "legacy";
+  repo: string;
+  dim: number;
+  size_mb: number;
+  backend: "local" | "embedding_service";
+  downloaded: boolean;
+  active: boolean;
+  model_dir: string;
+  points: number | null;
+};
+
+export type MemoryEmbedJob = {
+  id: string;
+  kind: "download" | "activate";
+  model: string;
+  status: "running" | "done" | "error";
+  phase: string;
+  bytes: number;
+  total_bytes: number;
+  progress: { total?: number; done?: number; indexed?: number; skipped_encrypted?: number; failed?: number };
+  error: string | null;
+  detail: string | null;
+  result: { total: number; indexed: number; skipped_encrypted: number; failed: number } | null;
+};
+
+export type MemoryEmbedStatus = {
+  enabled: boolean;
+  active: string;
+  models: MemoryEmbedModel[];
+  models_dir: string;
+  service_dim: number | null;
+  embedding_service_enabled: boolean;
+  job: MemoryEmbedJob | null;
+};
+
+export async function apiGetMemoryEmbedStatus(): Promise<MemoryEmbedStatus> {
+  const { data } = await api.get("/api/settings/memory-embed/status");
+  return data as MemoryEmbedStatus;
+}
+
+export async function apiPostMemoryEmbedDownload(model: string): Promise<MemoryEmbedJob> {
+  const { data } = await api.post("/api/settings/memory-embed/download", { model });
+  return data as MemoryEmbedJob;
+}
+
+export async function apiPostMemoryEmbedActivate(model: string): Promise<MemoryEmbedJob> {
+  const { data } = await api.post("/api/settings/memory-embed/activate", { model });
+  return data as MemoryEmbedJob;
+}
+
+export type SttPreset = { repo: string; tier: "small" | "medium" | "large"; size_mb: number; downloaded: boolean; active: boolean };
+
+export type SttModelsStatus = {
+  lang: string;
+  backend: string;
+  active: string | null;
+  presets: SttPreset[];
+  custom: { repo: string; downloaded: boolean; active: boolean } | null;
+  cache_dir: string;
+  openvino_available: boolean;
+  job: MemoryEmbedJob | null;
+};
+
+export async function apiGetSttModelsStatus(): Promise<SttModelsStatus> {
+  const { data } = await api.get("/api/settings/stt-models/status");
+  return data as SttModelsStatus;
+}
+
+export async function apiPostSttModelDownload(repo: string): Promise<MemoryEmbedJob> {
+  const { data } = await api.post("/api/settings/stt-models/download", { repo });
+  return data as MemoryEmbedJob;
+}
+
+export async function apiPostSttModelActivate(repo: string): Promise<MemoryEmbedJob> {
+  const { data } = await api.post("/api/settings/stt-models/activate", { repo });
+  return data as MemoryEmbedJob;
+}
+
+export async function apiGetModelsDir(): Promise<{ models_dir: string }> {
+  const { data } = await api.get("/api/settings/models-dir");
+  return data as { models_dir: string };
+}
+
+export async function apiPutModelsDir(models_dir: string): Promise<{ ok: boolean; models_dir: string }> {
+  const { data } = await api.put("/api/settings/models-dir", { models_dir });
+  return data as { ok: boolean; models_dir: string };
+}
+
 export async function apiPutVoiceBackend(payload: {
+  cpu_threads?: number;
   stt_backend?: string;
   faster_whisper_model?: string;
   compute_type?: string;
@@ -682,6 +828,7 @@ export async function apiTestConnection(url: string): Promise<{ ok: boolean; sta
 
 export type ToolPermissions = {
   always_included: string[];
+  no_always_included?: string[];   // roles without the always_included tools (P120)
   roles: Record<string, string[]>;
 };
 
@@ -715,6 +862,16 @@ export async function apiAdminServices(): Promise<Record<string, AdminServiceSta
   return data;
 }
 
+export async function apiGetMediaHost(): Promise<{ media_host: string; detected: string; in_container: boolean }> {
+  const { data } = await api.get("/api/settings/voice/media-host");
+  return data;
+}
+
+export async function apiPutMediaHost(media_host: string): Promise<{ ok: boolean; applied: boolean }> {
+  const { data } = await api.put("/api/settings/voice/media-host", { media_host });
+  return data;
+}
+
 export async function apiRestartService(key: ServiceKey): Promise<{ ok: boolean; unit?: string; error?: string }> {
   const { data } = await api.post(`/api/admin/restart/${key}`);
   return data;
@@ -727,62 +884,6 @@ export async function apiSettingsRollback(): Promise<{ ok: boolean; restored: st
 
 // ── Config snapshots ──────────────────────────────────────────────────────────
 
-export type ConfigSnapshot = {
-  id: string;
-  name: string;
-  created: string;
-  files: string[];
-};
-
-export async function apiSaveConfigSnapshot(name: string): Promise<{ ok: boolean; id?: string; error?: string; count?: number }> {
-  const { data } = await api.post("/api/admin/config-snapshot", { name });
-  return data;
-}
-
-export async function apiListConfigSnapshots(): Promise<{ snapshots: ConfigSnapshot[] }> {
-  const { data } = await api.get("/api/admin/config-snapshots");
-  return data;
-}
-
-export async function apiRestoreConfigSnapshot(id: string): Promise<{ ok: boolean; restored: string[]; errors: string[] }> {
-  const { data } = await api.post(`/api/admin/config-snapshot/${id}/restore`);
-  return data;
-}
-
-export async function apiDeleteConfigSnapshot(id: string): Promise<{ ok: boolean }> {
-  const { data } = await api.delete(`/api/admin/config-snapshot/${id}`);
-  return data;
-}
-
-export async function apiExportConfigSnapshot(id: string, downloadName: string): Promise<void> {
-  const token = sessionStorage.getItem("kaare_token");
-  const resp = await fetch(
-    `http://${window.location.hostname}:8000/api/admin/config-snapshot/${id}/export`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!resp.ok) throw new Error("Export failed");
-  const blob = await resp.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = downloadName;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-export async function apiImportConfigSnapshot(
-  name: string,
-  file: File
-): Promise<{ ok: boolean; id?: string; error?: string; count?: number }> {
-  const form = new FormData();
-  form.append("name", name);
-  form.append("file", file);
-  const { data } = await api.post("/api/admin/config-snapshot/import", form);
-  return data;
-}
-
-// ── Full backup ────────────────────────────────────────────────────────────────
-
 export type BackupPoint = {
   id: string;
   name: string;
@@ -790,7 +891,62 @@ export type BackupPoint = {
   categories: string[];
   size_bytes: number;
   ktsb_version: string;
+  /** "pre_update" = taken automatically before an in-app update (P57); not counted against the 5-point limit. */
+  kind?: string;
+  to_version?: string;
 };
+
+// ── In-app update (P57) ───────────────────────────────────────────────────────
+
+export type UpdateStep = { ts: string; phase: string; message: string };
+export type UpdateState = {
+  phase: string;
+  target?: string;
+  from_version?: string;
+  started?: string;
+  finished?: string;
+  error?: string;
+  result?: string;
+  steps?: UpdateStep[];
+};
+export type UpdateStatus = {
+  docker: boolean;
+  running_version: string;
+  reachable: boolean;
+  busy?: boolean;
+  current?: string;
+  problem?: string;
+  can_rollback?: boolean;
+  state?: UpdateState;
+};
+export type UpdateCheck = {
+  ok: boolean;
+  current: string;
+  available?: boolean;
+  latest?: { version: string; published: string; notes: string; url: string } | null;
+  checked?: string;
+  error?: string;
+};
+
+export async function apiUpdateStatus(): Promise<UpdateStatus> {
+  const { data } = await api.get("/api/update/status");
+  return data;
+}
+
+export async function apiUpdateCheck(force = false): Promise<UpdateCheck> {
+  const { data } = await api.post("/api/update/check", { force });
+  return data;
+}
+
+export async function apiUpdateStart(version: string): Promise<{ ok: boolean; started?: string; save_point?: string }> {
+  const { data } = await api.post("/api/update/start", { version });
+  return data;
+}
+
+export async function apiUpdateRollback(): Promise<{ ok: boolean }> {
+  const { data } = await api.post("/api/update/rollback");
+  return data;
+}
 
 export async function apiSaveBackupPoint(
   categories: string[],
@@ -822,7 +978,7 @@ export async function apiDeleteBackupPoint(id: string): Promise<{ ok: boolean }>
 export async function apiDownloadBackupPoint(id: string, downloadName: string): Promise<void> {
   const token = sessionStorage.getItem("kaare_token");
   const resp = await fetch(
-    `http://${window.location.hostname}:8000/api/backup/points/${id}/download`,
+    `${API_BASE}/api/backup/points/${id}/download`,
     { headers: { Authorization: `Bearer ${token}` } },
   );
   if (!resp.ok) throw new Error("Download failed");
@@ -839,7 +995,7 @@ export async function apiExportBackup(categories: string[], downloadName: string
   const token = sessionStorage.getItem("kaare_token");
   const params = new URLSearchParams({ categories: categories.join(",") });
   const resp = await fetch(
-    `http://${window.location.hostname}:8000/api/backup/export?${params}`,
+    `${API_BASE}/api/backup/export?${params}`,
     { headers: { Authorization: `Bearer ${token}` } },
   );
   if (!resp.ok) throw new Error("Export failed");
@@ -965,6 +1121,18 @@ export type WebsearchConfig = {
   searxng_url: string;
   brave_country: string;
   brave_search_lang: string;
+  search_total_timeout_s: number;
+  fetch_timeout_s: number;
+  max_download_bytes: number;
+  per_host_interval_s: number;
+  page_cache_ttl_s: number;
+  page_cache_max_entries: number;
+  trusted_slots: number;
+  official_timeout_s: number;
+  background_timeout_s: number;
+  open_web: boolean;
+  caution: "careful" | "balanced" | "open";
+  paid_calls_today?: Record<string, number>;
 };
 
 export async function apiGetWebsearch(): Promise<WebsearchConfig> {
@@ -1026,9 +1194,91 @@ export async function apiPutKareSettings(payload: Partial<KareSettings> & { pers
   return data as { ok: boolean };
 }
 
+// ── Settings: Kåre's memory drawers in the prompt (P133 C6) ───────────────────
+
+export type MemoryPromptSettings = {
+  relevance_enabled: boolean;
+  top_k: number;
+  min_score: number;
+  echo_min_score: number;
+  lessons_max_chars: number;
+  lessons_write_max_chars: number;
+  core_facts_max_chars: number;
+  index_max_chars: number;
+  resolve_roles: string[];
+  kare_reminders: {
+    injection_max_chars: number;
+    note_prompt_chars: number;
+    write_max_chars: number;
+    max_entries: number;
+  };
+  roles: string[];
+  relevance_active: boolean; // read-only: switch on AND an embedding service enabled (N25)
+};
+
+export async function apiGetMemoryPrompt(): Promise<MemoryPromptSettings> {
+  const { data } = await api.get("/api/settings/memory-prompt");
+  return data;
+}
+
+export async function apiPutMemoryPrompt(payload: Partial<Omit<MemoryPromptSettings, "roles" | "relevance_active">>) {
+  await api.put("/api/settings/memory-prompt", payload);
+}
+
 // ── Settings: Language ────────────────────────────────────────────────────────
 
 export type LanguageSettings = { language: string; kare_language: string };
+
+export type NetworkSettings = {
+  local_subnets: string[];
+  vpn_subnet: string;
+  trusted_proxies: string[];
+  api_docs: boolean;
+};
+
+export async function apiGetNetwork(): Promise<NetworkSettings> {
+  const { data } = await api.get("/api/settings/network");
+  return data;
+}
+
+export async function apiPutNetwork(payload: Partial<NetworkSettings>): Promise<NetworkSettings> {
+  const { data } = await api.put("/api/settings/network", payload);
+  return data;
+}
+
+export type RetentionDays = {
+  interactions_retention_days: number;
+  episodes_retention_days: number;
+  think_cache_retention_days: number;
+};
+
+export type LogsAndDataSettings = {
+  flush_interval_seconds: number;
+  retention: RetentionDays;
+  defaults: { flush_interval_seconds: number; retention: RetentionDays };
+  limits: { flush_max: number };
+  recommended: { flush_min: number; flush_max: number; retention_warn_below_days: number };
+};
+
+export async function apiGetLogsAndData(): Promise<LogsAndDataSettings> {
+  const { data } = await api.get("/api/settings/logs-and-data");
+  return data;
+}
+
+export async function apiPutLogsAndData(payload: {
+  flush_interval_seconds?: number;
+  retention?: Partial<RetentionDays>;
+}): Promise<LogsAndDataSettings> {
+  const { data } = await api.put("/api/settings/logs-and-data", payload);
+  return data;
+}
+
+export type NetworkSuggestion = { suggested_subnet: string; local_subnets: string[]; vpn_subnet: string; is_default: boolean };
+
+export async function apiGetNetworkSuggestion(): Promise<NetworkSuggestion> {
+  const { data } = await api.get("/api/onboarding/network-suggestion");
+  return data;
+}
 
 export async function apiGetLanguage(): Promise<LanguageSettings> {
   const { data } = await api.get("/api/settings/language");
@@ -1044,7 +1294,9 @@ export async function apiPutLanguage(language: string, kare_language?: string) {
 
 // ── Settings: Trusted sources ─────────────────────────────────────────────────
 
-export type TrustedEntry = { domain: string; beskrivelse?: string };
+export type SourceType = "public_authority" | "encyclopedia" | "newsroom" | "research" | "official" | "other_serious";
+export type TrustLevel = "high" | "normal" | "low";
+export type TrustedEntry = { domain: string; description?: string; type?: SourceType; trust?: TrustLevel };
 export type TrustedSources = Record<string, TrustedEntry[]>;
 
 export async function apiGetTrustedSources(): Promise<TrustedSources> {
@@ -1055,6 +1307,38 @@ export async function apiGetTrustedSources(): Promise<TrustedSources> {
 export async function apiPutTrustedSources(payload: TrustedSources) {
   const { data } = await api.put("/api/settings/trusted-sources", payload);
   return data as { ok: boolean; categories: number; domains: number };
+}
+
+export type LawSettings = {
+  enabled: boolean;
+  status: { built_at: string | null; documents: number; paragraphs: number };
+  refreshing: boolean;
+  attribution: string;
+};
+
+export async function apiGetLaw(): Promise<LawSettings> {
+  const { data } = await api.get("/api/settings/law");
+  return data;
+}
+
+export async function apiPutLaw(enabled: boolean) {
+  const { data } = await api.put("/api/settings/law", { enabled });
+  return data as { ok: boolean; enabled: boolean };
+}
+
+export async function apiRefreshLaw() {
+  const { data } = await api.post("/api/settings/law/refresh");
+  return data as { ok: boolean; started: boolean; refreshing: boolean };
+}
+
+export async function apiGetBlockedSources(): Promise<string[]> {
+  const { data } = await api.get("/api/settings/blocked-sources");
+  return (data?.blocked ?? []) as string[];
+}
+
+export async function apiPutBlockedSources(blocked: string[]) {
+  const { data } = await api.put("/api/settings/blocked-sources", { blocked });
+  return data as { ok: boolean; blocked: string[] };
 }
 
 // ── Settings: Images ──────────────────────────────────────────────────────────
@@ -1147,6 +1431,7 @@ export type NodeConfig = {
   has_display?: boolean;
   token?: string;
   default_user?: string;
+  trust?: "indoor" | "outdoor";   // who an unidentified speaker is here (P120)
   enabled: boolean;
 };
 
@@ -1267,9 +1552,6 @@ export type MeetingRolesConfig = {
   mechanic: string;
   mechanic_custom: string;
   mechanic_default: string;
-  miss_kare: string;
-  miss_kare_custom: string;
-  miss_kare_default: string;
 };
 
 export async function apiGetMeetingRoles(): Promise<MeetingRolesConfig> {
@@ -1344,12 +1626,21 @@ export async function apiPutInnerVoices(payload: {
 
 // ── Voice: browser STT/TTS ────────────────────────────────────────────────────
 
-const VOICE_BRIDGE = `http://${window.location.hostname}:8011`;
+// HTTPS (Caddy): same origin /voice/* — the browser blocks http:// calls from an https page and the mic
+// needs HTTPS (P127). HTTP (direct, as at home with vite preview): port 8011, like the API on 8000.
+const VOICE_BRIDGE = window.location.protocol === "https:"
+    ? `${window.location.origin}/voice`
+    : `http://${window.location.hostname}:8011`;
+// The voice bridge checks the login with the main API (P120)
+const voiceAuth = (): Record<string, string> => {
+  const tok = sessionStorage.getItem("kaare_token");
+  return tok ? { Authorization: `Bearer ${tok}` } : {};
+};
 
 export async function apiTranscribe(audioBlob: Blob): Promise<{ text: string }> {
   const form = new FormData();
   form.append("file", audioBlob, "recording.webm");
-  const res = await fetch(`${VOICE_BRIDGE}/transcribe`, { method: "POST", body: form });
+  const res = await fetch(`${VOICE_BRIDGE}/transcribe`, { method: "POST", body: form, headers: voiceAuth() });
   if (!res.ok) throw new Error(`Transcribe error: ${res.status}`);
   return res.json();
 }
@@ -1357,11 +1648,13 @@ export async function apiTranscribe(audioBlob: Blob): Promise<{ text: string }> 
 export async function apiTtsFile(text: string): Promise<{ url: string }> {
   const res = await fetch(`${VOICE_BRIDGE}/tts_file`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...voiceAuth() },
     body: JSON.stringify({ text }),
   });
   if (!res.ok) throw new Error(`TTS error: ${res.status}`);
-  return res.json();
+  // A voice service from before P127 still answers with an absolute url — use it until that service restarts
+  const body = (await res.json()) as { path?: string; url?: string };
+  return { url: body.path ? `${VOICE_BRIDGE}${body.path}` : (body.url ?? "") };
 }
 
 // ── Notifications + Normalcy ──────────────────────────────────────────────────

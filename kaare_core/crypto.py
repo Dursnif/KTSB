@@ -24,13 +24,11 @@ import json
 import os
 from pathlib import Path
 
-from argon2 import PasswordHasher
-from argon2.low_level import Type, hash_secret_raw
 import nacl.public
 import nacl.secret
 import nacl.utils
+from argon2.low_level import Type, hash_secret_raw
 from mnemonic import Mnemonic
-
 
 # --- Argon2id parameters (OWASP recommended for PIN derivation) ---
 _ARGON2_TIME_COST = 3
@@ -161,7 +159,9 @@ def generate_seed_phrase() -> str:
     return _mnemo.generate(strength=128)
 
 
-def seed_phrase_to_private_key(words: str, original_salt: bytes, original_public_key: bytes) -> bytes | None:
+def seed_phrase_to_private_key(
+    words: str, original_salt: bytes, original_public_key: bytes
+) -> bytes | None:
     """
     Recover private key from seed phrase.
     The seed phrase encodes all 32 raw private key bytes directly (24-word BIP39, not via HD
@@ -178,7 +178,9 @@ def seed_phrase_to_private_key(words: str, original_salt: bytes, original_public
         return None
 
 
-def write_user_text_file(path_base: Path, text: str, user_id: str, allow_system_key: bool = False) -> None:
+def write_user_text_file(
+    path_base: Path, text: str, user_id: str, allow_system_key: bool = False
+) -> None:
     """Write text to path_base.enc (encrypted) if a key is available, else path_base.md (plaintext).
 
     Mirrors the observations.md/.enc dual-file pattern already used elsewhere in KTSB
@@ -186,7 +188,9 @@ def write_user_text_file(path_base: Path, text: str, user_id: str, allow_system_
     written by unattended background jobs (e.g. miss_kare_portrait.md) don't each
     reimplement the same encrypt-or-fallback dance.
     """
-    from kaare_core.session_keys import resolve_key_sync
+    # PLC0415: circular: crypto ↔ session_keys
+    from kaare_core.session_keys import resolve_key_sync  # noqa: PLC0415
+
     enc_path = path_base.with_suffix(".enc")
     md_path = path_base.with_suffix(".md")
     key = resolve_key_sync(user_id, allow_system_key=allow_system_key)
@@ -203,7 +207,9 @@ def read_user_text_file(path_base: Path, user_id: str, allow_system_key: bool = 
     enc_path = path_base.with_suffix(".enc")
     md_path = path_base.with_suffix(".md")
     if enc_path.exists():
-        from kaare_core.session_keys import resolve_key_sync
+        # PLC0415: circular: crypto ↔ session_keys
+        from kaare_core.session_keys import resolve_key_sync  # noqa: PLC0415
+
         key = resolve_key_sync(user_id, allow_system_key=allow_system_key)
         if not key:
             return ""

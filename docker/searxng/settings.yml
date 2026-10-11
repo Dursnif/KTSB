@@ -1,0 +1,20 @@
+# SearXNG for KTSB (P121 Phase 1) — the default web search engine in Docker installs.
+# Internal only: reached by kaare-api as http://searxng:8080, never published to the network.
+# Everything not listed here keeps the image defaults (use_default_settings).
+use_default_settings: true
+
+general:
+  instance_name: "KTSB search"
+
+server:
+  # Placeholder — the real secret comes from the SEARXNG_SECRET environment variable
+  # (docker-compose.yml). It only signs SearXNG's own cookies/links; KTSB never uses them.
+  secret_key: "replaced-by-SEARXNG_SECRET"
+  limiter: false        # only KTSB's own container talks to this instance
+  image_proxy: false
+  public_instance: false
+
+search:
+  formats:
+    - html
+    - json              # KTSB reads results as JSON (the image default is html only → 403)

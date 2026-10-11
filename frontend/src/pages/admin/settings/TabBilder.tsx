@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { apiGetImageSettings, apiPutImageSettings, apiGetImageStats, type ImageSettings, type ImageUserStats } from "@/services/api";
-import { useSaveState, SaveFeedback, FieldRow, ExpertOnly } from "./shared";
+import { SaveFeedback, FieldRow, ExpertOnly } from "./shared";
+import { useSaveState } from "./useSaveState";
 import Cameras from "../Cameras";
 
 export default function TabBilder() {

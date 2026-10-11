@@ -2,17 +2,20 @@
 Provider abstraction for inner voice inference.
 Supported: openvino | mlx | cpu | remote.
 """
+
 from abc import ABC, abstractmethod
 from pathlib import Path
 
 try:
     import openvino_genai as ov_genai
+
     _HAS_OPENVINO = True
 except ImportError:
     _HAS_OPENVINO = False
 
 try:
     import mlx_lm
+
     _HAS_MLX = True
 except ImportError:
     _HAS_MLX = False
@@ -20,6 +23,7 @@ except ImportError:
 try:
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
+
     _HAS_TRANSFORMERS = True
 except ImportError:
     _HAS_TRANSFORMERS = False
@@ -60,7 +64,8 @@ class OpenVINOProvider(InnerVoiceProvider):
         self._pipe = ov_genai.LLMPipeline(
             model_path,
             "CPU",
-            **{"INFERENCE_NUM_THREADS": _CPU_THREADS, "CACHE_DIR": str(_MODEL_CACHE_DIR)},
+            INFERENCE_NUM_THREADS=_CPU_THREADS,
+            CACHE_DIR=str(_MODEL_CACHE_DIR),
         )
 
     def generate(self, prompt: str, max_tokens: int) -> str:
@@ -94,10 +99,8 @@ class CPUProvider(InnerVoiceProvider):
 
     def generate(self, prompt: str, max_tokens: int) -> str:
         inputs = self._tokenizer(prompt, return_tensors="pt")
-        outputs = self._model.generate(
-            **inputs, max_new_tokens=max_tokens, do_sample=False
-        )
-        new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
+        outputs = self._model.generate(**inputs, max_new_tokens=max_tokens, do_sample=False)
+        new_tokens = outputs[0][inputs["input_ids"].shape[1] :]
         return self._tokenizer.decode(new_tokens, skip_special_tokens=True)
 
 

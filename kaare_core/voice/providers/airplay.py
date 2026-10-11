@@ -22,8 +22,11 @@ class AirPlayProvider(BaseVoiceProvider):
         self._media_base_url = media_base_url
 
     async def speak(self, wav_path: Path, node_config: dict) -> None:
-        import pyatv
-        from pyatv import const
+        # PLC0415: optional dependency — loaded only when this feature is used (rule 24)
+        import pyatv  # noqa: PLC0415
+
+        # PLC0415: optional dependency — loaded only when this feature is used (rule 24)
+        from pyatv import const  # noqa: PLC0415
 
         host = node_config.get("host", "")
         if not host:

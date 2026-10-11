@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { SettingsLevelProvider, useSettingsLevel } from "@/contexts/SettingsLevelContext";
+import { SettingsLevelProvider } from "@/contexts/SettingsLevelContext";
+import { useSettingsLevel } from "@/hooks/useSettingsLevel";
 import TabGenerelt from "./settings/TabGenerelt";
 import TabHomeAssistant from "./settings/TabHomeAssistant";
 import TabMqtt from "./settings/TabMqtt";
@@ -41,9 +42,7 @@ function SettingsInner() {
 
   // Agent-instillinger is 100% Expert content (raw tool names, prompt-style role
   // editors) — the tab itself disappears in Basic mode rather than showing empty.
-  useEffect(() => {
-    if (level === "basic" && tab === "agenter") setTab("generelt");
-  }, [level, tab]);
+  const activeTab = level === "basic" && tab === "agenter" ? "generelt" : tab;
 
   return (
     <div>
@@ -51,7 +50,7 @@ function SettingsInner() {
         <h1 style={{ color: "#fff", fontSize: 22, fontWeight: 700, margin: 0 }}>{t("settings.title")}</h1>
         <SettingsLevelToggle />
       </div>
-      <Tabs value={tab} onValueChange={(v) => { if (v) setTab(v); }} className="w-full">
+      <Tabs value={activeTab} onValueChange={(v) => { if (v) setTab(v); }} className="w-full">
         {/* Scrollable on mobile so tabs stay on one row instead of wrapping over content */}
         <div className="w-full overflow-x-auto mb-6 pb-1">
           <TabsList className="flex-nowrap h-auto gap-1">

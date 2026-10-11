@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Loader2, RefreshCw, ChevronDown, ChevronRight, Undo2, ArrowUp, ArrowDown } from "lucide-react";
 import { api, apiGetNormalcyEvents, apiPostNormalcyCorrect, apiDeleteNormalcyCorrect, type NormalcyEvent } from "../../services/api";
+import { toggled } from "@/lib/collections";
 
 const UNDO_TIMEOUT_MS = 8000;
 
@@ -120,21 +121,33 @@ export default function Security() {
     }
   };
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const r = await apiGetNormalcyEvents({ days, label: labelFilter || undefined });
-      setEvents(r.events ?? []);
-      setSelectedKeys(new Set());
-      setExpandedKeys(new Set());
-    } catch {
-      setEvents([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [days, labelFilter]);
+  // Reloads whenever days/label change. `loading` is set to true by the filter buttons
+  // (chooseDays/chooseLabel) and starts true for the first load.
+  const load = useCallback(() =>
+    apiGetNormalcyEvents({ days, label: labelFilter || undefined })
+      .then(
+        r => {
+          setEvents(r.events ?? []);
+          setSelectedKeys(new Set());
+          setExpandedKeys(new Set());
+        },
+        () => setEvents([]),
+      )
+      .finally(() => setLoading(false)), [days, labelFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  const chooseDays = (d: number) => {
+    if (d === days) return;
+    setLoading(true);
+    setDays(d);
+  };
+
+  const chooseLabel = (l: string) => {
+    if (l === labelFilter) return;
+    setLoading(true);
+    setLabelFilter(l);
+  };
 
   useEffect(() => () => { if (undoTimerRef.current) clearTimeout(undoTimerRef.current); }, []);
 
@@ -270,11 +283,11 @@ export default function Security() {
   };
 
   const toggleExpand = (k: string) =>
-    setExpandedKeys(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+    setExpandedKeys(s => toggled(s, k));
 
   const toggleSelect = (k: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setSelectedKeys(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+    setSelectedKeys(s => toggled(s, k));
   };
 
   const toggleGroupSelect = (evs: NormalcyEvent[], e: React.ChangeEvent) => {
@@ -290,7 +303,7 @@ export default function Security() {
   };
 
   const toggleGroupCollapse = (gk: string) =>
-    setCollapsedGroups(s => { const n = new Set(s); n.has(gk) ? n.delete(gk) : n.add(gk); return n; });
+    setCollapsedGroups(s => toggled(s, gk));
 
   // ── Styles ──────────────────────────────────────────────────────────────
   const tab = (active: boolean): React.CSSProperties => ({
@@ -337,7 +350,7 @@ export default function Security() {
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
         <span style={{ color: "#444", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, marginRight: 2 }}>{t("security.period")}</span>
         {DAY_OPTIONS.map(d => (
-          <button key={d} style={tab(days === d)} onClick={() => setDays(d)}>{d}d</button>
+          <button key={d} style={tab(days === d)} onClick={() => chooseDays(d)}>{d}d</button>
         ))}
 
         <div style={{ width: 1, height: 18, background: "#2a2a2a", margin: "0 6px" }} />
@@ -356,7 +369,7 @@ export default function Security() {
             <div style={{ width: 1, height: 18, background: "#2a2a2a", margin: "0 6px" }} />
             <span style={{ color: "#444", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, marginRight: 2 }}>{t("security.group_object")}</span>
             {knownLabels.map(l => (
-              <button key={l || "alle"} style={tab(labelFilter === l)} onClick={() => setLabelFilter(l)}>
+              <button key={l || "alle"} style={tab(labelFilter === l)} onClick={() => chooseLabel(l)}>
                 {l || t("security.status_all")}
               </button>
             ))}

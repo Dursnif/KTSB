@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 import httpx
 
@@ -18,8 +17,8 @@ class HaDisplayProvider(BaseDisplayProvider):
         node_config: dict,
         text: str,
         title: str = "Kåre",
-        image_path: Optional[str] = None,
-        image_b64: Optional[str] = None,
+        image_path: str | None = None,
+        image_b64: str | None = None,
         duration: int = 8,
         position: str = "bottom_right",
     ) -> dict:

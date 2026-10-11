@@ -12,12 +12,16 @@ Switches household_state to home and fires trigger cleanup in profiles.
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+
+from kaare_core.config import now_local
+from kaare_core.tools.household_state import is_away, read_household_state, set_home
+from kaare_core.users.profile_manager import load_profile
+from kaare_core.users.store import list_users
 
 logger = logging.getLogger("presence_monitor")
 
-_POLL_INTERVAL_AWAY = 5 * 60   # 5 minutes when away
-_CONFIRM_POLLS = 2              # require this many consecutive positive polls before switching
+_POLL_INTERVAL_AWAY = 5 * 60  # 5 minutes when away
+_CONFIRM_POLLS = 2  # require this many consecutive positive polls before switching
 _HA_TIMEOUT = 5.0
 
 _consecutive_positive = 0
@@ -28,7 +32,7 @@ def _check_date_signal(expected_return: str | None) -> bool:
     if not expected_return:
         return False
     try:
-        return datetime.now().strftime("%Y-%m-%d") >= expected_return
+        return now_local().strftime("%Y-%m-%d") >= expected_return
     except Exception:
         return False
 
@@ -36,7 +40,9 @@ def _check_date_signal(expected_return: str | None) -> bool:
 def _ha_state(entity_id: str) -> str | None:
     """Fetch HA entity state synchronously. Returns state string or None on error."""
     try:
-        from kaare_ha_gateway import ha_get, HA_API_URL, HA_TOKEN
+        # PLC0415: kaare_ha_gateway configures logging and loads HA config at import — import only when used
+        from kaare_ha_gateway import ha_get  # noqa: PLC0415
+
         data = ha_get(f"/api/states/{entity_id}", timeout=_HA_TIMEOUT)
         return (data or {}).get("state")
     except Exception:
@@ -46,7 +52,9 @@ def _ha_state(entity_id: str) -> str | None:
 def _ha_attributes(entity_id: str) -> dict:
     """Fetch HA entity attributes. Returns empty dict on error."""
     try:
-        from kaare_ha_gateway import ha_get
+        # PLC0415: kaare_ha_gateway configures logging and loads HA config at import — import only when used
+        from kaare_ha_gateway import ha_get  # noqa: PLC0415
+
         data = ha_get(f"/api/states/{entity_id}", timeout=_HA_TIMEOUT)
         return (data or {}).get("attributes", {})
     except Exception:
@@ -77,8 +85,6 @@ def _collect_signals_for_user(user_profile: dict) -> list[bool]:
 
 def _count_positive_signals(state: dict) -> int:
     """Count how many unique signals indicate 'home' across all monitored users."""
-    from kaare_core.users.store import list_users
-    from kaare_core.users.profile_manager import load_profile
 
     positive = 0
 
@@ -106,21 +112,22 @@ def _count_positive_signals(state: dict) -> int:
 async def _poll_once() -> bool:
     """Run one poll cycle. Returns True if confirmed home (2+ signals, 2 consecutive)."""
     global _consecutive_positive
-    from kaare_core.tools.household_state import read_household_state, set_home
 
     state = read_household_state()
     if state.get("mode") != "away":
         _consecutive_positive = 0
         return False
 
-    positive = await asyncio.get_event_loop().run_in_executor(
-        None, _count_positive_signals, state
-    )
+    positive = await asyncio.get_event_loop().run_in_executor(None, _count_positive_signals, state)
 
     if positive >= 2:
         _consecutive_positive += 1
-        logger.info("[presence] %d/2 positive signals (%d/%d consecutive)",
-                    positive, _consecutive_positive, _CONFIRM_POLLS)
+        logger.info(
+            "[presence] %d/2 positive signals (%d/%d consecutive)",
+            positive,
+            _consecutive_positive,
+            _CONFIRM_POLLS,
+        )
     else:
         if _consecutive_positive > 0:
             logger.debug("[presence] signal lost — resetting consecutive counter")
@@ -137,10 +144,11 @@ async def _poll_once() -> bool:
 
 async def start_presence_monitor() -> None:
     """Long-running background task. No-ops when household is home."""
-    logger.info("[presence] Presence monitor started (poll interval: %ds when away)", _POLL_INTERVAL_AWAY)
+    logger.info(
+        "[presence] Presence monitor started (poll interval: %ds when away)", _POLL_INTERVAL_AWAY
+    )
     while True:
         try:
-            from kaare_core.tools.household_state import is_away
             if is_away():
                 confirmed = await _poll_once()
                 if confirmed:

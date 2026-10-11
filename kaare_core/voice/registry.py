@@ -30,12 +30,12 @@ class VoiceProviderRegistry:
 
         self._providers: dict[str, BaseVoiceProvider] = {
             "ha_media_player": HaProvider(ha_url, ha_token, media_base_url),
-            "esp32":           Esp32Provider(media_base_url),
-            "wyoming":         WyomingProvider(_cfg.get("wyoming", {})),
-            "chromecast":      ChromecastProvider(_cfg.get("chromecast", {}), media_base_url),
-            "snapcast":        SnapcastProvider(_cfg.get("snapcast", {}), media_base_url),
-            "airplay":         AirPlayProvider(_cfg.get("airplay", {}), media_base_url),
-            "dlna":            DlnaProvider(_cfg.get("dlna", {}), media_base_url),
+            "esp32": Esp32Provider(media_base_url),
+            "wyoming": WyomingProvider(_cfg.get("wyoming", {})),
+            "chromecast": ChromecastProvider(_cfg.get("chromecast", {}), media_base_url),
+            "snapcast": SnapcastProvider(_cfg.get("snapcast", {}), media_base_url),
+            "airplay": AirPlayProvider(_cfg.get("airplay", {}), media_base_url),
+            "dlna": DlnaProvider(_cfg.get("dlna", {}), media_base_url),
         }
         log.info("VoiceProviderRegistry klar: %s", list(self._providers.keys()))
 

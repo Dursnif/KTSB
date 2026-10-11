@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation, Trans } from "react-i18next";
-import { apiGenerate, apiMissKareComment, apiChatHistory, apiTranscribe, apiTtsFile, apiGetServices, apiGetPendingNotifications, apiAckNotification } from "../../services/api";
-import { useAuth } from "../../auth/AuthContext";
+import { API_BASE, apiGenerate, apiMissKareComment, apiChatHistory, apiTranscribe, apiTtsFile, apiGetServices, apiGetPendingNotifications, apiAckNotification } from "../../services/api";
+import { useAuth } from "@/hooks/useAuth";
+import { useAssistantName } from "@/hooks/useAssistantName";
 import type { TraceStep } from "../../services/api";
 import { useTheme } from "../../theme";
 import { useUserPrefs } from "../../hooks/useUserPrefs";
@@ -18,7 +19,6 @@ function getNightMood(): string | null {
   const h = new Date().getHours();
   return (h >= 23 || h < 7) ? "sleeping" : null;
 }
-const API_BASE = `http://${window.location.hostname}:8000`;
 
 function renderKareText(text: string, onImageClick: (src: string) => void) {
   const parts: React.ReactNode[] = [];
@@ -318,7 +318,11 @@ function getUserId(): string {
 
 export default function Home() {
   const { t } = useTranslation();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
+  // Speaker names on every message, so a copied dialogue says who said what (Stian 2026-10-04:
+  // no screenshot transcripts needed). Assistant name from the GUI setting, user from the profile.
+  const assistantName = useAssistantName();
+  const userName = user?.display_name || user?.username || "";
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -339,7 +343,7 @@ export default function Home() {
 
   useEffect(() => {
     apiGetServices().then(svc => {
-      setSttEnabled((svc as any).voice?.stt_enabled ?? true);
+      setSttEnabled(svc.voice?.stt_enabled ?? true);
     }).catch(() => {});
   }, []);
 
@@ -488,7 +492,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [input, pendingImages, loading, stopPolling, startPolling, prefs]);
+  }, [input, pendingImages, loading, stopPolling, startPolling, prefs, t]);
 
   const send = (e: React.FormEvent) => {
     e.preventDefault();
@@ -581,12 +585,19 @@ export default function Home() {
             </div>
           )}
           {messages.map((m, i) => (
-            <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "70%" }}>
+            <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "70%",
+                                  display: "flex", flexDirection: "column" as const,
+                                  alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
               {m.images && m.images.length > 0 && (
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const, marginBottom: 6, justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
                   {m.images.map((img, ii) => (
                     <img key={ii} src={img} alt="" style={{ maxWidth: 200, maxHeight: 200, borderRadius: 10, objectFit: "cover" as const }} />
                   ))}
+                </div>
+              )}
+              {(m.text || m.role === "kare") && (
+                <div style={{ fontSize: 11, opacity: 0.6, margin: "0 6px 2px", textAlign: m.role === "user" ? "right" as const : "left" as const }}>
+                  {m.role === "user" ? userName : assistantName}:
                 </div>
               )}
               {(m.text || m.role === "kare") && (

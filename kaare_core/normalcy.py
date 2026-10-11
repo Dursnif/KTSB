@@ -23,24 +23,25 @@ in-memory cache — zero blocking in the hot path.
 import json
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import yaml
 
+from kaare_core import log_buffer
+
 logger = logging.getLogger("normalcy")
 
-_BASELINE_PATH     = Path("/kaare/state/normalcy_baseline.json")
-_FRIGATE_LOG_PATH  = Path("/kaare/logs/frigate_mqtt.log")
-_CORRECTIONS_PATH  = Path("/kaare/state/normalcy_corrections.json")
-_SERVICES_PATH     = Path("/kaare/configs/services.yaml")
-_WINDOW_DAYS       = 28         # rolling window for baseline computation
-_MIN_TRUST_DAYS    = 14         # deviation_score not used in alert routing below this
-_CHUNK_BYTES       = 5_000_000  # read last 5 MB of log (~35k events)
-_ANOMALY_CHUNK     = 10_000_000 # read last 10 MB for get_recent_anomalies (7+ days)
+_BASELINE_PATH = Path("/kaare/state/normalcy_baseline.json")
+_FRIGATE_LOG_PATH = Path("/kaare/logs/frigate_mqtt.log")
+_CORRECTIONS_PATH = Path("/kaare/state/normalcy_corrections.json")
+_SERVICES_PATH = Path("/kaare/configs/services.yaml")
+_WINDOW_DAYS = 28  # rolling window for baseline computation
+_MIN_TRUST_DAYS = 14  # deviation_score not used in alert routing below this
+_CHUNK_BYTES = 5_000_000  # read last 5 MB of log (~35k events)
+_ANOMALY_CHUNK = 10_000_000  # read last 10 MB for get_recent_anomalies (7+ days)
 
-_WEEKDAY_NAMES = ["monday", "tuesday", "wednesday", "thursday",
-                  "friday", "saturday", "sunday"]
+_WEEKDAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
 # In-memory cache: loaded once, refreshed after nightly compute
 _cache: dict = {}
@@ -63,9 +64,7 @@ def _load_baseline() -> dict:
         return {}
 
 
-def get_deviation_score(
-    camera: str, label: str, dt: datetime | None = None
-) -> tuple[float, float]:
+def get_deviation_score(camera: str, label: str, dt: datetime | None = None) -> tuple[float, float]:
     """
     Return (deviation_score, confidence) for a Frigate event.
 
@@ -88,7 +87,11 @@ def get_deviation_score(
         if days_of_data < 1:
             return 0.5, 0.0
 
-        ref = dt or datetime.now()
+        # The baseline and the admin corrections are keyed by UTC hour/weekday (event ts is UTC), so the
+        # lookup must be UTC too — the machine clock gave a local hour here (2 h off in Norway, N16).
+        ref = dt or datetime.now(UTC)
+        if ref.tzinfo is not None:
+            ref = ref.astimezone(UTC)
         hour = ref.hour
         weekday = ref.weekday()  # 0=Mon, 6=Sun
         key = f"{camera}|{label}|{hour}|{weekday}"
@@ -124,11 +127,14 @@ def compute_baseline() -> dict:
     Build the normalcy baseline from the last _WINDOW_DAYS of frigate_mqtt.log.
     Writes state/normalcy_baseline.json and returns the baseline dict.
     """
+    log_buffer.flush(
+        _FRIGATE_LOG_PATH
+    )  # include lines still buffered in RAM in this process (P131)
     if not _FRIGATE_LOG_PATH.exists():
         logger.info("[normalcy] frigate_mqtt.log not found — skipping baseline")
         return {}
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     cutoff = now_utc - timedelta(days=_WINDOW_DAYS)
     cutoff_iso = cutoff.isoformat(timespec="seconds")
 
@@ -169,9 +175,9 @@ def compute_baseline() -> dict:
         except Exception:
             continue
 
-        camera  = ev.get("camera", "")
-        label   = ev.get("label", "")
-        hour    = ts_dt.hour
+        camera = ev.get("camera", "")
+        label = ev.get("label", "")
+        hour = ts_dt.hour
         weekday = ts_dt.weekday()
         day_str = ts_dt.strftime("%Y-%m-%d")
 
@@ -187,11 +193,22 @@ def compute_baseline() -> dict:
     for corr in corrections:
         if corr.get("verdict") != "normal":
             continue
-        cam  = corr.get("source_key", "").replace("frigate:", "").split(":")[0]
-        lbl  = corr.get("source_key", "").replace("frigate:", "").split(":")[-1] if corr.get("source_key") else ""
+        cam = corr.get("source_key", "").replace("frigate:", "").split(":")[0]
+        lbl = (
+            corr.get("source_key", "").replace("frigate:", "").split(":")[-1]
+            if corr.get("source_key")
+            else ""
+        )
         hour_s = corr.get("hour_bucket", "")
-        wd_map = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
-                  "friday": 4, "saturday": 5, "sunday": 6}
+        wd_map = {
+            "monday": 0,
+            "tuesday": 1,
+            "wednesday": 2,
+            "thursday": 3,
+            "friday": 4,
+            "saturday": 5,
+            "sunday": 6,
+        }
         wd = wd_map.get(corr.get("weekday", "").lower(), -1)
         if cam and lbl and hour_s.isdigit() and wd >= 0:
             key = f"{cam}|{lbl}|{int(hour_s)}|{wd}"
@@ -238,19 +255,19 @@ def compute_baseline() -> dict:
         n_with = len(days_with_event)
         p_normal = min(1.0, n_with / days_obs)
         buckets[key] = {
-            "p_normal":        round(p_normal, 3),
+            "p_normal": round(p_normal, 3),
             "days_with_event": n_with,
-            "days_observed":   days_obs,
+            "days_observed": days_obs,
         }
 
     result = {
-        "version":      1,
-        "updated_at":   now_utc.isoformat(timespec="seconds"),
+        "version": 1,
+        "updated_at": now_utc.isoformat(timespec="seconds"),
         "window_start": cutoff.strftime("%Y-%m-%d"),
         "days_of_data": days_of_data,
-        "confidence":   round(confidence, 3),
+        "confidence": round(confidence, 3),
         "bucket_count": len(buckets),
-        "buckets":      buckets,
+        "buckets": buckets,
     }
 
     try:
@@ -260,7 +277,9 @@ def compute_baseline() -> dict:
         )
         logger.info(
             "[normalcy] Baseline computed: %d days, %d buckets, confidence=%.2f",
-            days_of_data, len(buckets), confidence,
+            days_of_data,
+            len(buckets),
+            confidence,
         )
     except Exception as e:
         logger.warning("[normalcy] write error: %s", e)
@@ -289,10 +308,13 @@ def get_recent_anomalies(
 
     Results are sorted by ts descending, capped at limit.
     """
+    log_buffer.flush(
+        _FRIGATE_LOG_PATH
+    )  # include lines still buffered in RAM in this process (P131)
     if not _FRIGATE_LOG_PATH.exists():
         return []
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     cutoff = now_utc - timedelta(days=days)
     cutoff_iso = cutoff.isoformat(timespec="seconds")
 
@@ -346,7 +368,7 @@ def get_recent_anomalies(
             continue
 
         camera = ev.get("camera", "")
-        label  = ev.get("label", "")
+        label = ev.get("label", "")
 
         if cameras and camera not in cameras:
             continue
@@ -361,24 +383,26 @@ def get_recent_anomalies(
             continue
 
         hour_bucket = str(ts_dt.hour).zfill(2)
-        weekday     = _WEEKDAY_NAMES[ts_dt.weekday()]
-        source_key  = f"frigate:{camera}:{label}"
-        correction  = corr_lookup.get((camera, label, hour_bucket, weekday))
+        weekday = _WEEKDAY_NAMES[ts_dt.weekday()]
+        source_key = f"frigate:{camera}:{label}"
+        correction = corr_lookup.get((camera, label, hour_bucket, weekday))
 
-        results.append({
-            "ts":                  ts_str,
-            "camera":              camera,
-            "camera_friendly":     cam_names.get(camera, camera),
-            "label":               label,
-            "score":               round(float(ev.get("score", 0)), 2),
-            "deviation_score":     round(deviation_score, 2),
-            "baseline_confidence": round(confidence, 2),
-            "source_key":          source_key,
-            "hour_bucket":         hour_bucket,
-            "weekday":             weekday,
-            "correction":          correction,
-            "event_id":            ev.get("event_id", ""),
-        })
+        results.append(
+            {
+                "ts": ts_str,
+                "camera": camera,
+                "camera_friendly": cam_names.get(camera, camera),
+                "label": label,
+                "score": round(float(ev.get("score", 0)), 2),
+                "deviation_score": round(deviation_score, 2),
+                "baseline_confidence": round(confidence, 2),
+                "source_key": source_key,
+                "hour_bucket": hour_bucket,
+                "weekday": weekday,
+                "correction": correction,
+                "event_id": ev.get("event_id", ""),
+            }
+        )
 
     results.sort(key=lambda x: x["ts"], reverse=True)
     return results[:limit]
@@ -400,22 +424,25 @@ def add_correction(
     try:
         corrections = _load_corrections()
         corrections = [
-            c for c in corrections
+            c
+            for c in corrections
             if not (
                 c.get("source_key") == source_key
                 and c.get("hour_bucket") == hour_bucket
                 and c.get("weekday") == weekday
             )
         ]
-        corrections.append({
-            "source_key":  source_key,
-            "hour_bucket": hour_bucket,
-            "weekday":     weekday,
-            "verdict":     verdict,
-            "comment":     comment,
-            "by":          by,
-            "ts":          datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        })
+        corrections.append(
+            {
+                "source_key": source_key,
+                "hour_bucket": hour_bucket,
+                "weekday": weekday,
+                "verdict": verdict,
+                "comment": comment,
+                "by": by,
+                "ts": datetime.now(UTC).isoformat(timespec="seconds"),
+            }
+        )
         _CORRECTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
         _CORRECTIONS_PATH.write_text(
             json.dumps({"corrections": corrections}, ensure_ascii=False, indent=2),
@@ -438,7 +465,8 @@ def delete_correction(source_key: str, hour_bucket: str, weekday: str) -> bool:
     try:
         corrections = _load_corrections()
         remaining = [
-            c for c in corrections
+            c
+            for c in corrections
             if not (
                 c.get("source_key") == source_key
                 and c.get("hour_bucket") == hour_bucket

@@ -16,7 +16,7 @@ Most local AI projects are built by developers, for developers. They require you
 
 **KTSB was built to change that.**
 
-The creator of KTSB didn't know how to code either — still doesn't, and has never written a single line of it. The entire project was built over 12 months using ChatGPT copy-paste between terminal and chat, and later, Claude Code directly in the terminal. It was born out of pure frustration with how uncomfortable, difficult, and text-heavy the local AI landscape is for regular people — and the conviction that architecture, decisions, and years of frustration are still ownership, even without a single commit written by hand.
+The creator of KTSB didn't know how to code either — still doesn't, and has never written a single line of it. The project started in June 2025: about eight months of ChatGPT copy-paste between terminal and chat, then Claude from late February 2026, and Claude Code directly in the terminal from April 2026. It was born out of pure frustration with how uncomfortable, difficult, and text-heavy the local AI landscape is for regular people — and the conviction that architecture, decisions, and years of frustration are still ownership, even without a single commit written by hand.
 
 KTSB is built for **the average user**, not the terminal-comfortable developer: full access to the most advanced AI agent features spoken about today — completely free for private use, entirely local, and managed 100% through a beautiful, intuitive web GUI.
 
@@ -36,69 +36,119 @@ And because it's yours, you decide how deep you go: tune the personality, prompt
 
 ---
 
-## What can Kåre do?
+## What can the main agent do?
+
+KTSB's main agent is called *Kåre* by default — you can give it any name under **Settings → Assistant Settings**.
 
 ### Talk and understand
-Ask Kåre anything in natural language — by voice or text. No rigid commands, no keyword memorisation. *"Turn off everything downstairs and lock the door"* works just as well as *"lock front door"*.
+Ask the main agent anything in natural language — by voice or text. No rigid commands, no keyword memorisation. *"Turn off everything downstairs and lock the door"* works just as well as *"lock front door"*.
 
 The GUI supports **Norwegian, English, and German**. The assistant name, hot-word, and response language are all configurable.
 
 ### Control your smart home
-Kåre connects to Home Assistant and can control anything HA knows about: lights, locks, thermostats, covers, media players, scenes, and scripts. You define your own room names and device nicknames so you can say *"the lamp in the corner of the bedroom"* and Kåre knows exactly what you mean.
+The main agent connects to Home Assistant and can control anything HA knows about: lights, locks, thermostats, covers, media players, scenes, and scripts. You define your own room names and device nicknames so you can say *"the lamp in the corner of the bedroom"* and the main agent knows exactly what you mean.
 
 ### See through your cameras
-Ask *"is there anyone outside?"* or *"what happened at the front door in the last hour?"* and Kåre checks your Frigate cameras and describes what it sees. Motion events and snapshots can be analysed automatically and announced over your speakers.
+Ask *"is there anyone outside?"* or *"what happened at the front door in the last hour?"* and the main agent checks your Frigate cameras and describes what it sees. Motion events and snapshots can be analysed automatically and announced over your speakers.
 
 ### Remember and learn
-Kåre maintains a short-term memory of your recent conversations and a long-term memory that persists across sessions. It builds a self-image over time based on its interactions — the longer you use it, the better it knows you.
+The main agent maintains a short-term memory of your recent conversations and a long-term memory that persists across sessions. It builds a self-image over time based on its interactions — the longer you use it, the better it knows you. Its own notes are sorted into drawers — short follow-ups, observations, lessons it always keeps in mind, and topics it has settled — so old notes do not crowd out the conversation.
 
 ### A team of AI assistants
-Behind the scenes, Kåre has a small team working alongside it:
+Behind the scenes, the main agent has a small team working alongside it:
 
-- **Miss Kåre** — a quiet evaluator who reviews Kåre's answers before they reach you
+- **Miss Kåre** — a quiet evaluator who reviews the main agent's answers before they reach you
 - **Mechanic** — a technical assistant for deep-dives, system inspection, and complex problems
 - **Miss Library** — searches a local Wikipedia corpus and the web for factual answers
 - **Jing and Jang** — background inner voices that process and reflect while you are not watching
 
-Every night at 04:00 they hold a reflection meeting to review the day. At 05:30 a developer meeting investigates any system issues. All of this happens quietly while you sleep.
+Every night (03:00 by default, set under **Settings → Reflection**) a night sequence runs in order: memory compression, a weekly review of what the main agent believes about the world, a reflection meeting that reviews the day, and a dev slot that investigates problems with read-only tools and leaves proposals for an admin to confirm in chat. Nothing changes without that confirmation.
 
 ### Multi-user with proper access control
-Create separate accounts for everyone in your household. Each user gets a PIN, a role (Child, Teen, Adult, Admin), and their own memory and conversation history. Sensitive tools — web search, system inspection, camera access — are gated by role.
+Create separate accounts for everyone in your household. Each user gets a PIN, a role (Child, Teen, Young adult, Adult, Admin), and their own memory and conversation history. Sensitive tools — web search, system inspection, camera access — are gated by role.
 
 Remote access via WireGuard VPN is available as an optional service, with per-user access levels: local only, AI chat only, or full smart home access from anywhere.
 
 ### Flexible AI backend
-Kåre uses **Ollama** for local LLM inference out of the box. No cloud account required. If you have a capable GPU, models run fast and privately on your own hardware. If you do not have a GPU, or want a more powerful model for complex reasoning, you can connect any OpenAI-compatible provider: OpenAI, NVIDIA NIM, vLLM, HuggingFace, or others.
+KTSB uses **Ollama** for local LLM inference out of the box. No cloud account required. Models can run on this machine or on another machine in your network — point each role at its address under **Settings → LLM**. With a 24 GB GPU you can run the 27B as the main agent (in Ollama, or vLLM for more speed) for the full experience. A cloud provider (OpenAI-compatible, HuggingFace, NVIDIA NIM …) can be added for explicit «ask online» questions; it does not run the main agent's tools (smart home, memory, cameras) yet.
 
 ---
 
 ## What you need
 
-Kåre runs via **Docker**, which means it works on Linux, Windows, and macOS without installing anything else manually.
+KTSB runs via **Docker**, which means it works on Linux, Windows, and macOS without installing anything else manually.
 
 | | Minimum | Recommended |
 |---|---|---|
 | **OS** | Linux, Windows 10/11, macOS | Linux (native Docker, fastest) |
 | **RAM** | 8 GB | 16 GB+ |
 | **Disk** | 20 GB free | 60 GB+ (for AI models) |
-| **GPU** | Not required | NVIDIA with 8 GB+ VRAM |
+| **GPU** | Not required (basic mode) | NVIDIA with 24 GB+ VRAM (full main agent, 27B) |
 
-**No GPU?** Kåre still works fully. Connect a cloud LLM provider (like OpenAI) in Settings, or run small models on CPU — slower but functional.
+### What to expect from the model you run
 
-**No Home Assistant or Frigate?** That is fine too. Kåre works as a standalone AI assistant and you can add integrations whenever you are ready.
+Be honest with yourself about this one — it decides what the main agent can do:
+
+- **27B on a 24 GB+ GPU — KTSB as intended.** The main agent picks the right tool, controls the house, remembers, searches, and tells you when it doesn't know.
+- **9B or smaller (the default on a fresh install) — basic mode.** Conversation works. Tool use is unreliable: it may skip a search, pick the wrong tool, or claim to know things it has no source for. On CPU only, the first answer after start can take several minutes; later answers about a minute.
+- **Cloud** — only for explicit «ask online» questions today; it does not run the main agent's tools.
+
+A smaller model is a way to try KTSB, not the finished experience. A tuned KTSB-sized small model is on the roadmap.
+
+**No Home Assistant or Frigate?** That is fine too. KTSB works as a standalone AI assistant and you can add integrations whenever you are ready.
 
 **Already running Home Assistant or Frigate?** KTSB's own code is lightweight — it is the LLM behind it that is demanding. Running KTSB on the same machine as Home Assistant or Frigate can cause KTSB to introduce delays on those systems instead of the other way around. A separate machine, even a modest one, keeps everything responsive.
 
 ### What's actually been tested
 
-This is a one-person hobby project, not a company with a QA team, so here's an honest picture of what's been walked through end-to-end versus what should work in principle:
+This is a one-person hobby project, not a company with a QA team. Here is what we actually ran, and — just as
+important — what we did not.
 
-- **Linux with an NVIDIA GPU** — the primary development machine. Used daily, most thoroughly exercised.
-- **Windows 11, no dedicated GPU, via Docker Desktop + WSL2** — tested from a genuinely fresh `git clone`, all the way through the onboarding wizard, user creation, and every admin page. Several real bugs were found and fixed this way — the install instructions below reflect what actually went wrong, not just what should theoretically work.
-- **macOS** — not tested yet. Should work in principle (it's still Docker), but nobody has walked through a fresh install on a Mac.
-- **A GPU on a completely from-scratch install** — the GPU testing above happened on an already-set-up machine, not a repeated fresh clone. If your first `docker compose up` on GPU hardware hits something unexpected, it's genuinely new territory.
+**Where it runs every day:** the developer's own house, on Linux with two NVIDIA GPUs. That install runs
+**directly on the machine (systemd), not in Docker**, with the 27B main agent described under *What we run
+ourselves*. Every feature in this release has run there first.
 
-If you hit a problem, especially on macOS or a fresh GPU install, [open an issue](https://github.com/Dursnif/KTSB/issues) — that's exactly how the Windows fixes above happened.
+**How we tested the Docker release:** on a separate Windows 11 PC with Docker Desktop (WSL2), an AMD laptop
+CPU, 32 GB RAM and **no dedicated GPU**, in October 2026, before this release:
+
+- upgrading a real v1.9 install (data, users and settings kept) and a fresh install from scratch
+- the default 9B model on that CPU, and a 27B main agent running on another machine in the same network
+- backup → wipe → restore, a server using its own Ollama instead of the built-in one, several users at once
+- all containers starting at once on old and new configs, and two settings saved at the same moment
+- an attempt to get in from another machine on the network: login limits, default PIN, open endpoints, ports
+- the night sequence started by hand and started by itself
+- voice in the browser over HTTPS through the bundled Caddy
+
+More than 30 real bugs were found this way and fixed before the release, four of them security holes. The
+fixes are in the release notes. The last check ran on the release-candidate images from GitHub, on the same
+PC: an upgraded v1.9 install and a fresh install from the release file. It found one more bug — `setup.ps1`
+did not start in Windows PowerShell 5.1, the version Windows ships with (also in v1.9) — fixed in this release.
+
+**What we have not tested:**
+
+- **macOS** — never installed on a Mac. It is Docker, so it should work, but nobody has checked — and from
+  reading the code, `setup.sh` uses Linux-only shell features that macOS's default shell lacks.
+- **A GPU in Docker from a fresh install** — the GPU machine runs KTSB outside Docker. The Docker test PC has no
+  NVIDIA GPU, so `setup.sh`'s GPU setup and Ollama on a GPU inside Docker are untested.
+- **The update button from one release to the next** — we tested it with stand-in releases; the first real
+  update happens when the next release comes out. If it fails, it rolls back to the version you had.
+- **Pulling a model from the GUI on a fresh Docker install** — our test reused models already downloaded.
+- **Long-term running** — the new memory drawers, answer checks and dev-slot themes have run for days, not
+  weeks. The dev slot itself ran 8 nights in the developer's house; in Docker the night sequence has only run a
+  few nights.
+
+**Known issues in this release:**
+
+- On CPU only, the 9B backup model can time out (120 s) when it starts cold, so the fallback fails.
+- Right after you switch language, the main agent may keep answering in the old one for a while.
+- A 27B model can say it did something without doing it, or write a tool call as plain text instead of running
+  it; the answer check catches the common phrasings, not all.
+- In onboarding, «External LLM server» sets every role to the Ollama API. For vLLM, LM Studio or another
+  OpenAI-compatible server, change the provider afterwards under **Settings → LLM / Models**.
+- A per-user reply language is not active yet: everyone gets the household language unless they ask otherwise.
+- After an update, reload the page if the GUI still looks like the old version (the browser may cache it).
+
+If you hit a problem, especially on macOS or a GPU install, [open an issue](https://github.com/Dursnif/KTSB/issues).
 
 ---
 
@@ -135,23 +185,30 @@ git clone https://github.com/Dursnif/KTSB.git
 cd KTSB
 ```
 
-> **No git?** You can also [download the ZIP](https://github.com/Dursnif/KTSB/archive/refs/heads/main.zip) from GitHub and unzip it. Then open a terminal inside the unzipped folder.
+> **No git?** Download `ktsb-docker-<version>.tar.gz` from the [latest release](https://github.com/Dursnif/KTSB/releases/latest), unpack it, and open a terminal inside the folder. (Use the release file, not GitHub's «Download ZIP» — the ZIP carries no version, so the update button stays off.)
 
 ---
 
-### Step 3 — Start KTSB
+### Step 3 — Run setup, then start KTSB
+
+The setup script checks your hardware (GPU or CPU), asks whether to include the built-in Ollama, writes `.env`,
+and makes the folder updatable from the GUI later. Answer **yes** when it offers to convert the folder.
 
 **Linux / macOS:**
 ```bash
-cp .env.example .env
+./setup.sh
 docker compose up -d
 ```
 
 **Windows (PowerShell):**
 ```powershell
-copy .env.example .env
+powershell -ExecutionPolicy Bypass -File .\setup.ps1
 docker compose up -d
 ```
+(Windows blocks scripts by default; `-ExecutionPolicy Bypass` allows this one script, this one time. We ran it
+on Windows 11 with scripts blocked, in Windows PowerShell 5.1.)
+
+Docker Compose 2.20 or newer is needed — Docker Desktop and current Docker Engine already have it.
 
 The first start downloads the Docker images (about 5 GB). This takes a few minutes depending on your internet speed. You only need to do this once — future starts are instant.
 
@@ -180,8 +237,9 @@ The onboarding wizard walks you through the rest — no config files to edit man
 1. **Profile** — your assistant's name, language, timezone, and location (used for weather)
 2. **User** — create your personal user account with a PIN (min. 6 digits)
 3. **Distribution** — choose how much of the system to enable (start with *Medium*)
-4. **Integrations** — connect Home Assistant, Frigate, and others (you can skip this and do it later)
-5. **Done** — install your first AI model and start chatting
+4. **LLM source** — the built-in Ollama, or your own Ollama server elsewhere in the network
+5. **Integrations** — connect Home Assistant (URL and token), Frigate, and others (you can skip this and do it later)
+6. **Done** — install your first AI model and start chatting
 
 ---
 
@@ -199,7 +257,7 @@ To create one: in Home Assistant, click your profile picture in the bottom-left 
 
 Paste the URL and token into **Settings → Home Assistant** in KTSB and save. That is it.
 
-**Setting up device names** — Kåre understands room names and device nicknames you define yourself. Go to **Settings → Aliases** to map your own names (like *"the bedroom lamp"*) to Home Assistant entity IDs. The alias editor has a search function to help you find the right entity.
+**Setting up device names** — the main agent understands room names and device nicknames you define yourself. Open the **Aliases** page to map your own names (like *"the bedroom lamp"*) to Home Assistant entity IDs. The alias editor has a search function to help you find the right entity.
 
 ---
 
@@ -210,41 +268,43 @@ In KTSB admin, go to **Settings → Integrations → Frigate**.
 You need:
 - **Frigate URL** — the address of your Frigate instance (e.g. `http://192.168.1.x:5000`)
 
-For real-time motion event detection, also connect **MQTT** under **Settings → MQTT** with your broker address and credentials. This lets Kåre react to Frigate events as they happen.
+For real-time motion event detection, also connect **MQTT** under **Settings → MQTT/VPN** with your broker address and credentials. This lets the main agent react to Frigate events as they happen.
 
-Go to **Settings → Cameras** to configure which cameras Kåre should monitor, what objects to watch for (people, cars, animals), confidence thresholds, and whether to announce detections over your speakers.
+Go to **Settings → Images/Camera** to configure which cameras the main agent should monitor, what objects to watch for (people, cars, animals), confidence thresholds, and whether to announce detections over your speakers.
 
 ---
 
 ## Choosing an AI model
 
-After the onboarding wizard, go to **Settings → LLM → Manage models** to pull a model.
-No command line needed — search by name, click Pull, and wait.
+After the onboarding wizard, open **Settings → LLM / Models**, expand **Manage model** on a role's card, paste the
+model name from [ollama.com](https://ollama.com) and click **Pull model**. No command line needed.
 
-| Your GPU VRAM | Recommended model | Notes |
-|---|---|---|
-| No GPU (CPU) | `huihui_ai/qwen3.5-abliterated:2b` | 1.9 GB — slow, but works |
-| 4–6 GB | `huihui_ai/qwen3.5-abliterated:4b` | 3.3 GB — good for light use |
-| 8–16 GB | `huihui_ai/qwen3.5-abliterated:9b` | 6.6 GB — outperforms older 14B models |
-| 24 GB+ | `huihui_ai/Qwen3.6-abliterated:27b` | 17 GB — best results |
+| Your GPU VRAM | Recommended model | Size | How we have used it |
+|---|---|---|---|
+| No GPU (CPU) | `huihui_ai/qwen3.5-abliterated:2b` | 1.9 GB | Not tested by us as the main agent — expect very limited tool use |
+| 4–6 GB | `huihui_ai/qwen3.5-abliterated:4b` | 3.3 GB | Ran Miss Library in our tests; not tested as the main agent |
+| 8–16 GB | `huihui_ai/qwen3.5-abliterated:9b` | 6.6 GB | Runs Miss Kåre, Mechanic and Miss Library in our house every day; the fresh-install default (basic mode as main agent) |
+| 24 GB+ | `huihui_ai/Qwen3.6-abliterated:27b` | 17 GB | Our main agent until August 2026 — the full main agent (see *What to expect* above) |
 
-Start by setting the same model for all roles (Kåre, Miss Kåre, Library, Mechanic) — this uses less VRAM and keeps things simple. You can assign each agent its own model later under **Settings → LLM**.
+A fresh install expects `huihui_ai/qwen3.5-abliterated:9b` for every role (main agent, Miss Kåre, Library, Mechanic) on the built-in Ollama — pull that one first. One model for all roles uses less memory and keeps things simple. On a smaller machine, switch all roles to a smaller model instead; with a 24 GB+ GPU you can move Kåre to the 27B. You can assign each agent its own model later under **Settings → LLM**.
 
-**Why abliterated models?** Kåre is a multi-agent system — agents evaluate each other, inspect logs, and ask sensitive questions internally. Standard models can refuse these internal requests, breaking the pipeline. Abliterated variants have the refusal direction removed, which makes the whole system more reliable. All recommendations above are from [huihui_ai on Ollama](https://ollama.com/huihui_ai).
+**Why abliterated models?** KTSB is a multi-agent system — agents evaluate each other, inspect logs, and ask sensitive questions internally. Standard models can refuse these internal requests, breaking the pipeline. Abliterated variants have the refusal direction removed, which makes the whole system more reliable. Abliteration is not one method: variants differ in how much they change the model, and a heavier edit can cost quality. The recommendations above are from [huihui_ai on Ollama](https://ollama.com/huihui_ai) because they are easy to pull and we have run them.
 
-**Multimodal:** All recommended models understand both text and images. For the full agent setup — Kåre, Miss Kåre, Library, and Mechanic — using the same multimodal model across all roles ensures camera snapshots and images can be passed between agents without gaps.
+**What we run ourselves.** The house KTSB is developed in runs a different main agent than the table above: `orcarouter/Qwen3.8-27B-Uncensored` — a Qwen3.8 27B with a single refusal direction removed, ranked first in a public comparison of 12 abliterated Qwen3.8-27B variants ([abliterlitics.dev](https://abliterlitics.dev), October 2026). We quantized it ourselves to NVFP4 for vLLM, calibrated on KTSB-shaped conversations (system prompt, tool definitions, thinking and tool calls — no user data), Norwegian Wikipedia text and some English and German chat, so Norwegian stays clean after quantization; the model's speculative-decoding (MTP) head is kept for speed. This build is **not published**, and NVFP4 needs an NVIDIA Blackwell GPU — so it is not in the table, and nothing in KTSB depends on it.
+
+**Multimodal:** All recommended models understand both text and images. For the full agent setup — main agent, Miss Kåre, Library, and Mechanic — using the same multimodal model across all roles ensures camera snapshots and images can be passed between agents without gaps.
 
 **Extended thinking:** Qwen3 models can pause and reason before answering complex questions. Enable it per role under **Settings → LLM**.
 
-**Prefer cloud?** Go to **Settings → LLM → Cloud** and enter an API key for OpenAI, NVIDIA NIM, or another OpenAI-compatible provider.
+**Prefer cloud?** Under **Settings → LLM / Models**, the cloud role takes an address and API key for OpenAI, NVIDIA NIM, or another OpenAI-compatible provider. It answers only explicit «ask online» questions and has no tools.
 
 ---
 
 ## Voice input
 
-Browsers require HTTPS for microphone access. For voice input to work, Kåre needs to be served over HTTPS.
+Browsers require HTTPS for microphone access. For voice input to work, KTSB needs to be served over HTTPS.
 
-Kåre includes **Caddy**, which obtains a free Let's Encrypt certificate automatically. You will need a free dynamic DNS hostname from [DuckDNS](https://www.duckdns.org/).
+KTSB includes **Caddy**, which obtains a free Let's Encrypt certificate automatically. You will need a free dynamic DNS hostname from [DuckDNS](https://www.duckdns.org/).
 
 1. Create a free account at [DuckDNS](https://www.duckdns.org/) and register a subdomain — e.g. `mykaare.duckdns.org`
 2. Set it to point to your home's public IP address (shown on the DuckDNS dashboard)
@@ -254,7 +314,7 @@ Kåre includes **Caddy**, which obtains a free Let's Encrypt certificate automat
 
 Voice input will work as soon as the certificate is issued — usually within 30 seconds of first start.
 
-Access Kåre at `https://mykaare.duckdns.org` from any device on your local network.
+Access KTSB at `https://mykaare.duckdns.org` from any device on your local network.
 
 > For local use without voice, the default `KAARE_DOMAIN=localhost` works fine.
 
@@ -266,20 +326,23 @@ Set `COMPOSE_PROFILES` in your `.env` file to control which optional services st
 
 | Value | What starts | When to use |
 |---|---|---|
-| *(empty)* | Core only (API, GUI, agents, intent) | Cloud LLM or quick test |
-| `medium` | + Semantic memory and wiki search | Recommended for most installs |
-| `full` | + Voice bridge (speech-to-text, text-to-speech) | When you want voice input and output |
+| *(empty)* | Core: API, GUI, HA gateway, semantic memory service, Qdrant, SearXNG, Caddy, night runner, updater | You run your own LLM server elsewhere |
+| `ollama` | + Built-in Ollama LLM server | The default; leave it out when you use your own server |
+| `medium` | + BGE-M3 embedding service | Local wiki search, Argus search, better «Relevant now» |
+| `full` | + Voice bridge (speech-to-text, text-to-speech) and BGE-M3 | When you want voice input and output |
+| `vpn` | + WireGuard (wg-easy) | Remote access, see below |
+| `inner_voices` | + Jing and Jang | Optional background inner voices |
 
 ```
-# .env
-COMPOSE_PROFILES=medium
+# .env — what setup writes (ollama,full when it finds a GPU)
+COMPOSE_PROFILES=ollama,medium
 ```
 
 ---
 
 ## Remote access (VPN)
 
-To access Kåre securely from outside your home network, enable the built-in WireGuard VPN service.
+To access KTSB securely from outside your home network, enable the built-in WireGuard VPN service.
 
 **Requirements:** a public hostname (DuckDNS recommended — you can reuse `KAARE_DOMAIN`) and UDP port 51820 open in your router.
 
@@ -303,7 +366,7 @@ To access Kåre securely from outside your home network, enable the built-in Wir
 
 The VPN management UI is now available at `http://your-machine-ip:51821`. Add a client there, download its config or scan the QR code, and connect from your phone or laptop.
 
-Once connected via VPN, Kåre detects you automatically as a VPN user.
+Once connected via VPN, KTSB detects you automatically as a VPN user.
 
 ### Per-user access levels
 
@@ -323,18 +386,68 @@ New users default to **Full access**. Restrict individual users under Admin → 
 
 ## Updating
 
+From v1.10, update from the GUI: **Maintenance → Update KTSB**. It checks GitHub for a newer release and, after
+you enter your PIN:
+
+1. saves a backup point (marked «automatic», it does not count against your five),
+2. checks that the release files and images are signed by KTSB's own release workflow,
+3. downloads the new images while KTSB keeps running, then switches over,
+4. checks that KTSB answers with the new version — and puts the previous version back by itself if not.
+
+The button needs an install made with `setup.sh` / `setup.ps1` (Step 3). Updates are never installed on their
+own, and never while the night sequence runs.
+
+Your configuration, state, and data live in folders outside the Docker images and are kept. On the first start
+of a new version, KTSB adds any new settings to your files in `configs/` — your own values and comments stay. KTSB
+copies the whole folder to `configs/.history/_snapshots/` first, and every save from the settings pages
+keeps the previous version of that file in `configs/.history/<file>/` (the newest 20 per file).
+
+After an update from the GUI, the first time you run `docker compose up -d` yourself, Docker Desktop recreates
+every container once. That is expected.
+
+### Updating from v1.9 or older (once)
+
+Getting from v1.9 to the update button takes one manual update — run these in your KTSB folder:
+
 ```bash
-docker compose pull
+git pull
+./setup.sh              # Windows: powershell -ExecutionPolicy Bypass -File .\setup.ps1
 docker compose up -d
 ```
+Answer **yes** when setup offers to make the install updatable. We tested this on Windows with a v1.9 install
+that had changed settings, two users and encrypted chat history: settings, logins and memory were all kept.
 
-Your configuration, state, and data are stored in folders outside the Docker images and survive updates unchanged.
+Your settings are kept. The GUI keeps your configuration in `configs/` and the shipped templates live in
+`configs_default/`; files you never changed are replaced by the new templates on the first start, files you changed
+stay exactly as you left them (a copy of the folder is saved to `configs/.history/_snapshots/` first).
+Setup keeps your git history as `.git-before-ktsb-updater` — after that, updates come from the GUI, not `git pull`.
+If you edited `docker-compose.yml`, move your changes to `docker-compose.override.yml` first; setup warns you.
+
+If you use speakers on your network (ESP32, Chromecast, Home Assistant media players), set
+*Settings → LLM / Models → Piper → LAN address for speakers* once after the upgrade — Docker cannot detect it.
 
 ---
 
-## Your data stays home
+## What stays home, and what goes out
 
-Everything in KTSB runs on your own hardware by default. No data leaves your network unless you explicitly configure a cloud LLM provider. Conversations, memories, camera snapshots, and user data stay on your machine.
+KTSB runs on your own hardware. **Conversations, memories, camera images and user data never leave your
+machine** — unless you set up a cloud model and ask it something explicitly.
+
+Some things do go out with the default settings, because the feature cannot work otherwise:
+
+- **Web search** — the search words go to public search engines (through the bundled SearXNG), and KTSB then
+  opens the pages it found. When a question is about your area, the town or country from your settings is
+  added to the search.
+- **Weather** — your location (latitude and longitude) goes to the weather service when someone asks.
+- **Update check** — when an admin opens the Maintenance page, KTSB asks GitHub whether a newer release exists.
+- **First voice start** (`full` profile) — the speech models download from Hugging Face.
+
+One more, which is not needed and will go: the web interface loads its fonts from **Google Fonts**, so your
+browser contacts Google when you open KTSB. The next release ships the fonts with KTSB itself.
+
+Everything else that reaches the internet — cloud model, image generation, Brave Search, Norwegian law, tide
+data, model downloads, a HTTPS certificate — happens only after you switch it on or click it. The full list,
+with how to switch each one off: [docs/capabilities.md](docs/capabilities.md#what-leaves-your-machine).
 
 ---
 
@@ -355,9 +468,10 @@ For a full breakdown of every feature, agent, tool, and service profile: [docs/c
 ## Project layout
 
 ```
-configs/        ← All configuration (YAML + .env secrets)
-state/          ← Runtime state (memory, timers, Qdrant snapshots)
-data/           ← SQLite databases (users, long-term memory)
+configs/        ← Your configuration, written by the GUI (YAML + .env secrets) — not in git
+configs_default/ ← Shipped templates; missing files are copied into configs/ on start
+state/          ← Runtime state and databases (users, memory, knowledge, timers, Qdrant, backups)
+models/         ← Models downloaded from the GUI (speech, semantic memory)
 logs/           ← Service logs
 kaare_core/     ← Shared Python library
 services/       ← Embedding, voice, agents

@@ -9,7 +9,8 @@ log = logging.getLogger(__name__)
 
 def _cast_and_play_sync(host: str, media_url: str, discovery_timeout: float) -> None:
     """Blokkerende Chromecast-oppkobling og avspilling (kjøres i thread executor)."""
-    import pychromecast
+    # PLC0415: optional dependency — loaded only when this feature is used (rule 24)
+    import pychromecast  # noqa: PLC0415
 
     chromecasts, browser = pychromecast.get_listed_chromecasts(
         known_hosts=[host],
@@ -48,6 +49,8 @@ class ChromecastProvider(BaseVoiceProvider):
 
         loop = asyncio.get_event_loop()
         try:
-            await loop.run_in_executor(None, _cast_and_play_sync, host, media_url, discovery_timeout)
+            await loop.run_in_executor(
+                None, _cast_and_play_sync, host, media_url, discovery_timeout
+            )
         except Exception as exc:
             log.error("Chromecast provider feil på %s: %s", host, exc)

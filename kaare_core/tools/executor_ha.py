@@ -1,16 +1,20 @@
 import asyncio
+import json
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
+import websockets
 import yaml
 
+from kaare_core.config import get_local_tz
 from kaare_core.config import get_service as _svc
-from kaare_core.tools.i18n import t, get_lang
+from kaare_core.service_auth import service_headers
+from kaare_core.tools.i18n import _T, get_lang, t
 
 log = logging.getLogger(__name__)
 
@@ -29,9 +33,10 @@ HA_TOOLS = {
     "styr_enhet",
 }
 
+
 def _domain_label(domain: str, lang: str) -> str:
     key = f"ha_domain_{domain}"
-    from kaare_core.tools.i18n import _T
+
     return t(key, lang) if key in _T else domain
 
 
@@ -68,9 +73,9 @@ def resolve_node_entity(client_hint: str) -> str | None:
     return None
 
 
-def _load_aliases() -> Dict:
+def _load_aliases() -> dict:
     try:
-        with open(_ALIASES_PATH, "r", encoding="utf-8") as f:
+        with open(_ALIASES_PATH, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
         return {}
@@ -88,12 +93,9 @@ def _format_aliases(room: str | None = None, lang: str = "nb") -> str:
         domain = entity_id.split(".")[0] if "." in entity_id else ""
         return _domain_label(domain, lang)
 
-    room_kw: Dict[str, list] = {
-        r: [str(k).lower() for k in kws]
-        for r, kws in rooms_cfg.items()
-    }
+    room_kw: dict[str, list] = {r: [str(k).lower() for k in kws] for r, kws in rooms_cfg.items()}
 
-    groups: Dict[str, list] = {}
+    groups: dict[str, list] = {}
     unmatched: list = []
     for key in aliases:
         kl = key.lower()
@@ -146,7 +148,7 @@ async def _control_entity(
     if not entity_id or not action:
         return t("ha_entity_action_required", lang)
 
-    params: Dict[str, Any] = {}
+    params: dict[str, Any] = {}
     if action == "set_level" and brightness_pct is not None:
         params["level"] = int(brightness_pct)
     elif action == "set_color_temp" and color_temp_kelvin is not None:
@@ -158,7 +160,13 @@ async def _control_entity(
         async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.post(
                 f"{HA_GATEWAY_URL}/api/ha_apply",
-                json={"action": action, "entity_id": entity_id, "params": params, "source": "kare-tool"},
+                json={
+                    "action": action,
+                    "entity_id": entity_id,
+                    "params": params,
+                    "source": "kare-tool",
+                },
+                headers=service_headers(),
             )
             r.raise_for_status()
             data = r.json()
@@ -168,9 +176,16 @@ async def _control_entity(
             elif action == "turn_off":
                 msg = t("ha_turned_off", lang, entity_id=entity_id)
             elif action == "set_level":
-                msg = t("ha_brightness_set", lang, entity_id=entity_id, brightness_pct=brightness_pct)
+                msg = t(
+                    "ha_brightness_set", lang, entity_id=entity_id, brightness_pct=brightness_pct
+                )
             elif action == "set_color_temp":
-                msg = t("ha_color_temp_set", lang, entity_id=entity_id, color_temp_kelvin=color_temp_kelvin)
+                msg = t(
+                    "ha_color_temp_set",
+                    lang,
+                    entity_id=entity_id,
+                    color_temp_kelvin=color_temp_kelvin,
+                )
             elif action == "set_color":
                 msg = t("ha_color_set", lang, entity_id=entity_id)
             else:
@@ -189,13 +204,81 @@ def _read_ha_url() -> str:
         return ""
 
 
+async def _ha_ws_call(ha_url: str, token: str, message: dict, timeout: float = 10.0) -> Any:
+    """One command over Home Assistant's WebSocket API: auth → command → result. Long-term statistics
+    (`recorder/statistics_during_period`) exist only here — there is no REST endpoint for them."""
+    ws_url = ha_url.replace("https://", "wss://", 1).replace("http://", "ws://", 1) + "/api/websocket"
+    async with asyncio.timeout(timeout):
+        async with websockets.connect(ws_url, open_timeout=timeout) as ws:
+            if json.loads(await ws.recv()).get("type") != "auth_required":
+                raise RuntimeError("unexpected HA WebSocket greeting")
+            await ws.send(json.dumps({"type": "auth", "access_token": token}))
+            if json.loads(await ws.recv()).get("type") != "auth_ok":
+                raise RuntimeError("HA WebSocket authentication failed")
+            await ws.send(json.dumps({"id": 1, **message}))
+            while True:
+                reply = json.loads(await ws.recv())
+                if reply.get("id") == 1 and reply.get("type") == "result":
+                    if not reply.get("success"):
+                        raise RuntimeError((reply.get("error") or {}).get("message") or "HA error")
+                    return reply.get("result")
+
+
+def _parse_ha_time(value: Any) -> datetime:
+    """HA statistics give epoch milliseconds; REST history gives ISO strings."""
+    if isinstance(value, int | float):
+        return datetime.fromtimestamp(value / 1000, UTC)
+    return datetime.fromisoformat(str(value))
+
+
+async def _ha_state_changes(
+    ha_url: str, headers: dict, entity_id: str, start: datetime, end: datetime, days: int, lang: str
+) -> str:
+    """Raw state changes from HA's REST history — for entities without long-term statistics (switches,
+    binary sensors, sensors without state_class). Only as far back as HA's recorder keeps history."""
+    max_rows = 40
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(
+                f"{ha_url}/api/history/period/{start.isoformat()}",
+                params={
+                    "filter_entity_id": entity_id,
+                    "end_time": end.isoformat(),
+                    "minimal_response": "",
+                    "no_attributes": "",
+                },
+                headers=headers,
+            )
+    except Exception as exc:
+        return t("ha_history_error", lang, entity_id=entity_id, error=exc)
+    if r.status_code != 200:
+        return t("ha_history_error", lang, entity_id=entity_id, error=f"HTTP {r.status_code}")
+    series = r.json()
+    changes = series[0] if series and isinstance(series[0], list) else []
+    if not changes:
+        return t("ha_history_no_changes", lang, entity_id=entity_id, days=days)
+    try:
+        local_tz = get_local_tz()
+    except Exception:
+        local_tz = ZoneInfo("UTC")
+    rows = []
+    for ch in changes[-max_rows:]:
+        try:
+            when = _parse_ha_time(ch.get("last_changed")).astimezone(local_tz).strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            when = str(ch.get("last_changed", "?"))[:16]
+        rows.append(f"  {when} → {ch.get('state')}")
+    lines = [t("ha_history_changes_header", lang, entity_id=entity_id, days=days), *rows]
+    if len(changes) > max_rows:
+        lines.append(t("ha_history_changes_truncated", lang, shown=max_rows, total=len(changes)))
+    return "\n".join(lines)
+
+
 async def _ha_sensor_history(entity_id: str, days: int, period: str, lang: str) -> str:
     """
-    Fetch long-term statistics for a HA sensor using the recorder statistics API.
-
-    Uses POST /api/recorder/statistics_during_period which returns aggregated
-    mean/min/max/change values per day/week/month. Only works for sensors that
-    have state_class configured in HA (enabling long-term statistics).
+    Long-term statistics for a HA entity (mean/min/max/change per day/week/month) via the recorder's
+    WebSocket command `recorder/statistics_during_period`. Only entities with a state_class have them;
+    for the rest the raw state changes from the REST history are returned instead.
     """
     ha_url = _read_ha_url()
     try:
@@ -205,53 +288,43 @@ async def _ha_sensor_history(entity_id: str, days: int, period: str, lang: str) 
     if not ha_url:
         return t("ha_history_not_configured", lang)
 
-    # Build time range in UTC
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     start = now - timedelta(days=days)
-    start_str = start.strftime("%Y-%m-%dT%H:%M:%S+00:00")
-    end_str   = now.strftime("%Y-%m-%dT%H:%M:%S+00:00")
-
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
-    payload = {
-        "start_time": start_str,
-        "end_time":   end_str,
+    message = {
+        "type": "recorder/statistics_during_period",
+        "start_time": start.isoformat(),
+        "end_time": now.isoformat(),
         "statistic_ids": [entity_id],
         "period": period,
         "types": ["mean", "min", "max", "change"],
     }
 
-    try:
+    async def _state() -> httpx.Response:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            # Fetch statistics and entity unit in parallel
-            stats_resp, state_resp = await asyncio.gather(
-                client.post(
-                    f"{ha_url}/api/recorder/statistics_during_period",
-                    json=payload,
-                    headers=headers,
-                ),
-                client.get(f"{ha_url}/api/states/{entity_id}", headers=headers),
-                return_exceptions=True,
-            )
-    except Exception as exc:
-        return t("ha_history_error", lang, entity_id=entity_id, error=exc)
+            return await client.get(f"{ha_url}/api/states/{entity_id}", headers=headers)
 
-    # Parse unit from entity state (best effort)
+    stats, state_resp = await asyncio.gather(
+        _ha_ws_call(ha_url, token, message), _state(), return_exceptions=True
+    )
+
     unit = ""
-    if not isinstance(state_resp, Exception) and state_resp.status_code == 200:
-        unit_raw = state_resp.json().get("attributes", {}).get("unit_of_measurement", "")
-        unit = f" {unit_raw}" if unit_raw else ""
+    if not isinstance(state_resp, BaseException):
+        if state_resp.status_code == 404:
+            return t("ha_entity_not_found", lang, entity_id=entity_id)
+        if state_resp.status_code == 200:
+            unit_raw = state_resp.json().get("attributes", {}).get("unit_of_measurement", "")
+            unit = f" {unit_raw}" if unit_raw else ""
 
-    if isinstance(stats_resp, Exception):
-        return t("ha_history_error", lang, entity_id=entity_id, error=stats_resp)
-    if stats_resp.status_code != 200:
-        return t("ha_history_error", lang, entity_id=entity_id, error=f"HTTP {stats_resp.status_code}")
+    if isinstance(stats, BaseException):
+        return t("ha_history_error", lang, entity_id=entity_id, error=stats)
 
-    entries: list[dict] = stats_resp.json().get(entity_id, [])
+    entries: list[dict] = (stats or {}).get(entity_id, [])
     if not entries:
-        return t("ha_history_no_data", lang, entity_id=entity_id)
+        return await _ha_state_changes(ha_url, headers, entity_id, start, now, days, lang)
 
     # Resolve period label for header
     period_label = t(f"ha_history_period_{period}", lang)
@@ -260,37 +333,40 @@ async def _ha_sensor_history(entity_id: str, days: int, period: str, lang: str) 
     # Build per-period rows
     # Use local timezone for date display if available
     try:
-        from kaare_core.config import get_local_tz
         local_tz = get_local_tz()
     except Exception:
         local_tz = ZoneInfo("UTC")
 
     rows: list[str] = []
     all_means: list[float] = []
-    all_mins:  list[float] = []
+    all_mins: list[float] = []
     all_maxes: list[float] = []
     all_changes: list[float] = []
 
     for entry in entries:
         try:
-            start_dt = datetime.fromisoformat(entry["start"]).astimezone(local_tz)
-            date_str = start_dt.strftime("%Y-%m-%d")
+            date_str = _parse_ha_time(entry["start"]).astimezone(local_tz).strftime("%Y-%m-%d")
         except Exception:
-            date_str = entry.get("start", "?")[:10]
+            date_str = str(entry.get("start", "?"))[:10]
 
         parts: list[str] = []
         if (v := entry.get("mean")) is not None:
             all_means.append(float(v))
-            parts.append(f"snitt {float(v):.1f}{unit}" if lang == "nb" else
-                         f"avg {float(v):.1f}{unit}" if lang == "en" else
-                         f"Durchschn. {float(v):.1f}{unit}")
+            parts.append(
+                f"snitt {float(v):.1f}{unit}"
+                if lang == "nb"
+                else f"avg {float(v):.1f}{unit}"
+                if lang == "en"
+                else f"Durchschn. {float(v):.1f}{unit}"
+            )
         if (v := entry.get("min")) is not None:
             all_mins.append(float(v))
             parts.append(f"min {float(v):.1f}{unit}")
         if (v := entry.get("max")) is not None:
             all_maxes.append(float(v))
-            parts.append(f"maks {float(v):.1f}{unit}" if lang == "nb" else
-                         f"max {float(v):.1f}{unit}")
+            parts.append(
+                f"maks {float(v):.1f}{unit}" if lang == "nb" else f"max {float(v):.1f}{unit}"
+            )
         if (v := entry.get("change")) is not None and v is not None:
             all_changes.append(float(v))
             parts.append(f"Δ {float(v):.1f}{unit}")
@@ -299,17 +375,22 @@ async def _ha_sensor_history(entity_id: str, days: int, period: str, lang: str) 
     # Build summary
     summary_parts: list[str] = []
     if all_maxes:
-        summary_parts.append(t("ha_history_summary", lang,
-                                max_val=max(all_maxes),
-                                mean_val=sum(all_means) / len(all_means) if all_means else 0,
-                                min_val=min(all_mins) if all_mins else 0,
-                                unit=unit))
+        summary_parts.append(
+            t(
+                "ha_history_summary",
+                lang,
+                max_val=max(all_maxes),
+                mean_val=sum(all_means) / len(all_means) if all_means else 0,
+                min_val=min(all_mins) if all_mins else 0,
+                unit=unit,
+            )
+        )
     # Accumulated total from change values (useful for precipitation sensors that reset daily)
     if all_changes:
         total = sum(all_changes)
         summary_parts.append(t("ha_history_total", lang, total=total, unit=unit))
 
-    lines = [header] + rows
+    lines = [header, *rows]
     if summary_parts:
         lines.append("")
         lines.extend(summary_parts)
@@ -322,7 +403,9 @@ async def _read_ha_status(entity_id: str, lang: str = "nb") -> str:
         return t("ha_entity_id_required", lang)
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"{HA_GATEWAY_URL}/api/ha_status/{entity_id}")
+            r = await client.get(
+                f"{HA_GATEWAY_URL}/api/ha_status/{entity_id}", headers=service_headers()
+            )
             if r.status_code == 404:
                 return t("ha_entity_not_found", lang, entity_id=entity_id)
             r.raise_for_status()
@@ -362,7 +445,7 @@ async def dispatch(name: str, arguments: dict) -> str:
             entity_id = arguments.get("entity_id", "").strip()
             if not entity_id:
                 return t("ha_history_no_entity", lang)
-            days   = max(1, min(int(arguments.get("history_days", 7)), 365))
+            days = max(1, min(int(arguments.get("history_days", 7)), 365))
             period = arguments.get("history_period", "day")
             if period not in ("day", "week", "month"):
                 period = "day"

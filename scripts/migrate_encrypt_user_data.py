@@ -28,6 +28,9 @@ from pathlib import Path
 
 import yaml
 
+from kaare_core.crypto import encrypt_dict, encrypt_text
+from kaare_core.users.profile_manager import get_household_visible
+
 logger = logging.getLogger(__name__)
 
 USERS_DIR = Path("/kaare/state/users")
@@ -39,7 +42,14 @@ _HOUSEHOLD_FIELDS = {"household_visible"}
 _META_KEYS = {"household_visible", "updated", "meta"}
 
 # Keys that should NOT be moved to private (they're either housekeeping or already public)
-_SKIP_PRIVATE = {"household_visible", "updated", "meta", "change_log", "private_encrypted", "private"}
+_SKIP_PRIVATE = {
+    "household_visible",
+    "updated",
+    "meta",
+    "change_log",
+    "private_encrypted",
+    "private",
+}
 
 
 def _is_migrated(profile: dict) -> bool:
@@ -85,7 +95,6 @@ def migrate_user_if_needed(user_id: str, private_key_bytes: bytes | None = None)
 
     # Step 1: Ensure household_visible exists (auto-initialize if not)
     if "household_visible" not in profile:
-        from kaare_core.users.profile_manager import get_household_visible
         # This auto-initializes and saves household_visible, then we reload
         get_household_visible(user_id)
         profile = yaml.safe_load(profile_path.read_text(encoding="utf-8")) or {}
@@ -113,7 +122,6 @@ def migrate_user_if_needed(user_id: str, private_key_bytes: bytes | None = None)
     if private_key_bytes is not None and private_data:
         # Encrypt private section
         try:
-            from kaare_core.crypto import encrypt_dict
             new_profile["private_encrypted"] = encrypt_dict(private_data, private_key_bytes)
             logger.info(f"[MIGRATE] private section encrypted for {user_id}")
         except Exception as e:
@@ -125,12 +133,13 @@ def migrate_user_if_needed(user_id: str, private_key_bytes: bytes | None = None)
         # No key available — store plaintext private section for now
         new_profile["private"] = private_data
         new_profile["_needs_encryption"] = True
-        logger.info(f"[MIGRATE] private section stored plaintext for {user_id} (no key — will encrypt on next login)")
+        logger.info(
+            f"[MIGRATE] private section stored plaintext for {user_id} (no key — will encrypt on next login)"
+        )
 
     # Step 5: Encrypt observations.md if we have a key
     if private_key_bytes is not None and obs_path.exists():
         try:
-            from kaare_core.crypto import encrypt_text
             obs_content = obs_path.read_text(encoding="utf-8")
             encrypted_obs = encrypt_text(obs_content, private_key_bytes)
             obs_path.with_suffix(".enc").write_text(encrypted_obs, encoding="utf-8")
@@ -178,7 +187,6 @@ def finalize_encryption(user_id: str, private_key_bytes: bytes) -> bool:
     private_data = profile.pop("private", None)
     if private_data:
         try:
-            from kaare_core.crypto import encrypt_dict
             profile["private_encrypted"] = encrypt_dict(private_data, private_key_bytes)
             profile.pop("_needs_encryption", None)
             changed = True
@@ -191,7 +199,6 @@ def finalize_encryption(user_id: str, private_key_bytes: bytes) -> bool:
     # Encrypt plaintext observations.md if present
     if obs_path.exists():
         try:
-            from kaare_core.crypto import encrypt_text
             obs_content = obs_path.read_text(encoding="utf-8")
             obs_path.with_suffix(".enc").write_text(
                 encrypt_text(obs_content, private_key_bytes), encoding="utf-8"

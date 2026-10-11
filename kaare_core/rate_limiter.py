@@ -4,8 +4,9 @@ Simple sliding-window rate limiter for Kåre API endpoints.
 Per-user counters stored in memory (single-instance only — no Redis needed).
 Consistent with the login rate limiter pattern from SEC-01 (router_users.py).
 """
-import time
+
 import threading
+import time
 from collections import deque
 
 _lock = threading.Lock()

@@ -25,7 +25,7 @@ nodes: {}
 #       - sudo reboot now
 #
 # Example Home Assistant OS node:
-#   ha-nuc:
+#   ha-node:
 #     label: "Home Assistant"
 #     host: 192.168.1.100
 #     user: root

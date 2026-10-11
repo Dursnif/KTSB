@@ -5,9 +5,9 @@ import {
   LayoutDashboard, Users, Server, Bot, BookOpen,
   Wrench, Settings, Home, ChevronLeft, ChevronRight, LogOut, Map, Speaker, ShieldAlert,
 } from "lucide-react";
-import { useAuth } from "../auth/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { useTranslation } from "react-i18next";
-import { useAssistantName } from "../contexts/AssistantNameContext";
+import { useAssistantName } from "@/hooks/useAssistantName";
 import { KTSBLogo, KTSBEye } from "../components/KTSBLogo";
 import "../components/ktsb-logo.css";
 

@@ -1,0 +1,6 @@
+# Dev/test tooling that is NOT part of KTSB's runtime (requirements.txt).
+# Install into a separate environment: pip install -r requirements-dev.txt
+# then: python -m playwright install chromium
+
+# ── Browser end-to-end tests (scripts/e2e_gui_test.py, scripts/e2e_fresh_install_test.py) ──
+playwright>=1.40.0

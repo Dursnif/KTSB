@@ -1,26 +1,18 @@
 import { useState } from "react";
+import type { SaveState } from "./useSaveState";
 import { CheckCircle2, XCircle, Loader2, Eye, EyeOff, Wifi, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiTestConnection } from "@/services/api";
 import { useTranslation } from "react-i18next";
-import { useSettingsLevel } from "@/contexts/SettingsLevelContext";
+import { useSettingsLevel } from "@/hooks/useSettingsLevel";
 
 /** Renders children only when the page-level Basic/Expert toggle is set to "expert". */
 export function ExpertOnly({ children }: { children: React.ReactNode }) {
   const { level } = useSettingsLevel();
   if (level !== "expert") return null;
   return <>{children}</>;
-}
-
-export type SaveState = "idle" | "saving" | "saved" | "error";
-
-export function useSaveState() {
-  const [state, setState] = useState<SaveState>("idle");
-  const saved = () => { setState("saved"); setTimeout(() => setState("idle"), 3000); };
-  const error = () => { setState("error"); setTimeout(() => setState("idle"), 4000); };
-  return { state, saving: () => setState("saving"), saved, error };
 }
 
 export function SaveFeedback({ state }: { state: SaveState }) {

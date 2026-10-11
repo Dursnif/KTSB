@@ -2,12 +2,23 @@ import asyncio
 import base64
 import json
 import logging
-from datetime import datetime, timezone
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
 
-from kaare_core.tools.i18n import t, get_lang
+from adapters.frigate_adapter import derive_hints, fetch_event_snapshot, fetch_snapshot_b64
+from adapters.llm_adapter import ask_llm, ask_llm_with_tools
+from kaare_core import log_buffer
+from kaare_core.background import spawn
+from kaare_core.config import now_local
+from kaare_core.model_enforcement import mentions_agenda_promise
+from kaare_core.notify import Urgency, notify_user
+from kaare_core.tools.definitions import get_tools
+from kaare_core.tools.executor import execute_tool
+from kaare_core.tools.i18n import get_lang, t
+from kaare_core.users.store import list_users
 
 log = logging.getLogger("frigate_responder")
 
@@ -59,9 +70,7 @@ def should_analyze(camera: str, label: str, score: float, duration: float) -> bo
     if score < lcfg.get("min_confidence", 0.0):
         return False
     min_dur = lcfg.get("min_duration_seconds", 0)
-    if min_dur > 0 and duration < min_dur:
-        return False
-    return True
+    return not (min_dur > 0 and duration < min_dur)
 
 
 def _role_display(role: str) -> str:
@@ -83,7 +92,7 @@ def build_context_prompt(event: dict, cam_cfg: dict, lang: str = "nb") -> str:
     sub_label = event.get("sub_label")
     sub_score = event.get("sub_label_score")
 
-    now = datetime.now()
+    now = now_local()
     time_str = now.strftime("%H:%M")
     hour = now.hour
     if 5 <= hour < 12:
@@ -113,8 +122,6 @@ def build_context_prompt(event: dict, cam_cfg: dict, lang: str = "nb") -> str:
 
 
 async def analyze_event(event: dict, img_b64_override: str | None = None) -> dict | None:
-    from adapters.frigate_adapter import fetch_event_snapshot, fetch_snapshot_b64
-
     cfg = _cfg()
     cameras = cfg.get("cameras", {})
     camera = event.get("camera", "")
@@ -139,7 +146,11 @@ async def analyze_event(event: dict, img_b64_override: str | None = None) -> dic
                         if raw:
                             img_b64 = base64.b64encode(raw).decode()
                     except Exception as e2:
-                        log.warning("Event snapshot failed for %s after retry: %s — trying latest", event_id, e2)
+                        log.warning(
+                            "Event snapshot failed for %s after retry: %s — trying latest",
+                            event_id,
+                            e2,
+                        )
                 else:
                     log.warning("Event snapshot failed for %s: %s — trying latest", event_id, e)
 
@@ -154,15 +165,21 @@ async def analyze_event(event: dict, img_b64_override: str | None = None) -> dic
         log.warning("No snapshot available for event %s on %s", event_id, camera)
         return None
 
-    prompt = build_context_prompt(event, cam_cfg, lang=get_lang())
+    lang = get_lang()
+    prompt = build_context_prompt(event, cam_cfg, lang=lang)
+    rid = f"rid-frigate-{int(time.time() * 1000)}"
 
     try:
-        from adapters.llm_adapter import ask_llm
-        result = await ask_llm(prompt, images=[img_b64])
+        result = await ask_llm(prompt, images=[img_b64], rid=rid)
         analysis_text = result.get("text", "").strip()
     except Exception as e:
         log.error("VLM analysis failed for event %s: %s", event_id, e)
         return None
+
+    # P118: the analysis call has no tools, so «… til neste dev-møte» could never be kept.
+    # When Kåre says it, one background round gives him the agenda tool to write it down.
+    if mentions_agenda_promise(analysis_text):
+        spawn(_keep_agenda_promise(prompt, analysis_text, event_id, rid, lang))
 
     return {
         "analysis": analysis_text,
@@ -170,7 +187,68 @@ async def analyze_event(event: dict, img_b64_override: str | None = None) -> dic
         "camera_display": cam_cfg.get("display_name") or camera,
         "role": cam_cfg.get("role", ""),
         "img_b64": img_b64,
+        "rid": rid,
     }
+
+
+def _agenda_only_tool(lang: str) -> dict | None:
+    """The note tool narrowed to one job: write to the dev-meeting agenda."""
+    for tool in get_tools(lang):
+        if tool.get("function", {}).get("name") == "note":
+            narrowed = json.loads(json.dumps(tool))
+            props = narrowed["function"]["parameters"]["properties"]
+            props["action"]["enum"] = ["write"]
+            props["list_name"]["enum"] = ["agenda"]
+            return narrowed
+    return None
+
+
+async def _keep_agenda_promise(
+    prompt: str, analysis_text: str, event_id: str, rid: str, lang: str
+) -> None:
+    """One follow-up round after an event analysis that promised «next dev meeting»: Kåre gets
+    only the agenda tool and writes the item himself (source=frigate, pointer to the event).
+    Runs as a background task — never delays the analysis, notifications or the log. Text only
+    (no image): his own analysis already says what the image showed vs. what Frigate reported."""
+    try:
+        tool = _agenda_only_tool(lang)
+        if tool is None:
+            return
+        messages = [
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": analysis_text},
+            {"role": "user", "content": t("frigate_agenda_followup", lang)},
+        ]
+        result = await ask_llm_with_tools(
+            messages=messages, tools=[tool], rid=rid, user_id="", source="frigate"
+        )
+        calls = result.get("tool_calls") or []
+        if not calls:
+            log.info(
+                "Agenda follow-up for event %s: no tool call (text=%r)",
+                event_id,
+                (result.get("text") or "")[:120],
+            )
+            return
+        for tc in calls[:1]:
+            fn = tc.get("function", {})
+            args = fn.get("arguments", {})
+            if fn.get("name") != "note" or not isinstance(args, dict):
+                continue
+            args.update(
+                {
+                    "action": "write",
+                    "list_name": "agenda",
+                    "_rid": rid,
+                    "_source": "frigate",
+                    "_user_id": "global",
+                    "_pointer": f"frigate_analysis.log#event_id={event_id}",
+                }
+            )
+            res = await execute_tool("note", args)
+            log.info("Agenda follow-up for event %s: %s", event_id, str(res)[:120])
+    except Exception as e:
+        log.warning("Agenda follow-up for event %s failed: %s", event_id, e)
 
 
 def _save_snapshot(event_id: str, img_b64: str) -> Path | None:
@@ -211,10 +289,13 @@ def _cleanup_analysis_log(max_mb: int) -> None:
             return
         if _ANALYSIS_LOG.stat().st_size <= limit:
             return
-        lines = [l for l in _ANALYSIS_LOG.read_text(encoding="utf-8").splitlines() if l.strip()]
-        drop = max(1, len(lines) // 5)  # drop oldest 20%
-        lines = lines[drop:]
-        _ANALYSIS_LOG.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        with log_buffer.locked(_ANALYSIS_LOG):  # no buffered batch lands mid-rewrite (P131)
+            lines = [
+                ln for ln in _ANALYSIS_LOG.read_text(encoding="utf-8").splitlines() if ln.strip()
+            ]
+            drop = max(1, len(lines) // 5)  # drop oldest 20%
+            lines = lines[drop:]
+            _ANALYSIS_LOG.write_text("\n".join(lines) + "\n", encoding="utf-8")
         log.info("Analysis log trimmed: removed %d oldest entries", drop)
     except Exception as e:
         log.warning("Analysis log cleanup error: %s", e)
@@ -222,9 +303,7 @@ def _cleanup_analysis_log(max_mb: int) -> None:
 
 def _write_analysis_log(entry: dict) -> None:
     try:
-        _ANALYSIS_LOG.parent.mkdir(parents=True, exist_ok=True)
-        with open(_ANALYSIS_LOG, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        log_buffer.write(_ANALYSIS_LOG, entry)
     except Exception as e:
         log.warning("Could not write frigate_analysis.log: %s", e)
 
@@ -234,9 +313,7 @@ _NOTIFY_LOG = Path("/kaare/logs/notifications.log")
 
 def _write_notify_log(entry: dict) -> None:
     try:
-        _NOTIFY_LOG.parent.mkdir(parents=True, exist_ok=True)
-        with _NOTIFY_LOG.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        log_buffer.write(_NOTIFY_LOG, entry)
     except Exception as e:
         log.warning("[notify_log] write failed: %s", e)
 
@@ -244,10 +321,6 @@ def _write_notify_log(entry: dict) -> None:
 async def _maybe_notify_away(camera: str, label: str, score: float) -> None:
     """Fire notify_user() for admin users when household is away and threat is HIGH."""
     try:
-        from adapters.frigate_adapter import derive_hints
-        from kaare_core.notify import notify_user, Urgency
-        from kaare_core.users.store import list_users
-
         cam_cfg = _cfg().get("cameras", {}).get(camera, {})
         camera_role = cam_cfg.get("role", "")
         hints = derive_hints({"label": label, "confidence": score, "zones": []}, camera_role)
@@ -281,18 +354,20 @@ async def _maybe_notify_away(camera: str, label: str, score: float) -> None:
                 urgency_str = "high"
 
             await notify_user(uid, msg, urgency=urgency, source_key=source_key)
-            _write_notify_log({
-                "ts": datetime.now(timezone.utc).isoformat(),
-                "user_id": uid,
-                "urgency": urgency_str,
-                "source_key": source_key,
-                "channel": "sound_node",
-                "camera": camera,
-                "label": label,
-                "score": score,
-                "deviation_score": deviation_score,
-                "baseline_confidence": baseline_confidence,
-            })
+            _write_notify_log(
+                {
+                    "ts": datetime.now(UTC).isoformat(),
+                    "user_id": uid,
+                    "urgency": urgency_str,
+                    "source_key": source_key,
+                    "channel": "sound_node",
+                    "camera": camera,
+                    "label": label,
+                    "score": score,
+                    "deviation_score": deviation_score,
+                    "baseline_confidence": baseline_confidence,
+                }
+            )
     except Exception as e:
         log.warning("[frigate_responder] _maybe_notify_away failed: %s", e)
 
@@ -303,13 +378,25 @@ async def handle_end_event(event: dict) -> None:
     score = float(event.get("score", 0))
     duration = float(event.get("duration", 0))
 
-    asyncio.create_task(_maybe_notify_away(camera, label, score))
+    spawn(_maybe_notify_away(camera, label, score))
 
     if not should_analyze(camera, label, score, duration):
-        log.debug("Skipping event: camera=%s label=%s score=%.2f duration=%.1f", camera, label, score, duration)
+        log.debug(
+            "Skipping event: camera=%s label=%s score=%.2f duration=%.1f",
+            camera,
+            label,
+            score,
+            duration,
+        )
         return
 
-    log.info("Analyzing Frigate end-event: camera=%s label=%s score=%.2f duration=%.1fs", camera, label, score, duration)
+    log.info(
+        "Analyzing Frigate end-event: camera=%s label=%s score=%.2f duration=%.1fs",
+        camera,
+        label,
+        score,
+        duration,
+    )
 
     result = await analyze_event(event)
     if not result:
@@ -326,7 +413,7 @@ async def handle_end_event(event: dict) -> None:
         _cleanup_snapshots(snap_max)
 
     entry = {
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "camera": camera,
         "display_name": result["camera_display"],
         "role": result["role"],
@@ -337,6 +424,7 @@ async def handle_end_event(event: dict) -> None:
         "sub_label": event.get("sub_label"),
         "zones": event.get("zones", []),
         "event_id": event_id,
+        "rid": result.get("rid", ""),
         "analysis": result["analysis"],
     }
     _write_analysis_log(entry)

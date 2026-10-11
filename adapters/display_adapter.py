@@ -1,8 +1,9 @@
 import logging
 from pathlib import Path
-from typing import Optional
 
 import yaml
+
+from adapters.display.registry import DisplayProviderRegistry
 
 log = logging.getLogger(__name__)
 
@@ -14,10 +15,11 @@ _registry = None
 def _get_registry():
     global _registry
     if _registry is None:
-        from adapters.display.registry import DisplayProviderRegistry
         try:
             svc = yaml.safe_load(_SERVICES_PATH.read_text())
-            media_base_url = svc.get("voice_bridge", {}).get("media_base_url", "http://127.0.0.1:8011/media")
+            media_base_url = svc.get("voice_bridge", {}).get(
+                "media_base_url", "http://127.0.0.1:8011/media"
+            )
         except Exception:
             media_base_url = "http://127.0.0.1:8011/media"
         _registry = DisplayProviderRegistry(media_base_url)
@@ -35,8 +37,8 @@ async def send_display(
     node_id: str,
     text: str,
     title: str = "Kåre",
-    image_path: Optional[str] = None,
-    image_b64: Optional[str] = None,
+    image_path: str | None = None,
+    image_b64: str | None = None,
     duration: int = 8,
     position: str = "bottom_right",
 ) -> dict:
@@ -49,10 +51,14 @@ async def send_display(
 
     try:
         return await _get_registry().send(
-            node_id, node,
-            text=text, title=title,
-            image_path=image_path, image_b64=image_b64,
-            duration=duration, position=position,
+            node_id,
+            node,
+            text=text,
+            title=title,
+            image_path=image_path,
+            image_b64=image_b64,
+            duration=duration,
+            position=position,
         )
     except Exception as e:
         log.error("send_display error for %s: %s", node_id, e)

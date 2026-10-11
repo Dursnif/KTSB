@@ -1,6 +1,6 @@
 embedding:
-  enabled: false
   device: torch
+  enabled: false
   hf_model: BAAI/bge-m3
   max_length: 512
   model_path: /kaare/models/bge-m3
@@ -9,10 +9,10 @@ frigate:
   camera_names: {}
   snapshot_timeout: 15
   timeout: 10
-  url: ""
+  url: ''
 home_assistant:
   awareness_entities: []
-  ha_notify_entity: ""
+  ha_notify_entity: ''
   log_bridge:
     reconnect_delay: 10
     subscribe_events:
@@ -20,31 +20,51 @@ home_assistant:
     - call_service
     - automation_triggered
   timeout: 5
-  url: ""
+  url: ''
+inner_voices:
+  node_label: Local
+  push_token: ''
 internal:
   ha_gateway: http://kaare-ha-gateway:8002
-  semantic_embed: http://kaare-memory-embed:11500
   kaare_api: http://kaare-api:8000
   nl_parser: http://kaare-api:8000
+  semantic_embed: http://kaare-semantic-embed:11500
   voice_bridge: http://kaare-voice:8011
-memory_embed:
-  enabled: false
-  model_dir: ""
+jang:
+  model_path: ''
+  provider: openvino
+  push_token: ''
+  push_url: ''
+jing:
+  model_path: ''
+  provider: openvino
+  push_token: ''
+  push_url: ''
 media:
   mpd:
     host: 127.0.0.1
     port: 6600
   plex:
     timeout: 10
-    url: ""
+    url: ''
+memory_embed:
+  enabled: false
+  max_len: 128
+  model: minilm_int8
+  model_dir: ''
 mqtt:
   client_id: ''
-  host: ""
+  host: ''
   port: 1883
   reconnect_interval: 30
   tls_enabled: false
   topic_prefix: frigate
   zigbee_awareness: []
+notifications:
+  enabled: true
+  normalcy_cameras: []
+  normalcy_min_confidence: 0.0
+  normalcy_min_score: 0.5
 ollama:
   embed: http://kaare-embedding:11446
   kare: http://ollama:11434
@@ -57,39 +77,55 @@ voice:
   stt:
     backend: faster_whisper
     backup_model: /kaare/models/voice/whisper-v3
+    cpu_threads: 0
     device: cpu
     faster_whisper_compute_type: int8
-    faster_whisper_model: large-v3
-    model_dir: /kaare/models/voice/nb-whisper-large-ov
+    faster_whisper_model: ''
+    model_dir: ''
   tts:
     sample_rate: 22050
-    voice: /kaare/models/voice/piper/no_NO-talesyntese-medium.onnx
+    voice: ''
+  # LAN address speakers fetch audio from (GUI: Settings → LLM → Piper). Empty = detect (bare metal only;
+  # in Docker set it to the host's LAN address).
+  media_host: ''
   venv_python: python3
 web_search:
-  brave_country: 'NO'
-  brave_search_lang: nb
+  brave_country: ''
+  brave_search_lang: ''
+  # How careful probability words are: careful | balanced | open (P121).
+  caution: balanced
   content_max: 3000
-  fallback: ddg
+  fallback: ''
   fetch_count: 10
+  fetch_timeout_s: 8
+  max_download_bytes: 3000000
   max_results: 3
-  provider: ddg
-  searxng_url: ''
-jing:
-  provider: openvino
-  model_path: ''
-  push_url: ''
-  push_token: ''
-jang:
-  provider: openvino
-  model_path: ''
-  push_url: ''
-  push_token: ''
-inner_voices:
-  node_label: Local
-  push_token: ''
-
-notifications:
-  enabled: true
-  normalcy_min_score: 0.5
-  normalcy_min_confidence: 0.0
-  normalcy_cameras: []
+  # Open web: results outside the trusted list are used too, labelled as such (P121).
+  open_web: true
+  # Deadline for a search Kåre sends off as a work round (background, P122).
+  background_timeout_s: 180
+  # Time budget for finding the subject's official site via Wikidata (P121).
+  official_timeout_s: 20
+  page_cache_max_entries: 200
+  page_cache_ttl_s: 21600
+  per_host_interval_s: 1
+  provider: searxng
+  search_total_timeout_s: 60
+  # Places reserved for trusted sources out of max_results (P121).
+  trusted_slots: 2
+  # Docker: the bundled searxng service (docker-compose.yml). Other installs: your own SearXNG.
+  searxng_url: http://searxng:8080
+wiki:
+  auto_resolve_max_rows: 30
+  inline_max_chars: 6000
+  title_rank_k: 3
+  primary: ''
+  sources: {}
+# Norwegian law as a local source from Lovdata's open datasets (P123, NLOD 2.0). Optional —
+# switched on in the GUI (Settings → Web Search & Weather). Downloaded once per night.
+law:
+  lovdata:
+    enabled: false
+    datasets:
+    - https://api.lovdata.no/v1/publicData/get/gjeldende-lover.tar.bz2
+    - https://api.lovdata.no/v1/publicData/get/gjeldende-sentrale-forskrifter.tar.bz2

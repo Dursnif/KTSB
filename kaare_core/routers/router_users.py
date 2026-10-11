@@ -13,65 +13,93 @@ GET  /api/users/{username}/summary → grunnleggende brukerinfo (self, admin, el
 
 import base64
 import collections
+import json as _json
 import time
-import httpx
-from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, HTTPException, Depends, Request, status, UploadFile, File
-from pydantic import BaseModel
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
+import httpx
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from pydantic import BaseModel
+
+from adapters.llm_adapter import list_personalities
+from kaare_core import session_keys as _session_keys
 from kaare_core.audit import audit_log as _audit
+from kaare_core.client_ip import client_ip as _client_ip_of
 from kaare_core.config import get_service
 from kaare_core.crypto import (
-    seed_phrase_to_private_key,
-    private_key_to_seed_phrase,
-    generate_salt,
     derive_key_from_pin,
     encrypt_private_key,
+    generate_salt,
+    private_key_to_seed_phrase,
+    seed_phrase_to_private_key,
 )
-from kaare_core import session_keys as _session_keys
+from kaare_core.service_auth import service_headers
 from kaare_core.users import store
 from kaare_core.users.auth import (
-    login,
-    require_auth,
-    require_admin,
-    is_user_online,
+    create_token,
+    end_session,
     get_all_last_seen,
+    is_user_online,
+    login,
+    require_admin,
+    require_auth,
     setup_keypair,
     unlock_session,
-    end_session,
-    create_token,
 )
 from kaare_core.users.profile_manager import (
-    init_profile, get_profile_flag, set_profile_flag, get_household_visible,
-    update_household_visible, get_unlock_config, set_unlock_config,
+    get_household_visible,
+    get_profile_flag,
+    get_unlock_config,
+    init_profile,
+    set_profile_flag,
+    set_unlock_config,
+    update_household_visible,
 )
-from adapters.llm_adapter import list_personalities
+from kaare_core.users.store import reencrypt_private_key
 
-# Simple in-memory rate limiter for login: max 5 failures per 15 min per IP.
+# In-memory limit on failed logins / recoveries (DT03 R6 H1+M1), two counters per 15 min:
+#  - per username: stops PIN guessing on one account however many addresses the attacker uses;
+#  - per client IP (kaare_core.client_ip — X-Forwarded-For only from GUI-trusted proxies): stops
+#    spraying many usernames from one address. Higher, because behind Docker Desktop's NAT every
+#    LAN client shares one address and one person's typos must not lock the whole house out.
 _LOGIN_FAIL_WINDOW = 900  # seconds
-_LOGIN_FAIL_MAX = 5
+_LOGIN_FAIL_MAX_USER = 5
+_LOGIN_FAIL_MAX_IP = 30
 _login_failures: dict[str, collections.deque] = {}
 
 
-def _check_login_rate(ip: str) -> None:
+def _fail_keys(ip: str, username: str | None) -> list[tuple[str, int]]:
+    keys = [(f"ip:{ip}", _LOGIN_FAIL_MAX_IP)]
+    if username:
+        keys.append((f"user:{username.strip().lower()}", _LOGIN_FAIL_MAX_USER))
+    return keys
+
+
+def _check_login_rate(ip: str, username: str | None = None) -> None:
     now = time.monotonic()
-    dq = _login_failures.setdefault(ip, collections.deque())
-    while dq and now - dq[0] > _LOGIN_FAIL_WINDOW:
-        dq.popleft()
-    if len(dq) >= _LOGIN_FAIL_MAX:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many failed login attempts. Try again in 15 minutes.",
-        )
+    for key, limit in _fail_keys(ip, username):
+        dq = _login_failures.setdefault(key, collections.deque())
+        while dq and now - dq[0] > _LOGIN_FAIL_WINDOW:
+            dq.popleft()
+        if len(dq) >= limit:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed login attempts. Try again in 15 minutes.",
+            )
 
 
-def _record_login_fail(ip: str) -> None:
-    _login_failures.setdefault(ip, collections.deque()).append(time.monotonic())
+def _record_login_fail(ip: str, username: str | None = None) -> None:
+    now = time.monotonic()
+    for key, _limit in _fail_keys(ip, username):
+        _login_failures.setdefault(key, collections.deque()).append(now)
 
 
-def _clear_login_fail(ip: str) -> None:
-    _login_failures.pop(ip, None)
+def _clear_login_fail(ip: str, username: str | None = None) -> None:
+    """After a success only the account's own counter is cleared — a valid login must not reset
+    the per-IP counter that limits guessing at other accounts from the same address."""
+    if username:
+        _login_failures.pop(f"user:{username.strip().lower()}", None)
+
 
 _VOICE_BRIDGE = get_service("internal", "voice_bridge")
 
@@ -80,9 +108,11 @@ router = APIRouter(prefix="/api")
 
 # ── Modeller ───────────────────────────────────────────────────────────────────
 
+
 class LoginRequest(BaseModel):
     username: str
     pin: str
+
 
 class CreateUserRequest(BaseModel):
     username: str
@@ -91,18 +121,20 @@ class CreateUserRequest(BaseModel):
     pin: str
     avatar: str = ""
 
+
 class UpdateUserRequest(BaseModel):
-    display_name: Optional[str] = None
-    role: Optional[str] = None
-    avatar: Optional[str] = None
-    is_active: Optional[bool] = None
-    personality: Optional[str] = None
-    vpn_access: Optional[str] = None
-    can_manage_child_timers: Optional[bool] = None
-    notify_channel: Optional[str] = None
-    is_parent: Optional[bool] = None
-    pin_required: Optional[bool] = None
-    managed_children: Optional[str] = None
+    display_name: str | None = None
+    role: str | None = None
+    avatar: str | None = None
+    is_active: bool | None = None
+    personality: str | None = None
+    vpn_access: str | None = None
+    can_manage_child_timers: bool | None = None
+    notify_channel: str | None = None
+    is_parent: bool | None = None
+    pin_required: bool | None = None
+    managed_children: str | None = None
+
 
 class UpdatePinRequest(BaseModel):
     new_pin: str
@@ -116,31 +148,34 @@ class RecoverRequest(BaseModel):
 
 # ── Personligheter ────────────────────────────────────────────────────────────
 
+
 @router.get("/personalities")
-def api_list_personalities():
+def api_list_personalities(_u: dict = Depends(require_auth)):
     """Returnerer tilgjengelige personlighetsvarianter."""
     return list_personalities()
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
 
+
 @router.post("/auth/login")
 async def api_login(req: LoginRequest, request: Request):
-    client_ip = request.client.host if request.client else "unknown"
-    _check_login_rate(client_ip)
+    client_ip = _client_ip_of(request)
+    _check_login_rate(client_ip, req.username)
     # Sjekk om midlertidig PIN har utløpt før vi prøver å logge inn
     if store.check_pin_expired(req.username):
-        _record_login_fail(client_ip)
+        _record_login_fail(client_ip, req.username)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Temporary PIN has expired. Ask an administrator for a new one.",
         )
     result = login(req.username, req.pin)
     if not result:
-        _record_login_fail(client_ip)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Feil brukernavn eller PIN.")
-    _clear_login_fail(client_ip)
+        _record_login_fail(client_ip, req.username)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Feil brukernavn eller PIN."
+        )
+    _clear_login_fail(client_ip, req.username)
     # Unlock session key (decrypt private key to RAM) + process vault files
     pin_for_session = result.pop("_pin_for_session", None)
     expires_at = result.pop("_expires_at", None)
@@ -176,9 +211,10 @@ def api_ping(payload: dict = Depends(require_auth)):
 
 # ── Brukere (admin) ────────────────────────────────────────────────────────────
 
+
 @router.get("/users")
 def api_list_users(payload: dict = Depends(require_admin)):
-    users = store.list_users()
+    users = store.list_users(include_system=True)
     last_seen = get_all_last_seen()
     for u in users:
         u["is_online"] = is_user_online(u["username"])
@@ -200,23 +236,26 @@ def api_create_user(req: CreateUserRequest, payload: dict = Depends(require_admi
             avatar=req.avatar,
         )
         init_profile(req.username, req.display_name)
-        _audit("admin_user_action", payload["sub"], f"create_user username={req.username!r} role={req.role!r}")
+        _audit(
+            "admin_user_action",
+            payload["sub"],
+            f"create_user username={req.username!r} role={req.role!r}",
+        )
         # Generate keypair for personal accounts (not system accounts like "admin")
         seed_phrase = setup_keypair(req.username, req.pin)
         if seed_phrase:
             user["seed_phrase"] = seed_phrase  # shown once — frontend must display and hide
         return user
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         if "UNIQUE" in str(e):
-            raise HTTPException(status_code=409, detail="Username already taken.")
-        raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=409, detail="Username already taken.") from e
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.put("/users/{username}")
-def api_update_user(username: str, req: UpdateUserRequest,
-                    payload: dict = Depends(require_admin)):
+def api_update_user(username: str, req: UpdateUserRequest, payload: dict = Depends(require_admin)):
     try:
         user = store.update_user(
             username,
@@ -231,7 +270,7 @@ def api_update_user(username: str, req: UpdateUserRequest,
             managed_children=req.managed_children,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
     if req.can_manage_child_timers is not None:
@@ -264,8 +303,7 @@ def api_generate_temp_pin(username: str, payload: dict = Depends(require_admin))
 
 
 @router.put("/users/{username}/pin")
-def api_update_pin(username: str, req: UpdatePinRequest,
-                   payload: dict = Depends(require_auth)):
+def api_update_pin(username: str, req: UpdatePinRequest, payload: dict = Depends(require_auth)):
     # Admin kan bytte PIN for hvem som helst, bruker kun sin egen
     caller = payload["sub"]
     caller_role = payload["role"]
@@ -274,7 +312,7 @@ def api_update_pin(username: str, req: UpdatePinRequest,
     try:
         ok = store.update_pin(username, req.new_pin)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     if not ok:
         raise HTTPException(status_code=404, detail="User not found.")
     action = "admin_pin_reset" if caller != username else "pin_change"
@@ -282,7 +320,6 @@ def api_update_pin(username: str, req: UpdatePinRequest,
     # Re-encrypt stored private key with new PIN (only when user changes their own PIN)
     if caller == username:
         try:
-            from kaare_core.users.store import reencrypt_private_key
             pk = _session_keys.get_session_key_sync(username)
             if pk:
                 reencrypt_private_key(username, req.new_pin, pk)
@@ -296,7 +333,7 @@ def api_delete_user(username: str, payload: dict = Depends(require_admin)):
     try:
         ok = store.delete_user(username)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     if not ok:
         raise HTTPException(status_code=404, detail="User not found.")
     _audit("admin_user_action", payload["sub"], f"delete_user username={username!r}")
@@ -305,18 +342,21 @@ def api_delete_user(username: str, payload: dict = Depends(require_admin)):
 
 # ── Voice enrollment (proxy → voice_bridge) ────────────────────────────────────
 
+
 @router.get("/users/{username}/voice/status")
 async def api_voice_status(username: str, _=Depends(require_admin)):
     """Check whether a voiceprint exists for a user."""
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(f"{_VOICE_BRIDGE}/speaker/status/{username}")
+            resp = await client.get(
+                f"{_VOICE_BRIDGE}/speaker/status/{username}", headers=service_headers()
+            )
             resp.raise_for_status()
             return resp.json()
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Voice bridge not available.")
+    except httpx.ConnectError as exc:
+        raise HTTPException(status_code=503, detail="Voice bridge not available.") from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/users/{username}/voice/enroll")
@@ -330,15 +370,16 @@ async def api_voice_enroll(username: str, file: UploadFile = File(...), _=Depend
             resp = await client.post(
                 f"{_VOICE_BRIDGE}/speaker/enroll/{username}",
                 files={"file": (file.filename or "audio.wav", audio_bytes, "audio/wav")},
+                headers=service_headers(),
             )
             resp.raise_for_status()
             return resp.json()
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Voice bridge not available.")
+    except httpx.ConnectError as exc:
+        raise HTTPException(status_code=503, detail="Voice bridge not available.") from exc
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.delete("/users/{username}/voice")
@@ -346,13 +387,15 @@ async def api_voice_delete(username: str, _=Depends(require_admin)):
     """Remove stored voiceprint for a user."""
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.delete(f"{_VOICE_BRIDGE}/speaker/enroll/{username}")
+            resp = await client.delete(
+                f"{_VOICE_BRIDGE}/speaker/enroll/{username}", headers=service_headers()
+            )
             resp.raise_for_status()
             return resp.json()
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="Voice bridge not available.")
+    except httpx.ConnectError as exc:
+        raise HTTPException(status_code=503, detail="Voice bridge not available.") from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 # ── User-settable profile flags ───────────────────────────────────────────────
@@ -384,10 +427,11 @@ def api_put_user_flags(username: str, body: dict, payload: dict = Depends(requir
 
 # ── Parent child-summary access ───────────────────────────────────────────────
 
+
 @router.get("/users/{username}/summary")
 def api_user_summary(username: str, payload: dict = Depends(require_auth)):
     """Return basic display info for a user. Self, admin, or authenticated parent (has username in managed_children)."""
-    import json as _json
+
     caller = payload["sub"]
     caller_role = payload.get("role", "")
     if caller != username and caller_role != "admin":
@@ -412,6 +456,7 @@ def api_user_summary(username: str, payload: dict = Depends(require_auth)):
 
 
 # ── Recovery & household-visible ──────────────────────────────────────────────
+
 
 @router.get("/users/{username}/household-visible")
 def api_household_visible(username: str, payload: dict = Depends(require_auth)):
@@ -463,12 +508,17 @@ def api_put_unlock(username: str, req: UnlockConfigRequest, payload: dict = Depe
 
 
 @router.post("/users/recover")
-async def api_recover(req: RecoverRequest):
+async def api_recover(req: RecoverRequest, request: Request):
     """Recover account using seed phrase. No auth required.
     Validates seed phrase against stored public key, re-encrypts private key
-    with new PIN, updates PIN hash, and returns a JWT so the user is logged in."""
+    with new PIN, updates PIN hash, and returns a JWT so the user is logged in.
+    Shares the login rate limit (5 failures / 15 min per IP, P120): each try runs an
+    Argon2 key derivation, so unlimited tries were also a cheap way to load the CPU."""
+    client_ip = _client_ip_of(request)
+    _check_login_rate(client_ip, req.username)
     user = store.get_user(req.username)
-    if not user:
+    if not user or store.is_system_identity(req.username):
+        _record_login_fail(client_ip, req.username)
         raise HTTPException(status_code=400, detail="Invalid username or seed phrase.")
     kp = store.get_keypair_data(req.username)
     if not kp:
@@ -476,12 +526,14 @@ async def api_recover(req: RecoverRequest):
     try:
         pub_bytes = base64.b64decode(kp["public_key"])
         salt_bytes = base64.b64decode(kp["argon2_salt"])
-    except Exception:
-        raise HTTPException(status_code=500, detail="Keypair data corrupted.")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Keypair data corrupted.") from exc
 
     private_key = seed_phrase_to_private_key(req.seed_phrase.strip().lower(), salt_bytes, pub_bytes)
     if not private_key:
+        _record_login_fail(client_ip, req.username)
         raise HTTPException(status_code=400, detail="Invalid username or seed phrase.")
+    _clear_login_fail(client_ip, req.username)
 
     ok, msg = store.validate_pin_strength(req.new_pin)
     if not ok:
@@ -499,13 +551,13 @@ async def api_recover(req: RecoverRequest):
     )
     store.update_pin(req.username, req.new_pin)
 
-    expires_at = (datetime.now(timezone.utc) + timedelta(hours=12)).timestamp()
+    expires_at = (datetime.now(UTC) + timedelta(hours=12)).timestamp()
     await unlock_session(req.username, req.new_pin, expires_at)
 
     token = create_token(req.username, user["role"])
-    return {"token": token, "user": {"username": req.username, "role": user["role"],
-                                     "display_name": user.get("display_name", req.username),
-                                     "avatar": user.get("avatar", "👤")}}
+    # Same user shape as /auth/login (secrets stripped by the store), so the GUI gets
+    # is_parent / managed_children etc. right away after a recovery.
+    return {"token": token, "user": store.get_user(req.username) or user}
 
 
 @router.post("/users/{username}/reissue_seed_phrase")
@@ -523,7 +575,9 @@ def api_reissue_seed_phrase(username: str, payload: dict = Depends(require_auth)
         raise HTTPException(status_code=403, detail="You can only reissue your own recovery key.")
     private_key = _session_keys.get_session_key_sync(username)
     if not private_key:
-        raise HTTPException(status_code=401, detail="Active session required — please log in again.")
+        raise HTTPException(
+            status_code=401, detail="Active session required — please log in again."
+        )
     seed_phrase = private_key_to_seed_phrase(private_key)
     _audit("user_action", caller, "reissue_seed_phrase")
     return {"seed_phrase": seed_phrase}

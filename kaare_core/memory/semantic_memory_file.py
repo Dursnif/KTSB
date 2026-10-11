@@ -10,7 +10,7 @@ Mønster: identisk med think_cache.py (rullerende JSONL med trim).
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml as _yaml
@@ -52,7 +52,7 @@ def append_episode(
             "text": text,
             "narrative": narrative,
             "topics": topics,
-            "ts": ts or datetime.now(timezone.utc).isoformat(),
+            "ts": ts or datetime.now(UTC).isoformat(),
         }
         _FALLBACK_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(_FALLBACK_PATH, "a", encoding="utf-8") as f:

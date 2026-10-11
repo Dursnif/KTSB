@@ -105,7 +105,7 @@ if [ -d /kaare/.ssh ]; then
   chmod 700 /kaare/.ssh
   find /kaare/.ssh -name "id_*" -not -name "*.pub" -exec chmod 600 {} +
   [ -f /kaare/.ssh/config ] && chmod 600 /kaare/.ssh/config
-  find /kaare/.ssh -name "*.pub" -o -name "known_hosts" | xargs -r chmod 644
+  find /kaare/.ssh \( -name "*.pub" -o -name "known_hosts" \) -exec chmod 644 {} +
   echo "  /kaare/.ssh locked down (700/600)"
 fi
 
@@ -126,10 +126,8 @@ for bindir in \
 done
 
 # Restore execute bits in node_modules/.bin (symlinks stay as-is, only regular files)
-for bindir in \
-  /kaare/frontend/node_modules/.bin; do
-  [ -d "$bindir" ] && find "$bindir" -type f -exec chmod 775 {} + 2>/dev/null && echo "  Fixed: $bindir" || true
-done
+bindir=/kaare/frontend/node_modules/.bin
+[ -d "$bindir" ] && find "$bindir" -type f -exec chmod 775 {} + 2>/dev/null && echo "  Fixed: $bindir" || true
 
 echo "  chmod done"
 

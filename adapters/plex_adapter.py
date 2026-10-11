@@ -1,12 +1,12 @@
 """Plex Media Server adapter for Kåre."""
 
 import os
-import yaml
-import httpx
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 from urllib.parse import urlparse
+
+import httpx
+import yaml
 
 from kaare_core.tools.i18n import t
 
@@ -64,7 +64,7 @@ def _fmt_progress(view_offset: int | None, duration: int | None) -> str:
 def _fmt_timestamp(unix_ts: int | None) -> str:
     if not unix_ts:
         return "?"
-    dt = datetime.fromtimestamp(unix_ts, tz=timezone.utc).astimezone()
+    dt = datetime.fromtimestamp(unix_ts, tz=UTC).astimezone()
     return dt.strftime("%d.%m.%Y %H:%M")
 
 
@@ -91,7 +91,9 @@ async def get_sessions(lang: str = "nb") -> str:
         user = item.get("User", {}).get("title", "Ukjent bruker")
         device = item.get("Player", {}).get("title", "Ukjent enhet")
         state = item.get("Player", {}).get("state", "")
-        state_label = {"playing": "▶ spiller", "paused": "⏸ pauset", "buffering": "⏳ buffrer"}.get(state, state)
+        state_label = {"playing": "▶ spiller", "paused": "⏸ pauset", "buffering": "⏳ buffrer"}.get(
+            state, state
+        )
 
         item_type = item.get("type", "")
         if item_type == "episode":
@@ -114,8 +116,17 @@ async def get_sessions(lang: str = "nb") -> str:
         progress = _fmt_progress(item.get("viewOffset"), item.get("duration"))
         progress_str = f" [{progress}]" if progress else ""
 
-        lines.append(t("plex_session_line", lang, user=user, device=device,
-                       content=content, progress=progress_str, state=state_label))
+        lines.append(
+            t(
+                "plex_session_line",
+                lang,
+                user=user,
+                device=device,
+                content=content,
+                progress=progress_str,
+                state=state_label,
+            )
+        )
 
     return "\n".join(lines)
 
@@ -169,7 +180,6 @@ async def get_history(user: str | None = None, limit: int = 20) -> str:
         acc_id = item.get("accountID", 0)
         acc_name = accounts.get(acc_id, "Ukjent")
         ts = _fmt_timestamp(item.get("viewedAt"))
-        device_id = item.get("deviceID")
 
         item_type = item.get("type", "")
         if item_type == "episode":
@@ -220,8 +230,13 @@ async def search(query: str, limit: int = 8, lang: str = "nb") -> str:
             year = item.get("year", "")
             rating_key = item.get("ratingKey", "")
             type_label = {
-                "show": "Serie", "movie": "Film", "season": "Sesong",
-                "episode": "Episode", "artist": "Artist", "album": "Album", "track": "Sang",
+                "show": "Serie",
+                "movie": "Film",
+                "season": "Sesong",
+                "episode": "Episode",
+                "artist": "Artist",
+                "album": "Album",
+                "track": "Sang",
             }.get(item.get("type", hub_type), hub_type)
 
             year_str = f" ({year})" if year else ""
@@ -330,7 +345,9 @@ async def get_clients(lang: str = "nb") -> str:
     return "\n".join(lines)
 
 
-async def play_on_client(client_name_or_id: str, rating_key: str, offset_ms: int = 0, lang: str = "nb") -> str:
+async def play_on_client(
+    client_name_or_id: str, rating_key: str, offset_ms: int = 0, lang: str = "nb"
+) -> str:
     """
     Trigger Plex playback on a registered client.
 

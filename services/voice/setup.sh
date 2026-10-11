@@ -2,7 +2,7 @@
 # ============================================================
 # KÅRE VOICE SERVICE – INSTALLASJON
 # ============================================================
-# Kjør dette scriptet fra: /mnt/ai_disk/kaare/services/voice/
+# Run this script from: /kaare/services/voice/
 #
 #   chmod +x setup.sh
 #   ./setup.sh
@@ -39,6 +39,7 @@ else
 fi
 
 # Aktiver venv
+# shellcheck source=/dev/null  # the venv is created above at run time
 source "$VENV_DIR/bin/activate"
 
 # --- 2. Installer Python-pakker ---
@@ -48,7 +49,7 @@ pip install --upgrade pip
 # Kjernepakker
 pip install \
     fastapi \
-    uvicorn[standard] \
+    "uvicorn[standard]" \
     websockets \
     httpx \
     pyyaml \
@@ -61,7 +62,7 @@ pip install \
 pip install \
     openvino \
     openvino-genai \
-    optimum[openvino] \
+    "optimum[openvino]" \
     transformers
 
 # Whisper via OpenVINO

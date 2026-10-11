@@ -239,7 +239,7 @@ export default function TabForklaringer() {
     "ha_control", "ha_read", "timer", "get_weather", "library", "web_search",
     "kare_image", "view_images", "media", "note", "announce", "reason_freely",
     "memory", "camera", "search_argus", "read_meeting", "mechanic",
-    "explore_code", "inspect_system", "ssh_command", "local_command", "restart_docker_container",
+    "self_trace", "restart_docker_container",
     "household", "write_reflex",
   ];
 
@@ -270,6 +270,8 @@ export default function TabForklaringer() {
             { label: "young_adult", desc: t("forklaringer.users.roles.young_adult") },
             { label: "adult",       desc: t("forklaringer.users.roles.adult") },
             { label: "admin",       desc: t("forklaringer.users.roles.admin") },
+            { label: "household",   desc: t("forklaringer.users.roles.household") },
+            { label: "stranger",    desc: t("forklaringer.users.roles.stranger") },
           ]} />
           <SubHeading text={t("forklaringer.users.vpn_intro")} />
           <RoleList rows={[
@@ -295,7 +297,7 @@ export default function TabForklaringer() {
 
         {sec("vedlikehold", GROUP_COLORS.admin, <>
           <Body text={t("forklaringer.vedlikehold.body")} />
-          <Items items={items("vedlikehold", 5)} />
+          <Items items={items("vedlikehold", 6)} />
         </>)}
 
         {sec("verktoy", GROUP_COLORS.admin, <>
@@ -328,6 +330,7 @@ export default function TabForklaringer() {
 
         {sec("noder", GROUP_COLORS.admin, <>
           <Body text={t("forklaringer.noder.body")} />
+          <Body text={t("forklaringer.noder.trust")} />
 
           {sub("noder_kategorier", TAB_COLORS.kare, <>
             <Items items={items("noder_kategorier", 3)} />
@@ -384,7 +387,7 @@ export default function TabForklaringer() {
 
         {sec("refleksjoner", GROUP_COLORS.internal, <>
           <Body text={t("forklaringer.refleksjoner.body")} />
-          <Items items={items("refleksjoner", 5)} />
+          <Items items={items("refleksjoner", 7)} />
         </>)}
       </div>
 
@@ -398,12 +401,12 @@ export default function TabForklaringer() {
         </>)}
 
         {sec("innst_generelt", TAB_COLORS.generelt, <>
-          <Items items={items("innst_generelt", 3)} />
+          <Items items={items("innst_generelt", 6)} />
         </>)}
 
         {sec("innst_ha", TAB_COLORS.ha, <>
           <Body text={t("forklaringer.innst_ha.body")} />
-          <Items items={items("innst_ha", 4)} />
+          <Items items={items("innst_ha", 5)} />
         </>)}
 
         {sec("innst_mqtt", TAB_COLORS.mqtt, <>
@@ -422,15 +425,15 @@ export default function TabForklaringer() {
             { label: "Sky",         desc: t("forklaringer.innst_llm.role_sky"),       color: TAB_COLORS.kare },
           ]} />
           <SubHeading text="Andre begreper:" />
-          <Items items={items("innst_llm", 6)} />
+          <Items items={items("innst_llm", 12)} />
         </>)}
 
         {sec("innst_refleksjon", TAB_COLORS.refleksjon, <>
-          <Items items={items("innst_refleksjon", 4)} />
+          <Items items={items("innst_refleksjon", 11)} />
         </>)}
 
         {sec("innst_nett", TAB_COLORS.nettsok, <>
-          <Items items={items("innst_nett", 5)} />
+          <Items items={items("innst_nett", 6)} />
         </>)}
 
         {sec("innst_bilder", TAB_COLORS.bilder, <>
@@ -438,7 +441,7 @@ export default function TabForklaringer() {
         </>)}
 
         {sec("innst_kare", TAB_COLORS.kare, <>
-          <Items items={items("innst_kare", 10)} />
+          <Items items={items("innst_kare", 11)} />
         </>)}
 
         {sec("innst_integrasjoner", TAB_COLORS.integrasjoner, <>

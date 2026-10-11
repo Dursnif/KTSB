@@ -1,0 +1,53 @@
+# Ruff — lint and format standard for KTSB's Python code.
+# Run: ruff check .   /   ruff format .
+# Every ignored rule below states why. A rule is only ignored when it conflicts with a deliberate
+# KTSB convention — never just to make the count go down.
+
+target-version = "py312"
+line-length = 100
+
+extend-exclude = [
+    "venv", "**/venv", "**/.venv", "**/convert_venv",
+    "node_modules", "frontend",
+    "backups", "state", "logs", "data", "runtime", "models", "**/ov_cache",
+]
+
+[lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes — unused/undefined names
+    "I",        # import order
+    "UP",       # modern Python syntax
+    "B",        # bugbear — likely bugs
+    "SIM",      # simplifications
+    "ASYNC",    # blocking calls inside async code (CLAUDE.md rule 10)
+    "RUF",      # ruff's own checks (dangling asyncio tasks, mutable defaults …)
+    "PIE", "C4", "PERF",
+    "PLC0415",  # imports at module top (CLAUDE.md rule 14); exceptions carry `# PLC0415: <reason>` above (N20)
+]
+ignore = [
+    "E501",     # line length — the formatter owns it; long i18n strings are not split
+    "B008",     # call in default argument — FastAPI's Depends()/Query() pattern
+    "RUF001",   # ambiguous unicode in strings  — nb/de typography (–, ’, ×, −) is intended text
+    "RUF002",   # … in docstrings               — same
+    "RUF003",   # … in comments                 — same
+    "SIM105",   # contextlib.suppress — explicit try/except is house style (errors never crash the API)
+    "PERF203",  # try/except inside a loop — deliberate: one bad item must not stop the loop
+    "ASYNC240", # pathlib I/O in async (exists/stat/read_text/write_text) — almost all are small YAML
+                # config files in admin endpoints (tens of µs from page cache). Large or hot-path files
+                # (logs, audio) are moved to asyncio.to_thread by hand. open() (ASYNC230) and
+                # subprocess (ASYNC22x) stay enforced.
+    "ASYNC109", # timeout parameter on async functions — deliberate API: the value is passed to httpx /
+                # asyncio.wait_for, not used as the caller's deadline
+]
+
+[lint.isort]
+known-first-party = ["kaare_core", "adapters", "services", "semantic_embed"]
+
+[format]
+quote-style = "double"
+
+[lint.per-file-ignores]
+# Module-level imports after code, on purpose:
+"kaare_api.py" = ["E402"]          # logging.basicConfig must run before any import logs (fix 2026-09-02)
+"kaare_reflection.py" = ["E402"]   # loads configs/kare_llm.env + sys.path before importing modules that read them

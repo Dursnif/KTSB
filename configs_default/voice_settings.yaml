@@ -1,0 +1,40 @@
+# Voice service (kaare-voice / voice_bridge.py) — generic template (P127).
+# The live copy is configs/voice_settings.yaml. Models, voices and addresses are not set here:
+# STT/TTS models and the API address come from services.yaml, and the LAN address speakers fetch
+# audio from is Settings → LLM → Piper → «LAN address for speakers» (services.yaml voice.media_host).
+
+kaare:
+  # Timeout for calls to the main API (seconds)
+  timeout: 60
+
+stt:
+  # Max length of one local-microphone recording (seconds)
+  max_record_seconds: 10
+  # Seconds of silence before a recording stops
+  silence_threshold_seconds: 1.5
+  # Volume below this counts as silence
+  silence_amplitude_threshold: 0.05
+
+fast_responses:
+  # Pre-rendered wav files (relative to the voice service folder)
+  cache_dir: "cache/fast_responses"
+
+audio:
+  # sounddevice input index for a local microphone; null = the system default
+  mic_device: null
+  # Microphone sample rate (resampled to 16000 Hz for Whisper)
+  mic_sample_rate: 44100
+
+duck:
+  # Pause MPD playback while Kåre speaks through the local speakers
+  mpd: true
+  # Seconds between end of speech and MPD resuming
+  mpd_resume_delay: 0.3
+
+bridge:
+  # UDP port for audio streams from ESP32 nodes
+  udp_port: 8010
+  # HTTP port for button presses and wav serving
+  http_port: 8011
+  # "local" = this machine's speakers, "esp32" = the node's speaker
+  playback_mode: "local"
