@@ -43,11 +43,13 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/dursnif/kaare
-          # metadata-action adds :latest on every git tag by default (latest=auto) — off; the raw rule below decides.
+          # metadata-action adds :latest on every git tag by default (latest=auto) — off; the raw rule below decides:
+          # only a release tag (vX.Y.Z, no suffix) sets :latest — a main push built :latest with version «latest» and
+          # raced the tag run (v1.10.1, 2026-10-11).
           flavor: latest=false
           tags: |
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
 
       - name: Build and push kaare
         id: build-kaare
@@ -77,7 +79,7 @@ jobs:
           flavor: latest=false
           tags: |
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
 
       - name: Build and push kaare-embedding
         id: build-embedding
@@ -105,7 +107,7 @@ jobs:
           flavor: latest=false
           tags: |
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
 
       - name: Build and push kaare-voice
         id: build-voice
@@ -133,7 +135,7 @@ jobs:
           flavor: latest=false
           tags: |
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
 
       - name: Build and push kaare-frontend
         id: build-frontend
@@ -162,7 +164,7 @@ jobs:
           flavor: latest=false
           tags: |
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
 
       - name: Build and push kaare-inner-voices
         id: build-inner-voices
@@ -192,7 +194,7 @@ jobs:
           flavor: latest=false
           tags: |
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
 
       - name: Build and push kaare-updater
         id: build-updater

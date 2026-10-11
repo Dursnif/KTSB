@@ -1,7 +1,7 @@
 # Kåre The Smart Butler
 
 ![Version](https://img.shields.io/github/v/tag/dursnif/KTSB?label=version&sort=semver)
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shields.io/badge/license-Personal%20Use-blue)
 ![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fdursnif%2Fktsb-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-dursnif-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/dursnif)
@@ -482,4 +482,6 @@ frontend/       ← React/Vite GUI (TypeScript)
 
 ## License
 
-[MIT](LICENSE)
+Free for personal, educational and non-commercial use. Commercial use (hosting it for customers, bundling it
+into a product, or running it in a business) needs a separate license — see [LICENSE](LICENSE). This is KTSB's own
+license, not an OSI open-source license.
