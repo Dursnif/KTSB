@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 kaare_nightjob.py
 -----------------
@@ -21,33 +20,35 @@ import logging
 import re
 import sqlite3
 import sys
-from datetime import datetime, timedelta, timezone
+from collections import Counter, defaultdict
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import httpx
-import yaml
-import sys
 sys.path.insert(0, "/kaare")
 from qdrant_client import QdrantClient
-from qdrant_client.models import FieldCondition, Filter, PointIdsList
-from kaare_core.config import get_service as _svc, get_qdrant_api_key as _qdrant_key
-from kaare_core.memory.long_term import _ENC_PREFIX, _dec, _enc
-from kaare_core.memory.semantic_memory import ensure_collection, index_episode
+from qdrant_client.models import PointIdsList
+
 from adapters.llm_adapter import call_llm_chat as _llm_chat
+from kaare_core.config import get_memory_embed_config, now_local
+from kaare_core.config import get_qdrant_api_key as _qdrant_key
+from kaare_core.config import get_service as _svc
+from kaare_core.memory.long_term import _ENC_PREFIX, _dec, _enc, save_daily_summary
+from kaare_core.memory.semantic_memory import ensure_collection, index_episode
 from kaare_core.normalcy import compute_baseline as _compute_baseline
-from kaare_core.tools.i18n import t as _t_i18n, get_lang as _get_lang
+from kaare_core.tools.i18n import get_lang as _get_lang
+from kaare_core.tools.i18n import t as _t_i18n
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Konfigurasjon
 # ──────────────────────────────────────────────────────────────────────────────
 
-DB_PATH            = Path("/kaare/state/memory/interactions.db")
-ALIAS_OUT          = Path("/kaare/state/memory/alias_suggestions.yaml")
-LOG_PATH           = Path("/kaare/logs/kaare_nightjob.log")
+DB_PATH = Path("/kaare/state/memory/interactions.db")
+ALIAS_OUT = Path("/kaare/state/memory/alias_suggestions.yaml")
+LOG_PATH = Path("/kaare/logs/kaare_nightjob.log")
 JING_THOUGHTS_PATH = Path("/kaare/state/jing_thoughts.txt")
-JING_STATE_PATH    = Path("/kaare/state/jing_last_processed.json")
-BATCH_SIZE         = 20   # interaksjoner per episode (per-user)
-GLOBAL_BATCH_SIZE  = 30   # jing entries per global episode (shorter entries)
+JING_STATE_PATH = Path("/kaare/state/jing_last_processed.json")
+BATCH_SIZE = 20  # interaksjoner per episode (per-user)
+GLOBAL_BATCH_SIZE = 30  # jing entries per global episode (shorter entries)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,6 +64,7 @@ log = logging.getLogger("nightjob")
 # ──────────────────────────────────────────────────────────────────────────────
 # Database
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(str(DB_PATH))
@@ -108,7 +110,6 @@ def _fetch_unprocessed(conn: sqlite3.Connection, after_id: int, limit: int) -> l
 
 def _dominant_user(interactions: list[dict]) -> str:
     """Returnerer user_id som forekommer flest ganger i batchen."""
-    from collections import Counter
     counts = Counter(ix.get("user_id", "global") for ix in interactions)
     return counts.most_common(1)[0][0] if counts else "global"
 
@@ -133,8 +134,14 @@ def _save_episode(
         """INSERT INTO episodes (ts_created, user_id, from_id, to_id, interaction_count, narrative, topics, confidence)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            user_id, from_id, to_id, count, stored_narrative, stored_topics, confidence,
+            datetime.now(UTC).isoformat(timespec="seconds"),
+            user_id,
+            from_id,
+            to_id,
+            count,
+            stored_narrative,
+            stored_topics,
+            confidence,
         ),
     )
     conn.commit()
@@ -145,10 +152,11 @@ def _save_episode(
 # LLM-komprimering
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _build_compression_prompt(interactions: list[dict], lang: str = "nb") -> str:
     encrypted_label = _t_i18n("nightjob_encrypted_placeholder", lang)
-    label_user    = _t_i18n("nightjob_label_user", lang)
-    label_reply   = _t_i18n("nightjob_label_reply", lang)
+    label_user = _t_i18n("nightjob_label_user", lang)
+    label_reply = _t_i18n("nightjob_label_reply", lang)
     label_outcome = _t_i18n("nightjob_label_outcome", lang)
     lines = [
         _t_i18n("nightjob_ltm_header", lang),
@@ -157,13 +165,17 @@ def _build_compression_prompt(interactions: list[dict], lang: str = "nb") -> str
         _t_i18n("nightjob_sep_interactions", lang),
     ]
     for ix in interactions:
-        ts     = ix["ts"][:16].replace("T", " ")
+        ts = ix["ts"][:16].replace("T", " ")
         # Rows are decrypted upstream (_decrypt_rows, P87) — a lingering ENC: prefix here
         # means the system key genuinely couldn't resolve, so this still degrades safely.
-        raw_p  = ix["prompt"] or ""
-        raw_r  = ix["response"] or ""
-        prompt = (encrypted_label if raw_p.startswith(_ENC_PREFIX) else raw_p[:120]).replace("\n", " ")
-        resp   = (encrypted_label if raw_r.startswith(_ENC_PREFIX) else raw_r[:120]).replace("\n", " ")
+        raw_p = ix["prompt"] or ""
+        raw_r = ix["response"] or ""
+        prompt = (encrypted_label if raw_p.startswith(_ENC_PREFIX) else raw_p[:120]).replace(
+            "\n", " "
+        )
+        resp = (encrypted_label if raw_r.startswith(_ENC_PREFIX) else raw_r[:120]).replace(
+            "\n", " "
+        )
         entity = f" [{ix['entity_id']}]" if ix.get("entity_id") else ""
         lines.append(
             f"[{ts}]{entity} {label_user}: {prompt} | {label_reply}: {resp} | {label_outcome}: {ix['outcome']}"
@@ -201,9 +213,10 @@ async def _compress_with_llm(interactions: list[dict], lang: str = "nb") -> str:
 # Hoved-løkke
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _build_stm_summary_prompt(interactions: list[dict], lang: str = "nb") -> str:
-    label_user    = _t_i18n("nightjob_label_user", lang)
-    label_reply   = _t_i18n("nightjob_label_reply", lang)
+    label_user = _t_i18n("nightjob_label_user", lang)
+    label_reply = _t_i18n("nightjob_label_reply", lang)
     label_outcome = _t_i18n("nightjob_label_outcome", lang)
     lines = [
         _t_i18n("nightjob_stm_header", lang),
@@ -212,22 +225,20 @@ def _build_stm_summary_prompt(interactions: list[dict], lang: str = "nb") -> str
         _t_i18n("nightjob_sep_interactions", lang),
     ]
     for ix in interactions:
-        ts     = ix["ts"][:16].replace("T", " ")
+        ts = ix["ts"][:16].replace("T", " ")
         prompt = (ix["prompt"] or "")[:100].replace("\n", " ")
-        resp   = (ix["response"] or "")[:100].replace("\n", " ")
+        resp = (ix["response"] or "")[:100].replace("\n", " ")
         entity = f" [{ix['entity_id']}]" if ix.get("entity_id") else ""
-        lines.append(f"[{ts}]{entity} {label_user}: {prompt} | {label_reply}: {resp} | {label_outcome}: {ix['outcome']}")
+        lines.append(
+            f"[{ts}]{entity} {label_user}: {prompt} | {label_reply}: {resp} | {label_outcome}: {ix['outcome']}"
+        )
     return "\n".join(lines)
 
 
 async def compress_daily_stm(conn: sqlite3.Connection) -> None:
     """Compress yesterday's interactions into per-user daily STM summaries and save to DB."""
-    from collections import defaultdict
-    from datetime import date, timedelta
-    from kaare_core.memory.long_term import save_daily_summary
-
-    today     = date.today().isoformat()
-    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    today = now_local().date().isoformat()
+    yesterday = (now_local().date() - timedelta(days=1)).isoformat()
 
     rows = conn.execute(
         """SELECT id, ts, user_id, prompt, response, entity_id, intent, outcome
@@ -244,9 +255,9 @@ async def compress_daily_stm(conn: sqlite3.Connection) -> None:
     fields = ["id", "ts", "user_id", "prompt", "response", "entity_id", "intent", "outcome"]
     by_user: dict[str, list] = defaultdict(list)
     for r in rows:
-        ix = dict(zip(fields, r))
+        ix = dict(zip(fields, r, strict=False))
         by_user[ix["user_id"]].append(ix)
-    for uid, interactions in by_user.items():
+    for interactions in by_user.values():
         _decrypt_rows(interactions)
 
     for uid, interactions in by_user.items():
@@ -257,7 +268,12 @@ async def compress_daily_stm(conn: sqlite3.Connection) -> None:
             log.info("STM daily summary for %s/%s already exists — skipping.", today, uid)
             continue
 
-        log.info("Building STM daily summary for %s user=%s (%d interactions).", yesterday, uid, len(interactions))
+        log.info(
+            "Building STM daily summary for %s user=%s (%d interactions).",
+            yesterday,
+            uid,
+            len(interactions),
+        )
         prompt = _build_stm_summary_prompt(interactions, _get_lang(uid))
         result = await _llm_chat(
             "default",
@@ -266,7 +282,9 @@ async def compress_daily_stm(conn: sqlite3.Connection) -> None:
             disable_thinking=True,
         )
         if not result.get("ok"):
-            log.warning("STM daily summary LLM call failed for %s: %s", uid, result.get("error", "ukjent"))
+            log.warning(
+                "STM daily summary LLM call failed for %s: %s", uid, result.get("error", "ukjent")
+            )
             continue
         summary = result.get("text", "").strip()
         if not summary:
@@ -279,6 +297,7 @@ async def compress_daily_stm(conn: sqlite3.Connection) -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 # Global event compression (Jing → LTM → Qdrant)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _load_jing_state() -> dict:
     try:
@@ -309,7 +328,7 @@ def _parse_jing_blocks(text: str) -> list[tuple[str, str]]:
         if not ts_match:
             continue
         ts_label = ts_match.group(1)
-        content = block[ts_match.end():].strip()
+        content = block[ts_match.end() :].strip()
         if not content:
             continue
         # Strip category headers and "Ingen data." to check if anything meaningful remains
@@ -325,7 +344,7 @@ def _parse_jing_blocks(text: str) -> list[tuple[str, str]]:
 
 def _insert_global_interaction(conn: sqlite3.Connection, ts_label: str, content: str) -> None:
     """Insert a Jing thought block as a global interaction in the LTM database."""
-    ts_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ts_str = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn.execute(
         """INSERT INTO interactions (ts, prompt, source, response, user_id, confidence)
            VALUES (?, ?, 'jing', '', 'global', 0.8)""",
@@ -336,9 +355,7 @@ def _insert_global_interaction(conn: sqlite3.Connection, ts_label: str, content:
 
 def _last_global_episode_to_id(conn: sqlite3.Connection) -> int:
     """Return the last interaction id covered by a global episode, or 0 if none."""
-    row = conn.execute(
-        "SELECT MAX(to_id) FROM episodes WHERE user_id = 'global'"
-    ).fetchone()
+    row = conn.execute("SELECT MAX(to_id) FROM episodes WHERE user_id = 'global'").fetchone()
     return row[0] or 0
 
 
@@ -352,7 +369,7 @@ def _fetch_unprocessed_global(conn: sqlite3.Connection, after_id: int, limit: in
         (after_id, limit),
     )
     cols = [d[0] for d in cursor.description]
-    return [dict(zip(cols, row)) for row in cursor.fetchall()]
+    return [dict(zip(cols, row, strict=False)) for row in cursor.fetchall()]
 
 
 def _build_global_compression_prompt(interactions: list[dict], lang: str = "nb") -> str:
@@ -399,6 +416,14 @@ async def _compress_global_events(conn: sqlite3.Connection) -> None:
     state = _load_jing_state()
     last_offset = state.get("last_offset", 0)
     content = JING_THOUGHTS_PATH.read_text(encoding="utf-8")
+    if last_offset > len(content):
+        log.warning(
+            "Jing offset (%d) exceeds current file length (%d) — jing_thoughts.txt was "
+            "likely trimmed/reset since the last run; resetting offset to 0",
+            last_offset,
+            len(content),
+        )
+        last_offset = 0
     new_content = content[last_offset:]
 
     if new_content.strip():
@@ -409,7 +434,7 @@ async def _compress_global_events(conn: sqlite3.Connection) -> None:
             inserted += 1
         if inserted:
             log.info("Ingested %d new Jing entries as global interactions", inserted)
-        _save_jing_state({"last_offset": len(content.encode("utf-8"))})
+        _save_jing_state({"last_offset": len(content)})
     else:
         log.info("No new Jing entries since last run (offset=%d)", last_offset)
 
@@ -443,7 +468,7 @@ async def _compress_global_events(conn: sqlite3.Connection) -> None:
             episode_id=ep_id,
             narrative=narrative,
             topics=topics,
-            ts=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            ts=datetime.now(UTC).isoformat(timespec="seconds"),
             from_id=from_id,
             to_id=to_id,
             interaction_count=count,
@@ -451,8 +476,13 @@ async def _compress_global_events(conn: sqlite3.Connection) -> None:
         )
         if indexed:
             log.info("Global episode %d indeksert i Qdrant.", ep_id)
+        elif not get_memory_embed_config().get("enabled", False):
+            log.info(
+                "Global episode %d not indexed — semantic memory is off (Settings → LLM → Semantic memory).",
+                ep_id,
+            )
         else:
-            log.warning("Global episode %d ble IKKE indeksert i Qdrant.", ep_id)
+            log.warning("Global episode %d was NOT indexed in Qdrant.", ep_id)
 
         after_id = to_id
         global_episodes_made += 1
@@ -470,7 +500,7 @@ async def run_nightjob() -> None:
         log.warning("Qdrant collection-sjekk feilet: %s — fortsetter uten Qdrant.", e)
 
     conn = _get_conn()
-    after_id     = _last_episode_to_id(conn)
+    after_id = _last_episode_to_id(conn)
     episodes_made = 0
     total_compressed = 0
 
@@ -483,8 +513,8 @@ async def run_nightjob() -> None:
             break
 
         from_id = batch[0]["id"]
-        to_id   = batch[-1]["id"]
-        count   = len(batch)
+        to_id = batch[-1]["id"]
+        count = len(batch)
         log.info("Komprimerer batch: id %d–%d (%d interaksjoner)", from_id, to_id, count)
 
         narrative = await _compress_with_llm(batch, _get_lang())
@@ -493,12 +523,21 @@ async def run_nightjob() -> None:
             after_id = to_id
             continue
 
-        topics     = _extract_topics(batch)
+        topics = _extract_topics(batch)
         # Confidence: gjennomsnitt av interaksjonenes confidence
-        avg_conf   = sum(ix.get("confidence", 0.5) for ix in batch) / count
+        avg_conf = sum(ix.get("confidence", 0.5) for ix in batch) / count
         batch_user = _dominant_user(batch)
-        ep_id = _save_episode(conn, from_id, to_id, count, narrative, topics, round(avg_conf, 3),
-                              user_id=batch_user, allow_system_key=True)
+        ep_id = _save_episode(
+            conn,
+            from_id,
+            to_id,
+            count,
+            narrative,
+            topics,
+            round(avg_conf, 3),
+            user_id=batch_user,
+            allow_system_key=True,
+        )
 
         log.info("Episode %d lagret (conf=%.2f, topics: %s)", ep_id, avg_conf, topics or "ingen")
         log.info("Narrativ: %s", narrative[:200])
@@ -508,7 +547,7 @@ async def run_nightjob() -> None:
             episode_id=ep_id,
             narrative=narrative,
             topics=topics,
-            ts=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            ts=datetime.now(UTC).isoformat(timespec="seconds"),
             from_id=from_id,
             to_id=to_id,
             interaction_count=count,
@@ -516,11 +555,16 @@ async def run_nightjob() -> None:
         )
         if indexed:
             log.info("Episode %d indeksert i Qdrant.", ep_id)
+        elif not get_memory_embed_config().get("enabled", False):
+            log.info(
+                "Episode %d not indexed — semantic memory is off (Settings → LLM → Semantic memory).",
+                ep_id,
+            )
         else:
-            log.warning("Episode %d ble IKKE indeksert i Qdrant.", ep_id)
+            log.warning("Episode %d was NOT indexed in Qdrant.", ep_id)
 
         after_id = to_id
-        episodes_made   += 1
+        episodes_made += 1
         total_compressed += count
 
     # STM daily summary — once per day, after episode compression
@@ -543,7 +587,7 @@ async def run_nightjob() -> None:
     # Slett argus-hendelser eldre enn 30 dager
     # ts er lagret som ISO-streng — bruk scroll+Python-sammenligning (Range krever float)
     try:
-        cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(timespec="seconds")
+        cutoff_iso = (datetime.now(UTC) - timedelta(days=30)).isoformat(timespec="seconds")
         qc = QdrantClient(url=_svc("storage", "qdrant"), api_key=_qdrant_key(write=True))
         ids_to_delete: list = []
         offset = None
@@ -567,7 +611,11 @@ async def run_nightjob() -> None:
                 collection_name="argus_events",
                 points_selector=PointIdsList(points=ids_to_delete),
             )
-            log.info("Argus-cleanup: slettet %d hendelser eldre enn %s", len(ids_to_delete), cutoff_iso[:10])
+            log.info(
+                "Argus-cleanup: slettet %d hendelser eldre enn %s",
+                len(ids_to_delete),
+                cutoff_iso[:10],
+            )
         else:
             log.info("Argus-cleanup: ingen gamle hendelser å slette.")
     except Exception as e:
@@ -583,7 +631,8 @@ async def run_nightjob() -> None:
     conn.close()
     log.info(
         "=== Nattjobb ferdig: %d episoder laget, %d interaksjoner komprimert ===",
-        episodes_made, total_compressed,
+        episodes_made,
+        total_compressed,
     )
 
 

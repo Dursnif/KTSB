@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useUserPrefs } from "../../hooks/useUserPrefs";
 import { useTheme } from "../../theme";
-import { useAuth } from "../../auth/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { apiGetUnlockConfig, apiPutUnlockConfig, apiGetUserFlags, apiPutUserFlags, apiReissueSeedPhrase } from "../../services/api";
 import { SeedModal } from "../admin/Users";
 

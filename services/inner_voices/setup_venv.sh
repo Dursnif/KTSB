@@ -35,8 +35,8 @@ case "$PROVIDER" in
     openvino)
         echo "[inner_voices] Installing openvino_genai + optimum-intel..."
         "$VENV_DIR/bin/pip" install \
-            openvino-genai>=2025.0 \
-            optimum-intel>=1.20.0 \
+            "openvino-genai>=2025.0" \
+            "optimum-intel>=1.20.0" \
             --quiet
         ;;
     mlx)

@@ -1,3 +1,16 @@
+agent_pool:
+  options:
+    num_ctx: 32768
+    presence_penalty: 1.5
+    temperature: 0.7
+    top_k: 20
+    top_p: 0.8
+  roles:
+  - fallback
+  - miss_kare
+  - library
+  - mechanic
+  think: false
 cloud:
   base_url: https://router.huggingface.co/v1
   enabled: false
@@ -8,47 +21,51 @@ cloud:
   temperature: 0.2
   top_p: 0.7
 default:
-  base_url: http://127.0.0.1:11440
-  keep_warm: false
+  base_url: http://ollama:11434
+  keep_warm: true
   model_role: kare
   options:
     max_tokens: 8192
+    num_ctx: 32768
+    num_predict: 2048
     presence_penalty: 1.5
-    temperature: 1
-    top_p: 0.75
-  provider: vllm
+    temperature: 0.7
+    top_k: 20
+    top_p: 0.8
+  provider: ollama
   stream: false
   system:
-    nb: 'Du er Kåre. Du bor med familien, kjenner hjemmet og menneskene i det —
-      eller du er i ferd med å bli kjent med dem.
+    de: 'Du bist Kåre. Du wohnst bei der Familie, kennst das Zuhause und die Menschen
+      darin — oder bist gerade dabei, sie kennenzulernen.
 
 
-      Du kan hjelpe med:
+      Du kannst helfen bei:
 
-      - Smarthjem: lys, varme, låser, kamera, automatiseringer
+      - Smart Home: Licht, Heizung, Schlösser, Kameras, Automatisierungen
 
-      - Produktivitet: komplekse oppgaver, koding, skriving, planlegging
+      - Produktivität: komplexe Aufgaben, Programmieren, Schreiben, Planung
 
-      - Hverdagsassistanse: oppskrifter, tidtaking, rutiner, spørsmål om det meste
-
-
-      Du er ikke alene. Du er en del av et lite AI-fellesskap:
-
-      - Miss Kåre: varm, moderlig stemme. Følger med fra sidelinjen og bryr seg om folk.
-
-      - Miss Library: bibliotekar og kunnskapsvokter. Bruk spør_miss_library-verktøyet
-      for faktaspørsmål.
-
-      - Mechanic: praktisk problemløser med bredt teknisk spekter.
+      - Alltagshilfe: Rezepte, Zeitmessung, Routinen, Fragen zu fast allem
 
 
-      Svarstil:
+      Du bist nicht allein. Du bist Teil einer kleinen KI-Gemeinschaft:
 
-      - Kort og direkte — maks 2-3 setninger for vanlige spørsmål
+      - Miss Kåre: eine warme, mütterliche Stimme. Beobachtet vom Rand aus und kümmert
+      sich um die Menschen.
 
-      - Ikke gjenta spørsmålet, bare svar
+      - Miss Library: Bibliothekarin und Hüterin des Wissens. Nutze das library-Werkzeug
+      für Faktenfragen.
 
-      - Bruk bullet points for oppskrifter og lister
+      - Mechanic: ein praktischer Problemlöser mit breitem technischem Spektrum.
+
+
+      Antwortstil:
+
+      - Kurz und direkt — maximal 2-3 Sätze bei gewöhnlichen Fragen
+
+      - Wiederhole die Frage nicht, antworte einfach
+
+      - Verwende Aufzählungspunkte für Rezepte und Listen
 
       '
     en: 'You are Kåre. You live with the family, you know the home and the people
@@ -69,8 +86,8 @@ default:
       - Miss Kåre: a warm, motherly voice. Watches from the sidelines and cares about
       people.
 
-      - Miss Library: librarian and keeper of knowledge. Use the ask_miss_library
-      tool for factual questions.
+      - Miss Library: librarian and keeper of knowledge. Use the library tool for
+      factual questions.
 
       - Mechanic: a practical problem-solver with a broad technical range.
 
@@ -84,40 +101,39 @@ default:
       - Use bullet points for recipes and lists
 
       '
-    de: 'Du bist Kåre. Du wohnst bei der Familie, kennst das Zuhause und die Menschen
-      darin — oder bist gerade dabei, sie kennenzulernen.
+    nb: 'Du er Kåre. Du bor med familien, kjenner hjemmet og menneskene i det — eller
+      du er i ferd med å bli kjent med dem.
 
 
-      Du kannst helfen bei:
+      Du kan hjelpe med:
 
-      - Smart Home: Licht, Heizung, Schlösser, Kameras, Automatisierungen
+      - Smarthjem: lys, varme, låser, kamera, automatiseringer
 
-      - Produktivität: komplexe Aufgaben, Programmieren, Schreiben, Planung
+      - Produktivitet: komplekse oppgaver, koding, skriving, planlegging
 
-      - Alltagshilfe: Rezepte, Zeitmessung, Routinen, Fragen zu fast allem
-
-
-      Du bist nicht allein. Du bist Teil einer kleinen KI-Gemeinschaft:
-
-      - Miss Kåre: eine warme, mütterliche Stimme. Beobachtet vom Rand aus und kümmert
-      sich um die Menschen.
-
-      - Miss Library: Bibliothekarin und Hüterin des Wissens. Nutze das ask_miss_library-Werkzeug
-      für Faktenfragen.
-
-      - Mechanic: ein praktischer Problemlöser mit breitem technischem Spektrum.
+      - Hverdagsassistanse: oppskrifter, tidtaking, rutiner, spørsmål om det meste
 
 
-      Antwortstil:
+      Du er ikke alene. Du er en del av et lite AI-fellesskap:
 
-      - Kurz und direkt — maximal 2-3 Sätze bei gewöhnlichen Fragen
+      - Miss Kåre: varm, moderlig stemme. Følger med fra sidelinjen og bryr seg om
+      folk.
 
-      - Wiederhole die Frage nicht, antworte einfach
+      - Miss Library: bibliotekar og kunnskapsvokter. Bruk library-verktøyet for faktaspørsmål.
 
-      - Verwende Aufzählungspunkte für Rezepte und Listen
+      - Mechanic: praktisk problemløser med bredt teknisk spekter.
+
+
+      Svarstil:
+
+      - Kort og direkte — maks 2-3 setninger for vanlige spørsmål
+
+      - Ikke gjenta spørsmålet, bare svar
+
+      - Bruk bullet points for oppskrifter og lister
 
       '
-  think: true
+  think: false
   vllm_docker:
     container: vllm-kare
     gpu_id: 0
@@ -126,19 +142,16 @@ default:
     max_model_len: 32768
     max_num_seqs: 1
 fallback:
-  base_url: http://127.0.0.1:11445
+  base_url: http://ollama:11434
   container: ollama-miss_kare
   enabled: true
   keep_warm: true
   max_tool_tier: 0.0
   model_role: miss_kare
   options:
-    num_ctx: 8192
     num_predict: 1024
-    temperature: 0.5
   provider: ollama
   stream: false
-  think: false
   timeout: 120
 image_edit:
   api_key_env: IMAGE_EDIT_API_KEY
@@ -153,79 +166,64 @@ image_edit:
   timeout: 120
   true_cfg_scale: 5
 library:
-  base_url: http://127.0.0.1:11447
+  base_url: http://ollama:11434
   container: ollama-agents
   enabled: true
   gpu_id: 1
   keep_warm: true
   model_role: library
   options:
-    num_ctx: 8192
     num_predict: 1024
-    temperature: 0.4
   provider: ollama
   stream: false
-  think: false
   timeout: 120
 mechanic:
-  base_url: http://ollama:11434
   enabled: true
-  keep_warm: false
-  model_role: miss_kare
-  options:
-    num_ctx: 8192
-    num_predict: 600
-    temperature: 0.4
-  provider: ollama
   share_with: miss_kare
-  stream: false
-  think: false
-  timeout: 120.0
 miss_kare:
-  base_url: http://127.0.0.1:11445
+  base_url: http://ollama:11434
   container: ollama-miss_kare
   enabled: true
   gpu_id: 1
   keep_warm: true
   model_role: miss_kare
   options:
-    num_ctx: 8192
     num_predict: 2048
-    temperature: 0.4
   provider: ollama
   stream: false
-  think: false
   timeout: 90
 reason_freely:
-  base_url: http://127.0.0.1:11440
+  base_url: http://ollama:11434
   keep_warm: false
   model_role: kare
   options:
     max_tokens: 2048
+    num_ctx: 32768
+    num_predict: 2048
     temperature: 0.7
     top_p: 0.9
-  provider: vllm
+  provider: ollama
   stream: false
   think: true
 vision:
-  base_url: http://127.0.0.1:11441
+  base_url: http://ollama:11434
   keep_warm: false
   model_role: miss_kare
   options:
-    num_ctx: 4096
+    num_ctx: 32768
     temperature: 0.3
   provider: ollama
   stream: false
   system:
-    nb: 'Du er Kåre sitt kamerasyn. Beskriv hva du ser i bildet kort og faktabasert.
-      Maks 5-6 setninger.
+    de: 'Du bist Kåres Kamerasicht. Beschreibe kurz und sachlich, was du auf dem Bild
+      siehst. Maximal 5-6 Sätze.
 
       '
     en: 'You are Kåre''s camera vision. Describe what you see in the image briefly
       and factually. Max 5-6 sentences.
 
       '
-    de: 'Du bist Kåres Kamerasicht. Beschreibe kurz und sachlich, was du auf dem
-      Bild siehst. Maximal 5-6 Sätze.
+    nb: 'Du er Kåre sitt kamerasyn. Beskriv hva du ser i bildet kort og faktabasert.
+      Maks 5-6 setninger.
 
       '

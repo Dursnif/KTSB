@@ -118,9 +118,9 @@ fi
 
 # ── NPU ──────────────────────────────────────────────────────────────────────
 NPU_DETECTED=false
-if [[ -d /dev/accel ]] && [[ -n "$(ls /dev/accel/ 2>/dev/null)" ]]; then
+if [[ -d /dev/accel ]] && compgen -G "/dev/accel/*" > /dev/null; then
   NPU_DETECTED=true
-  echo "  NPU:  Intel NPU detected ($(ls /dev/accel/ | tr '\n' ' '))"
+  echo "  NPU:  Intel NPU detected ($(cd /dev/accel && echo *))"
 else
   echo "  NPU:  None detected"
 fi
@@ -235,6 +235,56 @@ else
   echo "COMPOSE_PROFILES=$PROFILES" >> "$ENV_FILE"
 fi
 echo "  ✓ COMPOSE_PROFILES=$PROFILES written to .env"
+
+# ── Install path + version (read by the in-app updater) ──────────────────────
+set_env() {
+  local key="$1" val="$2" tmp
+  tmp="$(mktemp)"
+  awk -v k="$key" -v v="$val" 'BEGIN{done=0} $0 ~ "^"k"=" {print k"="v; done=1; next} {print} END{if(!done) print k"="v}' \
+    "$ENV_FILE" > "$tmp" && cat "$tmp" > "$ENV_FILE"
+  rm -f "$tmp"
+}
+# On Linux and macOS the Docker engine sees this folder under the same path.
+set_env KTSB_HOME "$SCRIPT_DIR"
+set_env KTSB_HOME_HOST "$SCRIPT_DIR"
+echo "  ✓ KTSB_HOME=$SCRIPT_DIR written to .env"
+# ── Git clone → updatable install (the first upgrade from v1.9, P57) ────────
+# The in-app updater replaces docker-compose.yml and friends; a later `git pull` would then conflict. So a git clone
+# is converted once: every file stays where it is, .git is only moved aside (rename it back to undo), and the release
+# the clone is on is written to VERSION. From then on updates come from the Maintenance page.
+if [[ -d "$SCRIPT_DIR/.git" ]] && command -v git >/dev/null 2>&1; then
+  CLONE_TAG="$(git -C "$SCRIPT_DIR" describe --tags --abbrev=0 --exclude '*-*' 2>/dev/null || true)"
+  if [[ "$CLONE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo ""
+    echo "  This folder is a git clone (release $CLONE_TAG)."
+    echo "  Converting it lets KTSB update itself from the Maintenance page; git pull is then no longer used."
+    read -rp "  Convert now? [Y/n]: " CONVERT_CHOICE
+    CONVERT_CHOICE="${CONVERT_CHOICE:-y}"
+    if [[ "${CONVERT_CHOICE,,}" == "y" || "${CONVERT_CHOICE,,}" == "yes" ]]; then
+      CHANGED="$(git -C "$SCRIPT_DIR" status --porcelain -- docker-compose.yml docker-compose.gpu.yml .env.example setup.sh setup.ps1 docker 2>/dev/null || true)"
+      if [[ -n "$CHANGED" ]]; then
+        echo "  ! Your own changes in these files will be replaced by future updates —"
+        echo "    move them to docker-compose.override.yml:"
+        printf '%s\n' "$CHANGED" | sed 's/^/      /'
+      fi
+      GIT_ASIDE="$SCRIPT_DIR/.git-before-ktsb-updater"
+      [[ -e "$GIT_ASIDE" ]] && GIT_ASIDE="$GIT_ASIDE-$(date +%Y%m%d%H%M%S)"
+      echo "$CLONE_TAG" > "$SCRIPT_DIR/VERSION"
+      mv "$SCRIPT_DIR/.git" "$GIT_ASIDE"
+      set_env KTSB_VERSION "$CLONE_TAG"
+      echo "  ✓ Converted: .git moved to $(basename "$GIT_ASIDE"), KTSB_VERSION=$CLONE_TAG"
+      echo "    (to undo: rename it back to .git and delete VERSION)"
+    else
+      echo "  Kept as a git clone — updates from the Maintenance page stay off."
+    fi
+  fi
+fi
+
+# A release bundle carries VERSION; never overwrite a version the updater already set.
+if [[ -f "$SCRIPT_DIR/VERSION" ]] && ! grep -q "^KTSB_VERSION=." "$ENV_FILE"; then
+  set_env KTSB_VERSION "$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION")"
+  echo "  ✓ KTSB_VERSION=$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION") written to .env"
+fi
 
 echo ""
 echo "=== Next steps ==="

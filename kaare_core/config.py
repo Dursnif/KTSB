@@ -1,27 +1,74 @@
 import json
 import logging
-import yaml
-from datetime import datetime, timezone
+import os
+from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import yaml
+
+from kaare_core import config_migrations, config_store
+from kaare_core.tools.i18n import get_lang
+
 _log = logging.getLogger(__name__)
 
+_IN_DOCKER = os.path.exists("/.dockerenv")
 CONFIG_DIR = Path("/kaare/configs")
 _DEFAULT_DIR = Path("/kaare/configs_default")
-_CAPABILITY_MAP_PATH = Path("/kaare/capability_map.yaml")
+# GUI-written (distribution profile, domains/services on/off). Lives on the configs volume so GUI
+# changes survive a Docker upgrade (P127); the repo-root path is where installs before P127 kept it.
+CAPABILITY_MAP_PATH = CONFIG_DIR / "capability_map.yaml"
+_LEGACY_CAPABILITY_MAP_PATH = Path("/kaare/capability_map.yaml")
 
-with open(CONFIG_DIR / "models.yaml", "r", encoding="utf-8") as f:
-    MODELS: dict = yaml.safe_load(f)
 
-with open(CONFIG_DIR / "llm.yaml", "r", encoding="utf-8") as f:
-    _LLM_CFG: dict = yaml.safe_load(f)
+def ensure_config_file(target: Path, legacy: Path | None = None) -> Path:
+    """Return configs/<name>, creating it if missing: a copy of `legacy` (where an install before P127
+    kept it — keeps the user's settings) if that exists, else the shipped template from configs_default/.
+    Copies only — the old file is never removed here. Readers call this themselves (a process may start before
+    the migration has run). Atomic and locked through the config store, so processes starting at once never see
+    a half-copied file (P134). Never raises."""
+    if target.exists():
+        return target
+    src = legacy if legacy is not None and legacy.exists() else _DEFAULT_DIR / target.name
+    return config_store.ensure_file(target, src)
 
-with open(CONFIG_DIR / "services.yaml", "r", encoding="utf-8") as f:
-    _SERVICES: dict = yaml.safe_load(f)
 
-with open(CONFIG_DIR / "settings.yaml", "r", encoding="utf-8") as f:
-    _SETTINGS: dict = yaml.safe_load(f)
+def _migrate_or_wait_in_docker() -> None:
+    """Docker: every KTSB container imports this module before it reads any config, but only the main image runs the
+    migration from its entrypoint. Run the same runner here — the first process migrates, every other one waits on
+    the migration lock and then finds nothing to do — so voice/embedding never read a file mid-upgrade (P134 R9).
+    Bare metal migrates from kaare.service's ExecStartPre drop-in instead. Never raises."""
+    if not _IN_DOCKER:
+        return
+    try:
+        config_migrations.run(CONFIG_DIR, _DEFAULT_DIR)
+    except Exception:
+        _log.exception("config migration at import failed — continuing with the files as they are")
+
+
+_migrate_or_wait_in_docker()
+
+
+def ensure_capability_map() -> Path:
+    return ensure_config_file(CAPABILITY_MAP_PATH, _LEGACY_CAPABILITY_MAP_PATH)
+
+
+ensure_capability_map()
+
+
+def _load_required(name: str) -> dict:
+    """A config file every process needs at import. Missing → FileNotFoundError, as before; read through the
+    config store so a file being replaced by another container is retried, not read as empty (P134)."""
+    path = CONFIG_DIR / name
+    if not path.exists():
+        raise FileNotFoundError(path)
+    return config_store.read_yaml(path)
+
+
+MODELS: dict = _load_required("models.yaml")
+_LLM_CFG: dict = _load_required("llm.yaml")  # agent_pool merged below, once the helper is defined
+_SERVICES: dict = _load_required("services.yaml")
+_SETTINGS: dict = _load_required("settings.yaml")
 
 _TOOL_PERMISSIONS: dict = {}
 _CAPABILITY_SERVICES: dict = {}
@@ -31,14 +78,17 @@ def _load_tool_permissions() -> None:
     global _TOOL_PERMISSIONS
     p = CONFIG_DIR / "tool_permissions.yaml"
     try:
-        _TOOL_PERMISSIONS = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        _TOOL_PERMISSIONS = config_store.read_yaml(p)
     except Exception:
-        _TOOL_PERMISSIONS = {}
+        # Unreadable: keep what this process already has rather than running with no permissions table.
+        _log.exception("tool_permissions.yaml unreadable — keeping the loaded permissions")
     # Runs on every load — process startup (call moved to end of this file, after
     # get_tools_for_role() is defined) and every hot-reload (save_tool_permissions(),
     # reload_config()). Never let a check failure break config loading itself.
     try:
-        mismatches = validate_tool_permissions_consistency() + verify_always_included_survives("adult")
+        mismatches = validate_tool_permissions_consistency() + verify_always_included_survives(
+            "adult"
+        )
         if mismatches:
             _report_tool_consistency_alert(mismatches)
     except Exception:
@@ -48,10 +98,10 @@ def _load_tool_permissions() -> None:
 def _load_capability_services() -> None:
     global _CAPABILITY_SERVICES
     try:
-        data = yaml.safe_load(_CAPABILITY_MAP_PATH.read_text(encoding="utf-8")) or {}
+        data = config_store.read_yaml(CAPABILITY_MAP_PATH)
         _CAPABILITY_SERVICES = data.get("services", {})
     except Exception:
-        _CAPABILITY_SERVICES = {}
+        _log.exception("capability_map.yaml unreadable — keeping the loaded services")
 
 
 def reload_capability_services() -> None:
@@ -64,14 +114,14 @@ def reload_config() -> list[str]:
     global MODELS, _LLM_CFG, _SERVICES, _SETTINGS
     reloaded = []
     for filename, setter in [
-        ("models.yaml",          lambda v: _set_models(v)),
-        ("llm.yaml",             lambda v: _set_llm(v)),
-        ("services.yaml",        lambda v: _set_services(v)),
-        ("settings.yaml",        lambda v: _set_settings(v)),
+        ("models.yaml", lambda v: _set_models(v)),
+        ("llm.yaml", lambda v: _set_llm(v)),
+        ("services.yaml", lambda v: _set_services(v)),
+        ("settings.yaml", lambda v: _set_settings(v)),
         ("tool_permissions.yaml", lambda _: _load_tool_permissions()),
     ]:
         try:
-            data = yaml.safe_load((CONFIG_DIR / filename).read_text(encoding="utf-8"))
+            data = config_store.read_yaml(CONFIG_DIR / filename)
             setter(data)
             reloaded.append(filename)
         except Exception:
@@ -80,16 +130,68 @@ def reload_config() -> list[str]:
 
 
 def _set_models(v: dict) -> None:
-    global MODELS; MODELS = v
+    global MODELS
+    MODELS = v
+
 
 def _set_llm(v: dict) -> None:
-    global _LLM_CFG; _LLM_CFG = v
+    global _LLM_CFG
+    _LLM_CFG = apply_agent_pool(v)
+
+
+# Per-role/per-call options a sub-agent-pool member may still set for itself. Only
+# output length: everything else (num_ctx, sampling, num_thread, …) is shared, because a
+# differing load-time option makes Ollama reload the model (P111 Phase 1).
+POOL_ROLE_OVERRIDABLE = ("num_predict",)
+
+
+def apply_agent_pool(raw: dict) -> dict:
+    """Merge llm.yaml's shared `agent_pool:` block (options + think) into every role listed
+    in `agent_pool.roles`. A member keeps its own base_url/container/timeout/enabled and may
+    override only POOL_ROLE_OVERRIDABLE. Members are tagged `agent_pool: True`."""
+    pool = (raw or {}).get("agent_pool") or {}
+    members = pool.get("roles") or []
+    if not members:
+        return raw
+    out = dict(raw)
+    shared_opts = pool.get("options") or {}
+    for role in members:
+        cfg = raw.get(role)
+        if not isinstance(cfg, dict) or cfg.get("share_with"):
+            continue
+        own = cfg.get("options") or {}
+        merged = dict(cfg)
+        merged["options"] = {
+            **shared_opts,
+            **{k: own[k] for k in POOL_ROLE_OVERRIDABLE if k in own},
+        }
+        if "think" in pool:
+            merged["think"] = pool["think"]
+        merged["agent_pool"] = True
+        out[role] = merged
+    return out
+
+
+def pool_call_options(cfg: dict, overrides: dict | None = None) -> dict:
+    """Options for one call. For an agent-pool role, per-call overrides are limited to
+    POOL_ROLE_OVERRIDABLE on top of the shared options; for any other role, given overrides
+    replace the configured options as they always have (call_llm_chat's original contract)."""
+    base = dict(cfg.get("options") or {})
+    if overrides is None:
+        return base
+    if cfg.get("agent_pool"):
+        return {**base, **{k: v for k, v in overrides.items() if k in POOL_ROLE_OVERRIDABLE}}
+    return dict(overrides)
+
 
 def _set_services(v: dict) -> None:
-    global _SERVICES; _SERVICES = v
+    global _SERVICES
+    _SERVICES = v
+
 
 def _set_settings(v: dict) -> None:
-    global _SETTINGS; _SETTINGS = v
+    global _SETTINGS
+    _SETTINGS = v
 
 
 def get_settings() -> dict:
@@ -113,14 +215,176 @@ def get_llm_config(section: str) -> dict:
     return base
 
 
+def get_known_containers() -> list[str]:
+    """Distinct Docker container names referenced across all llm.yaml roles (share_with
+    resolved, vllm_docker.container handled). Single source of truth for which containers
+    exist on this install — never hardcode container names in code or GUI; read this
+    instead, so renaming a container in llm.yaml is the only change needed anywhere."""
+    seen: list[str] = []
+    for role in _LLM_CFG:
+        if not isinstance(_LLM_CFG.get(role), dict):
+            continue  # not a role (a stray top-level value must not take the whole API down)
+        cfg = get_llm_config(role)
+        container = cfg.get("container") or cfg.get("vllm_docker", {}).get("container")
+        if container and container not in seen:
+            seen.append(container)
+    return seen
+
+
+def get_vllm_gpu_ids() -> set[int]:
+    """GPU indices (nvidia-smi numbering) that host a vLLM container, from llm.yaml
+    `vllm_docker.gpu_id` on every role whose provider is vllm. Empty when no role uses vLLM."""
+    ids: set[int] = set()
+    for role in _LLM_CFG:
+        cfg = get_llm_config(role)
+        gpu_id = (cfg.get("vllm_docker") or {}).get("gpu_id")
+        if cfg.get("provider") == "vllm" and gpu_id is not None:
+            try:
+                ids.add(int(gpu_id))
+            except (TypeError, ValueError):
+                pass
+    return ids
+
+
+_tz_cache: dict = {"mtime": None, "tz": None}
+
+
 def get_local_tz() -> ZoneInfo:
-    """Return the configured local timezone as a ZoneInfo object (from settings.yaml location.timezone)."""
+    """The household timezone set in the GUI (settings.yaml location.timezone; legacy
+    lokasjon.tidssone as fallback; UTC when unset). Every module uses this one function.
+
+    Follows a GUI change at once, in every process (API, Argus, night jobs): the file's mtime is
+    checked on each call (a cheap stat) and the timezone is re-read only when the file changed —
+    saving the location in the GUI does not reload the cached config by itself."""
+    path = CONFIG_DIR / "settings.yaml"
     try:
-        loc = _SETTINGS.get("location") or _SETTINGS.get("lokasjon", {})
-        tz_str = loc.get("timezone") or loc.get("tidssone", "UTC")
-        return ZoneInfo(tz_str)
+        mtime = path.stat().st_mtime
+        if mtime != _tz_cache["mtime"] or _tz_cache["tz"] is None:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            loc = data.get("location") or data.get("lokasjon") or {}
+            _tz_cache["tz"] = ZoneInfo(loc.get("timezone") or loc.get("tidssone") or "UTC")
+            _tz_cache["mtime"] = mtime
+        return _tz_cache["tz"]
     except Exception:
-        return ZoneInfo("UTC")
+        return _tz_cache["tz"] or ZoneInfo("UTC")
+
+
+LOG_FLUSH_DEFAULT_SECONDS = 2.0
+LOG_FLUSH_MAX_SECONDS = 30.0
+_log_flush_cache: dict = {"mtime": None, "seconds": LOG_FLUSH_DEFAULT_SECONDS}
+
+
+def get_log_flush_seconds() -> float:
+    """How often buffered logs are written to disk (settings.yaml logging.flush_interval_seconds,
+    set in the GUI under Settings → General → Logs and data; P131). 0 = write every line at once.
+    Clamped to 0–30 s. Follows a GUI change at once in every process — same mtime check as
+    get_local_tz()."""
+    path = CONFIG_DIR / "settings.yaml"
+    try:
+        mtime = path.stat().st_mtime
+        if mtime != _log_flush_cache["mtime"]:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            raw = (data.get("logging") or {}).get(
+                "flush_interval_seconds", LOG_FLUSH_DEFAULT_SECONDS
+            )
+            _log_flush_cache["seconds"] = min(max(float(raw), 0.0), LOG_FLUSH_MAX_SECONDS)
+            _log_flush_cache["mtime"] = mtime
+    except Exception:
+        pass
+    return _log_flush_cache["seconds"]
+
+
+def now_local() -> datetime:
+    """The household's «now» — an aware datetime in the GUI timezone (N16). Use this for every time
+    or date a person or the model sees, and for clock-time scheduling («at 07:00»). Never the
+    machine clock: in Docker that is UTC. Durations use time.monotonic(); stored timestamps use
+    datetime.now(timezone.utc)."""
+    return datetime.now(get_local_tz())
+
+
+def today_local() -> str:
+    """Today's date in the household timezone, ISO format (YYYY-MM-DD)."""
+    return now_local().date().isoformat()
+
+
+def local_from_ts(ts: float) -> datetime:
+    """A Unix timestamp as an aware datetime in the household timezone."""
+    return datetime.fromtimestamp(ts, get_local_tz())
+
+
+_home_loc_cache: dict = {"mtime": None, "loc": None}
+
+
+def get_home_location() -> dict:
+    """The household's place set in the GUI: {"city": str, "country": str} from settings.yaml
+    location (legacy lokasjon.sted/land as fallback; empty strings when unset). Same mtime check as
+    get_local_tz(), so a GUI change is picked up at once without a reload."""
+    path = CONFIG_DIR / "settings.yaml"
+    try:
+        mtime = path.stat().st_mtime
+        if mtime != _home_loc_cache["mtime"] or _home_loc_cache["loc"] is None:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            loc = data.get("location") or data.get("lokasjon") or {}
+            _home_loc_cache["loc"] = {
+                "city": str(loc.get("city") or loc.get("sted") or "").strip(),
+                "country": str(loc.get("country") or loc.get("land") or "").strip(),
+            }
+            _home_loc_cache["mtime"] = mtime
+        return dict(_home_loc_cache["loc"])
+    except Exception:
+        return dict(_home_loc_cache["loc"] or {"city": "", "country": ""})
+
+
+_DEFAULT_TRUSTED_PROXIES = ["caddy", "127.0.0.1", "::1"]
+_net_cache: dict = {"mtime": None, "net": None}
+
+
+# Fallback when no local subnet is set (P127): every 192.168.x.y home network, not one house's /24.
+# Not 172.16.0.0/12 (Docker Desktop's NAT gateway would make every client «home») and not 10.0.0.0/8
+# (collides with the VPN subnet). The onboarding suggests the user's own /24 instead.
+DEFAULT_LOCAL_SUBNET = "192.168.0.0/16"
+
+
+def get_network_settings() -> dict:
+    """Network / access settings set in the GUI (Settings → General → Network and access, Expert):
+    {"local_subnets": [..], "vpn_subnet": str, "trusted_proxies": [..], "api_docs": bool} from
+    settings.yaml `network:`. Same mtime check as get_local_tz(), so a GUI change applies at once.
+
+    trusted_proxies: the only peers whose X-Forwarded-For is believed (rule 27 — a reverse proxy the
+    user configured is trusted, nobody else). Default: the bundled Caddy (compose service name) and
+    loopback (a proxy on the same host). api_docs: /docs, /redoc, /openapi.json on (default off)."""
+    path = CONFIG_DIR / "settings.yaml"
+    try:
+        mtime = path.stat().st_mtime
+        if mtime != _net_cache["mtime"] or _net_cache["net"] is None:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            net = data.get("network") or {}
+            subnets = net.get("local_subnets") or [net.get("local_subnet") or DEFAULT_LOCAL_SUBNET]
+            if isinstance(subnets, str):
+                subnets = [subnets]
+            proxies = net.get("trusted_proxies")
+            if proxies is None:
+                proxies = list(_DEFAULT_TRUSTED_PROXIES)
+            elif isinstance(proxies, str):
+                proxies = [proxies]
+            _net_cache["net"] = {
+                "local_subnets": [str(x).strip() for x in subnets if str(x).strip()],
+                "vpn_subnet": str(net.get("vpn_subnet") or "10.0.0.0/24").strip(),
+                "trusted_proxies": [str(x).strip() for x in proxies if str(x).strip()],
+                "api_docs": bool(net.get("api_docs", False)),
+            }
+            _net_cache["mtime"] = mtime
+        return {k: (list(v) if isinstance(v, list) else v) for k, v in _net_cache["net"].items()}
+    except Exception:
+        cached = _net_cache["net"]
+        if cached:
+            return {k: (list(v) if isinstance(v, list) else v) for k, v in cached.items()}
+        return {
+            "local_subnets": [DEFAULT_LOCAL_SUBNET],
+            "vpn_subnet": "10.0.0.0/24",
+            "trusted_proxies": list(_DEFAULT_TRUSTED_PROXIES),
+            "api_docs": False,
+        }
 
 
 def get_qdrant_api_key(write: bool = True) -> str | None:
@@ -141,7 +405,11 @@ def get_qdrant_api_key(write: bool = True) -> str | None:
             keys[k.strip()] = v.strip()
         if write:
             return keys.get("QDRANT__SERVICE__API_KEY") or None
-        return keys.get("QDRANT__SERVICE__READ_ONLY_API_KEY") or keys.get("QDRANT__SERVICE__API_KEY") or None
+        return (
+            keys.get("QDRANT__SERVICE__READ_ONLY_API_KEY")
+            or keys.get("QDRANT__SERVICE__API_KEY")
+            or None
+        )
     except OSError:
         return None
 
@@ -160,6 +428,77 @@ def get_service(section: str, key: str | None = None):
     if key is None:
         return sec
     return sec.get(key)
+
+
+def _read_yaml_live(name: str) -> dict:
+    """configs/<name>, re-read only when the file changed (mtime_ns + inode + size — a cheap stat per call).
+
+    For settings the GUI writes straight to disk without a config reload — same idea as get_local_tz().
+    Returns {} if the file is missing; an unreadable file keeps the last good value instead of caching {} (P134).
+    Shared object — never mutate the result."""
+    data = config_store.read_yaml_cached(CONFIG_DIR / name, copy_result=False)
+    return data if isinstance(data, dict) else {}
+
+
+def get_capability_map() -> dict:
+    """The GUI-written capability map, re-read when the file changes (P127)."""
+    return _read_yaml_live(CAPABILITY_MAP_PATH.name)
+
+
+DEFAULT_MODELS_DIR = "/kaare/models"
+
+
+def get_models_dir() -> Path:
+    """Root folder for model files KTSB downloads from the GUI (settings.yaml models_dir,
+    GUI: Settings → LLM/Model → Model storage). Each feature uses its own sub-folder."""
+    return Path(_read_yaml_live("settings.yaml").get("models_dir") or DEFAULT_MODELS_DIR)
+
+
+# P133: how Kåre's memory drawers reach the prompt. One accessor, always current (GUI writes
+# settings.yaml directly). Defaults = the shipped behaviour (rule 24/25).
+MEMORY_PROMPT_DEFAULTS = {
+    "relevance_enabled": True,  # «Relevant nå» block — off without an embedding service anyway
+    "top_k": 3,  # D12
+    "min_score": 0.50,  # D12 — measured 2026-10-09 (BGE-M3): hits ≥ 0.50, noise ≤ 0.50
+    "echo_min_score": 0.60,  # a new row this close to a resolved conclusion is an echo (C2)
+    "lessons_max_chars": 1500,  # lessons drawer, always prose (D3/D7)
+    "lessons_write_max_chars": 600,  # one lesson is one rule, not a story (N25)
+    "core_facts_max_chars": 1500,  # top-ranked world facts + resolved conclusions as prose (D3)
+    "index_max_chars": 2000,  # title index of kare notes + other world facts (D2)
+    "resolve_roles": ["admin"],  # who may mark a topic resolved (D11)
+}
+
+
+def get_memory_prompt_config() -> dict:
+    """settings.yaml `memory_prompt:` over MEMORY_PROMPT_DEFAULTS; bad values fall back."""
+    raw = dict(_read_yaml_live("settings.yaml").get("memory_prompt") or {})
+    cfg = dict(MEMORY_PROMPT_DEFAULTS)
+    for key, default in MEMORY_PROMPT_DEFAULTS.items():
+        if key not in raw:
+            continue
+        val = raw[key]
+        try:
+            if isinstance(default, bool):
+                cfg[key] = bool(val)
+            elif isinstance(default, int):
+                cfg[key] = int(val) if int(val) > 0 else default
+            elif isinstance(default, float):
+                cfg[key] = float(val) if 0.0 < float(val) < 1.0 else default
+            elif isinstance(default, list):
+                cfg[key] = [str(v) for v in val] if isinstance(val, list) else default
+        except (TypeError, ValueError):
+            cfg[key] = default
+    return cfg
+
+
+def get_embedding_config() -> dict:
+    """The embedding section of services.yaml (BGE-M3 service), always current."""
+    return dict(_read_yaml_live("services.yaml").get("embedding") or {})
+
+
+def get_memory_embed_config() -> dict:
+    """The memory_embed section of services.yaml (semantic memory), always current."""
+    return dict(_read_yaml_live("services.yaml").get("memory_embed") or {})
 
 
 def get_ssh_nodes() -> dict:
@@ -211,9 +550,7 @@ def is_stt_enabled() -> bool:
 
 def save_tool_permissions(data: dict) -> None:
     """Write new tool_permissions.yaml and hot-reload the cache."""
-    p = CONFIG_DIR / "tool_permissions.yaml"
-    with open(p, "w", encoding="utf-8") as f:
-        yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    config_store.write_yaml(CONFIG_DIR / "tool_permissions.yaml", data, "gui:tool_permissions")
     _load_tool_permissions()
 
 
@@ -230,7 +567,9 @@ def filter_tools_by_model(tools: list, size_b: float) -> list:
     if size_b < 9.0:
         _log.info("filter_tools_by_model: model=%.2fB < 9B — no tools", size_b)
         return []
-    from kaare_core.tools.definitions import TOOL_MODEL_TIERS
+    # PLC0415: circular: config is imported by tools.definitions
+    from kaare_core.tools.definitions import TOOL_MODEL_TIERS  # noqa: PLC0415
+
     always_names: set[str] = set(_TOOL_PERMISSIONS.get("always_included", []))
     result = []
     removed = []
@@ -257,7 +596,9 @@ def filter_tools_by_tier_ceiling(tools: list, max_tier: float) -> list:
     this is for the fallback model's own degraded-mode token budget (num_ctx: 8192
     on port 11445), not a capability check. always_included tools always pass.
     """
-    from kaare_core.tools.definitions import TOOL_MODEL_TIERS
+    # PLC0415: circular: config is imported by tools.definitions
+    from kaare_core.tools.definitions import TOOL_MODEL_TIERS  # noqa: PLC0415
+
     always_names: set[str] = set(_TOOL_PERMISSIONS.get("always_included", []))
     result = []
     removed = []
@@ -276,6 +617,15 @@ def filter_tools_by_tier_ceiling(tools: list, max_tier: float) -> list:
     return result
 
 
+# Tools that read shared logs holding other users' text: the think cache (prompt + reply, no
+# user_id) and Jing/Jang's inner thoughts (fed by the Argus digest, which quotes the start of
+# every user message). Admin only, whatever tool_permissions.yaml says — also enforced in
+# kaare_core/tools/executor_memory.py.
+ADMIN_ONLY_TOOLS: frozenset[str] = frozenset(
+    {"thought_history", "les_tankehistorikk", "inner_thoughts", "les_indre_tanker"}
+)
+
+
 def get_tools_for_role(role: str, user_id: str = "") -> list:
     """
     Return the filtered tool list for the given user role and language.
@@ -286,8 +636,8 @@ def get_tools_for_role(role: str, user_id: str = "") -> list:
     - cloud.enabled=false  → library tool loses the online action
     - agents service off   → library tool removed, søk_nett added as fallback
     """
-    from kaare_core.tools.definitions import get_tools, get_library_no_online
-    from kaare_core.tools.i18n import get_lang
+    # PLC0415: circular: config is imported by tools.definitions
+    from kaare_core.tools.definitions import get_library_no_online, get_tools  # noqa: PLC0415
 
     lang = get_lang(user_id) if user_id else "nb"
     all_tools = get_tools(lang)
@@ -295,7 +645,15 @@ def get_tools_for_role(role: str, user_id: str = "") -> list:
 
     always_names: set[str] = set(_TOOL_PERMISSIONS.get("always_included", []))
     roles_cfg: dict = _TOOL_PERMISSIONS.get("roles", {})
-    role_list: list[str] = roles_cfg.get(role, roles_cfg.get("adult", []))
+    if (
+        role in set(_TOOL_PERMISSIONS.get("no_always_included", ["household", "stranger"]))
+        or role not in roles_cfg
+    ):
+        always_names = (
+            set()
+        )  # knowledge boundary for the system identities and unknown roles (P120)
+    # Unknown role → the most restricted list, never a broader one (fail closed, P120).
+    role_list: list[str] = roles_cfg.get(role, roles_cfg.get("stranger", []))
 
     if "all" in role_list:
         candidate = list(all_tools)
@@ -314,11 +672,11 @@ def get_tools_for_role(role: str, user_id: str = "") -> list:
                 candidate.append(tool)
 
     # Capability guards — applied regardless of role
-    cloud_enabled  = _LLM_CFG.get("cloud", {}).get("enabled", True)
+    cloud_enabled = _LLM_CFG.get("cloud", {}).get("enabled", True)
     agents_enabled = is_service_enabled("agents")
 
     result: list = []
-    had_library  = False
+    had_library = False
     has_søk_nett = any(t["function"]["name"] == "web_search" for t in candidate)
 
     for tool in candidate:
@@ -338,6 +696,8 @@ def get_tools_for_role(role: str, user_id: str = "") -> list:
                 result.append(tool)
                 break
 
+    if role != "admin":
+        result = [t for t in result if t["function"]["name"] not in ADMIN_ONLY_TOOLS]
     return result
 
 
@@ -352,7 +712,7 @@ def _report_tool_consistency_alert(mismatches: list[str]) -> None:
     """
     _log.critical("tool_permissions consistency check failed: %s", mismatches)
     entry = {
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "source": "kaare",
         "subsystem": "routing",
         "stage": "tool_consistency_mismatch",
@@ -389,7 +749,8 @@ def validate_tool_permissions_consistency() -> list[str]:
     not this namespace. Confirmed empirically 2026-08-01: comparing them against
     definitions.py produced 8 false "orphaned config" hits.
     """
-    from kaare_core.tools.definitions import get_tools
+    # PLC0415: circular: config is imported by tools.definitions
+    from kaare_core.tools.definitions import get_tools  # noqa: PLC0415
 
     try:
         defined_names = {t["function"]["name"] for t in get_tools("nb")}
@@ -426,6 +787,8 @@ def verify_always_included_survives(role: str = "adult") -> list[str]:
     definitions.py/tool_permissions.yaml mismatch.
     """
     always_names: set[str] = set(_TOOL_PERMISSIONS.get("always_included", []))
+    if role != "admin":
+        always_names -= ADMIN_ONLY_TOOLS  # removed on purpose for every role but admin
     if not always_names:
         return []
     try:
@@ -446,3 +809,4 @@ def verify_always_included_survives(role: str = "adult") -> list[str]:
 # this file (before get_tools_for_role() existed) would raise NameError on import.
 _load_tool_permissions()
 _load_capability_services()
+_LLM_CFG = apply_agent_pool(_LLM_CFG)

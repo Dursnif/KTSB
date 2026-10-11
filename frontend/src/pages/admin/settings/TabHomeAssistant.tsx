@@ -4,9 +4,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { apiGetServices, apiPutHa, apiGetHaToken, apiPutHaToken, apiGetHaBridge, apiPutHaBridge } from "@/services/api";
-import { useSaveState, FieldRow, SaveFeedback, TestButton, MaskedInput, ExpertOnly } from "./shared";
+import { FieldRow, SaveFeedback, TestButton, MaskedInput, ExpertOnly } from "./shared";
+import { useSaveState } from "./useSaveState";
 
 const HA_ALLOWED_ACTIONS = [
   "turn_on", "turn_off", "toggle", "set_level", "set_color_temp", "set_color",
@@ -17,6 +19,7 @@ export default function TabHomeAssistant() {
   const { t } = useTranslation();
   const [haUrl, setHaUrl]       = useState("");
   const [haTimeout, setHaTimeout] = useState("5");
+  const [haEnabled, setHaEnabled] = useState(false);
   const [haToken, setHaToken]   = useState("");
   const [tokenInfo, setTokenInfo] = useState<{ is_set: boolean; masked: string } | null>(null);
   const [bridgeLogUrl, setBridgeLogUrl] = useState("");
@@ -31,6 +34,7 @@ export default function TabHomeAssistant() {
     apiGetServices().then(d => {
       setHaUrl(d.home_assistant.url);
       setHaTimeout(String(d.home_assistant.timeout));
+      setHaEnabled(d.home_assistant.enabled ?? false);
     }).catch(() => {});
     apiGetHaToken().then(setTokenInfo).catch(() => {});
     apiGetHaBridge().then(d => {
@@ -43,7 +47,7 @@ export default function TabHomeAssistant() {
   const saveGateway = async () => {
     ssGateway.saving();
     try {
-      await apiPutHa({ url: haUrl, timeout: Number(haTimeout) });
+      await apiPutHa({ url: haUrl, timeout: Number(haTimeout), enabled: haEnabled });
       ssGateway.saved();
     } catch { ssGateway.error(); }
   };
@@ -77,6 +81,12 @@ export default function TabHomeAssistant() {
         </CardHeader>
         <CardContent>
           <div className="divide-y divide-border">
+            <FieldRow label={t("settings.ha.gateway.enabled_label")} hint={t("settings.ha.gateway.enabled_hint")}>
+              <div className="flex items-center gap-2">
+                <Switch checked={haEnabled} onCheckedChange={setHaEnabled} className="data-checked:bg-green-600 data-unchecked:bg-red-600" />
+                <span className="text-sm text-muted-foreground">{haEnabled ? t("common.enabled") : t("common.disabled")}</span>
+              </div>
+            </FieldRow>
             <FieldRow label={t("settings.ha.gateway.url_label")} hint={t("settings.ha.gateway.url_hint")}>
               <div className="flex gap-2">
                 <Input value={haUrl} onChange={(e: React.ChangeEvent<HTMLInputElement>) =>setHaUrl(e.target.value)} placeholder="http://192.168.0.x:8123" />

@@ -1,168 +1,54 @@
 #!/usr/bin/env python3
 """
-Config migration: runs on every container startup.
+Config migration — thin CLI around kaare_core.config_migrations.run() (P134).
 
-- Copies missing config files from configs_default/
-- Restores corrupted YAML files from defaults (invalid YAML → replace)
-- Adds missing keys from defaults into existing configs (deep merge, never overwrites)
-- Treats null/None values as missing (fills in from defaults)
+Runs at every container start (scripts/docker_entrypoint.sh) and, on bare metal, before kaare.service
+(scripts/systemd/kaare-config-migrate.conf). Safe when many start at once: one migrates, the rest wait on the
+migration lock and find nothing to do. A normal start writes nothing.
+
+- Copies missing config files from configs_default/ (never overwrites)
+- Keeps an unreadable or empty YAML file in configs/.history/ as `_corrupt` before replacing it with the template
+- Runs each numbered migration step once (state in configs/.config_version)
+- Adds missing keys from the templates (never overwrites a value; null counts as missing)
+- Snapshots the whole configs/ folder to configs/.history/_snapshots/ before the first change
+
+Usage: migrate_configs.py [--dry-run] [--config-dir DIR] [--defaults-dir DIR]
+Exit codes: 0 = ok (changed or up to date), 1 = error.
 """
-import shutil
+
+import argparse
 import sys
 from pathlib import Path
 
-import yaml
+# Run as a plain script (entrypoint, systemd): the repo root must be importable before kaare_core is.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-DEFAULTS_DIR = Path("/kaare/configs_default")
-CONFIGS_DIR = Path("/kaare/configs")
-
-
-def deep_merge(default: dict, existing: dict) -> dict:
-    """Return existing with any missing keys filled in from default. Never overwrites."""
-    if not isinstance(default, dict) or not isinstance(existing, dict):
-        return existing
-    result = dict(existing)
-    for key, default_val in default.items():
-        if key not in result or result[key] is None:
-            result[key] = default_val
-        elif isinstance(default_val, dict) and isinstance(result[key], dict):
-            result[key] = deep_merge(default_val, result[key])
-    return result
+from kaare_core import (
+    config_migrations,
+    config_store,
+)
 
 
-def _migrate_nodes(config_file: Path, changed: list) -> None:
-    """Migrate is_tv: true → has_display: true + has_audio: true."""
-    if not config_file.exists():
-        return
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Bring configs/ up to the shipped templates (P134).")
+    ap.add_argument(
+        "--dry-run", action="store_true", help="report what would change, write nothing"
+    )
+    ap.add_argument("--config-dir", type=Path, default=config_store.CONFIG_DIR)
+    ap.add_argument("--defaults-dir", type=Path, default=config_store.DEFAULT_DIR)
+    args = ap.parse_args()
     try:
-        data = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return
-    nodes = data.get("nodes", {})
-    if not isinstance(nodes, dict):
-        return
-    migrated_count = 0
-    for node_id, node in nodes.items():
-        if not isinstance(node, dict):
-            continue
-        if "is_tv" in node:
-            node.setdefault("has_display", True)
-            node.setdefault("has_audio", True)
-            del node["is_tv"]
-            migrated_count += 1
-    if migrated_count:
-        with open(config_file, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        changed.append(f"  migrated nodes.yaml: {migrated_count} node(s) is_tv → has_display/has_audio")
-
-
-def _migrate_llm_system_i18n(config_file: Path, default_file: Path, changed: list) -> None:
-    """Migrate default.system / vision.system from a flat string to a {nb, en, de} dict.
-
-    Existing installs keep their own (possibly customized) Norwegian text as the nb
-    variant; en/de come from the shipped default translation since a customized prompt
-    has no other-language equivalent to migrate.
-    """
-    if not config_file.exists() or not default_file.exists():
-        return
-    try:
-        data = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
-        defaults = yaml.safe_load(default_file.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return
-    migrated_roles = []
-    for role in ("default", "vision"):
-        role_cfg = data.get(role)
-        if not isinstance(role_cfg, dict):
-            continue
-        sys_val = role_cfg.get("system")
-        if not isinstance(sys_val, str):
-            continue
-        default_sys = (defaults.get(role) or {}).get("system")
-        if not isinstance(default_sys, dict):
-            continue
-        role_cfg["system"] = {
-            "nb": sys_val,
-            "en": default_sys.get("en", sys_val),
-            "de": default_sys.get("de", sys_val),
-        }
-        migrated_roles.append(role)
-    if migrated_roles:
-        with open(config_file, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        changed.append(
-            f"  migrated {config_file.name}: {', '.join(migrated_roles)}.system → nb/en/de dict"
-        )
-
-
-def _migrate_network_config(config_file: Path, changed: list) -> None:
-    """Migrate network.local_subnet (string) to network.local_subnets (list)."""
-    if not config_file.exists():
-        return
-    try:
-        data = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return
-    net = data.get("network", {})
-    if not isinstance(net, dict):
-        return
-    if "local_subnets" in net or "local_subnet" not in net:
-        return
-    # Convert string to list
-    data["network"]["local_subnets"] = [net["local_subnet"]]
-    del data["network"]["local_subnet"]
-    with open(config_file, "w", encoding="utf-8") as f:
-        yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-    changed.append(f"  migrated {config_file.name}: network.local_subnet → network.local_subnets")
-
-
-def migrate():
-    CONFIGS_DIR.mkdir(exist_ok=True)
-    changed = []
-
-    for default_file in sorted(DEFAULTS_DIR.glob("*.yaml")):
-        config_file = CONFIGS_DIR / default_file.name
-
-        try:
-            default_data = yaml.safe_load(default_file.read_text(encoding="utf-8")) or {}
-        except Exception as e:
-            print(f"[migrate] Warning: default {default_file.name} is invalid YAML: {e}", flush=True)
-            continue
-
-        if not config_file.exists():
-            shutil.copy(default_file, config_file)
-            changed.append(f"  copied {default_file.name} (was missing)")
-            continue
-
-        try:
-            existing_data = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
-        except Exception as e:
-            print(f"[migrate] {config_file.name} is corrupted ({e}) — restoring from default", flush=True)
-            shutil.copy(default_file, config_file)
-            changed.append(f"  restored {config_file.name} (corrupted YAML)")
-            continue
-
-        merged = deep_merge(default_data, existing_data)
-        if merged != existing_data:
-            with open(config_file, "w", encoding="utf-8") as f:
-                yaml.dump(merged, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-            changed.append(f"  updated {config_file.name} (added missing keys)")
-
-    _migrate_network_config(CONFIGS_DIR / "settings.yaml", changed)
-    _migrate_nodes(CONFIGS_DIR / "nodes.yaml", changed)
-    _migrate_llm_system_i18n(CONFIGS_DIR / "llm.yaml", DEFAULTS_DIR / "llm.yaml", changed)
-
-    if changed:
-        print("[migrate] Config changes applied:", flush=True)
-        for line in changed:
-            print(line, flush=True)
-    else:
-        print("[migrate] All configs up to date.", flush=True)
+        rep = config_migrations.run(args.config_dir, args.defaults_dir, dry_run=args.dry_run)
+    except config_store.ConfigLockTimeout as e:
+        print(f"[migrate] ERROR: another migration is still running ({e})", flush=True)
+        return 1
+    except Exception as e:
+        print(f"[migrate] ERROR: {type(e).__name__}: {e}", flush=True)
+        return 1
+    for line in rep.lines():
+        print(line, flush=True)
+    return 0
 
 
 if __name__ == "__main__":
-    try:
-        migrate()
-    except Exception as e:
-        print(f"[migrate] ERROR: {e}", flush=True)
-        sys.exit(1)
+    sys.exit(main())

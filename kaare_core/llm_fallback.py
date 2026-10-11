@@ -19,9 +19,8 @@ Retry cooldown: 60 s between main-model re-attempts.
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -30,10 +29,10 @@ _RETRY_COOLDOWN = 60  # seconds between main-model retry attempts
 
 
 def _utc_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def _read() -> Optional[dict]:
+def _read() -> dict | None:
     try:
         return json.loads(_FLAG_PATH.read_text(encoding="utf-8"))
     except Exception:
@@ -50,12 +49,13 @@ def _write(data: dict) -> None:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+
 def is_fallback_active() -> bool:
     """True if the 9B fallback is currently in effect."""
     return _FLAG_PATH.exists()
 
 
-def get_fallback_info() -> Optional[dict]:
+def get_fallback_info() -> dict | None:
     """Returns the current fallback state dict, or None if not active."""
     return _read()
 
@@ -64,12 +64,14 @@ def activate_fallback() -> None:
     """Mark that the main model is unreachable. Idempotent."""
     if is_fallback_active():
         return
-    _write({
-        "active":          True,
-        "ts_start":        _utc_iso(),
-        "ts_last_failure": time.time(),
-        "turn_count":      0,
-    })
+    _write(
+        {
+            "active": True,
+            "ts_start": _utc_iso(),
+            "ts_last_failure": time.time(),
+            "turn_count": 0,
+        }
+    )
     log.warning("[fallback] activated — main model unreachable, switching to 9B backup")
 
 
@@ -78,7 +80,9 @@ def deactivate_fallback() -> dict:
     info = _read() or {}
     try:
         _FLAG_PATH.unlink(missing_ok=True)
-        log.info("[fallback] deactivated — main model recovered (turns=%s)", info.get("turn_count", 0))
+        log.info(
+            "[fallback] deactivated — main model recovered (turns=%s)", info.get("turn_count", 0)
+        )
     except Exception as e:
         log.error("[fallback] deactivate failed: %s", e)
     return info

@@ -9,6 +9,7 @@ class BaseVoiceProvider(ABC):
 
     async def set_volume(self, volume: float, node_config: dict) -> None:
         """Set volume before playback. No-op unless overridden."""
+        return
 
     def supports_mic(self) -> bool:
         return False

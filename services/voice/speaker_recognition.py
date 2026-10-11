@@ -3,6 +3,7 @@ Speaker recognition using WeSpeaker VoxCeleb ResNet34-LM (ONNX).
 Enrollment: extract embedding from audio, save per-user voiceprint.
 Identification: compare live audio against stored voiceprints.
 """
+
 import logging
 from pathlib import Path
 
@@ -16,7 +17,9 @@ _speaker_model = None
 def _get_model():
     global _speaker_model
     if _speaker_model is None:
-        import wespeakerruntime as wespeaker
+        # PLC0415: optional dependency — wespeakerruntime needs torch (absent in the Docker voice image)
+        import wespeakerruntime as wespeaker  # noqa: PLC0415
+
         _speaker_model = wespeaker.Speaker(lang="en")
         log.info("WeSpeaker ResNet34-LM model loaded.")
     return _speaker_model
@@ -29,8 +32,11 @@ def extract_embedding(audio_16k: np.ndarray) -> np.ndarray:
     Replicates wespeakerruntime._compute_fbank using torchaudio.compliance.kaldi.fbank,
     which accepts tensors directly and does not require torchcodec (torchaudio 2.10+).
     """
-    import torch
-    import torchaudio.compliance.kaldi as kaldi
+    # PLC0415: optional dependency — loaded only when this feature is used (rule 24)
+    import torch  # noqa: PLC0415
+
+    # PLC0415: optional dependency — loaded only when this feature is used (rule 24)
+    import torchaudio.compliance.kaldi as kaldi  # noqa: PLC0415
 
     model = _get_model()
 
@@ -112,7 +118,9 @@ def identify(
 
         log.info(
             "Speaker not identified (best=%s score=%.3f threshold=%.2f)",
-            best_user, best_score, threshold,
+            best_user,
+            best_score,
+            threshold,
         )
         return None, best_user, best_score
 

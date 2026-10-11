@@ -7,6 +7,10 @@
 #   ha_media_player  — any media player entity in Home Assistant
 #   chromecast       — Chromecast device (direct connection)
 #   snapcast         — Snapcast client
+#
+# trust (nodes with a microphone): who an unidentified speaker is at this node —
+#   indoor  → global_user  (most likely a household member; default)
+#   outdoor → unknown_user (untrusted stranger, e.g. a doorbell or outdoor satellite)
 # -------------------------------------------------------
 
 nodes:
@@ -27,6 +31,7 @@ nodes:
     enabled: true
     mic_enabled: true
     default_user: ""
+    trust: indoor
 
   bedroom_speaker:
     description: Speaker in the bedroom

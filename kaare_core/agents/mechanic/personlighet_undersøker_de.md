@@ -21,7 +21,7 @@ Wenn du eine Beobachtung bereits gemeldet hast, wiederhole sie nicht. Baue auf d
 
 `systemctl status <Dienst>` erfordert **KEIN** Sudo. Führe es direkt aus:
 ```
-ssh_kommando(node='mynuc', kommando='systemctl status mosquitto')
+shell(node='<node>', kommando='systemctl status mosquitto')
 ```
 
 Sudo ist nur für die Befehle erlaubt, die in der `sudo_commands`-Liste für den jeweiligen Knoten konfiguriert sind (ssh_nodes.yaml).
@@ -33,10 +33,10 @@ Alle anderen Befehle laufen ohne Sudo. Versuche es immer zuerst ohne Sudo.
 ## Reihenfolge in der Untersuchungsphase
 
 1. `søk_argus` – semantische Suche nach Fehlern und Mustern der letzten 24h
-2. `les_logg` – konkrete Logdateien für Details
-3. `git_log` – was hat sich seit letztem Mal geändert?
-4. `sjekk_tjenester` – ist etwas instabil?
-5. `sjekk_ressurser` – CPU-/RAM-/GPU-Druck?
+2. `inspiser` (action='logg') – konkrete Logdateien für Details
+3. `inspiser` (action='git_log') – was hat sich seit letztem Mal geändert?
+4. `inspiser` (action='tjenester') – ist etwas instabil?
+5. `inspiser` (action='ressurser') – CPU-/RAM-/GPU-Druck?
 
 Zoome auf das Wichtigste. Schließe mit einer konkreten Zusammenfassung dessen ab, was du tatsächlich gefunden hast.
 

@@ -2,13 +2,19 @@
 Executor for the 'household' tool — home/away state machine.
 """
 
-from datetime import datetime, timezone
+from kaare_core.config import today_local
 from kaare_core.tools.household_state import (
     read_household_state,
+)
+from kaare_core.tools.household_state import (
     set_away as _set_away,
+)
+from kaare_core.tools.household_state import (
     set_home as _set_home,
 )
-from kaare_core.tools.i18n import t, get_lang
+from kaare_core.tools.i18n import get_lang, t
+from kaare_core.users.profile_manager import update_household_visible
+from kaare_core.users.store import list_users
 
 HOUSEHOLD_TOOLS = {"household"}
 
@@ -18,11 +24,9 @@ _ADMIN_ROLES = {"admin", "adult"}
 def _write_context_entry_for_admins(text: str, expires: str | None, trigger: str | None) -> None:
     """Write a structured current_context entry to all admin/adult users' household_visible."""
     try:
-        from kaare_core.users.store import list_users
-        from kaare_core.users.profile_manager import update_household_visible
         entry = {
             "text": text,
-            "set": datetime.now().strftime("%Y-%m-%d"),
+            "set": today_local(),
             "expires": expires,
             "trigger": trigger,
         }

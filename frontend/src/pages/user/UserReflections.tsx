@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useAuth } from "../../auth/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import {
   apiReflectionDates,
   apiReflectionContent,
@@ -135,9 +135,8 @@ function UserCommentBox({
   const [saved, setSaved]     = useState(false);
   const [saving, setSaving]   = useState(false);
 
+  // Remounted per username+date+pin (key at the call site), so no state reset is needed here.
   useEffect(() => {
-    setSaved(false);
-    setComment("");
     apiGetReflectionComment(username, date, pin)
       .then(r => setComment(r.comment))
       .catch(() => {});
@@ -206,9 +205,9 @@ function UserTopicBox({
   const [saved, setSaved]   = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Remounted per username+pin (key at the call site), so no state reset is needed here.
   useEffect(() => {
     if (!pin) return;
-    setSaved(false);
     apiGetReflectionTopic(username, pin)
       .then(r => setTopic(r.topic))
       .catch(() => {});
@@ -373,6 +372,7 @@ export default function UserReflections() {
         {/* Topic for next meeting — always visible */}
         {user && (
           <UserTopicBox
+            key={`${user.username}:${cachedPin ?? ""}`}
             username={user.username}
             pin={cachedPin}
             onNeedPin={handleTopicNeedsPin}
@@ -447,6 +447,7 @@ export default function UserReflections() {
                 <div>{renderContent(content)}</div>
                 {selected && cachedPin && user && (
                   <UserCommentBox
+                    key={`${user.username}:${selected}:${cachedPin}`}
                     username={user.username}
                     date={selected}
                     pin={cachedPin}

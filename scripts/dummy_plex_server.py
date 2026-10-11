@@ -12,30 +12,45 @@ Point configs/services.yaml media.plex.url at http://<host>:<port>
 Any non-empty PLEX_TOKEN in configs/plex.env satisfies the adapter (this
 stub does not check the token value).
 """
+
 import json
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 MACHINE_ID = "dummy0000-0000-0000-0000-000000000001"
 
 MOVIE = {
-    "ratingKey": "1001", "type": "movie", "title": "Test-filmen",
-    "year": 2024, "librarySectionTitle": "Filmer",
+    "ratingKey": "1001",
+    "type": "movie",
+    "title": "Test-filmen",
+    "year": 2024,
+    "librarySectionTitle": "Filmer",
 }
 SHOW = {"ratingKey": "2001", "type": "show", "title": "Test-serien"}
 SEASON = {
-    "ratingKey": "2002", "type": "season", "title": "Sesong 1",
-    "parentIndex": 1, "leafCount": 2, "viewedLeafCount": 1,
+    "ratingKey": "2002",
+    "type": "season",
+    "title": "Sesong 1",
+    "parentIndex": 1,
+    "leafCount": 2,
+    "viewedLeafCount": 1,
 }
 EPISODE = {
-    "ratingKey": "2003", "type": "episode", "title": "Test-episoden",
-    "grandparentTitle": "Test-serien", "parentIndex": 1, "index": 1,
-    "duration": 1320000, "viewCount": 0,
+    "ratingKey": "2003",
+    "type": "episode",
+    "title": "Test-episoden",
+    "grandparentTitle": "Test-serien",
+    "parentIndex": 1,
+    "index": 1,
+    "duration": 1320000,
+    "viewCount": 0,
 }
 CLIENT = {
-    "name": "Stue-TV (dummy)", "product": "Plex for Android TV",
-    "platform": "Android", "machineIdentifier": "dummy-client-0001",
+    "name": "Stue-TV (dummy)",
+    "product": "Plex for Android TV",
+    "platform": "Android",
+    "machineIdentifier": "dummy-client-0001",
 }
 
 
@@ -60,7 +75,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(container(machineIdentifier=MACHINE_ID, friendlyName="Dummy Plex"))
         elif path == "/sessions":
             sess = {
-                **EPISODE, "User": {"title": "Testbruker"},
+                **EPISODE,
+                "User": {"title": "Testbruker"},
                 "Player": {"title": "Stue-TV (dummy)", "state": "playing"},
                 "viewOffset": 300000,
             }
@@ -72,16 +88,24 @@ class Handler(BaseHTTPRequestHandler):
             self._json(container(Metadata=[hist]))
         elif path == "/hubs/search":
             query = (qs.get("query") or [""])[0]
-            self._json(container(Hub=[
-                {"type": "movie", "Metadata": [MOVIE]},
-                {"type": "show", "Metadata": [SHOW]},
-            ]))
+            self._json(
+                container(
+                    Hub=[
+                        {"type": "movie", "Metadata": [MOVIE]},
+                        {"type": "show", "Metadata": [SHOW]},
+                    ]
+                )
+            )
             print(f"[dummy-plex] search query={query!r}", flush=True)
         elif path == "/library/sections":
-            self._json(container(Directory=[
-                {"title": "Filmer", "type": "movie", "count": 1, "key": "1"},
-                {"title": "TV-serier", "type": "show", "count": 1, "key": "2"},
-            ]))
+            self._json(
+                container(
+                    Directory=[
+                        {"title": "Filmer", "type": "movie", "count": 1, "key": "1"},
+                        {"title": "TV-serier", "type": "show", "count": 1, "key": "2"},
+                    ]
+                )
+            )
         elif path.startswith("/library/metadata/") and path.endswith("/children"):
             key = path.split("/")[3]
             if key == SHOW["ratingKey"]:
@@ -92,8 +116,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(container(Metadata=[]))
         elif path.startswith("/library/metadata/"):
             key = path.split("/")[3]
-            item = {MOVIE["ratingKey"]: MOVIE, SHOW["ratingKey"]: SHOW,
-                    SEASON["ratingKey"]: SEASON, EPISODE["ratingKey"]: EPISODE}.get(key)
+            item = {
+                MOVIE["ratingKey"]: MOVIE,
+                SHOW["ratingKey"]: SHOW,
+                SEASON["ratingKey"]: SEASON,
+                EPISODE["ratingKey"]: EPISODE,
+            }.get(key)
             self._json(container(Metadata=[item] if item else []))
         elif path == "/clients":
             self._json(container(Device=[CLIENT]))

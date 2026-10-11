@@ -29,7 +29,7 @@ Lies die Sitzungsberichte, auf die du Zugriff bekommen hast. Erstelle eine struk
 
 ## Werkzeuge, die du nutzen kannst
 
-`les_fil` – lies einen konkreten Sitzungsbericht
-`liste_filer` – finde heraus, welche Berichte existieren
-`søk_kode` – suche nach bestimmten Mustern über mehrere Berichte hinweg
+`utforsk` (action='les') – lies einen konkreten Sitzungsbericht
+`utforsk` (action='liste') – finde heraus, welche Berichte existieren
+`utforsk` (action='søk') – suche nach bestimmten Mustern über mehrere Berichte hinweg
 `hukommelse` – lies, was du dir von früher gemerkt hast / schreibe neue Beobachtungen

@@ -8,12 +8,14 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, Circle, Loader2, ChevronRight, ChevronLeft, Rocket } from "lucide-react";
 import axios from "axios";
 import {
+  API_BASE,
   apiGetCapabilities, apiPutCapabilities,
-  apiGetServices, apiPutFrigate, apiPutHa, apiPutMqtt, apiPutPlex,
+  apiGetServices, apiPutFrigate, apiPutHa, apiPutHaToken, apiPutMqtt, apiPutPlex,
+  apiGetNetworkSuggestion, apiPutNetwork, apiGetMediaHost, apiPutMediaHost,
   type CapabilitiesConfig,
 } from "@/services/api";
+import { suggestedMediaHost, subnetFromHostname } from "@/lib/network";
 
-const BASE = `http://${window.location.hostname}:8000`;
 const authHeader = () => ({ Authorization: `Bearer ${sessionStorage.getItem("kaare_token")}` });
 
 // ── Step 1: Profil ────────────────────────────────────────────────────────────
@@ -27,7 +29,7 @@ function StepProfil({ onDone }: { onDone: () => void }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    axios.get(`${BASE}/api/settings`, { headers: authHeader() })
+    axios.get(`${API_BASE}/api/settings`, { headers: authHeader() })
       .then(r => { if (r.data.location) setLok(r.data.location); })
       .catch(() => {});
   }, []);
@@ -39,7 +41,7 @@ function StepProfil({ onDone }: { onDone: () => void }) {
     setSaving(true);
     setError("");
     try {
-      await axios.put(`${BASE}/api/settings/location`, lok, { headers: authHeader() });
+      await axios.put(`${API_BASE}/api/settings/location`, lok, { headers: authHeader() });
       onDone();
     } catch { setError(t("onboarding.profil.error_save")); }
     finally { setSaving(false); }
@@ -98,7 +100,7 @@ function StepBruker({ onDone, onSkip }: { onDone: () => void; onSkip: () => void
     setSaving(true);
     setError("");
     try {
-      await axios.post(`${BASE}/api/users`, { display_name: displayName, username, pin, role }, { headers: authHeader() });
+      await axios.post(`${API_BASE}/api/users`, { display_name: displayName, username, pin, role }, { headers: authHeader() });
       onDone();
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? t("onboarding.bruker.error_create");
@@ -221,7 +223,7 @@ function StepLLM({ onDone }: { onDone: () => void }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    axios.get(`${BASE}/api/settings/ollama_source`, { headers: authHeader() })
+    axios.get(`${API_BASE}/api/settings/ollama_source`, { headers: authHeader() })
       .then(r => {
         if (!r.data.builtin && r.data.url) {
           setChoice("external");
@@ -235,7 +237,7 @@ function StepLLM({ onDone }: { onDone: () => void }) {
     setError("");
     try {
       const targetUrl = choice === "builtin" ? "http://ollama:11434" : url.trim();
-      await axios.put(`${BASE}/api/settings/ollama_source`, { url: targetUrl }, { headers: authHeader() });
+      await axios.put(`${API_BASE}/api/settings/ollama_source`, { url: targetUrl }, { headers: authHeader() });
       onDone();
     } catch { setError(t("onboarding.llm.error_save")); }
     finally { setSaving(false); }
@@ -306,6 +308,7 @@ function StepLLM({ onDone }: { onDone: () => void }) {
 
 // ── Step 5: Integrasjoner (valgfri) ──────────────────────────────────────────
 
+
 type IntegrationState = {
   haUrl: string; mqttHost: string; frigateUrl: string; plexUrl: string;
 };
@@ -313,6 +316,11 @@ type IntegrationState = {
 function StepIntegrasjoner({ onDone }: { onDone: () => void }) {
   const { t } = useTranslation();
   const [state, setState] = useState<IntegrationState>({ haUrl: "", mqttHost: "", frigateUrl: "", plexUrl: "" });
+  const [haToken, setHaToken] = useState("");
+  // Network (P127): suggested, the user confirms or edits. Empty field = leave the setting alone.
+  const [subnet, setSubnet] = useState("");
+  const [subnetIsDefault, setSubnetIsDefault] = useState(false);
+  const [mediaHost, setMediaHost] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -324,6 +332,11 @@ function StepIntegrasjoner({ onDone }: { onDone: () => void }) {
         plexUrl: d.plex?.url ?? "",
       });
     }).catch(() => {});
+    apiGetNetworkSuggestion().then(n => {
+      setSubnetIsDefault(n.is_default);
+      if (n.is_default) setSubnet(n.suggested_subnet || subnetFromHostname(n.vpn_subnet));
+    }).catch(() => {});
+    apiGetMediaHost().then(m => setMediaHost(m.media_host || suggestedMediaHost())).catch(() => {});
   }, []);
 
   const set = (k: keyof IntegrationState, v: string) => setState(p => ({ ...p, [k]: v }));
@@ -331,11 +344,16 @@ function StepIntegrasjoner({ onDone }: { onDone: () => void }) {
   const save = async () => {
     setSaving(true);
     try {
+      // Token first: saving the URL reloads the HA gateway, which then picks up both (P127).
+      const tokenSaved = haToken.trim() ? await apiPutHaToken(haToken.trim()).then(() => true, () => false) : false;
       await Promise.allSettled([
-        state.haUrl ? apiPutHa({ url: state.haUrl }) : Promise.resolve(),
+        // A configured integration is turned on — before P127 it stayed off until the user found the switch
+        state.haUrl ? apiPutHa(tokenSaved ? { url: state.haUrl, enabled: true } : { url: state.haUrl }) : Promise.resolve(),
         state.mqttHost ? apiPutMqtt({ host: state.mqttHost }) : Promise.resolve(),
-        state.frigateUrl ? apiPutFrigate({ url: state.frigateUrl }) : Promise.resolve(),
+        state.frigateUrl ? apiPutFrigate({ url: state.frigateUrl, enabled: true }) : Promise.resolve(),
         state.plexUrl ? apiPutPlex({ url: state.plexUrl }) : Promise.resolve(),
+        subnetIsDefault && subnet.trim() ? apiPutNetwork({ local_subnets: [subnet.trim()] }) : Promise.resolve(),
+        mediaHost.trim() ? apiPutMediaHost(mediaHost.trim()) : Promise.resolve(),
       ]);
       onDone();
     } finally { setSaving(false); }
@@ -364,8 +382,30 @@ function StepIntegrasjoner({ onDone }: { onDone: () => void }) {
           <div key={key}>
             <Label className="text-xs text-muted-foreground mb-1 block">{label}</Label>
             <Input value={state[key]} onChange={e => set(key, e.target.value)} placeholder={placeholder} />
+            {key === "haUrl" && (
+              <div className="mt-2">
+                <Label className="text-xs text-muted-foreground mb-1 block">{t("onboarding.integrasjoner.ha_token_label")}</Label>
+                <Input type="password" autoComplete="off" value={haToken} onChange={e => setHaToken(e.target.value)} />
+                <p className="text-xs text-muted-foreground mt-1">{t("onboarding.integrasjoner.ha_token_hint")}</p>
+              </div>
+            )}
           </div>
         ))}
+      </div>
+      <div className="space-y-3 border-t border-border pt-4">
+        <p className="text-sm font-medium">{t("onboarding.integrasjoner.network_title")}</p>
+        {subnetIsDefault && (
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">{t("onboarding.integrasjoner.subnet_label")}</Label>
+            <Input value={subnet} onChange={e => setSubnet(e.target.value)} placeholder="192.168.0.0/24" />
+            <p className="text-xs text-muted-foreground mt-1">{t("onboarding.integrasjoner.subnet_hint")}</p>
+          </div>
+        )}
+        <div>
+          <Label className="text-xs text-muted-foreground mb-1 block">{t("settings.llm.media_host_label")}</Label>
+          <Input value={mediaHost} onChange={e => setMediaHost(e.target.value)} placeholder="192.168.0.x" />
+          <p className="text-xs text-muted-foreground mt-1">{t("onboarding.integrasjoner.media_host_hint")}</p>
+        </div>
       </div>
       <div className="flex gap-2">
         <Button onClick={save} disabled={saving} className="flex-1">

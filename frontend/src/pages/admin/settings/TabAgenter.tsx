@@ -6,7 +6,8 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { apiGetAgentTools, apiPutAgentTools, apiGetMeetingRoles, apiPutMeetingRoles, type AgentToolsConfig, type MeetingRolesConfig } from "@/services/api";
-import { useSaveState, SaveFeedback, RadioOption } from "./shared";
+import { SaveFeedback, RadioOption } from "./shared";
+import { useSaveState } from "./useSaveState";
 
 const DEFAULT_AGENT_TOOLS: AgentToolsConfig = {
   mechanic: { utforsk: true, inspiser: true, "nettsøk": true, "søk_argus": true, shell: false, hukommelse: true },
@@ -16,14 +17,41 @@ const DEFAULT_AGENT_TOOLS: AgentToolsConfig = {
 
 const DEFAULT_MEETING_ROLES: MeetingRolesConfig = {
   mechanic: "undersøker", mechanic_custom: "", mechanic_default: "",
-  miss_kare: "empatisk", miss_kare_custom: "", miss_kare_default: "",
 };
+
+// Defined at module level, not inside TabAgenter: components created during render get a new
+// identity on every render and lose their internal state (P116 B14).
+type ToolDef = { key: string; label: string; description: string; defaultOff?: boolean };
+type ToggleFn = (agent: keyof AgentToolsConfig, tool: string, val: boolean) => void;
+
+const SectionLabel = ({ text }: { text: string }) => (
+  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">{text}</p>
+);
+
+const ToolList = ({ agent, tools, cfg, onToggle }: {
+  agent: keyof AgentToolsConfig; tools: ToolDef[]; cfg: AgentToolsConfig; onToggle: ToggleFn;
+}) => (
+  <div className="space-y-3">
+    {tools.map(tool => (
+      <div key={tool.key} className="flex items-center justify-between py-1">
+        <div>
+          <p className="text-sm font-mono text-white/90">{tool.label}</p>
+          <p className="text-xs text-muted-foreground">{tool.description}</p>
+        </div>
+        <Switch
+          checked={cfg[agent]?.[tool.key] ?? !tool.defaultOff}
+          onCheckedChange={v => onToggle(agent, tool.key, v)}
+          className="data-checked:bg-green-600 data-unchecked:bg-red-600"
+        />
+      </div>
+    ))}
+  </div>
+);
 
 export default function TabAgenter() {
   const { t } = useTranslation();
   const ss         = useSaveState();
   const ssPsRole   = useSaveState();
-  const ssMkRole   = useSaveState();
   const [cfg, setCfg]       = useState<AgentToolsConfig>(DEFAULT_AGENT_TOOLS);
   const [roles, setRoles]   = useState<MeetingRolesConfig>(DEFAULT_MEETING_ROLES);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
@@ -58,28 +86,7 @@ export default function TabAgenter() {
       ssPsRole.saved();
     } catch { ssPsRole.error(); }
   };
-  const saveMkRole = async () => {
-    ssMkRole.saving();
-    try {
-      await apiPutMeetingRoles({
-        miss_kare: roles.miss_kare,
-        ...(roles.miss_kare === "egendefinert" ? { miss_kare_custom: roles.miss_kare_custom } : {}),
-      });
-      ssMkRole.saved();
-    } catch { ssMkRole.error(); }
-  };
-
   if (loading) return <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mt-6" />;
-
-  const ColorSwitch = ({ agent, tool, defaultOff }: { agent: keyof AgentToolsConfig; tool: string; defaultOff?: boolean }) => (
-    <Switch
-      checked={cfg[agent]?.[tool] ?? !defaultOff}
-      onCheckedChange={v => toggle(agent, tool, v)}
-      className="data-checked:bg-green-600 data-unchecked:bg-red-600"
-    />
-  );
-
-  type ToolDef = { key: string; label: string; description: string; defaultOff?: boolean };
 
   const psTools: ToolDef[] = [
     { key: "utforsk",        label: t("settings.agenter.tools.utforsk"),        description: t("settings.agenter.tools.utforsk_desc") },
@@ -95,24 +102,6 @@ export default function TabAgenter() {
   const mlTools: ToolDef[] = [
     { key: "wiki", label: t("settings.agenter.tools.wiki"), description: t("settings.agenter.tools.wiki_desc"), defaultOff: true },
   ];
-
-  const SectionLabel = ({ text }: { text: string }) => (
-    <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">{text}</p>
-  );
-
-  const ToolList = ({ agent, tools }: { agent: keyof AgentToolsConfig; tools: ToolDef[] }) => (
-    <div className="space-y-3">
-      {tools.map(tool => (
-        <div key={tool.key} className="flex items-center justify-between py-1">
-          <div>
-            <p className="text-sm font-mono text-white/90">{tool.label}</p>
-            <p className="text-xs text-muted-foreground">{tool.description}</p>
-          </div>
-          <ColorSwitch agent={agent} tool={tool.key} defaultOff={tool.defaultOff} />
-        </div>
-      ))}
-    </div>
-  );
 
   return (
     <div className="space-y-4">
@@ -132,7 +121,7 @@ export default function TabAgenter() {
           <CardContent className="space-y-6 pt-0">
             <div>
               <SectionLabel text={t("settings.agenter.section_tools")} />
-              <ToolList agent="mechanic" tools={psTools} />
+              <ToolList agent="mechanic" tools={psTools} cfg={cfg} onToggle={toggle} />
             </div>
             <Separator className="bg-[#333]" />
             <div>
@@ -197,52 +186,9 @@ export default function TabAgenter() {
           <CardContent className="space-y-6 pt-0">
             <div>
               <SectionLabel text={t("settings.agenter.section_tools")} />
-              <ToolList agent="miss_kare" tools={mkTools} />
+              <ToolList agent="miss_kare" tools={mkTools} cfg={cfg} onToggle={toggle} />
             </div>
-            <Separator className="bg-[#333]" />
-            <div>
-              <SectionLabel text={t("settings.agenter.section_role_reflection")} />
-              <div className="divide-y divide-[#2a2a2a] mb-4">
-                {([ ["empatisk", "empatisk"], ["analytiker", "analytiker"], ["utfordrende", "utfordrende"], ["egendefinert", "egendefinert"] ] as [string, string][]).map(([value, key]) => (
-                  <RadioOption
-                    key={value}
-                    value={value}
-                    current={roles.miss_kare}
-                    onChange={v => setRoles(r => ({ ...r, miss_kare: v }))}
-                    label={t(`settings.agenter.miss_kare.roles.${key}_label`)}
-                    description={t(`settings.agenter.miss_kare.roles.${key}_desc`)}
-                  />
-                ))}
-              </div>
-              {roles.miss_kare === "egendefinert" && (
-                <div className="space-y-2 mt-2">
-                  {roles.miss_kare_custom === "" && roles.miss_kare_default && (
-                    <div className="flex justify-end">
-                      <Button variant="outline" size="sm"
-                        onClick={() => setRoles(r => ({ ...r, miss_kare_custom: r.miss_kare_default }))}>
-                        {t("settings.agenter.role_load_default")}
-                      </Button>
-                    </div>
-                  )}
-                  <textarea
-                    value={roles.miss_kare_custom}
-                    onChange={e => setRoles(r => ({ ...r, miss_kare_custom: e.target.value }))}
-                    placeholder={t("settings.agenter.role_custom_placeholder")}
-                    rows={14}
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                  <p className="text-xs text-muted-foreground">{t("settings.agenter.role_custom_hint")}</p>
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground mt-3">{t("settings.agenter.role_hot_reload_hint")}</p>
-              <div className="flex items-center gap-3 mt-4">
-                <Button size="sm" onClick={saveMkRole} disabled={ssMkRole.state === "saving"}>
-                  {ssMkRole.state === "saving" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {t("settings.agenter.role_save")}
-                </Button>
-                <SaveFeedback state={ssMkRole.state} />
-              </div>
-            </div>
+            <p className="text-xs text-muted-foreground">{t("settings.agenter.miss_kare.locked_personality_hint")}</p>
           </CardContent>
         )}
       </Card>
@@ -260,7 +206,7 @@ export default function TabAgenter() {
         </CardHeader>
         {expanded.miss_library && (
           <CardContent className="pt-0">
-            <ToolList agent="miss_library" tools={mlTools} />
+            <ToolList agent="miss_library" tools={mlTools} cfg={cfg} onToggle={toggle} />
           </CardContent>
         )}
       </Card>

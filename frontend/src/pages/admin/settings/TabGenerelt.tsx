@@ -6,9 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
-import { apiGetLanguage, apiPutLanguage } from "@/services/api";
+import { Switch } from "@/components/ui/switch";
+import { apiGetLanguage, apiPutLanguage, apiGetNetwork, apiPutNetwork } from "@/services/api";
 import { BASE, token } from "./constants";
-import { useSaveState, FieldRow, SaveFeedback } from "./shared";
+import { FieldRow, SaveFeedback, ExpertOnly } from "./shared";
+import { useSaveState } from "./useSaveState";
+import LogsAndDataCard from "./LogsAndDataCard";
 
 type Location = { city: string; postal_code: string; country: string; lat: number; lon: number; timezone: string };
 
@@ -40,6 +43,13 @@ export default function TabGenerelt() {
   const [kareLang, setKareLang] = useState<string>("nb");
   const ssLoc  = useSaveState();
   const ssLang = useSaveState();
+  const ssNet  = useSaveState();
+  // Network and access: lists edited as comma-separated text
+  const [netSubnets, setNetSubnets] = useState("");
+  const [netVpn, setNetVpn] = useState("");
+  const [netProxies, setNetProxies] = useState("");
+  const [netDocs, setNetDocs] = useState(false);
+  const [netError, setNetError] = useState("");
 
   useEffect(() => {
     axios.get(`${BASE}/api/settings`, { headers: { Authorization: `Bearer ${token()}` } })
@@ -49,7 +59,35 @@ export default function TabGenerelt() {
       setLang(r.language || "nb");
       setKareLang(r.kare_language || r.language || "nb");
     }).catch(() => {});
+    apiGetNetwork().then(n => {
+      setNetSubnets(n.local_subnets.join(", "));
+      setNetVpn(n.vpn_subnet);
+      setNetProxies(n.trusted_proxies.join(", "));
+      setNetDocs(n.api_docs);
+    }).catch(() => {});
   }, []);
+
+  const splitList = (v: string) => v.split(/[\s,]+/).map(x => x.trim()).filter(Boolean);
+
+  const saveNet = async () => {
+    ssNet.saving();
+    setNetError("");
+    try {
+      const n = await apiPutNetwork({
+        local_subnets: splitList(netSubnets),
+        vpn_subnet: netVpn.trim(),
+        trusted_proxies: splitList(netProxies),
+        api_docs: netDocs,
+      });
+      setNetSubnets(n.local_subnets.join(", "));
+      setNetProxies(n.trusted_proxies.join(", "));
+      ssNet.saved();
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setNetError(detail ?? "");
+      ssNet.error();
+    }
+  };
 
   const saveLoc = async () => {
     ssLoc.saving();
@@ -156,6 +194,43 @@ export default function TabGenerelt() {
           </div>
         </CardContent>
       </Card>
+
+      <ExpertOnly>
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.generelt.network.title")}</CardTitle>
+            <CardDescription>{t("settings.generelt.network.description")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="divide-y divide-border">
+              <FieldRow label={t("settings.generelt.network.local_subnets_label")} hint={t("settings.generelt.network.local_subnets_hint")}>
+                <Input value={netSubnets} placeholder="192.168.0.0/24" onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNetSubnets(e.target.value)} />
+              </FieldRow>
+              <FieldRow label={t("settings.generelt.network.vpn_subnet_label")} hint={t("settings.generelt.network.vpn_subnet_hint")}>
+                <Input value={netVpn} placeholder="10.0.0.0/24" onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNetVpn(e.target.value)} />
+              </FieldRow>
+              <FieldRow label={t("settings.generelt.network.trusted_proxies_label")} hint={t("settings.generelt.network.trusted_proxies_hint")}>
+                <Input value={netProxies} placeholder="caddy, 127.0.0.1" onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNetProxies(e.target.value)} />
+              </FieldRow>
+              <FieldRow label={t("settings.generelt.network.api_docs_label")} hint={t("settings.generelt.network.api_docs_hint")}>
+                <Switch checked={netDocs} onCheckedChange={(v: boolean) => setNetDocs(v)} />
+              </FieldRow>
+            </div>
+            <div className="flex items-center gap-3 mt-4">
+              <Button onClick={saveNet} disabled={ssNet.state === "saving"}>
+                {ssNet.state === "saving" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {t("common.save")}
+              </Button>
+              <SaveFeedback state={ssNet.state} />
+              {netError && <span className="text-sm text-destructive">{netError}</span>}
+            </div>
+          </CardContent>
+        </Card>
+      </ExpertOnly>
+
+      <ExpertOnly>
+        <LogsAndDataCard />
+      </ExpertOnly>
     </div>
   );
 }

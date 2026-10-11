@@ -5,14 +5,15 @@ import base64
 import logging
 import sys
 import time
-from pathlib import Path
 from typing import Any
 
 import httpx
 
 sys.path.insert(0, "/kaare")
 from kaare_core.config import get_service as _svc
+from kaare_core.config import now_local
 from kaare_core.normalcy import get_deviation_score as _get_deviation_score
+from kaare_core.tools.household_state import is_away
 
 log = logging.getLogger("frigate_adapter")
 
@@ -20,6 +21,7 @@ _DEDUP_CACHE: dict[str, float] = {}
 
 
 # ── Config loading ────────────────────────────────────────────────────────────
+
 
 def _frigate_url() -> str:
     return _svc("frigate", "url") or "http://127.0.0.1:5000"
@@ -53,6 +55,7 @@ def _friendly_to_api(name: str) -> str | None:
 
 
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
+
 
 async def fetch_snapshot(camera: str) -> bytes:
     """
@@ -96,11 +99,10 @@ async def get_cameras() -> list[dict]:
                 result.append({"api_name": api_name, "friendly_name": friendly})
             return result
     except Exception as e:
-        log.warning("Could not fetch cameras from Frigate API: %s — using settings.yaml fallback", e)
-        return [
-            {"api_name": k, "friendly_name": v}
-            for k, v in _camera_map().items()
-        ]
+        log.warning(
+            "Could not fetch cameras from Frigate API: %s — using settings.yaml fallback", e
+        )
+        return [{"api_name": k, "friendly_name": v} for k, v in _camera_map().items()]
 
 
 async def fetch_events(
@@ -166,6 +168,7 @@ async def get_event(event_id: str) -> dict:
 
 # ── Event parsing (inbound from Frigate via HTTP POST to Kåre) ────────────────
 
+
 def parse_frigate_event(payload: dict) -> dict:
     if not isinstance(payload, dict):
         raise ValueError("payload is not a dict")
@@ -215,7 +218,7 @@ _PERIMETER_ROLES = {"front_door", "driveway", "road_facing", "garden"}
 
 
 def _is_nighttime(nighttime_start: int, nighttime_end: int) -> bool:
-    hour = time.localtime().tm_hour
+    hour = now_local().hour
     if nighttime_start > nighttime_end:
         return hour >= nighttime_start or hour < nighttime_end
     return nighttime_start <= hour < nighttime_end
@@ -223,7 +226,9 @@ def _is_nighttime(nighttime_start: int, nighttime_end: int) -> bool:
 
 def _load_away_mode_cfg() -> dict:
     try:
-        from kaare_core.domain.frigate_responder import _cfg
+        # PLC0415: circular: frigate_adapter ↔ domain.frigate_responder
+        from kaare_core.domain.frigate_responder import _cfg  # noqa: PLC0415
+
         return _cfg().get("away_mode") or {}
     except Exception:
         return {}
@@ -271,7 +276,6 @@ def derive_hints(event: dict, camera_role: str = "") -> dict:
     away_mode = False
     away_reason = None
     try:
-        from kaare_core.tools.household_state import is_away
         if is_away():
             away_mode = True
             am_cfg = _load_away_mode_cfg()
@@ -291,7 +295,11 @@ def derive_hints(event: dict, camera_role: str = "") -> dict:
                     away_reason = "Person at perimeter during absence"
 
                 # Unknown or low-confidence at perimeter at night → HIGH
-                if unknown_night_high and is_night and (not label or label == "generic" or confidence < 0.5):
+                if (
+                    unknown_night_high
+                    and is_night
+                    and (not label or label == "generic" or confidence < 0.5)
+                ):
                     priority = "high"
                     notify = True
                     away_reason = "Unidentified presence at perimeter at night during absence"
@@ -336,7 +344,9 @@ async def handle_frigate_event(payload: dict, rid: str) -> dict:
     # Look up camera role from config for away-mode threat assessment
     camera_role = ""
     try:
-        from kaare_core.domain.frigate_responder import _cfg
+        # PLC0415: circular: frigate_adapter ↔ domain.frigate_responder
+        from kaare_core.domain.frigate_responder import _cfg  # noqa: PLC0415
+
         cam_cfg = _cfg().get("cameras", {}).get(event.get("camera", ""), {})
         camera_role = cam_cfg.get("role", "")
     except Exception:

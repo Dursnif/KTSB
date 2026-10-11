@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ExpertOnly } from "./settings/shared";
+import { API_BASE } from "@/services/api";
 
 type AnalysisEntry = {
   ts: string;
@@ -58,7 +59,6 @@ type CamerasData = {
   away_mode: AwayModeConfig;
 };
 
-const API = `http://${window.location.hostname}:8000`;
 const authHeaders = () => ({
   Authorization: `Bearer ${sessionStorage.getItem("kaare_token")}`,
   "Content-Type": "application/json",
@@ -90,7 +90,7 @@ export default function Cameras() {
   });
 
   useEffect(() => {
-    fetch(`${API}/api/settings/cameras`, { headers: authHeaders() })
+    fetch(`${API_BASE}/api/settings/cameras`, { headers: authHeaders() })
       .then(r => {
         if (r.status === 401) throw new Error("Ikke innlogget. Logg ut og inn igjen.");
         if (!r.ok) throw new Error(`Serverfeil: ${r.status}`);
@@ -106,16 +106,16 @@ export default function Cameras() {
       })
       .catch((e: Error) => setError(e.message || t("cameras.error_load")));
 
-    fetch(`${API}/api/settings/cameras/_storage_usage`, { headers: authHeaders() })
+    fetch(`${API_BASE}/api/settings/cameras/_storage_usage`, { headers: authHeaders() })
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) { setUsageSnap(d.snapshots_mb); setUsageLog(d.log_mb); } })
       .catch(() => {});
-  }, []);
+  }, [t]);
 
   const handleGlobalToggle = async (val: boolean) => {
     setGlobalEnabled(val);
     try {
-      const r = await fetch(`${API}/api/settings/cameras/_global`, {
+      const r = await fetch(`${API_BASE}/api/settings/cameras/_global`, {
         method: "PUT",
         headers: authHeaders(),
         body: JSON.stringify({ enabled: val }),
@@ -135,7 +135,7 @@ export default function Cameras() {
     setError(null);
     try {
       const { _id, ...payload } = cam;
-      await fetch(`${API}/api/settings/cameras/${_id}`, {
+      await fetch(`${API_BASE}/api/settings/cameras/${_id}`, {
         method: "PUT",
         headers: authHeaders(),
         body: JSON.stringify(payload),
@@ -160,7 +160,7 @@ export default function Cameras() {
     setStorageSaving(true);
     setStorageError(null);
     try {
-      const r = await fetch(`${API}/api/settings/cameras/_storage`, {
+      const r = await fetch(`${API_BASE}/api/settings/cameras/_storage`, {
         method: "PUT",
         headers: authHeaders(),
         body: JSON.stringify({ snapshots_max_mb: snapVal, log_max_mb: logVal }),
@@ -328,7 +328,7 @@ function AwayModePanel({ awayMode, onChange }: { awayMode: AwayModeConfig; onCha
   const save = async () => {
     setSaving(true); setError(null);
     try {
-      const r = await fetch(`${API}/api/settings/cameras/_away_mode`, {
+      const r = await fetch(`${API_BASE}/api/settings/cameras/_away_mode`, {
         method: "PUT",
         headers: authHeaders(),
         body: JSON.stringify(awayMode),
@@ -418,7 +418,7 @@ function AwayModePanel({ awayMode, onChange }: { awayMode: AwayModeConfig; onCha
 function AnalysisPanel() {
   const { t } = useTranslation();
   const [entries, setEntries] = useState<AnalysisEntry[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // first load runs on mount
   const [selected, setSelected] = useState<AnalysisEntry | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
@@ -427,33 +427,31 @@ function AnalysisPanel() {
 
   const token = sessionStorage.getItem("kaare_token") ?? "";
 
-  const fetchLog = async () => {
-    setLoading(true);
-    try {
-      const r = await fetch(`${API}/api/settings/cameras/_analysis_log?limit=40`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (r.ok) {
-        const d = await r.json();
+  const fetchLog = useCallback(() =>
+    fetch(`${API_BASE}/api/settings/cameras/_analysis_log?limit=40`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (!d) return;
         setEntries(d.entries ?? []);
         setSelected(prev => {
           if (!prev) return null;
           return (d.entries as AnalysisEntry[]).find(e => e.event_id === prev.event_id) ?? null;
         });
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+      })
+      .finally(() => setLoading(false)), [token]);
 
-  useEffect(() => { fetchLog(); }, []);
+  useEffect(() => { fetchLog(); }, [fetchLog]);
+
+  const refreshLog = () => { setLoading(true); fetchLog(); };
 
   const handleRetry = async () => {
     if (!selected) return;
     setRetrying(true);
     setRetryError(null);
     try {
-      const r = await fetch(`${API}/api/settings/cameras/_retry_analysis`, {
+      const r = await fetch(`${API_BASE}/api/settings/cameras/_retry_analysis`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -509,7 +507,7 @@ function AnalysisPanel() {
   };
 
   const snapUrl = (eid: string) =>
-    `${API}/api/frigate_snapshot/${eid}?token=${encodeURIComponent(token)}`;
+    `${API_BASE}/api/frigate_snapshot/${eid}?token=${encodeURIComponent(token)}`;
 
   return (
     <div style={{
@@ -520,7 +518,7 @@ function AnalysisPanel() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
         <span style={{ color: "#aaa", fontWeight: 600, fontSize: 13 }}>{t("cameras.log_title")}</span>
         <button
-          onClick={fetchLog}
+          onClick={refreshLog}
           disabled={loading}
           style={{
             background: "#1e1e1e", border: "1px solid #333", borderRadius: 6,

@@ -19,29 +19,34 @@ so callers don't need to thread them through every function signature.
 
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
-
-import json
 
 import yaml
 
+from kaare_core import (
+    app_state,  # app_state.STM_REGISTRY is set by kaare_api at startup — read it per call
+    log_buffer,
+)
+from kaare_core.config import now_local
+from kaare_core.tools.household_state import is_away
+
 logger = logging.getLogger("context_builder")
 
-_NODES_PATH          = Path("/kaare/configs/nodes.yaml")
-_SERVICES_PATH       = Path("/kaare/configs/services.yaml")
-_FRIGATE_LOG_PATH    = Path("/kaare/logs/frigate_mqtt.log")
-_HA_CONTEXT_PATH     = Path("/kaare/state/ha_context.json")
+_NODES_PATH = Path("/kaare/configs/nodes.yaml")
+_SERVICES_PATH = Path("/kaare/configs/services.yaml")
+_FRIGATE_LOG_PATH = Path("/kaare/logs/frigate_mqtt.log")
+_HA_CONTEXT_PATH = Path("/kaare/state/ha_context.json")
 _ZIGBEE_CONTEXT_PATH = Path("/kaare/state/zigbee_context.json")
-_PLEX_CACHE_PATH     = Path("/kaare/state/plex_cache.json")
-_FRIGATE_TAIL_BYTES  = 32_000  # ~200 lines — enough for 30 min of Frigate activity
+_PLEX_CACHE_PATH = Path("/kaare/state/plex_cache.json")
+_FRIGATE_TAIL_BYTES = 32_000  # ~200 lines — enough for 30 min of Frigate activity
 
 # Per-request context vars — set by router_generate, read by _build_system
-_REQUEST_NODE: ContextVar[str]    = ContextVar("request_node",    default="")
+_REQUEST_NODE: ContextVar[str] = ContextVar("request_node", default="")
 _REQUEST_NETWORK: ContextVar[str] = ContextVar("request_network", default="local")
 
 
@@ -67,7 +72,7 @@ def _minutes_ago(ts_iso: str) -> int:
     """Return minutes since an ISO timestamp, or -1 on error."""
     try:
         dt = datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
-        delta = datetime.now(timezone.utc) - dt
+        delta = datetime.now(UTC) - dt
         return max(0, int(delta.total_seconds() / 60))
     except Exception:
         return -1
@@ -80,10 +85,9 @@ def _recent_node_activity(user_id: str, limit_minutes: int = 30) -> list[dict]:
     """
     results = []
     try:
-        from kaare_core.app_state import STM_REGISTRY
-        if not STM_REGISTRY:
+        if not app_state.STM_REGISTRY:
             return []
-        for uid, stm in STM_REGISTRY._users.items():
+        for uid, stm in app_state.STM_REGISTRY._users.items():
             if uid == user_id:
                 continue
             try:
@@ -236,10 +240,18 @@ def _source_label(node_name: str, network_context: str, lang: str) -> str:
     """Return a compact source description: 'kjøkken-node, lokalt nett' or 'chat, VPN'."""
     if node_name:
         room = _node_room(node_name)
-        key = f"node_{network_context}" if network_context in ("local", "vpn", "external") else "node_local"
+        key = (
+            f"node_{network_context}"
+            if network_context in ("local", "vpn", "external")
+            else "node_local"
+        )
         return _l(key, lang, room=room)
     else:
-        key = f"chat_{network_context}" if network_context in ("local", "vpn", "external") else "chat_local"
+        key = (
+            f"chat_{network_context}"
+            if network_context in ("local", "vpn", "external")
+            else "chat_local"
+        )
         return _l(key, lang)
 
 
@@ -250,6 +262,7 @@ def _time_label(minutes_ago: int, lang: str) -> str:
 
 
 # ── Frigate recent activity ───────────────────────────────────────────────────
+
 
 def _load_camera_names() -> dict[str, str]:
     """Load camera_names from configs/services.yaml (frigate.camera_names)."""
@@ -262,8 +275,12 @@ def _load_camera_names() -> dict[str, str]:
 
 def _frigate_label_key(raw_label: str) -> str:
     """Map Frigate label to i18n key."""
-    mapping = {"person": "frigate_person", "car": "frigate_car",
-               "dog": "frigate_animal", "cat": "frigate_animal"}
+    mapping = {
+        "person": "frigate_person",
+        "car": "frigate_car",
+        "dog": "frigate_animal",
+        "cat": "frigate_animal",
+    }
     return mapping.get(raw_label.lower(), "frigate_motion")
 
 
@@ -273,6 +290,9 @@ def _frigate_recent_block(lang: str, limit_minutes: int = 30, max_lines: int = 3
     Reads frigate_mqtt.log directly — no network call, no embedding.
     Returns empty string if Frigate not configured, log missing, or no recent events.
     """
+    log_buffer.flush(
+        _FRIGATE_LOG_PATH
+    )  # include lines still buffered in RAM in this process (P131)
     if not _FRIGATE_LOG_PATH.exists():
         return ""
     try:
@@ -284,8 +304,8 @@ def _frigate_recent_block(lang: str, limit_minutes: int = 30, max_lines: int = 3
             raw = fh.read().decode("utf-8", errors="replace")
 
         camera_names = _load_camera_names()
-        cutoff = datetime.now(timezone.utc).timestamp() - limit_minutes * 60
-        now_utc = datetime.now(timezone.utc)
+        cutoff = datetime.now(UTC).timestamp() - limit_minutes * 60
+        now_utc = datetime.now(UTC)
 
         # Parse lines — only detection_end events (not noisy updates)
         # Deduplicate by (camera, label) — keep most recent per combination
@@ -307,8 +327,8 @@ def _frigate_recent_block(lang: str, limit_minutes: int = 30, max_lines: int = 3
             if ts_dt.timestamp() < cutoff:
                 continue
             cam_raw = ev.get("camera", "")
-            label   = ev.get("label", "motion")
-            key     = (cam_raw, label)
+            label = ev.get("label", "motion")
+            key = (cam_raw, label)
             # Keep only the most recent event per camera+label
             if key not in seen or ts_dt > datetime.fromisoformat(
                 seen[key]["ts"].replace("Z", "+00:00")
@@ -319,21 +339,20 @@ def _frigate_recent_block(lang: str, limit_minutes: int = 30, max_lines: int = 3
             return ""
 
         # Sort by ts descending, take max_lines
-        events = sorted(seen.values(),
-                        key=lambda e: e.get("ts", ""), reverse=True)[:max_lines]
+        events = sorted(seen.values(), key=lambda e: e.get("ts", ""), reverse=True)[:max_lines]
 
         lines = []
         for ev in events:
-            cam_raw  = ev.get("camera", "")
-            cam      = camera_names.get(cam_raw, cam_raw)
-            label    = ev.get("label", "motion")
-            score    = int(float(ev.get("score", 0)) * 100)
-            sub      = ev.get("sub_label")
+            cam_raw = ev.get("camera", "")
+            cam = camera_names.get(cam_raw, cam_raw)
+            label = ev.get("label", "motion")
+            score = int(float(ev.get("score", 0)) * 100)
+            sub = ev.get("sub_label")
             try:
                 ts_dt = datetime.fromisoformat(ev["ts"].replace("Z", "+00:00"))
-                mins  = max(0, int((now_utc - ts_dt).total_seconds() / 60))
+                mins = max(0, int((now_utc - ts_dt).total_seconds() / 60))
             except Exception:
-                mins  = -1
+                mins = -1
 
             ago = _time_label(mins, lang) if mins >= 0 else ""
             lbl_str = _l(_frigate_label_key(label), lang)
@@ -341,7 +360,9 @@ def _frigate_recent_block(lang: str, limit_minutes: int = 30, max_lines: int = 3
             if sub:
                 line = _l("frigate_named", lang, name=sub, label=lbl_str, cam=cam, ago=ago)
             else:
-                line = _l("frigate_detection", lang, label=lbl_str, cam=cam, pct=str(score), ago=ago)
+                line = _l(
+                    "frigate_detection", lang, label=lbl_str, cam=cam, pct=str(score), ago=ago
+                )
             lines.append(f"• {line}")
 
         return "\n".join(lines)
@@ -352,6 +373,7 @@ def _frigate_recent_block(lang: str, limit_minutes: int = 30, max_lines: int = 3
 
 
 # ── HA entity state + automations ────────────────────────────────────────────
+
 
 def _ha_state_block(lang: str, max_entities: int = 5, max_automations: int = 2) -> str:
     """
@@ -366,7 +388,7 @@ def _ha_state_block(lang: str, max_entities: int = 5, max_automations: int = 2) 
         return ""
 
     lines = []
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
 
     # Entity states
     entities: dict = ctx.get("entities", {})
@@ -377,8 +399,8 @@ def _ha_state_block(lang: str, max_entities: int = 5, max_automations: int = 2) 
         name = entity_id.split(".")[-1].replace("_", " ")
         try:
             ts_dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-            mins  = max(0, int((now_utc - ts_dt).total_seconds() / 60))
-            ago   = _time_label(mins, lang)
+            mins = max(0, int((now_utc - ts_dt).total_seconds() / 60))
+            ago = _time_label(mins, lang)
         except Exception:
             ago = ""
         lines.append(f"• {_l('ha_entity_state', lang, name=name, state=state, ago=ago)}")
@@ -392,8 +414,8 @@ def _ha_state_block(lang: str, max_entities: int = 5, max_automations: int = 2) 
             continue
         try:
             ts_dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-            mins  = max(0, int((now_utc - ts_dt).total_seconds() / 60))
-            ago   = _time_label(mins, lang)
+            mins = max(0, int((now_utc - ts_dt).total_seconds() / 60))
+            ago = _time_label(mins, lang)
         except Exception:
             ago = ""
         lines.append(f"• {_l('ha_automation', lang, name=name, ago=ago)}")
@@ -402,6 +424,7 @@ def _ha_state_block(lang: str, max_entities: int = 5, max_automations: int = 2) 
 
 
 # ── Zigbee2MQTT direct sensor state ──────────────────────────────────────────
+
 
 def _zigbee_block(lang: str) -> str:
     """
@@ -420,7 +443,7 @@ def _zigbee_block(lang: str) -> str:
     if not ctx:
         return ""
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     lines = []
     for _topic, info in ctx.items():
         label = info.get("label", _topic.split("/")[-1])
@@ -428,8 +451,8 @@ def _zigbee_block(lang: str) -> str:
         ts_str = info.get("ts", "")
         try:
             ts_dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-            mins  = max(0, int((now_utc - ts_dt).total_seconds() / 60))
-            ago   = _time_label(mins, lang)
+            mins = max(0, int((now_utc - ts_dt).total_seconds() / 60))
+            ago = _time_label(mins, lang)
         except Exception:
             ago = ""
         suffix = f" [{ago}]" if ago else ""
@@ -439,6 +462,7 @@ def _zigbee_block(lang: str) -> str:
 
 
 # ── Media activity ───────────────────────────────────────────────────────────
+
 
 def _media_block(lang: str) -> str:
     """
@@ -451,9 +475,7 @@ def _media_block(lang: str) -> str:
 
     # MPD — check if playing
     try:
-        result = subprocess.run(
-            ["mpc", "status"], capture_output=True, text=True, timeout=2
-        )
+        result = subprocess.run(["mpc", "status"], capture_output=True, text=True, timeout=2)
         if result.returncode == 0 and "[playing]" in result.stdout:
             lines.append(f"• {_l('media_mpd_playing', lang)}")
     except Exception:
@@ -478,13 +500,14 @@ def _media_block(lang: str) -> str:
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
+
 def build_situational_context(user_id: str, lang: str = "nb") -> str:
     """
     Build a compact situational context block for injection into the system prompt.
     Never raises — all errors produce an empty string or partial block.
     """
     try:
-        node_name       = _REQUEST_NODE.get()
+        node_name = _REQUEST_NODE.get()
         network_context = _REQUEST_NETWORK.get()
 
         lines: list[str] = []
@@ -495,7 +518,6 @@ def build_situational_context(user_id: str, lang: str = "nb") -> str:
 
         # Household mode
         try:
-            from kaare_core.tools.household_state import is_away
             if is_away():
                 lines.append(f"• {_l('household_away', lang)}")
             else:
@@ -548,7 +570,7 @@ def build_situational_context(user_id: str, lang: str = "nb") -> str:
         if not lines:
             return ""
 
-        now_str = datetime.now().strftime("%H:%M")
+        now_str = now_local().strftime("%H:%M")
         header = f"{_l('header', lang)} ({now_str}):"
         return header + "\n" + "\n".join(lines)
 

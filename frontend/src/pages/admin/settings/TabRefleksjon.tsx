@@ -3,14 +3,20 @@ import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import {
   apiGetReflectionSettings, apiPutReflectionSettings,
   apiGetReflectionMeetingSettings, apiPutReflectionMeetingSettings,
   apiGetDevMeetingSettings, apiPutDevMeetingSettings,
   type ReflectionConfig, type ReflectionMeetingSettings, type DevMeetingSettings,
+  api,
 } from "@/services/api";
-import { useSaveState, FieldRow, SaveFeedback, ExpertOnly } from "./shared";
+import { FieldRow, SaveFeedback, ExpertOnly } from "./shared";
+import { useSaveState } from "./useSaveState";
+
+// N17: start time of the night sequence — kaare_night_runner.py reads it on every poll.
+type NightSequenceSettings = { start_time: string; default: string; timezone: string; last_slot: string | null };
 
 export default function TabRefleksjon() {
   const { t } = useTranslation();
@@ -27,6 +33,9 @@ export default function TabRefleksjon() {
   const [loadingDev, setLoadingDev] = useState(true);
   const ssDev = useSaveState();
 
+  const [night, setNight] = useState<NightSequenceSettings | null>(null);
+  const ssNight = useSaveState();
+
   useEffect(() => {
     apiGetReflectionSettings()
       .then(d => { setCfg(d); setLoadingCfg(false); })
@@ -37,32 +46,60 @@ export default function TabRefleksjon() {
     apiGetDevMeetingSettings()
       .then(d => { setDevMtg(d); setLoadingDev(false); })
       .catch(() => setLoadingDev(false));
+    api.get<NightSequenceSettings>("/api/settings/night-sequence")
+      .then(r => setNight(r.data))
+      .catch(() => setNight(null));
   }, []);
+
+  const saveNight = async () => {
+    if (!night) return;
+    ssNight.saving();
+    try { await api.put("/api/settings/night-sequence", { start_time: night.start_time }); ssNight.saved(); }
+    catch { ssNight.error(); }
+  };
 
   const saveSchedule = async () => {
     ss.saving();
-    try { await apiPutReflectionSettings(cfg); ss.saved(); }
+    // Only this card's fields — the shared GET also returns read-only/meeting fields the PUT rejects
+    try { await apiPutReflectionSettings({ enabled: cfg.enabled, interval_seconds: cfg.interval_seconds }); ss.saved(); }
     catch { ss.error(); }
   };
 
   const saveRefMtg = async () => {
     if (!refMtg) return;
     ssRef.saving();
-    try { await apiPutReflectionMeetingSettings(refMtg); ssRef.saved(); }
+    try {
+      await apiPutReflectionMeetingSettings({
+        max_rounds: refMtg.max_rounds,
+        kare_max_tokens: refMtg.kare_max_tokens,
+        miss_kare_max_tokens: refMtg.miss_kare_max_tokens,
+        leder_preset: refMtg.leder_preset,
+        leder_preset_custom: refMtg.leder_preset_custom,
+      });
+      ssRef.saved();
+    }
     catch { ssRef.error(); }
   };
 
   const saveDevMtg = async () => {
     if (!devMtg) return;
     ssDev.saving();
-    try { await apiPutDevMeetingSettings(devMtg); ssDev.saved(); }
+    try {
+      await apiPutDevMeetingSettings({
+        enabled: devMtg.enabled,
+        time_budget_minutes: devMtg.time_budget_minutes,
+        topics_per_meeting: devMtg.topics_per_meeting,
+        max_user_traces: devMtg.max_user_traces,
+        round_cap_per_topic: devMtg.round_cap_per_topic,
+      });
+      ssDev.saved();
+    }
     catch { ssDev.error(); }
   };
 
   const intervalMinutes = Math.round(cfg.interval_seconds / 60);
 
   const REF_PRESETS = ["standard", "analytisk", "utfordrende", "egendefinert"];
-  const DEV_PRESETS = ["standard", "streng", "utforskende", "egendefinert"];
 
   if (loadingCfg) return <div className="text-muted-foreground text-sm">{t("common.loading")}</div>;
 
@@ -119,6 +156,38 @@ export default function TabRefleksjon() {
         </CardContent>
       </Card>
 
+      {/* ── Night sequence start time (N17) ── */}
+      {night && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("reflections.night_title")}</CardTitle>
+            <CardDescription>{t("reflections.night_desc")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="divide-y divide-border">
+              <FieldRow label={t("reflections.night_start_label")}
+                hint={t("reflections.night_start_hint", { tz: night.timezone })}>
+                <Input type="time" step={60} className="w-32" required
+                  value={night.start_time}
+                  onChange={e => setNight({ ...night, start_time: e.target.value || night.default })} />
+              </FieldRow>
+            </div>
+            {night.last_slot && (
+              <div className="text-xs text-muted-foreground mt-3">
+                {t("reflections.night_last_run", { date: night.last_slot })}
+              </div>
+            )}
+            <div className="flex items-center gap-3 mt-4">
+              <Button onClick={saveNight} disabled={ssNight.state === "saving"}>
+                {ssNight.state === "saving" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {t("common.save")}
+              </Button>
+              <SaveFeedback state={ssNight.state} />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── Reflection meeting ── */}
       <Card>
         <CardHeader>
@@ -136,13 +205,13 @@ export default function TabRefleksjon() {
                   value={refMtg.max_rounds}
                   onChange={e => setRefMtg({ ...refMtg, max_rounds: Number(e.target.value) })} />
               </FieldRow>
-              <FieldRow label={t("reflections.settings_kare_tokens")}>
-                <Input type="number" min={200} max={8000} step={100} className="w-28"
+              <FieldRow label={t("reflections.settings_kare_tokens")} hint={t("reflections.settings_kare_tokens_hint")}>
+                <Input type="number" min={1} step={1} className="w-28"
                   value={refMtg.kare_max_tokens}
                   onChange={e => setRefMtg({ ...refMtg, kare_max_tokens: Number(e.target.value) })} />
               </FieldRow>
-              <FieldRow label={t("reflections.settings_miss_kare_tokens")}>
-                <Input type="number" min={100} max={4000} step={100} className="w-28"
+              <FieldRow label={t("reflections.settings_miss_kare_tokens")} hint={t("reflections.settings_miss_kare_tokens_hint")}>
+                <Input type="number" min={1} step={1} className="w-28"
                   value={refMtg.miss_kare_max_tokens}
                   onChange={e => setRefMtg({ ...refMtg, miss_kare_max_tokens: Number(e.target.value) })} />
               </FieldRow>
@@ -191,68 +260,44 @@ export default function TabRefleksjon() {
         </CardContent>
       </Card>
 
-      {/* ── Dev meeting ── */}
+      {/* ── Dev slot (P118) — replaces the old persona dev meeting; its round/token/leader
+          settings are still in settings.yaml and the API but no longer shown here ── */}
       <Card>
         <CardHeader>
           <CardTitle>{t("reflections.tab_dev")}</CardTitle>
-          <CardDescription>{t("reflections.settings_title")}</CardDescription>
+          <CardDescription>{t("reflections.settings_dev_slot_desc")}</CardDescription>
         </CardHeader>
         <CardContent>
-          <ExpertOnly><>
           {loadingDev || !devMtg
             ? <div className="text-muted-foreground text-sm">{t("common.loading")}</div>
             : (
             <div className="divide-y divide-border">
-              <FieldRow label={t("reflections.settings_max_rounds")}>
-                <Input type="number" min={2} max={12} className="w-24"
-                  value={devMtg.max_rounds}
-                  onChange={e => setDevMtg({ ...devMtg, max_rounds: Number(e.target.value) })} />
+              <FieldRow label={t("reflections.settings_dev_enabled")}>
+                <Switch checked={devMtg.enabled}
+                  onCheckedChange={(v: boolean) => setDevMtg({ ...devMtg, enabled: v })} />
               </FieldRow>
-              <FieldRow label={t("reflections.settings_max_invest_rounds")}>
-                <Input type="number" min={1} max={10} className="w-24"
-                  value={devMtg.max_invest_rounds}
-                  onChange={e => setDevMtg({ ...devMtg, max_invest_rounds: Number(e.target.value) })} />
+              <FieldRow label={t("reflections.settings_topics_per_meeting")} hint={t("reflections.settings_topics_per_meeting_hint")}>
+                <Input type="number" min={1} max={50} className="w-24"
+                  value={devMtg.topics_per_meeting}
+                  onChange={e => setDevMtg({ ...devMtg, topics_per_meeting: Number(e.target.value) })} />
               </FieldRow>
-              <FieldRow label={t("reflections.settings_kare_tokens")}>
-                <Input type="number" min={500} max={8000} step={100} className="w-28"
-                  value={devMtg.kare_max_tokens}
-                  onChange={e => setDevMtg({ ...devMtg, kare_max_tokens: Number(e.target.value) })} />
+              <ExpertOnly><>
+              <FieldRow label={t("reflections.settings_time_budget")} hint={t("reflections.settings_time_budget_hint")}>
+                <Input type="number" min={1} max={240} className="w-24"
+                  value={devMtg.time_budget_minutes}
+                  onChange={e => setDevMtg({ ...devMtg, time_budget_minutes: Number(e.target.value) })} />
               </FieldRow>
-              <FieldRow label={t("reflections.settings_kare_invest_tokens")}>
-                <Input type="number" min={200} max={4000} step={100} className="w-28"
-                  value={devMtg.kare_invest_tokens}
-                  onChange={e => setDevMtg({ ...devMtg, kare_invest_tokens: Number(e.target.value) })} />
+              <FieldRow label={t("reflections.settings_max_traces")} hint={t("reflections.settings_max_traces_hint")}>
+                <Input type="number" min={0} max={200} className="w-24"
+                  value={devMtg.max_user_traces}
+                  onChange={e => setDevMtg({ ...devMtg, max_user_traces: Number(e.target.value) })} />
               </FieldRow>
-              <FieldRow label={t("reflections.settings_leder_preset")}>
-                <div className="flex flex-wrap gap-2">
-                  {DEV_PRESETS.map(p => (
-                    <button key={p} type="button"
-                      onClick={() => setDevMtg(prev => prev ? { ...prev, leder_preset: p } : prev)}
-                      className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
-                        devMtg.leder_preset === p
-                          ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
-                          : "bg-muted text-muted-foreground border-border hover:border-blue-500/30"
-                      }`}>
-                      {t(`reflections.leder_preset_${p}`)}
-                    </button>
-                  ))}
-                </div>
+              <FieldRow label={t("reflections.settings_round_cap")} hint={t("reflections.settings_round_cap_hint")}>
+                <Input type="number" min={1} max={12} className="w-24"
+                  value={devMtg.round_cap_per_topic}
+                  onChange={e => setDevMtg({ ...devMtg, round_cap_per_topic: Number(e.target.value) })} />
               </FieldRow>
-              {devMtg.leder_preset !== "egendefinert" ? (
-                <FieldRow label={t("reflections.settings_leder_default_label")}>
-                  <pre className="bg-muted/30 border border-border rounded-md p-3 text-xs text-muted-foreground whitespace-pre-wrap font-mono leading-relaxed">
-                    {devMtg.leder_preset_default || "—"}
-                  </pre>
-                </FieldRow>
-              ) : (
-                <FieldRow label={t("reflections.settings_leder_custom")}>
-                  <textarea rows={8}
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono leading-relaxed resize-y focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    placeholder={t("reflections.settings_leder_custom_ph")}
-                    value={devMtg.leder_preset_custom}
-                    onChange={e => setDevMtg({ ...devMtg, leder_preset_custom: e.target.value })} />
-                </FieldRow>
-              )}
+              </></ExpertOnly>
             </div>
           )}
           {devMtg && (
@@ -264,7 +309,6 @@ export default function TabRefleksjon() {
               <SaveFeedback state={ssDev.state} />
             </div>
           )}
-          </></ExpertOnly>
         </CardContent>
       </Card>
 

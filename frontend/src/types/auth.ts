@@ -3,7 +3,9 @@ export type Role =
   | "teen"
   | "young_adult"
   | "adult"
-  | "admin";
+  | "admin"
+  | "household"   // system identity global_user (P120)
+  | "stranger";   // system identity unknown_user (P120)
 
 export type AuthUser = {
   username: string;

@@ -1,21 +1,24 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import axios from "axios";
 import {
+  API_BASE,
   apiListUsers,
   apiReflectionDates,
   apiReflectionContent,
   apiGetMeetingTopic,
   apiSetMeetingTopic,
+  AGENDA_THEMES,
+  apiGetResolvedTopics,
+  type ResolvedTopic,
   apiGetMeetingComment,
   apiSetMeetingComment,
   type KaareUser,
 } from "../../services/api";
 
-const BASE = `http://${window.location.hostname}:8000`;
 const authHeaders = () => ({ Authorization: `Bearer ${sessionStorage.getItem("kaare_token")}` });
-const apiGet  = (path: string) => axios.get(BASE + path,  { headers: authHeaders() });
-const apiPost = (path: string) => axios.post(BASE + path, {}, { headers: authHeaders() });
+const apiGet  = (path: string) => axios.get(API_BASE + path,  { headers: authHeaders() });
+const apiPost = (path: string) => axios.post(API_BASE + path, {}, { headers: authHeaders() });
 
 type MeetingType = "reflection" | "dev";
 
@@ -27,6 +30,7 @@ interface MeetingStatus {
   round: number;
   max_rounds: number;
   step: string;
+  step_code?: string;   // dev slot (P118): S0 / janus / S1 / S2 / S3 / S5 — shown in the user's language
   log: string[];
   started_at: string | null;
   source: "manual" | "timer" | null;
@@ -165,13 +169,16 @@ function ProgressPanel({
             {startedTime && <span style={{ color: "#555", fontSize: 11 }}>· {t("reflections.started_at", { time: startedTime })}</span>}
           </div>
           <span style={{ color: "#555", fontSize: 11 }}>
-            {status.round > 0 ? t("reflections.round", { round: status.round, max: status.max_rounds }) : ""}
+            {status.step_code
+              ? t("reflections.devslot_step", { n: status.round, max: status.max_rounds,
+                  label: t(`reflections.devslot_step_${status.step_code}`) })
+              : status.round > 0 ? t("reflections.round", { round: status.round, max: status.max_rounds }) : ""}
           </span>
         </div>
         <div style={{ background: "#1a1a1a", borderRadius: 6, height: 8, overflow: "hidden", marginBottom: 8 }}>
           <div style={{ height: "100%", width: `${pct}%`, borderRadius: 6, background: `linear-gradient(90deg, ${color}99, ${color})`, transition: "width 1.2s ease" }} />
         </div>
-        <div style={{ color: "#555", fontSize: 11, marginBottom: 10, minHeight: 16 }}>{status.step || t("reflections.waiting_model")}</div>
+        <div style={{ color: "#555", fontSize: 11, marginBottom: 10, minHeight: 16 }}>{status.step_code ? "" : (status.step || t("reflections.waiting_model"))}</div>
         {status.log.length > 0 && (
           <div ref={logRef} style={{ background: "#0a0a0a", borderRadius: 8, padding: "10px 12px", maxHeight: 120, overflowY: "auto", fontFamily: "monospace" }}>
             {status.log.slice(-8).map((line, i) => (
@@ -202,18 +209,19 @@ function TopicBox({ type }: { type: MeetingType }) {
   const { t } = useTranslation();
   const color = ACCENT[type];
   const [topic, setTopic]   = useState("");
+  const [theme, setTheme]   = useState("");  // dev only (P118 B8); "" = chosen by code rules
   const [saved, setSaved]   = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Remounted per type (key at the call site), so no state reset is needed here.
   useEffect(() => {
-    setSaved(false);
     apiGetMeetingTopic(type).then(r => setTopic(r.topic)).catch(() => {});
   }, [type]);
 
   const save = async () => {
     setSaving(true);
     try {
-      await apiSetMeetingTopic(type, topic);
+      await apiSetMeetingTopic(type, topic, type === "dev" ? theme : "");
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } finally {
@@ -254,7 +262,70 @@ function TopicBox({ type }: { type: MeetingType }) {
           {saved ? "✓ OK" : t("reflections.topic_save")}
         </button>
       </div>
+      {type === "dev" && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+          <label htmlFor="dev-topic-theme" style={{ color: "#777", fontSize: 12 }}>
+            {t("reflections.topic_theme")}
+          </label>
+          <select
+            id="dev-topic-theme"
+            value={theme}
+            onChange={e => { setTheme(e.target.value); setSaved(false); }}
+            style={{
+              background: "#0d0d0d", border: `1px solid ${color}33`, borderRadius: 8,
+              color: "#ccc", fontSize: 13, padding: "6px 8px", outline: "none",
+              fontFamily: "inherit", maxWidth: "100%",
+            }}
+          >
+            <option value="">{t("reflections.topic_theme_auto")}</option>
+            {AGENDA_THEMES.map(th => (
+              <option key={th} value={th}>{t(`reflections.theme_${th}`)}</option>
+            ))}
+          </select>
+        </div>
+      )}
     </div>
+  );
+}
+
+// ── Resolved topics (P133 C6) ─────────────────────────────────────────────────
+// What was settled with a human: locked conclusions; later matching rows are counted as echoes.
+function ResolvedBox() {
+  const { t } = useTranslation();
+  const color = ACCENT.dev;
+  const [rows, setRows] = useState<ResolvedTopic[] | null>(null);
+
+  useEffect(() => {
+    apiGetResolvedTopics().then(setRows).catch(() => setRows([]));
+  }, []);
+
+  if (rows === null) return null;
+  return (
+    <details style={{ marginBottom: 16, background: "#111", borderRadius: 10, padding: "10px 16px", border: `1px solid ${color}22` }}>
+      <summary style={{ color: "#777", fontSize: 12, cursor: "pointer" }}>
+        {t("reflections.resolved_title", { count: rows.length })}
+      </summary>
+      {rows.length === 0 ? (
+        <p style={{ color: "#666", fontSize: 13, marginTop: 8 }}>{t("reflections.resolved_empty")}</p>
+      ) : (
+        <ul style={{ listStyle: "none", padding: 0, margin: "8px 0 0" }}>
+          {rows.map(r => (
+            <li key={r.id} style={{ padding: "6px 0", borderTop: "1px solid #1c1c1c", fontSize: 13, color: "#bbb", overflowWrap: "anywhere" }}>
+              <span style={{ color }}>#{r.id}</span>{" "}
+              {r.label && <strong style={{ color: "#ddd" }}>{r.label}: </strong>}
+              {r.conclusion}
+              <div style={{ color: "#666", fontSize: 11, marginTop: 2 }}>
+                {t("reflections.resolved_meta", {
+                  date: (r.resolved_at || "").slice(0, 10),
+                  by: r.resolved_by || "—",
+                  echoes: r.echoes,
+                })}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </details>
   );
 }
 
@@ -267,9 +338,8 @@ function CommentBox({ type, date }: { type: MeetingType; date: string }) {
   const [saved, setSaved]     = useState(false);
   const [saving, setSaving]   = useState(false);
 
+  // Remounted per type+date (key at the call site), so no state reset is needed here.
   useEffect(() => {
-    setSaved(false);
-    setComment("");
     apiGetMeetingComment(type, date).then(r => setComment(r.comment)).catch(() => {});
   }, [type, date]);
 
@@ -366,18 +436,27 @@ export default function Reflections() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [anyRunning]);
 
+  const loadDevDate = useCallback(async (date: string) => {
+    setSelected(date); setLoading(true);
+    try {
+      const r = await apiGet(`/api/dev-meetings/${date}`);
+      setContent(r.data.content);
+    } finally { setLoading(false); }
+  }, []);
+
   useEffect(() => {
-    setDates([]); setContent(""); setSelected(null);
-    if (meetingType === "reflection") {
-      if (!selectedUser) return;
-      apiReflectionDates(selectedUser.username).then(d => setDates(d));
-    } else {
-      apiGet("/api/dev-meetings").then(r => {
-        setDates(r.data);
-        if (r.data.length > 0) loadDevDate(r.data[0]);
-      });
-    }
-  }, [meetingType, selectedUser]);
+    // A late reply from the previous meeting type / user must not overwrite the new view.
+    let cancelled = false;
+    const load: Promise<string[]> = meetingType === "reflection"
+      ? (selectedUser ? apiReflectionDates(selectedUser.username) : Promise.resolve([]))
+      : apiGet("/api/dev-meetings").then(r => r.data as string[]);
+    load.then(d => {
+      if (cancelled) return;
+      setDates(d); setContent(""); setSelected(null);
+      if (meetingType === "dev" && d.length > 0) loadDevDate(d[0]);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [meetingType, selectedUser, loadDevDate]);
 
   const prevRunning = useRef<Record<MeetingType, boolean>>({ reflection: false, dev: false });
   useEffect(() => {
@@ -391,15 +470,7 @@ export default function Reflections() {
       }
       prevRunning.current[mt] = status[mt].running;
     }
-  }, [status]);
-
-  const loadDevDate = async (date: string) => {
-    setSelected(date); setLoading(true);
-    try {
-      const r = await apiGet(`/api/dev-meetings/${date}`);
-      setContent(r.data.content);
-    } finally { setLoading(false); }
-  };
+  }, [status, selectedUser]);
 
   const handleReflectionDateClick = (date: string) => {
     setSelected(date);
@@ -509,7 +580,8 @@ export default function Reflections() {
         )}
 
         {/* Topic for next meeting */}
-        <TopicBox type={meetingType} />
+        <TopicBox key={meetingType} type={meetingType} />
+        {meetingType === "dev" && <ResolvedBox />}
 
         {/* Progress / Start button */}
         <ProgressPanel type={meetingType} status={status[meetingType]} onStart={startMeeting} />
@@ -546,7 +618,7 @@ export default function Reflections() {
               </div>
             )}
             {!loading && content && selected && (
-              <CommentBox type={meetingType} date={selected} />
+              <CommentBox key={`${meetingType}-${selected}`} type={meetingType} date={selected} />
             )}
           </div>
         </div>

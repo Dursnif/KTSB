@@ -9,8 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /kaare/services/voice
 
-COPY services/voice/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY services/voice/requirements.txt services/voice/constraints.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 COPY kaare_core/ /kaare/kaare_core/
 COPY configs_default/ /kaare/configs_default/

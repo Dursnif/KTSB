@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { apiGetServices, apiPutMqtt, apiGetVpnSettings, apiPutVpnSettings } from "@/services/api";
-import { useSaveState, FieldRow, SaveFeedback, TestButton, ExpertOnly } from "./shared";
+import { FieldRow, SaveFeedback, TestButton, ExpertOnly } from "./shared";
+import { useSaveState } from "./useSaveState";
 
 export default function TabMqtt() {
   const { t } = useTranslation();

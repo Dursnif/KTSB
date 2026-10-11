@@ -1,6 +1,5 @@
 import logging
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -40,14 +39,14 @@ class DisplayProviderRegistry:
 
         # primary → fallback per type
         self._map: dict[str, list[BaseDisplayProvider]] = {
-            "chromecast":      [self._chromecast, self._ha],
-            "google_tv":       [self._tvoverlay, self._ha],
-            "android_tv":      [self._tvoverlay, self._ha],
-            "fire_tv":         [self._ha],
-            "samsung_tv":      [self._dlna, self._ha],
-            "lg_tv":           [self._dlna, self._ha],
-            "apple_tv":        [self._dlna, self._ha],
-            "projector":       [self._dlna, self._ha],
+            "chromecast": [self._chromecast, self._ha],
+            "google_tv": [self._tvoverlay, self._ha],
+            "android_tv": [self._tvoverlay, self._ha],
+            "fire_tv": [self._ha],
+            "samsung_tv": [self._dlna, self._ha],
+            "lg_tv": [self._dlna, self._ha],
+            "apple_tv": [self._dlna, self._ha],
+            "projector": [self._dlna, self._ha],
             "ha_media_player": [self._ha],
         }
 
@@ -63,5 +62,10 @@ class DisplayProviderRegistry:
             if result.get("ok"):
                 return result
             last_error = result.get("error", "unknown error")
-            log.debug("Display provider %s failed for %s: %s", type(provider).__name__, node_id, last_error)
+            log.debug(
+                "Display provider %s failed for %s: %s",
+                type(provider).__name__,
+                node_id,
+                last_error,
+            )
         return {"ok": False, "error": last_error}

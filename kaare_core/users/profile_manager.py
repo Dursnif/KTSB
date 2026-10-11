@@ -12,41 +12,51 @@ Vault system:
   vault files (vault_*.bin) to the user's directory. On next login, process_vault_files()
   decrypts and applies them, then deletes the .bin files.
 """
+
 import base64
 import json
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 import bcrypt
 import yaml
 
-from kaare_core.tools.i18n import t, get_lang
+from kaare_core import session_keys
+from kaare_core.config import now_local
+from kaare_core.crypto import decrypt_dict, decrypt_text, encrypt_dict, encrypt_text, seal, unseal
+from kaare_core.tools.household_state import read_household_state
+from kaare_core.tools.i18n import get_lang, t
+from kaare_core.users.store import SYSTEM_IDENTITIES, get_public_key_b64, list_users
 
 # Keys kept in plaintext after migration (needed for household context without a session).
 # "unlock" must be plaintext so detection works before the user is authenticated.
-_PLAINTEXT_KEYS = frozenset({"household_visible", "updated", "meta", "change_log", "flags", "unlock"})
+_PLAINTEXT_KEYS = frozenset(
+    {"household_visible", "updated", "meta", "change_log", "flags", "unlock"}
+)
 
 logger = logging.getLogger(__name__)
 
-USERS_DIR    = Path("/kaare/state/users")
+USERS_DIR = Path("/kaare/state/users")
 OBS_MAX_DAYS = 90
 
 # Accounts that are system-only — never appear in household block
-SYSTEM_ACCOUNTS: set[str] = {"admin", "kare"}
+SYSTEM_ACCOUNTS: set[str] = {"admin", "kare"} | set(
+    SYSTEM_IDENTITIES
+)  # no keypair → profiles stay plain
 
 # Hardcoded schema for what is globally visible about each household member.
 # Only these fields can ever end up in the household block.
 HOUSEHOLD_VISIBLE_FIELDS: dict[str, Any] = {
-    "preferred_name":  None,   # what to call them
-    "role":            None,   # family | admin | guest
-    "age":             None,   # integer or null
-    "key_facts":       [],     # ["nøttallergi", "vegetarianer"]
-    "current_context": [],     # list of {text, set, expires, trigger} — or legacy string
-    "recent_updates":  [],     # ["Farget håret rosa 2026-05-10"]
-    "notify_channel":  "sound_node",  # sound_node | push | chat | silent
+    "preferred_name": None,  # what to call them
+    "role": None,  # family | admin | guest
+    "age": None,  # integer or null
+    "key_facts": [],  # ["nøttallergi", "vegetarianer"]
+    "current_context": [],  # list of {text, set, expires, trigger} — or legacy string
+    "recent_updates": [],  # ["Farget håret rosa 2026-05-10"]
+    "notify_channel": "sound_node",  # sound_node | push | chat | silent
 }
 
 
@@ -63,7 +73,6 @@ def _get_session_key(user_id: str, allow_system_key: bool = False) -> "bytes | N
     the interactive/GUI-facing restriction.
     """
     try:
-        from kaare_core import session_keys
         return session_keys.resolve_key_sync(user_id, allow_system_key=allow_system_key)
     except Exception:
         return None
@@ -79,7 +88,6 @@ def _read_obs_text(user_id: str, allow_system_key: bool = False) -> str:
         if not private_key:
             return ""
         try:
-            from kaare_core.crypto import decrypt_text
             return decrypt_text(enc_path.read_text(encoding="utf-8"), private_key)
         except Exception as e:
             logger.warning(f"[OBS] decrypt failed for {user_id}: {e}")
@@ -106,7 +114,6 @@ def _write_obs_text(user_id: str, content: str, allow_system_key: bool = False) 
     private_key = _get_session_key(user_id, allow_system_key=allow_system_key)
     if private_key and user_id not in SYSTEM_ACCOUNTS:
         try:
-            from kaare_core.crypto import encrypt_text
             enc_path.write_text(encrypt_text(content, private_key), encoding="utf-8")
             if plain_path.exists():
                 plain_path.unlink()
@@ -118,6 +125,7 @@ def _write_obs_text(user_id: str, content: str, allow_system_key: bool = False) 
 
 _TEMPLATE_PATH = Path("/kaare/configs/profile_template.yaml")
 
+
 def _empty_profile(user_id: str) -> dict:
     try:
         profile = yaml.safe_load(_TEMPLATE_PATH.read_text(encoding="utf-8")) or {}
@@ -127,26 +135,26 @@ def _empty_profile(user_id: str) -> dict:
         "user_id": user_id,
         "display_name": user_id,
         "role": None,
-        "created": datetime.now().strftime("%Y-%m-%d"),
-        "last_updated": datetime.now().strftime("%Y-%m-%d"),
+        "created": now_local().strftime("%Y-%m-%d"),
+        "last_updated": now_local().strftime("%Y-%m-%d"),
         "kare_summary": None,
     }
     return profile
 
 
 _PROMPT_TOP_LABELS = {
-    "preferred_name":             "Foretrukket navn",
-    "language":                   "Språk",
-    "personality_summary":        "Hvem er denne personen",
-    "communication_style":        "Kommunikasjonsstil",
+    "preferred_name": "Foretrukket navn",
+    "language": "Språk",
+    "personality_summary": "Hvem er denne personen",
+    "communication_style": "Kommunikasjonsstil",
     "response_length_preference": "Svar-lengde",
-    "formality_with_kare":        "Tone med Kåre",
-    "proactivity_preference":     "Proaktivitet",
-    "key_values":                 "Kjerneverdier",
-    "topics_to_avoid":            "Ikke snakk om",
-    "topics_to_flag":             "Alltid ta opp",
-    "current_context":            "Nåværende kontekst",
-    "curiosity":                  "Kåre lurer fortsatt på",
+    "formality_with_kare": "Tone med Kåre",
+    "proactivity_preference": "Proaktivitet",
+    "key_values": "Kjerneverdier",
+    "topics_to_avoid": "Ikke snakk om",
+    "topics_to_flag": "Alltid ta opp",
+    "current_context": "Nåværende kontekst",
+    "curiosity": "Kåre lurer fortsatt på",
 }
 
 
@@ -154,8 +162,7 @@ def _is_new_user(user_id: str, prompt_top: dict) -> bool:
     """True if Kåre has no meaningful knowledge about this user yet."""
     skip = {"language", "preferred_name"}
     filled = [
-        k for k, v in prompt_top.items()
-        if k not in skip and v is not None and v != [] and v != ""
+        k for k, v in prompt_top.items() if k not in skip and v is not None and v != [] and v != ""
     ]
     if filled:
         return False
@@ -200,10 +207,7 @@ def get_profile_prompt_top(user_id: str) -> str:
 def init_profile(user_id: str, display_name: str) -> None:
     """Create profile.yaml on user creation with the admin-set display_name locked in meta."""
     path = _user_dir(user_id) / "profile.yaml"
-    if path.exists():
-        profile = load_profile(user_id)
-    else:
-        profile = _empty_profile(user_id)
+    profile = load_profile(user_id) if path.exists() else _empty_profile(user_id)
     profile["meta"]["display_name"] = display_name
     save_profile(user_id, profile)
 
@@ -233,7 +237,8 @@ def get_writable_sections() -> list[str]:
     so it can never drift out of sync with the schema."""
     template = _empty_profile("_schema_probe")
     return [
-        k for k, v in template.items()
+        k
+        for k, v in template.items()
         if isinstance(v, dict) and k not in ("household_visible", "meta")
     ]
 
@@ -262,7 +267,6 @@ def load_profile(user_id: str, allow_system_key: bool = False) -> dict:
             private_key = _get_session_key(user_id, allow_system_key=allow_system_key)
             if private_key:
                 try:
-                    from kaare_core.crypto import decrypt_dict
                     private_data = decrypt_dict(data["private_encrypted"], private_key)
                     merged = {k: v for k, v in data.items() if k != "private_encrypted"}
                     merged.update(private_data)
@@ -277,7 +281,7 @@ def load_profile(user_id: str, allow_system_key: bool = False) -> dict:
 
 
 def save_profile(user_id: str, profile: dict, allow_system_key: bool = False) -> None:
-    profile["updated"] = datetime.now().strftime("%Y-%m-%d")
+    profile["updated"] = now_local().strftime("%Y-%m-%d")
     path = _user_dir(user_id) / "profile.yaml"
     private_key = None
     if user_id not in SYSTEM_ACCOUNTS:
@@ -292,7 +296,6 @@ def save_profile(user_id: str, profile: dict, allow_system_key: bool = False) ->
                 private_data[k] = v
         if private_data:
             try:
-                from kaare_core.crypto import encrypt_dict
                 plaintext["private_encrypted"] = encrypt_dict(private_data, private_key)
             except Exception as e:
                 logger.warning(f"[PROFILE] save encryption failed for {user_id}: {e}")
@@ -325,18 +328,20 @@ def update_profile_field(user_id: str, field: str, value: Any, reason: str) -> N
     """Oppdater ett felt i profilen og logg endringen."""
     profile = load_profile(user_id)
     profile[field] = value
-    profile.setdefault("change_log", []).append({
-        "date": datetime.now().strftime("%Y-%m-%d"),
-        "field": field,
-        "reason": reason,
-    })
+    profile.setdefault("change_log", []).append(
+        {
+            "date": now_local().strftime("%Y-%m-%d"),
+            "field": field,
+            "reason": reason,
+        }
+    )
     profile["change_log"] = profile["change_log"][-50:]
     save_profile(user_id, profile)
 
 
 def add_observation(user_id: str, text: str, allow_system_key: bool = False) -> None:
     """Legg til en dagsbasert observasjon, trim etterpå. Kryptert hvis sesjonsnøkkel tilgjengelig."""
-    date_str = datetime.now().strftime("%Y-%m-%d")
+    date_str = now_local().strftime("%Y-%m-%d")
     entry = f"\n## {date_str}\n{text.strip()}\n"
     content = _read_obs_text(user_id, allow_system_key=allow_system_key) + entry
     _write_obs_text(user_id, content, allow_system_key=allow_system_key)
@@ -366,12 +371,12 @@ def update_nested_profile_field(user_id: str, section: str, field: str, value: s
     current = sec.get(field)
     if isinstance(current, list):
         if value.strip():
-            sec[field] = current + [value.strip()]
+            sec[field] = [*current, value.strip()]
     else:
         sec[field] = value.strip() if value.strip() else None
     profile[section] = sec
     if isinstance(profile.get("meta"), dict):
-        profile["meta"]["last_updated"] = datetime.now().strftime("%Y-%m-%d")
+        profile["meta"]["last_updated"] = now_local().strftime("%Y-%m-%d")
     save_profile(user_id, profile)
     return "OK"
 
@@ -421,7 +426,7 @@ def get_recent_observations(user_id: str, days: int = 14, allow_system_key: bool
     content = _read_obs_text(user_id, allow_system_key=allow_system_key)
     if not content:
         return t("prof_no_observations", get_lang(user_id))
-    cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (now_local() - timedelta(days=days)).strftime("%Y-%m-%d")
     lines = content.splitlines()
     result, include = [], False
     for line in lines:
@@ -442,7 +447,7 @@ def _trim_observations(user_id: str, allow_system_key: bool = False) -> None:
     content = _read_obs_text(user_id, allow_system_key=allow_system_key)
     if not content:
         return
-    cutoff = (datetime.now() - timedelta(days=OBS_MAX_DAYS)).strftime("%Y-%m-%d")
+    cutoff = (now_local() - timedelta(days=OBS_MAX_DAYS)).strftime("%Y-%m-%d")
     lines = content.splitlines()
     result, include = [], False
     for line in lines:
@@ -460,7 +465,7 @@ def delete_observation_fragment(user_id: str, fragment: str) -> tuple[bool, int]
     if not content:
         return False, 0
     lines = content.splitlines(keepends=True)
-    remaining = [l for l in lines if fragment.lower() not in l.lower()]
+    remaining = [ln for ln in lines if fragment.lower() not in ln.lower()]
     count = len(lines) - len(remaining)
     if count == 0:
         return False, 0
@@ -477,7 +482,7 @@ def edit_observation_fragment(user_id: str, fragment: str, new_text: str) -> tup
     lines = content.splitlines(keepends=True)
     result = []
     changed = 0
-    date = datetime.now().strftime("%Y-%m-%d")
+    date = now_local().strftime("%Y-%m-%d")
     for line in lines:
         if fragment.lower() in line.lower():
             result.append(f"[{date}] {new_text.strip()}\n")
@@ -493,16 +498,39 @@ def edit_observation_fragment(user_id: str, fragment: str, new_text: str) -> tup
 # ── Voice unlock config ────────────────────────────────────────────────────────
 
 _SPOKEN_DIGITS: dict[str, str] = {
-    "en": "1", "ett": "1", "én": "1", "one": "1", "eins": "1",
-    "to": "2", "two": "2", "zwei": "2",
-    "tre": "3", "three": "3", "drei": "3",
-    "fire": "4", "four": "4", "vier": "4",
-    "fem": "5", "five": "5", "fünf": "5",
-    "seks": "6", "six": "6", "sechs": "6",
-    "sju": "7", "syv": "7", "seven": "7", "sieben": "7",
-    "åtte": "8", "eight": "8", "acht": "8",
-    "ni": "9", "nine": "9", "neun": "9",
-    "null": "0", "zero": "0", "nul": "0",
+    "en": "1",
+    "ett": "1",
+    "én": "1",
+    "one": "1",
+    "eins": "1",
+    "to": "2",
+    "two": "2",
+    "zwei": "2",
+    "tre": "3",
+    "three": "3",
+    "drei": "3",
+    "fire": "4",
+    "four": "4",
+    "vier": "4",
+    "fem": "5",
+    "five": "5",
+    "fünf": "5",
+    "seks": "6",
+    "six": "6",
+    "sechs": "6",
+    "sju": "7",
+    "syv": "7",
+    "seven": "7",
+    "sieben": "7",
+    "åtte": "8",
+    "eight": "8",
+    "acht": "8",
+    "ni": "9",
+    "nine": "9",
+    "neun": "9",
+    "null": "0",
+    "zero": "0",
+    "nul": "0",
 }
 
 
@@ -522,8 +550,8 @@ def get_unlock_config(user_id: str) -> dict:
     profile = load_profile(user_id)
     unlock = profile.get("unlock") or {}
     return {
-        "method":       unlock.get("method", "none"),
-        "phrase":       unlock.get("phrase", ""),
+        "method": unlock.get("method", "none"),
+        "phrase": unlock.get("phrase", ""),
         "global_lists": bool(unlock.get("global_lists", False)),
     }
 
@@ -567,7 +595,7 @@ def check_unlock_phrase(user_id: str, text: str) -> tuple[bool, str]:
         return False, text
     t_lower = text.strip().lower()
     if t_lower.startswith(phrase):
-        remainder = text.strip()[len(phrase):].lstrip(" ,.")
+        remainder = text.strip()[len(phrase) :].lstrip(" ,.")
         return True, remainder
     return False, text
 
@@ -592,6 +620,7 @@ def check_unlock_pin(user_id: str, text: str) -> bool:
 
 # ── Vault system (agent-writes when user is offline) ─────────────────────────────
 
+
 def write_vault_entry(user_id: str, payload: dict) -> bool:
     """
     Encrypt and write a vault entry for a user who is currently offline.
@@ -599,15 +628,13 @@ def write_vault_entry(user_id: str, payload: dict) -> bool:
     Returns True if written, False if the user has no public key (not yet migrated).
     """
     try:
-        from kaare_core.users.store import get_public_key_b64
-        from kaare_core.crypto import seal
         pub_key_b64 = get_public_key_b64(user_id)
         if not pub_key_b64:
             return False
         pub_key_bytes = base64.b64decode(pub_key_b64)
         json_text = json.dumps(payload, ensure_ascii=False)
         encrypted = seal(json_text, pub_key_bytes)
-        ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        ts = now_local().strftime("%Y%m%d-%H%M%S-%f")
         vault_path = _user_dir(user_id) / f"vault_{ts}.bin"
         vault_path.write_text(encrypted, encoding="utf-8")
         logger.info(f"[VAULT] wrote vault entry for {user_id}: type={payload.get('type')}")
@@ -646,7 +673,7 @@ def process_vault_files(user_id: str, private_key_bytes: bytes) -> int:
     Returns the number of vault entries successfully processed.
     Failed files are left in place for retry on next login.
     """
-    from kaare_core.crypto import unseal
+
     user_dir = _user_dir(user_id)
     vault_files = sorted(user_dir.glob("vault_*.bin"))
     if not vault_files:
@@ -670,6 +697,7 @@ def process_vault_files(user_id: str, private_key_bytes: bytes) -> int:
 
 # ── Household visible (global, no PIN needed) ─────────────────────────────────
 
+
 def get_household_visible(user_id: str) -> dict:
     """Return household_visible section for a user (no PIN needed).
     Auto-initializes from existing profile data on first call."""
@@ -684,9 +712,7 @@ def get_household_visible(user_id: str) -> dict:
         return result
 
     # Auto-initialize from existing flat profile
-    hv_new: dict[str, Any] = {}
-    for field, default in HOUSEHOLD_VISIBLE_FIELDS.items():
-        hv_new[field] = default
+    hv_new: dict[str, Any] = dict(HOUSEHOLD_VISIBLE_FIELDS)
 
     # Seed preferred_name from identity.known_name or user_id
     identity = profile.get("identity", {})
@@ -716,7 +742,7 @@ def update_household_visible(user_id: str, field: str, value: Any) -> str:
         return f"Unknown field: '{field}'. Valid: {valid}"
     profile = load_profile(user_id)
     if "household_visible" not in profile:
-        profile["household_visible"] = {k: v for k, v in HOUSEHOLD_VISIBLE_FIELDS.items()}
+        profile["household_visible"] = dict(HOUSEHOLD_VISIBLE_FIELDS.items())
     hv = profile["household_visible"]
     default = HOUSEHOLD_VISIBLE_FIELDS[field]
     if isinstance(default, list):
@@ -735,14 +761,19 @@ def update_household_visible(user_id: str, field: str, value: Any) -> str:
 
 
 def get_all_household_visible() -> dict[str, dict]:
-    """Read household_visible for ALL personal users. Used for system prompt injection."""
+    """Read household_visible for ALL personal users. Used for system prompt injection.
+
+    Only registered people (users.db) count — a leftover profile folder (test users, a deleted
+    user) must never appear in Kåre's picture of the household (P120 Phase 5; it iterated the
+    folders, so «testfix» and «testbruker_ny2» were injected into every chat)."""
     result: dict[str, dict] = {}
     try:
+        registered = {u["username"] for u in list_users()}
         for entry in sorted(USERS_DIR.iterdir()):
             if not entry.is_dir():
                 continue
             user_id = entry.name
-            if user_id in SYSTEM_ACCOUNTS:
+            if user_id in SYSTEM_ACCOUNTS or user_id not in registered:
                 continue
             if not (entry / "profile.yaml").exists():
                 continue
@@ -765,10 +796,9 @@ def _resolve_current_context(raw) -> list[str]:
         return [raw] if raw.strip() else []
     if not isinstance(raw, list):
         return []
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = now_local().strftime("%Y-%m-%d")
     household_mode = "home"
     try:
-        from kaare_core.tools.household_state import read_household_state
         household_mode = read_household_state().get("mode", "home")
     except Exception:
         pass
@@ -816,10 +846,8 @@ def format_household_block(all_visible: dict[str, dict]) -> str:
         details = []
         if key_facts:
             details.append(", ".join(key_facts))
-        for ctx in context_texts:
-            details.append(ctx)
-        for upd in recent_updates[-3:]:
-            details.append(upd)
+        details.extend(context_texts)
+        details.extend(recent_updates[-3:])
 
         line = header + (" " + ". ".join(details) + "." if details else "")
         lines.append(f"- {line}")

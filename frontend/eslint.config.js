@@ -6,7 +6,8 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // '@/' is a stray copy of src/components/ui from a 2026-05 shadcn CLI run — unused, not linted
+  globalIgnores(['dist', '@']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

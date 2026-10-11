@@ -191,6 +191,66 @@ if (Test-Path $EnvFile) {
     Write-Host "  OK COMPOSE_PROFILES=$profiles written to .env" -ForegroundColor Green
 }
 
+# ── Install path + version (read by the in-app updater) ──────────────────────
+function Set-EnvValue([string]$Key, [string]$Value) {
+    $lines = @(Get-Content $EnvFile)
+    $found = $false
+    $out = foreach ($line in $lines) {
+        if ($line -match "^$Key=") { "$Key=$Value"; $found = $true } else { $line }
+    }
+    if (-not $found) { $out = @($out) + "$Key=$Value" }
+    Set-Content -Path $EnvFile -Value $out -Encoding UTF8
+}
+if (Test-Path $EnvFile) {
+    # Docker Desktop (WSL2) sees C:\path\to\ktsb as /run/desktop/mnt/host/c/path/to/ktsb
+    $drive = $ScriptDir.Substring(0, 1).ToLower()
+    $rest = $ScriptDir.Substring(2).Replace('\', '/')
+    $engineHome = "/run/desktop/mnt/host/$drive$rest"
+    Set-EnvValue "KTSB_HOME" $engineHome
+    Set-EnvValue "KTSB_HOME_HOST" $ScriptDir
+    Write-Host "  OK KTSB_HOME=$engineHome written to .env" -ForegroundColor Green
+    # ── Git clone → updatable install (the first upgrade from v1.9, P57) ──
+    # The in-app updater replaces docker-compose.yml and friends; a later `git pull` would then conflict. So a git
+    # clone is converted once: every file stays where it is, .git is only moved aside (rename it back to undo), and
+    # the release the clone is on is written to VERSION. From then on updates come from the Maintenance page.
+    $gitDir = Join-Path $ScriptDir ".git"
+    if ((Test-Path $gitDir) -and (Get-Command git -ErrorAction SilentlyContinue)) {
+        $cloneTag = (git -C $ScriptDir describe --tags --abbrev=0 --exclude "*-*" 2>$null)
+        if ($cloneTag -match '^v\d+\.\d+\.\d+$') {
+            Write-Host ""
+            Write-Host "  This folder is a git clone (release $cloneTag)."
+            Write-Host "  Converting it lets KTSB update itself from the Maintenance page; git pull is then no longer used."
+            $convertChoice = Read-Host "  Convert now? [Y/n]"
+            if ([string]::IsNullOrWhiteSpace($convertChoice)) { $convertChoice = "y" }
+            if ($convertChoice -match "^[Yy]") {
+                $changed = @(git -C $ScriptDir status --porcelain -- docker-compose.yml docker-compose.gpu.yml .env.example setup.sh setup.ps1 docker 2>$null)
+                if ($changed.Count -gt 0) {
+                    Write-Host "  ! Your own changes in these files will be replaced by future updates -" -ForegroundColor Yellow
+                    Write-Host "    move them to docker-compose.override.yml:" -ForegroundColor Yellow
+                    $changed | ForEach-Object { Write-Host "      $_" -ForegroundColor Yellow }
+                }
+                $gitAside = Join-Path $ScriptDir ".git-before-ktsb-updater"
+                if (Test-Path $gitAside) { $gitAside = "$gitAside-" + (Get-Date -Format "yyyyMMddHHmmss") }
+                Set-Content -Path (Join-Path $ScriptDir "VERSION") -Value $cloneTag -Encoding ASCII
+                Rename-Item -Path $gitDir -NewName (Split-Path $gitAside -Leaf)
+                Set-EnvValue "KTSB_VERSION" $cloneTag
+                Write-Host "  OK Converted: .git moved to $(Split-Path $gitAside -Leaf), KTSB_VERSION=$cloneTag" -ForegroundColor Green
+                Write-Host "     (to undo: rename it back to .git and delete VERSION)"
+            } else {
+                Write-Host "  Kept as a git clone - updates from the Maintenance page stay off."
+            }
+        }
+    }
+    # A release bundle carries VERSION; never overwrite a version the updater already set.
+    $versionFile = Join-Path $ScriptDir "VERSION"
+    $hasVersion = @(Get-Content $EnvFile | Where-Object { $_ -match "^KTSB_VERSION=." }).Count -gt 0
+    if ((Test-Path $versionFile) -and -not $hasVersion) {
+        $ver = (Get-Content $versionFile -Raw).Trim()
+        Set-EnvValue "KTSB_VERSION" $ver
+        Write-Host "  OK KTSB_VERSION=$ver written to .env" -ForegroundColor Green
+    }
+}
+
 Write-Host ""
 Write-Host "=== Next steps ===" -ForegroundColor Cyan
 Write-Host ""

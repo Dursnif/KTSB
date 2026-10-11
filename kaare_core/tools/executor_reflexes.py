@@ -13,15 +13,17 @@ Exported: REFLEX_TOOLS, dispatch()
 import json
 import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Dict
 
 import yaml
 
+import kaare_fastpath as _fp
+from kaare_core import config_store
 from kaare_core.memory.long_term import DB_PATH as _LTM_DB_PATH
-from kaare_core.tools.i18n import t, get_lang
+from kaare_core.tools.i18n import get_lang, t
 from kaare_core.tools.trace_reader import get_recent_traces
+from kaare_core.users.contributors import contributor_allowed
 
 _RULES_PATH = Path("/kaare/configs/fastpath_rules.yaml")
 _PROPOSALS_PATH = Path("/kaare/state/reflex_proposals.json")
@@ -41,22 +43,8 @@ def _get_threshold() -> int:
 def _is_allowed_reflex_contributor(user_id: str) -> bool:
     """Same contributor-mode gate as executor_personality._is_allowed_self_contributor(),
     scoped to approving/rejecting Kåre's self-learned automation reflexes instead of
-    shaping her self-image. Fail-open on config error, matching the sibling gate."""
-    try:
-        s = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
-        ar = s.get("automation_reflex", {})
-        mode = ar.get("contributors", "admin_only")
-        if mode == "all":
-            return True
-        if mode == "admin_only":
-            from kaare_core.users.store import get_user
-            u = get_user(user_id)
-            return bool(u and u.get("role") == "admin")
-        if mode == "selected":
-            return user_id in ar.get("allowed_users", [])
-        return True
-    except Exception:
-        return True
+    shaping her self-image. Fails closed (P120, was fail-open)."""
+    return contributor_allowed("automation_reflex", "admin_only", user_id)
 
 
 def _load_proposals() -> list:
@@ -85,16 +73,15 @@ def _load_rules() -> dict:
     if not _RULES_PATH.exists():
         return {"settings": {"cache_ttl_seconds": 30}, "reflexes": []}
     try:
-        return yaml.safe_load(_RULES_PATH.read_text(encoding="utf-8")) or {}
+        return config_store.load_for_update(
+            _RULES_PATH
+        )  # _save_rules() applies only the changes (P134)
     except Exception:
         return {"settings": {}, "reflexes": []}
 
 
 def _save_rules(data: dict) -> None:
-    _RULES_PATH.write_text(
-        yaml.dump(data, allow_unicode=True, sort_keys=False, default_flow_style=False),
-        encoding="utf-8",
-    )
+    config_store.write_yaml(_RULES_PATH, data, "tool:save_rules")
 
 
 def _suggest(lang: str, user_id: str) -> str:
@@ -149,8 +136,7 @@ def _suggest(lang: str, user_id: str) -> str:
     # Exclude phrases already in rules or pending proposals
     existing = _load_rules()
     existing_phrases = {
-        _normalize_phrase(r.get("phrase", ""))
-        for r in existing.get("reflexes", [])
+        _normalize_phrase(r.get("phrase", "")) for r in existing.get("reflexes", [])
     }
     existing_proposals = _load_proposals()
     pending_phrases = {
@@ -160,7 +146,7 @@ def _suggest(lang: str, user_id: str) -> str:
     }
 
     new_proposals = []
-    ts_base = int(datetime.now(timezone.utc).timestamp())
+    ts_base = int(datetime.now(UTC).timestamp())
     for i, candidate in enumerate(ltm_candidates):
         norm = _normalize_phrase(candidate["prompt"])
         if norm in existing_phrases or norm in pending_phrases:
@@ -176,7 +162,7 @@ def _suggest(lang: str, user_id: str) -> str:
                 "freq": candidate["freq"],
                 "simple_traces_total": simple_trace_count,
                 "status": "pending",
-                "suggested_at": datetime.now(timezone.utc).isoformat(),
+                "suggested_at": datetime.now(UTC).isoformat(),
                 "suggested_by": user_id,
             }
         )
@@ -187,10 +173,10 @@ def _suggest(lang: str, user_id: str) -> str:
     _save_proposals(existing_proposals + new_proposals)
 
     lines = [t("reflex_suggest_header", lang, count=len(new_proposals), threshold=threshold)]
-    for p in new_proposals:
-        lines.append(
-            f"  [{p['id']}] \"{p['phrase']}\" → {p['action']} {p['entity_id']} (×{p['freq']})"
-        )
+    lines.extend(
+        f'  [{p["id"]}] "{p["phrase"]}" → {p["action"]} {p["entity_id"]} (×{p["freq"]})'
+        for p in new_proposals
+    )
     lines.append(t("reflex_suggest_confirm_hint", lang))
     return "\n".join(lines)
 
@@ -212,7 +198,7 @@ def _confirm(proposal_id: str, lang: str) -> str:
         idx += 1
     reflex_id = f"rf_{idx:03d}"
 
-    new_reflex: Dict = {
+    new_reflex: dict = {
         "id": reflex_id,
         "phrase": proposal["phrase"],
         "match": "contains",
@@ -233,7 +219,6 @@ def _confirm(proposal_id: str, lang: str) -> str:
     _save_rules(rules)
 
     try:
-        import kaare_fastpath as _fp
         _fp.invalidate_cache()
     except Exception:
         pass
@@ -241,7 +226,7 @@ def _confirm(proposal_id: str, lang: str) -> str:
     for p in proposals:
         if p.get("id") == proposal_id:
             p["status"] = "confirmed"
-            p["confirmed_at"] = datetime.now(timezone.utc).isoformat()
+            p["confirmed_at"] = datetime.now(UTC).isoformat()
             p["reflex_id"] = reflex_id
     _save_proposals(proposals)
 
@@ -257,7 +242,7 @@ def _reject(proposal_id: str, lang: str) -> str:
     for p in proposals:
         if p.get("id") == proposal_id:
             p["status"] = "rejected"
-            p["rejected_at"] = datetime.now(timezone.utc).isoformat()
+            p["rejected_at"] = datetime.now(UTC).isoformat()
     _save_proposals(proposals)
 
     return t("reflex_rejected", lang, phrase=proposal.get("phrase", proposal_id))
@@ -270,15 +255,15 @@ def _list_proposals(lang: str) -> str:
         return t("reflex_list_empty", lang)
 
     lines = [t("reflex_list_header", lang, count=len(pending))]
-    for p in pending:
-        lines.append(
-            f"  [{p['id']}] \"{p.get('phrase', '')}\" → "
-            f"{p.get('action', '')} {p.get('entity_id', '')} (×{p.get('freq', '?')})"
-        )
+    lines.extend(
+        f'  [{p["id"]}] "{p.get("phrase", "")}" → '
+        f"{p.get('action', '')} {p.get('entity_id', '')} (×{p.get('freq', '?')})"
+        for p in pending
+    )
     return "\n".join(lines)
 
 
-async def dispatch(name: str, arguments: Dict) -> str:
+async def dispatch(name: str, arguments: dict) -> str:
     user_id = arguments.get("_user_id", "global")
     lang = get_lang(user_id)
 
@@ -297,8 +282,7 @@ async def dispatch(name: str, arguments: Dict) -> str:
         if action == "list":
             return _list_proposals(lang)
         return (
-            f"Unknown action for write_reflex: '{action}'. "
-            "Valid: suggest, confirm, reject, list."
+            f"Unknown action for write_reflex: '{action}'. Valid: suggest, confirm, reject, list."
         )
 
     return f"Unknown tool in executor_reflexes: {name}"

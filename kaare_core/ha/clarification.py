@@ -12,16 +12,16 @@ Denne modulen:
 - returnerer strukturert resultat eller None
 """
 
-from typing import Optional, Dict, Any
+from typing import Any
 
 
 async def ha_clarification_rescue(
     *,
     prompt: str,
-    intent_res: Dict[str, Any],
-    capability_hints: Dict[str, Any],
+    intent_res: dict[str, Any],
+    capability_hints: dict[str, Any],
     call_llm,  # async fn(prompt:str)->str
-) -> Optional[Dict[str, str]]:
+) -> dict[str, str] | None:
     """
     Forsøk HA-rescue hvis intent forstår HA, men mangler info.
 

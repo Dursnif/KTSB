@@ -8,10 +8,10 @@ Usage:
   sudo kaare-wg-manage remove <pubkey>
 """
 
-import sys
-import re
 import base64
+import re
 import subprocess
+import sys
 from pathlib import Path
 
 CONF_PATH = Path("/etc/wireguard/wg0.conf")
@@ -44,9 +44,8 @@ def remove_peer_from_conf(conf_text: str, pubkey: str) -> str:
 
     for line in lines:
         if re.match(r"^\s*\[Peer\]", line):
-            if in_peer:
-                if not skip:
-                    result.extend(block)
+            if in_peer and not skip:
+                result.extend(block)
             in_peer = True
             skip = False
             block = [line]

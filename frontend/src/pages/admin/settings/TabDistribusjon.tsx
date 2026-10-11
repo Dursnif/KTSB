@@ -7,7 +7,8 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { apiGetCapabilities, apiPutCapabilities, type CapabilitiesConfig, type ServiceEntry } from "@/services/api";
-import { useSaveState, SaveFeedback, ExpertOnly } from "./shared";
+import { SaveFeedback, ExpertOnly } from "./shared";
+import { useSaveState } from "./useSaveState";
 
 const DISTRIBUTION_PRESETS: { id: string; emoji: string; services: string[] }[] = [
   {

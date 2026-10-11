@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { apiRecover } from "../services/api";
-import { useAuth } from "../auth/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
+import { apiErrorDetail } from "@/lib/apiError";
 
 export default function Recovery() {
   const { t } = useTranslation();
@@ -18,10 +19,10 @@ export default function Recovery() {
     setLoading(true);
     try {
       const result = await apiRecover(f.username.trim(), f.seed_phrase.trim().toLowerCase(), f.new_pin);
-      login(result.user as any, result.token);
+      login(result.user, result.token);
       navigate("/");
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail ?? "";
+    } catch (err) {
+      const detail = apiErrorDetail(err) ?? "";
       if (detail.includes("Invalid")) {
         setError(t("recover.error_invalid"));
       } else {

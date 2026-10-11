@@ -9,11 +9,13 @@ his own reasoning history and detect patterns or past uncertainty.
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 import yaml as _yaml
+
+from kaare_core import log_buffer
+
 
 def _load_settings() -> dict:
     try:
@@ -22,6 +24,7 @@ def _load_settings() -> dict:
     except Exception:
         return {}
 
+
 _settings = _load_settings()
 _tc = _settings.get("think_cache", {})
 _CACHE_PATH = Path(_tc.get("path", "/kaare/state/think_cache.jsonl"))
@@ -29,6 +32,7 @@ _MAX_ENTRIES: int = int(_tc.get("max_entries", 150))
 _TRIM_THRESHOLD: int = _MAX_ENTRIES + int(_tc.get("trim_margin", 30))
 
 _write_count = 0
+_trimmed_at = 0
 
 
 def _extract_summary(think_text: str) -> str:
@@ -37,7 +41,7 @@ def _extract_summary(think_text: str) -> str:
         return ""
     paragraphs = [p.strip() for p in think_text.split("\n\n") if p.strip()]
     if not paragraphs:
-        lines = [l.strip() for l in think_text.splitlines() if l.strip()]
+        lines = [ln.strip() for ln in think_text.splitlines() if ln.strip()]
         return lines[-1][:200] if lines else ""
     last = paragraphs[-1]
     if len(last) < 60 and len(paragraphs) > 1:
@@ -46,7 +50,7 @@ def _extract_summary(think_text: str) -> str:
     for sep in (". ", "! ", "? "):
         idx = last.find(sep)
         if idx > 40:
-            return last[:idx + 1]
+            return last[: idx + 1]
     return last[:200]
 
 
@@ -60,7 +64,7 @@ def extract_conclusion(think_text: str) -> str:
         return ""
     paragraphs = [p.strip() for p in think_text.split("\n\n") if p.strip()]
     if not paragraphs:
-        lines = [l.strip() for l in think_text.splitlines() if l.strip()]
+        lines = [ln.strip() for ln in think_text.splitlines() if ln.strip()]
         return lines[-1][:500] if lines else think_text[:500]
     last = paragraphs[-1]
     if len(last) < 60 and len(paragraphs) > 1:
@@ -90,26 +94,30 @@ def log_think(
         return
     try:
         entry = {
-            "id":             uuid.uuid4().hex[:12],
-            "ts":             datetime.now(timezone.utc).isoformat(),
-            "rid":            rid,
-            "role":           role,
-            "model":          model,
+            "id": uuid.uuid4().hex[:12],
+            "ts": datetime.now(UTC).isoformat(),
+            "rid": rid,
+            "role": role,
+            "model": model,
             "prompt_preview": prompt_preview[:200],
-            "think_text":     think_text,
-            "think_summary":  _extract_summary(think_text),
-            "response":       response[:500],
-            "recovered":      recovered,
-            "latency_ms":     latency_ms,
+            "think_text": think_text,
+            "think_summary": _extract_summary(think_text),
+            "response": response[:500],
+            "recovered": recovered,
+            "latency_ms": latency_ms,
         }
-        _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(_CACHE_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        log_buffer.write(_CACHE_PATH, entry)
         _write_count += 1
-        if _write_count % 20 == 0:
-            _trim_cache()
     except Exception:
         pass
+
+
+def _trim_after_flush() -> None:
+    """Runs inside log_buffer's flush of this file: trim once per 20 new entries (as before)."""
+    global _trimmed_at
+    if _write_count - _trimmed_at >= 20:
+        _trimmed_at = _write_count
+        _trim_cache()
 
 
 def _trim_cache() -> None:
@@ -129,8 +137,8 @@ def _trim_cache() -> None:
 
 def read_think_history(
     n: int = 10,
-    search: Optional[str] = None,
-    role: Optional[str] = None,
+    search: str | None = None,
+    role: str | None = None,
     recovered_only: bool = False,
 ) -> list[dict]:
     """
@@ -143,6 +151,7 @@ def read_think_history(
     """
     n = min(n, 50)
     try:
+        log_buffer.flush(_CACHE_PATH)  # include entries still in RAM (P131)
         if not _CACHE_PATH.exists():
             return []
         lines = _CACHE_PATH.read_text(encoding="utf-8").splitlines()
@@ -160,11 +169,13 @@ def read_think_history(
             if recovered_only and not entry.get("recovered"):
                 continue
             if search:
-                haystack = " ".join([
-                    entry.get("think_text", ""),
-                    entry.get("think_summary", ""),
-                    entry.get("prompt_preview", ""),
-                ]).lower()
+                haystack = " ".join(
+                    [
+                        entry.get("think_text", ""),
+                        entry.get("think_summary", ""),
+                        entry.get("prompt_preview", ""),
+                    ]
+                ).lower()
                 if search.lower() not in haystack:
                     continue
             entries.append(entry)
@@ -187,3 +198,6 @@ def format_for_kare(entries: list[dict]) -> str:
         latency = e.get("latency_ms", 0)
         lines.append(f"[{ts}] ({latency}ms){recovered}\n  {summary}")
     return "\n\n".join(lines)
+
+
+log_buffer.on_flush(_CACHE_PATH, _trim_after_flush)

@@ -1,66 +1,28 @@
 """
-Reindekserer alle episoder fra SQLite til Qdrant med korrekt user_id.
+Rebuild the active semantic-memory collection from all episodes in SQLite.
 
-Kjøres én gang for å rette opp at eksisterende Qdrant-punkter
-mangler user_id i payload (og for å indeksere episoder 1-10 som manglet).
+The GUI does this by itself when the memory model is switched (P126); this script is the manual
+way. Must run as a user that can read state/system_master.key (personal episodes are encrypted).
 
-Bruk:
-  PYTHONPATH=/mnt/ai_disk venv/bin/python scripts/reindex_episodes.py
+Usage:
+  sudo -u kaare PYTHONPATH=/kaare venv/bin/python scripts/reindex_episodes.py
 """
 
 import asyncio
-import sqlite3
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from kaare_core.memory.semantic_memory import ensure_collection, index_episode
-from kaare_core.memory.long_term import _dec
-
-DB_PATH = Path("/kaare/state/memory/interactions.db")
+from kaare_core.memory.memory_embed_models import active_model
+from kaare_core.memory.semantic_reindex import reindex_all
 
 
 async def main() -> None:
-    ensure_collection()
-
-    conn = sqlite3.connect(str(DB_PATH))
-    rows = conn.execute(
-        """SELECT id, ts_created, user_id, from_id, to_id, interaction_count, narrative, topics
-           FROM episodes ORDER BY id"""
-    ).fetchall()
-    conn.close()
-
-    print(f"Fant {len(rows)} episoder. Starter reindeksering...")
-
-    ok = 0
-    fail = 0
-    for row in rows:
-        ep_id, ts, user_id, from_id, to_id, count, narrative, topics = row
-        user_id = user_id or "global"
-        # allow_system_key=True (P87): episodes are encrypted per-user as of Phase 6.
-        # Without this, a re-run of this script would read ciphertext here and hand it
-        # to index_episode(), which would SealedBox-encrypt already-encrypted garbage.
-        narrative = _dec(user_id, narrative or "", allow_system_key=True)
-        topics = _dec(user_id, topics or "", allow_system_key=True)
-        success = await index_episode(
-            episode_id=ep_id,
-            narrative=narrative or "",
-            topics=topics or "",
-            ts=ts or "",
-            from_id=from_id or 0,
-            to_id=to_id or 0,
-            interaction_count=count or 0,
-            user_id=user_id,
-        )
-        if success:
-            ok += 1
-            print(f"  ✓ Episode {ep_id} (user={user_id})")
-        else:
-            fail += 1
-            print(f"  ✗ Episode {ep_id} FEILET")
-
-    print(f"\nFerdig: {ok} OK, {fail} feilet.")
+    model = active_model()
+    print(f"Reindexing all episodes with '{model['key']}' into '{model['collection']}'...")
+    result = await reindex_all(model)
+    print(f"Done: {result}")
 
 
 if __name__ == "__main__":

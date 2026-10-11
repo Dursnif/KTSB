@@ -3,9 +3,11 @@ Description=Kåre BGE-M3 Embedding Service (NPU, port 11446)
 After=network.target
 
 [Service]
+# Slim OpenVINO runtime (P132): python3.12 -m venv venv && venv/bin/pip install -r requirements-openvino.txt
+UMask=0002
 User=kaare
 WorkingDirectory=/kaare/services/embedding
-ExecStart=/kaare/services/argus/convert_venv/bin/python /kaare/services/embedding/server.py
+ExecStart=/kaare/services/embedding/venv/bin/python /kaare/services/embedding/server.py
 Restart=always
 RestartSec=10
 Environment=PYTHONPATH=/kaare

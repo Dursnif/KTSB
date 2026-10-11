@@ -10,11 +10,12 @@ import { KTSBLogo } from "../components/KTSBLogo";
 import "../components/ktsb-logo.css";
 
 const HEADER_H = 140; // px — fixed logo header height
-import { useAuth } from "../auth/AuthContext";
-import { useAssistantName } from "../contexts/AssistantNameContext";
+import { useAuth } from "@/hooks/useAuth";
+import { useAssistantName } from "@/hooks/useAssistantName";
 import { apiUpdatePin, apiPing } from "../services/api";
 import { useTheme } from "../theme";
 import type { Role } from "../services/api";
+import { apiErrorDetail } from "@/lib/apiError";
 
 const SIDEBAR_KEY = "user-sidebar-collapsed";
 
@@ -38,8 +39,8 @@ function ChangePinModal({ onClose }: { onClose: () => void }) {
     try {
       await apiUpdatePin(user!.username, p1);
       setOk(true);
-    } catch (e: any) {
-      setErr(e?.response?.data?.detail ?? t("user.error"));
+    } catch (e) {
+      setErr(apiErrorDetail(e) ?? t("user.error"));
     } finally {
       setLoading(false);
     }

@@ -1,17 +1,21 @@
 """Wyoming TCP server — tar imot satellitter, kjører STT → Kåre API → TTS → audio ut."""
 
+import array
 import asyncio
 import logging
+import math
 import os
 import wave
-from datetime import datetime
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Awaitable, Callable, Optional
 
-from wyoming.audio import AudioChunk, AudioStart, AudioStop
 from wyoming.asr import Transcript
+from wyoming.audio import AudioChunk, AudioStart, AudioStop
 from wyoming.event import async_read_event, async_write_event
 from wyoming.info import AsrModel, AsrProgram, Attribution, Describe, Info
+
+from kaare_core.background import spawn
+from kaare_core.config import now_local
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +51,9 @@ def _parse_local_mics(raw: str) -> dict[str, str]:
 
 
 _RECORD_LOCAL_MICS = _parse_local_mics(os.environ.get(_RECORD_LOCAL_MICS_ENV, ""))
-_RECORD_MAX_SEC = int(os.environ.get("KAARE_WYOMING_RECORD_MAX_SEC", "10"))  # safety cap per round; stopped earlier by AudioStop in practice
+_RECORD_MAX_SEC = int(
+    os.environ.get("KAARE_WYOMING_RECORD_MAX_SEC", "10")
+)  # safety cap per round; stopped earlier by AudioStop in practice
 _RECORD_LEAD_TRIM_SEC = 2.0  # skip this much audio right after AudioStart — the
 # firmware's own button-press click sound plays through the device speaker and
 # bleeds into the mic before it decays, on all 3 sources (device + local mics)
@@ -60,8 +66,6 @@ def _get_record_ack_wav() -> Path:
     Generated once, reused — no numpy dependency, stdlib array/wave only."""
     if _RECORD_ACK_WAV_PATH.exists():
         return _RECORD_ACK_WAV_PATH
-    import array
-    import math
 
     rate = 16000
     duration_s = 0.15
@@ -78,6 +82,7 @@ def _get_record_ack_wav() -> Path:
         wf.setframerate(rate)
         wf.writeframes(samples.tobytes())
     return _RECORD_ACK_WAV_PATH
+
 
 SttCallback = Callable[[bytes, int], Awaitable[str]]
 KaareCallback = Callable[[str, str], Awaitable[str]]
@@ -98,12 +103,10 @@ class WyomingServer:
         self._stt = stt_fn
         self._kaare = kaare_fn
         self._tts = tts_fn
-        self._server: Optional[asyncio.AbstractServer] = None
+        self._server: asyncio.AbstractServer | None = None
 
     async def start(self) -> None:
-        self._server = await asyncio.start_server(
-            self._handle_client, self._host, self._port
-        )
+        self._server = await asyncio.start_server(self._handle_client, self._host, self._port)
         log.info("Wyoming server aktiv på %s:%s", self._host, self._port)
 
     async def stop(self) -> None:
@@ -131,7 +134,7 @@ class WyomingServer:
         record_dir = os.environ.get(_RECORD_DIR_ENV)
         record_person = os.environ.get(_RECORD_PERSON_ENV, "user")
         local_recorders: dict[str, asyncio.subprocess.Process] = {}
-        local_recorders_task: Optional[asyncio.Task] = None
+        local_recorders_task: asyncio.Task | None = None
         record_session_id = ""
         record_start_monotonic = 0.0
 
@@ -143,19 +146,23 @@ class WyomingServer:
 
                 if Describe.is_type(event.type):
                     info = Info(
-                        asr=[AsrProgram(
-                            name="kare-whisper",
-                            description="Kåre Whisper STT",
-                            attribution=Attribution(name="Kåre", url=""),
-                            installed=True,
-                            models=[AsrModel(
-                                name="nb-whisper",
-                                description="NbAiLab nb-whisper (Norwegian)",
-                                attribution=Attribution(name="NbAiLab", url=""),
+                        asr=[
+                            AsrProgram(
+                                name="kare-whisper",
+                                description="Kåre Whisper STT",
+                                attribution=Attribution(name="Kåre", url=""),
                                 installed=True,
-                                languages=["no"],
-                            )],
-                        )]
+                                models=[
+                                    AsrModel(
+                                        name="nb-whisper",
+                                        description="NbAiLab nb-whisper (Norwegian)",
+                                        attribution=Attribution(name="NbAiLab", url=""),
+                                        installed=True,
+                                        languages=["no"],
+                                    )
+                                ],
+                            )
+                        ]
                     )
                     await async_write_event(info.event(), writer)
                     log.debug("Wyoming: describe → info sendt til %s", peer_host)
@@ -165,14 +172,21 @@ class WyomingServer:
                     audio_rate = fmt.rate
                     audio_width = fmt.width
                     audio_buffer = bytearray()
-                    log.debug("Wyoming: audio-start %dHz/%dbit fra %s", audio_rate, audio_width * 8, peer_host)
+                    log.debug(
+                        "Wyoming: audio-start %dHz/%dbit fra %s",
+                        audio_rate,
+                        audio_width * 8,
+                        peer_host,
+                    )
 
                     if record_dir:
-                        record_session_id = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+                        record_session_id = now_local().strftime("%Y-%m-%d_%H%M%S")
                         record_start_monotonic = asyncio.get_event_loop().time()
                         local_recorders = {}
                         local_recorders_task = asyncio.create_task(
-                            _start_local_recorders_delayed(record_session_id, record_dir, record_person, local_recorders)
+                            _start_local_recorders_delayed(
+                                record_session_id, record_dir, record_person, local_recorders
+                            )
                         )
                     else:
                         local_recorders_task = None
@@ -193,12 +207,19 @@ class WyomingServer:
                         local_recorders = {}
                         if audio_buffer:
                             _save_recorded_clip(
-                                record_dir, "voicepe", record_person, record_session_id,
-                                bytes(audio_buffer), audio_rate, audio_width,
+                                record_dir,
+                                "voicepe",
+                                record_person,
+                                record_session_id,
+                                bytes(audio_buffer),
+                                audio_rate,
+                                audio_width,
                             )
                         log.info(
                             "Wyoming: opptaksmodus — lagret runde %s (%d bytes fra %s)",
-                            record_session_id, len(audio_buffer), peer_host,
+                            record_session_id,
+                            len(audio_buffer),
+                            peer_host,
                         )
                         # Firmware waits ~30s for a real reply and errors out if none
                         # comes — recording mode skips STT/Kåre/TTS, so send a short
@@ -209,11 +230,13 @@ class WyomingServer:
                         # problem this caused turned out to be the button-press click
                         # sound at the *start* of the round, not this beep — fixed by
                         # trimming the first _RECORD_LEAD_TRIM_SEC instead.)
-                        await async_write_event(Transcript(text="[recording saved]").event(), writer)
+                        await async_write_event(
+                            Transcript(text="[recording saved]").event(), writer
+                        )
                         async with lock:
                             await _send_wav(writer, _get_record_ack_wav())
                     elif audio_buffer:
-                        asyncio.create_task(
+                        spawn(
                             self._pipeline(bytes(audio_buffer), audio_rate, peer_host, writer, lock)
                         )
                     audio_buffer = bytearray()
@@ -239,7 +262,9 @@ class WyomingServer:
         lock: asyncio.Lock,
     ) -> None:
         try:
-            log.info("Wyoming: pipeline for %s (%d bytes @ %dHz)", peer_host, len(audio_bytes), rate)
+            log.info(
+                "Wyoming: pipeline for %s (%d bytes @ %dHz)", peer_host, len(audio_bytes), rate
+            )
 
             text = await self._stt(audio_bytes, rate)
             if not text.strip():
@@ -249,7 +274,7 @@ class WyomingServer:
             log.info("Wyoming: STT '%s' fra %s", text, peer_host)
             await async_write_event(Transcript(text=text).event(), writer)
 
-            answer = await self._kaare(text, "")
+            answer = await self._kaare(text, peer_host)  # the callback maps the IP to a node (P120)
             if not answer.strip():
                 return
 
@@ -282,9 +307,20 @@ async def _start_local_recorders(
     for label, alsa_dev in _RECORD_LOCAL_MICS.items():
         out_path = _record_out_path(record_dir, label, person, session_id)
         proc = await asyncio.create_subprocess_exec(
-            "arecord", "-D", alsa_dev, "-f", "S16_LE", "-r", "16000", "-c", "1",
-            "-d", str(_RECORD_MAX_SEC), str(out_path),
-            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+            "arecord",
+            "-D",
+            alsa_dev,
+            "-f",
+            "S16_LE",
+            "-r",
+            "16000",
+            "-c",
+            "1",
+            "-d",
+            str(_RECORD_MAX_SEC),
+            str(out_path),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
         )
         procs[label] = proc
     return procs
@@ -304,7 +340,7 @@ async def _start_local_recorders_delayed(
 
 async def _stop_local_recorders(procs: dict[str, asyncio.subprocess.Process]) -> None:
     """Graceful stop (SIGINT) — arecord only finalizes the WAV header on a clean exit."""
-    for label, proc in procs.items():
+    for proc in procs.values():
         try:
             proc.send_signal(2)  # SIGINT
         except ProcessLookupError:
@@ -312,14 +348,19 @@ async def _stop_local_recorders(procs: dict[str, asyncio.subprocess.Process]) ->
     for label, proc in procs.items():
         try:
             await asyncio.wait_for(proc.wait(), timeout=3.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log.warning("Wyoming: opptaksmodus — %s-mic svarte ikke på SIGINT, dreper", label)
             proc.kill()
 
 
 def _save_recorded_clip(
-    record_dir: str, source: str, person: str, session_id: str,
-    audio_bytes: bytes, rate: int, width: int,
+    record_dir: str,
+    source: str,
+    person: str,
+    session_id: str,
+    audio_bytes: bytes,
+    rate: int,
+    width: int,
 ) -> None:
     out_path = _record_out_path(record_dir, source, person, session_id)
     with wave.open(str(out_path), "wb") as wf:
@@ -336,7 +377,9 @@ async def _send_wav(writer: asyncio.StreamWriter, wav_path: Path) -> None:
         channels = wf.getnchannels()
         chunk_frames = rate // 4  # 250ms per chunk
 
-        await async_write_event(AudioStart(rate=rate, width=width, channels=channels).event(), writer)
+        await async_write_event(
+            AudioStart(rate=rate, width=width, channels=channels).event(), writer
+        )
 
         while True:
             frames = wf.readframes(chunk_frames)

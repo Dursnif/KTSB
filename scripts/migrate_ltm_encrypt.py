@@ -13,11 +13,12 @@ Idempotent: rows already prefixed with ENC: are skipped.
 """
 
 import sys
+
 sys.path.insert(0, "/kaare")
 
 from kaare_core.memory.long_term import migrate_user_ltm
 from kaare_core.session_keys import active_sessions
-from kaare_core.users.store import list_users, has_keypair
+from kaare_core.users.store import has_keypair
 
 
 def main() -> None:

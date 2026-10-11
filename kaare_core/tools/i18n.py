@@ -1,20 +1,31 @@
-import yaml
 from pathlib import Path
+
+import yaml
 
 _SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
 
 
+def get_user_lang_override(user_id: str = "global") -> str | None:
+    """The user's own language choice (profile `prompt_top.language`, nb/en/de), or None when the user
+    follows the installation's language."""
+    if not user_id or user_id == "global":
+        return None
+    try:
+        profile_path = Path(f"/kaare/state/users/{user_id}/profile.yaml")
+        if profile_path.exists():
+            profile = yaml.safe_load(profile_path.read_text(encoding="utf-8")) or {}
+            lang = (profile.get("prompt_top") or {}).get("language")
+            if lang in ("nb", "en", "de"):
+                return lang
+    except Exception:
+        pass
+    return None
+
+
 def get_lang(user_id: str = "global") -> str:
-    if user_id and user_id != "global":
-        try:
-            profile_path = Path(f"/kaare/state/users/{user_id}/profile.yaml")
-            if profile_path.exists():
-                profile = yaml.safe_load(profile_path.read_text(encoding="utf-8")) or {}
-                lang = (profile.get("prompt_top") or {}).get("language")
-                if lang in ("nb", "en", "de"):
-                    return lang
-        except Exception:
-            pass
+    override = get_user_lang_override(user_id)
+    if override:
+        return override
     try:
         cfg = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
         lang = cfg.get("kare_language", "nb")
@@ -154,11 +165,6 @@ _T: dict = {
         "en": "entity_id is required for ha_history.",
         "de": "entity_id ist für ha_history erforderlich.",
     },
-    "ha_history_no_data": {
-        "nb": "Ingen statistikkdata funnet for {entity_id}. Kontroller at sensoren har 'state_class' i HA og at long-term statistics er aktivert.",
-        "en": "No statistics data found for {entity_id}. Check that the sensor has 'state_class' in HA and long-term statistics are enabled.",
-        "de": "Keine Statistikdaten für {entity_id} gefunden. Prüfe, ob der Sensor 'state_class' in HA hat und Langzeitstatistiken aktiviert sind.",
-    },
     "ha_history_not_configured": {
         "nb": "HA-tilkobling ikke konfigurert (mangler URL eller token).",
         "en": "HA connection not configured (missing URL or token).",
@@ -169,13 +175,28 @@ _T: dict = {
         "en": "Error fetching history for {entity_id}: {error}",
         "de": "Fehler beim Abrufen des Verlaufs für {entity_id}: {error}",
     },
+    "ha_history_no_changes": {
+        "nb": "Ingen registrert historikk for {entity_id} de siste {days} dagene.",
+        "en": "No recorded history for {entity_id} in the last {days} days.",
+        "de": "Kein aufgezeichneter Verlauf für {entity_id} in den letzten {days} Tagen.",
+    },
+    "ha_history_changes_header": {
+        "nb": "Tilstandsendringer — {entity_id} (siste {days} dager). Entiteten har ingen langtidsstatistikk i HA, så dette er rå historikk, bare så langt tilbake som HA lagrer den:",
+        "en": "State changes — {entity_id} (last {days} days). The entity has no long-term statistics in HA, so this is raw history, only as far back as HA keeps it:",
+        "de": "Zustandsänderungen — {entity_id} (letzte {days} Tage). Die Entität hat keine Langzeitstatistik in HA, daher ist dies der Rohverlauf, nur so weit zurück, wie HA ihn speichert:",
+    },
+    "ha_history_changes_truncated": {
+        "nb": "(viser de siste {shown} av {total} endringer)",
+        "en": "(showing the last {shown} of {total} changes)",
+        "de": "(zeigt die letzten {shown} von {total} Änderungen)",
+    },
     "ha_history_header": {
         "nb": "Sensorhistorikk — {entity_id} (siste {days} dager, per {period}):",
         "en": "Sensor history — {entity_id} (last {days} days, per {period}):",
         "de": "Sensorverlauf — {entity_id} (letzte {days} Tage, pro {period}):",
     },
-    "ha_history_period_day":   {"nb": "dag",   "en": "day",   "de": "Tag"},
-    "ha_history_period_week":  {"nb": "uke",   "en": "week",  "de": "Woche"},
+    "ha_history_period_day": {"nb": "dag", "en": "day", "de": "Tag"},
+    "ha_history_period_week": {"nb": "uke", "en": "week", "de": "Woche"},
     "ha_history_period_month": {"nb": "måned", "en": "month", "de": "Monat"},
     "ha_history_summary": {
         "nb": "Oppsummering over perioden: maks {max_val:.2f}{unit}, snitt {mean_val:.2f}{unit}, lavest {min_val:.2f}{unit}",
@@ -187,7 +208,6 @@ _T: dict = {
         "en": "Accumulated total: {total:.2f}{unit}",
         "de": "Kumulierter Gesamtwert: {total:.2f}{unit}",
     },
-
     # ── Camera ───────────────────────────────────────────────────────────────
     "cam_no_cameras": {
         "nb": "Ingen kameraer funnet i Frigate.",
@@ -351,7 +371,6 @@ _T: dict = {
         "en": "\n\nDescribe what you see in the image and whether the stored analysis is accurate.",
         "de": "\n\nBeschreibe, was du auf dem Bild siehst, und ob die gespeicherte Analyse korrekt ist.",
     },
-
     # ── Memory ───────────────────────────────────────────────────────────────
     "mem_no_stm_history": {
         "nb": "Ingen STM-historikk funnet ennå.",
@@ -377,6 +396,11 @@ _T: dict = {
         "nb": "Kunne ikke lese STM-snapshot for {date}: {error}",
         "en": "Could not read STM snapshot for {date}: {error}",
         "de": "STM-Snapshot für {date} konnte nicht gelesen werden: {error}",
+    },
+    "mem_admin_only_tool": {
+        "nb": "Tankehistorikken og de indre tankene kan inneholde andre brukeres samtaler, så bare en administrator kan lese dem.",
+        "en": "The thought history and inner thoughts can contain other users' conversations, so only an administrator can read them.",
+        "de": "Der Gedankenverlauf und die inneren Gedanken können Gespräche anderer Nutzer enthalten, daher kann nur ein Administrator sie lesen.",
     },
     "mem_no_inner_thoughts": {
         "nb": "Ingen indre tanker akkumulert ennå.",
@@ -429,9 +453,19 @@ _T: dict = {
         "de": "Nichts im Gedächtnis zu '{query}' gefunden.",
     },
     "mem_search_results": {
-        "nb": "Fant {count} relevante episoder fra minnet:",
-        "en": "Found {count} relevant episodes from memory:",
-        "de": "{count} relevante Episoden aus dem Gedächtnis gefunden:",
+        "nb": "Samtaler i langtidsminnet — viser {count} av {total} treff (flest søkeord først, så nyeste):",
+        "en": "Conversations in long-term memory — showing {count} of {total} hits (most keywords first, then newest):",
+        "de": "Gespräche im Langzeitgedächtnis — zeige {count} von {total} Treffern (meiste Suchwörter zuerst, dann neueste):",
+    },
+    "mem_episode_header": {
+        "nb": "Episoder fra episodeminnet (sammendrag, {count} nærmeste i betydning):",
+        "en": "Episodes from episodic memory (summaries, {count} closest in meaning):",
+        "de": "Episoden aus dem Episodengedächtnis (Zusammenfassungen, {count} bedeutungsnächste):",
+    },
+    "mem_unverified_user": {
+        "nb": "Bruker",
+        "en": "User",
+        "de": "Nutzer",
     },
     "mem_no_ids": {
         "nb": "Ingen IDer oppgitt.",
@@ -449,21 +483,25 @@ _T: dict = {
         "de": "Keine unbestätigten Interaktionen gefunden — du bist auf dem neuesten Stand!",
     },
     "mem_unverified_header": {
-        "nb": "Ubekreftede interaksjoner{note}:",
-        "en": "Unverified interactions{note}:",
-        "de": "Unbestätigte Interaktionen{note}:",
+        "nb": "Ubekreftede interaksjoner — viser {start}–{end} av {total}, nyeste først (de ubekreftede spenner {first} til {last}):",
+        "en": "Unverified interactions — showing {start}–{end} of {total}, newest first (the unverified span {first} to {last}):",
+        "de": "Unbestätigte Interaktionen — zeige {start}–{end} von {total}, neueste zuerst (die unbestätigten reichen von {first} bis {last}):",
     },
     "mem_unverified_error": {
         "nb": "Kunne ikke hente ubekreftede interaksjoner: {error}",
         "en": "Could not fetch unverified interactions: {error}",
         "de": "Unbestätigte Interaktionen konnten nicht abgerufen werden: {error}",
     },
-
     # ── Agents ───────────────────────────────────────────────────────────────
     "agent_empty_query": {
         "nb": "Feil: spørsmål kan ikke være tomt.",
         "en": "Error: query cannot be empty.",
         "de": "Fehler: Anfrage darf nicht leer sein.",
+    },
+    "agent_argus_embedding_off": {
+        "nb": "Argus-søk er av på denne installasjonen: det trenger embedding-tjenesten (BGE-M3), som ikke er slått på. Den slås på under Innstillinger → LLM/Modeller → «Embedding (BGE-M3)».",
+        "en": "Argus search is off on this install: it needs the embedding service (BGE-M3), which is not switched on. Switch it on under Settings → LLM / Models → «Embedding (BGE-M3)».",
+        "de": "Die Argus-Suche ist auf dieser Installation aus: sie braucht den Embedding-Dienst (BGE-M3), der nicht eingeschaltet ist. Einschalten unter Einstellungen → LLM / Modelle → «Embedding (BGE-M3)».",
     },
     "agent_argus_unavailable": {
         "nb": "Argus utilgjengelig: {error}",
@@ -485,6 +523,44 @@ _T: dict = {
         "en": "Mechanic is disabled. Enable it under Settings → LLM/Models.",
         "de": "Mechanic ist deaktiviert. Aktiviere es unter Einstellungen → LLM/Modelle.",
     },
+    "agent_job_done_notification": {
+        "nb": "Mechanic er ferdig med oppgaven. Her er hva den fant:\n\n{result}",
+        "en": "Mechanic has finished the task. Here's what it found:\n\n{result}",
+        "de": "Mechanic hat die Aufgabe abgeschlossen. Hier ist das Ergebnis:\n\n{result}",
+    },
+    "agent_job_error_notification": {
+        "nb": "Mechanic støtte på en feil under oppgaven:\n\n{result}",
+        "en": "Mechanic ran into an error during the task:\n\n{result}",
+        "de": "Mechanic ist bei der Aufgabe auf einen Fehler gestoßen:\n\n{result}",
+    },
+    "agent_delegate_started": {
+        "nb": (
+            "Jobb startet, job_id={job_id}. Mechanic jobber i bakgrunnen. Du blir varslet "
+            "proaktivt i chatten straks den er ferdig — ikke bare ved neste samtalerunde. "
+            "Bekreft kort til brukeren, i din egen naturlige stil, at du følger opp og "
+            "kommer tilbake med svaret — ikke beskriv selve varslingsmekanismen. Husk at "
+            "dette er oppgaven brukeren nettopp ba om. (Manuell poll fortsatt mulig: "
+            "mechanic(action='result', job_id='{job_id}'))."
+        ),
+        "en": (
+            "Job started, job_id={job_id}. Mechanic is working in the background. You'll be "
+            "notified proactively in the chat as soon as it's done — not just at the next "
+            "turn. Briefly acknowledge to the user, in your own natural voice, that you're "
+            "following up and will come back with the answer — don't describe the "
+            "notification mechanism itself. Remember this is the task the user just asked "
+            "about. (Manual poll still available: mechanic(action='result', "
+            "job_id='{job_id}'))."
+        ),
+        "de": (
+            "Job gestartet, job_id={job_id}. Mechanic arbeitet im Hintergrund. Du wirst "
+            "proaktiv im Chat benachrichtigt, sobald es fertig ist — nicht erst bei der "
+            "nächsten Runde. Bestätige dem Nutzer kurz, in deiner eigenen natürlichen Art, "
+            "dass du dranbleibst und mit der Antwort zurückkommst — beschreibe nicht den "
+            "Benachrichtigungsmechanismus selbst. Denk daran, dass dies die Aufgabe ist, "
+            "um die der Nutzer gerade gebeten hat. (Manuelles Abfragen weiterhin möglich: "
+            "mechanic(action='result', job_id='{job_id}'))."
+        ),
+    },
     "agent_mechanic_nothing": {
         "nb": "Mechanic fant ingenting.",
         "en": "Mechanic found nothing.",
@@ -500,7 +576,6 @@ _T: dict = {
         "en": "Mechanic search failed: {error}",
         "de": "Mechanic-Suche fehlgeschlagen: {error}",
     },
-
     # ── Personality ──────────────────────────────────────────────────────────
     "pers_empty_observation": {
         "nb": "Feil: observasjon kan ikke være tom.",
@@ -637,7 +712,6 @@ _T: dict = {
         "en": "Error updating house profile: {error}",
         "de": "Fehler beim Aktualisieren des Hausprofils: {error}",
     },
-
     # ── World ────────────────────────────────────────────────────────────────
     "world_no_vars": {
         "nb": "Ingen variabler lagret ennå.",
@@ -764,7 +838,6 @@ _T: dict = {
         "en": "Could not edit world file: {error}",
         "de": "Weltdatei konnte nicht bearbeitet werden: {error}",
     },
-
     # ── Library ──────────────────────────────────────────────────────────────
     "lib_empty_query": {
         "nb": "Feil: spørsmål kan ikke være tomt.",
@@ -832,9 +905,9 @@ _T: dict = {
         "de": "URL konnte nicht abgerufen werden: {error}",
     },
     "lib_url_not_trusted": {
-        "nb": "Domenet i '{url}' er ikke på listen over betrodde kilder. Legg til domenet i Innstillinger → Nettsøk.",
-        "en": "The domain in '{url}' is not on the trusted sources list. Add it in Settings → Web search.",
-        "de": "Die Domain in '{url}' steht nicht auf der Liste vertrauenswürdiger Quellen. Füge sie unter Einstellungen → Websuche hinzu.",
+        "nb": "Domenet i '{url}' er ikke på listen over vitlistede nettsider.",
+        "en": "The domain in '{url}' is not on the whitelisted websites list.",
+        "de": "Die Domain in '{url}' steht nicht auf der Liste der Whitelist-Webseiten.",
     },
     "lib_url_direct_no_content": {
         "nb": "Klarte ikke å hente innhold fra adressen (tom respons).",
@@ -856,7 +929,6 @@ _T: dict = {
         "en": "reason_freely failed: {error}",
         "de": "reason_freely fehlgeschlagen: {error}",
     },
-
     # ── trace_reader / self-monitoring ──────────────────────────────────────
     "rid_note": {
         "nb": "[System: Din nåværende request-ID er **{rid}**. Bruk inspect_system(action='fetch_trace', rid='{rid}') for å inspisere en tidligere tur. Merk: inspiserer du DENNE pågående turen (samme rid), vil traceen være ufullstendig siden turen ikke er ferdig ennå.]",
@@ -878,7 +950,6 @@ _T: dict = {
         "en": "No traces found in log files.",
         "de": "Keine Traces in den Logdateien gefunden.",
     },
-
     # ── System / shared_tools ────────────────────────────────────────────────
     "sys_invalid_path": {
         "nb": "Mangler eller ugyldig filsti. Oppgi absolutt sti under /kaare/, f.eks. les_fil(sti='/kaare/kaare_api.py'). Bruk liste_filer() for å se hva som finnes.",
@@ -960,7 +1031,31 @@ _T: dict = {
         "en": "GPU: [nvidia-smi not available]",
         "de": "GPU: [nvidia-smi nicht verfügbar]",
     },
-
+    "sys_res_cpu": {
+        "nb": "CPU: last {l1} / {l5} / {l15} (1/5/15 min) på {cores} kjerner",
+        "en": "CPU: load {l1} / {l5} / {l15} (1/5/15 min) on {cores} cores",
+        "de": "CPU: Last {l1} / {l5} / {l15} (1/5/15 Min.) auf {cores} Kernen",
+    },
+    "sys_res_ram": {
+        "nb": "RAM: brukt {used} GiB av {total} GiB, ledig {free} GiB ({pct_free} % ledig)",
+        "en": "RAM: used {used} GiB of {total} GiB, free {free} GiB ({pct_free} % free)",
+        "de": "RAM: belegt {used} GiB von {total} GiB, frei {free} GiB ({pct_free} % frei)",
+    },
+    "sys_res_disk": {
+        "nb": "Disk ({path}): brukt {used} GiB av {total} GiB, ledig {free} GiB ({pct_free} % ledig)",
+        "en": "Disk ({path}): used {used} GiB of {total} GiB, free {free} GiB ({pct_free} % free)",
+        "de": "Festplatte ({path}): belegt {used} GiB von {total} GiB, frei {free} GiB ({pct_free} % frei)",
+    },
+    "sys_res_gpu": {
+        "nb": "GPU {index} ({name}): brukt {used} MiB av {total} MiB, ledig {free} MiB ({pct_free} % ledig), belastning {util} %",
+        "en": "GPU {index} ({name}): used {used} MiB of {total} MiB, free {free} MiB ({pct_free} % free), utilisation {util} %",
+        "de": "GPU {index} ({name}): belegt {used} MiB von {total} MiB, frei {free} MiB ({pct_free} % frei), Auslastung {util} %",
+    },
+    "sys_res_gpu_vllm": {
+        "nb": "  ↳ vLLM kjører på dette kortet og reserverer minnet på forhånd — et nesten fullt kort er normalt, ikke et problem.",
+        "en": "  ↳ vLLM runs on this card and reserves its memory up front — a nearly full card is normal, not a problem.",
+        "de": "  ↳ vLLM läuft auf dieser Karte und reserviert den Speicher im Voraus — eine fast volle Karte ist normal, kein Problem.",
+    },
     # ── Timer ────────────────────────────────────────────────────────────────
     "timer_empty_prompt": {
         "nb": "Feil: prompt kan ikke være tom.",
@@ -1062,7 +1157,6 @@ _T: dict = {
         "en": "The time is {time}. Date: {date}.",
         "de": "Es ist {time} Uhr. Datum: {date}.",
     },
-
     # ── Notisblokk ───────────────────────────────────────────────────────────
     "nota_empty_text": {
         "nb": "Feil: tekst kan ikke være tom.",
@@ -1139,7 +1233,16 @@ _T: dict = {
         "en": "Could not clear notepad: {error}",
         "de": "Notizblock konnte nicht geleert werden: {error}",
     },
-
+    "nota_marked_important": {
+        "nb": "Notat '{note_id}' markert som viktig — tas opp i neste refleksjonsmøte.",
+        "en": "Note '{note_id}' marked important — will be picked up at the next reflection meeting.",
+        "de": "Notiz '{note_id}' als wichtig markiert — wird beim nächsten Reflexionstreffen behandelt.",
+    },
+    "nota_unmarked_important": {
+        "nb": "Notat '{note_id}' er ikke lenger markert som viktig.",
+        "en": "Note '{note_id}' is no longer marked important.",
+        "de": "Notiz '{note_id}' ist nicht mehr als wichtig markiert.",
+    },
     # ── executor.py (misc) ───────────────────────────────────────────────────
     "exec_announce_sent": {
         "nb": "Kunngjøring sendt til {target}{vol_label}.",
@@ -1196,7 +1299,6 @@ _T: dict = {
         "en": "Images for {uid}:",
         "de": "Bilder für {uid}:",
     },
-
     # ── Media ────────────────────────────────────────────────────────────────
     "media_no_query": {
         "nb": "Mangler søketekst (query).",
@@ -1318,7 +1420,6 @@ _T: dict = {
         "en": "Error starting radio: {error}",
         "de": "Fehler beim Starten des Radios: {error}",
     },
-
     # ── Plex ─────────────────────────────────────────────────────────────────
     "plex_unreachable": {
         "nb": "Kunne ikke nå Plex ({error}).",
@@ -1337,7 +1438,7 @@ _T: dict = {
     },
     "plex_search_header": {
         "nb": "Plex-søk: «{query}»",
-        "en": "Plex search: \"{query}\"",
+        "en": 'Plex search: "{query}"',
         "de": "Plex-Suche: „{query}“",
     },
     "plex_no_clients": {
@@ -1352,7 +1453,7 @@ _T: dict = {
     },
     "plex_playing_on": {
         "nb": "▶ Starter avspilling{offset} på «{client}» ✅",
-        "en": "▶ Starting playback{offset} on \"{client}\" ✅",
+        "en": '▶ Starting playback{offset} on "{client}" ✅',
         "de": "▶ Starte Wiedergabe{offset} auf „{client}“ ✅",
     },
     "plex_session_line": {
@@ -1360,12 +1461,137 @@ _T: dict = {
         "en": "  • {user} on {device}: {content}{progress} ({state})",
         "de": "  • {user} auf {device}: {content}{progress} ({state})",
     },
-
     # ── Web search ────────────────────────────────────────────────────────────
     "search_empty_query": {
         "nb": "Ingen søketekst oppgitt.",
         "en": "No search query provided.",
         "de": "Kein Suchbegriff angegeben.",
+    },
+    "search_no_results_any": {
+        "nb": "Søket ga ingen brukbare resultater (verken fra godkjente kilder eller åpent nett).",
+        "en": "The search gave no usable results (neither from trusted sources nor the open web).",
+        "de": "Die Suche ergab keine brauchbaren Ergebnisse (weder aus vertrauenswürdigen Quellen noch aus dem offenen Web).",
+    },
+    "lib_fetch_source": {
+        "nb": "Kilde",
+        "en": "Source",
+        "de": "Quelle",
+    },
+    "lib_quote_translate_yourself": {
+        "nb": "(originalspråk {src_lang} — oversett selv, og ikke legg til tall eller detaljer som ikke står der)",
+        "en": "(original language {src_lang} — translate it yourself, and don't add numbers or details that aren't there)",
+        "de": "(Originalsprache {src_lang} — selbst übersetzen, und keine Zahlen oder Details hinzufügen, die nicht dastehen)",
+    },
+    "lib_retry_hint": {
+        "nb": "Du kan sende søket ut igjen med bedre instruks: andre eller flere `keywords` (også på kildens språk), et snevrere `task`, et riktigere `subject` (navnet slik det står på Wikipedia), eller en kortere `query`. Gjør det bare hvis det er verdt det for brukeren — ellers si ærlig hva som mangler.",
+        "en": "You can send the search out again with a better instruction: other or more `keywords` (also in the source's language), a narrower `task`, a more accurate `subject` (the name as on Wikipedia), or a shorter `query`. Only do it if it's worth it for the user — otherwise say honestly what is missing.",
+        "de": "Du kannst die Suche mit besserer Anweisung erneut losschicken: andere oder mehr `keywords` (auch in der Sprache der Quelle), eine engere `task`, ein genaueres `subject` (der Name wie auf Wikipedia) oder eine kürzere `query`. Tu es nur, wenn es sich für den Nutzer lohnt — sonst sage ehrlich, was fehlt.",
+    },
+    "lib_assessment_header": {
+        "nb": "Hvor sannsynlig (regnet ut av koden fra hvor kildene kommer fra — ikke sjekket av noen; bruk disse ordene, aldri «vet»):",
+        "en": "How likely (computed by code from where the sources come from — checked by no one; use these words, never «know»):",
+        "de": "Wie wahrscheinlich (vom Code aus der Herkunft der Quellen berechnet — von niemandem geprüft; nutze diese Wörter, nie «weiß»):",
+    },
+    "lib_conflict": {"nb": "MOTSTRID om", "en": "CONFLICT on", "de": "WIDERSPRUCH zu"},
+    "lib_n_sources": {"nb": "{n} kilde(r)", "en": "{n} source(s)", "de": "{n} Quelle(n)"},
+    "prob_highly_likely": {
+        "nb": "høyst sannsynlig",
+        "en": "highly likely",
+        "de": "höchst wahrscheinlich",
+    },
+    "prob_likely": {"nb": "sannsynlig", "en": "likely", "de": "wahrscheinlich"},
+    "prob_uncertain": {"nb": "usikkert", "en": "uncertain", "de": "unsicher"},
+    "prob_unlikely": {"nb": "lite sannsynlig", "en": "unlikely", "de": "unwahrscheinlich"},
+    "tool_stakes_desc": {
+        "nb": "Hva står på spill for brukeren? trivial = hverdagslig (oppskrift, trivia); normal = vanlig faktaspørsmål; high = helse, sikkerhet, penger eller juss; extraordinary = en påstand som strider mot etablert kunnskap eller er uavklart i fagmiljøet. Styrer hvor forsiktig svaret må være.",
+        "en": "What is at stake for the user? trivial = everyday (recipe, trivia); normal = ordinary factual question; high = health, safety, money or law; extraordinary = a claim against established knowledge or unresolved among experts. Controls how careful the answer must be.",
+        "de": "Was steht für den Nutzer auf dem Spiel? trivial = alltäglich (Rezept, Trivia); normal = gewöhnliche Sachfrage; high = Gesundheit, Sicherheit, Geld oder Recht; extraordinary = eine Behauptung gegen gesichertes Wissen oder in der Fachwelt ungeklärt. Steuert, wie vorsichtig die Antwort sein muss.",
+    },
+    "gen_correction_stakes": {
+        "nb": "[SYSTEM: web_search ble IKKE kjørt — stakes mangler. Kall web_search på nytt med stakes = trivial, normal, high (helse, sikkerhet, penger, juss) eller extraordinary (strider mot etablert kunnskap).]",
+        "en": "[SYSTEM: web_search was NOT run — stakes is missing. Call web_search again with stakes = trivial, normal, high (health, safety, money, law) or extraordinary (against established knowledge).]",
+        "de": "[SYSTEM: web_search wurde NICHT ausgeführt — stakes fehlt. Rufe web_search erneut mit stakes = trivial, normal, high (Gesundheit, Sicherheit, Geld, Recht) oder extraordinary (gegen gesichertes Wissen) auf.]",
+    },
+    "lib_stakes_high": {
+        "nb": "Mye står på spill her: gi bare råd der vurderingen er «høyst sannsynlig». Ellers si hva kildene skriver og hvor sikkert det er, og pek brukeren dit de kan sjekke selv (oppgi kilden).",
+        "en": "A lot is at stake here: only give advice where the assessment is «highly likely». Otherwise say what the sources write and how certain it is, and point the user to where they can check themselves (name the source).",
+        "de": "Hier steht viel auf dem Spiel: gib nur dort Rat, wo die Einschätzung «höchst wahrscheinlich» ist. Sonst sage, was die Quellen schreiben und wie sicher es ist, und zeige dem Nutzer, wo er selbst prüfen kann (Quelle nennen).",
+    },
+    "lib_stakes_extraordinary": {
+        "nb": "Dette er en ekstraordinær påstand: den regnes som uavklart uansett hvor mange sider som sier det. Si at den er uavklart og hvor påstanden kommer fra.",
+        "en": "This is an extraordinary claim: it counts as unresolved however many pages say it. Say it is unresolved and where the claim comes from.",
+        "de": "Dies ist eine außergewöhnliche Behauptung: sie gilt als ungeklärt, egal wie viele Seiten sie aufstellen. Sage, dass sie ungeklärt ist und woher die Behauptung stammt.",
+    },
+    "prob_unresolved": {"nb": "uavklart", "en": "unresolved", "de": "ungeklärt"},
+    "tool_library_keywords_desc": {
+        "nb": "Ord som trolig står i kildeteksten — for 'law': lovens egne, ofte formelle begreper — f.eks. 'skadeverk' (ikke 'hærverk'), 'øvingskjøring' (ikke 'øvelseskjøring'), 'tre- eller firehjuls moped' / 'klasse AM 147' (ikke 'mopedbil'), 'oppsigelse'. Ta med førerkortklasse, paragraf eller lovnavn når du kjenner dem.",
+        "en": "Words likely to appear in the source text — for 'law': the law's own, often formal Norwegian terms — e.g. 'skadeverk' (not 'hærverk'), 'øvingskjøring' (not 'øvelseskjøring'), 'tre- eller firehjuls moped' / 'klasse AM 147' (not 'mopedbil'), 'oppsigelse'. Add the licence class, section or law name when you know it.",
+        "de": "Wörter, die wahrscheinlich im Quelltext stehen — für 'law': die eigenen, oft formellen norwegischen Begriffe des Gesetzes — z.B. 'skadeverk' (nicht 'hærverk'), 'øvingskjøring' (nicht 'øvelseskjøring'), 'tre- eller firehjuls moped' / 'klasse AM 147' (nicht 'mopedbil'), 'oppsigelse'. Führerscheinklasse, Paragraph oder Gesetzesname angeben, wenn bekannt.",
+    },
+    "law_not_enabled": {
+        "nb": "Norsk lov (Lovdata) er ikke slått på eller ikke lastet ned ennå. En admin kan slå det på under Innstillinger → Nettsøk/Vær → Norsk lov (Lovdata).",
+        "en": "Norwegian law (Lovdata) is not switched on or not downloaded yet. An admin can switch it on under Settings → Web Search & Weather → Norwegian law (Lovdata).",
+        "de": "Norwegisches Recht (Lovdata) ist nicht eingeschaltet oder noch nicht heruntergeladen. Ein Admin kann es unter Einstellungen → Websuche & Wetter → Norwegisches Recht (Lovdata) einschalten.",
+    },
+    "law_no_hits": {
+        "nb": "Fant ingen paragrafer i lovene for dette søket.",
+        "en": "Found no paragraphs in the laws for this search.",
+        "de": "Keine Paragraphen in den Gesetzen für diese Suche gefunden.",
+    },
+    "lib_law_find_task": {
+        "nb": "Din jobb er bare å FINNE: siter ordrett de HELE setningene i paragrafene som trengs for å svare (også unntak og vilkår), én påstand per setning. Ikke trekk konklusjoner og ikke regn ut noe.",
+        "en": "Your job is only to FIND: quote verbatim the WHOLE sentences in the sections needed to answer (including exceptions and conditions), one claim per sentence. Do not draw conclusions and do not calculate anything.",
+        "de": "Deine Aufgabe ist nur zu FINDEN: zitiere wörtlich die GANZEN Sätze aus den Paragraphen, die für die Antwort nötig sind (auch Ausnahmen und Bedingungen), eine Aussage pro Satz. Keine Schlüsse ziehen und nichts ausrechnen.",
+    },
+    "lib_interpret_yourself": {
+        "nb": "Tolk dette selv: svar bare ut fra setningene over, si hvilke paragrafer du kombinerer og hvordan, og si tydelig fra der loven er uklar eller kan tolkes på flere måter. Lover kan være vanskelige å tolke — er du usikker, si det og pek brukeren til paragrafen.",
+        "en": "Interpret this yourself: answer only from the sentences above, say which sections you combine and how, and say clearly where the law is unclear or open to more than one reading. Laws can be hard to interpret — if unsure, say so and point the user to the section.",
+        "de": "Lege das selbst aus: antworte nur anhand der Sätze oben, sage, welche Paragraphen du wie kombinierst, und sage deutlich, wo das Gesetz unklar oder mehrdeutig ist. Gesetze können schwer auszulegen sein — bist du unsicher, sage es und verweise auf den Paragraphen.",
+    },
+    "tool_background_desc": {
+        "nb": "true = send søket ut som arbeidsrunde: du får svar med en gang, kan si til brukeren at du sjekker, og resultatet kommer til DEG når det er ferdig (du tolker og svarer da). Bruk når søket kan ta tid (offisiell kilde, mange kilder, lovspørsmål) og svaret ikke må komme i samme setning.",
+        "en": "true = send the search off as a work round: you get a reply at once, can tell the user you're checking, and the result comes to YOU when done (you interpret and answer then). Use when the search may take time (official source, many sources, law questions) and the answer needn't come in the same breath.",
+        "de": "true = die Suche als Arbeitsrunde losschicken: du bekommst sofort eine Antwort, kannst dem Nutzer sagen, dass du nachsiehst, und das Ergebnis kommt zu DIR, wenn es fertig ist (dann deutest du es und antwortest). Nutze es, wenn die Suche dauern kann (offizielle Quelle, viele Quellen, Rechtsfragen) und die Antwort nicht sofort kommen muss.",
+    },
+    "work_round_started": {
+        "nb": "Søket kjører som arbeidsrunde (id {job}). Svar brukeren nå — f.eks. at du sjekker det og kommer tilbake. Resultatet kommer til deg når det er ferdig.",
+        "en": "The search is running as a work round (id {job}). Answer the user now — e.g. that you're checking and will come back. The result comes to you when it's done.",
+        "de": "Die Suche läuft als Arbeitsrunde (id {job}). Antworte dem Nutzer jetzt — z.B. dass du nachsiehst und dich meldest. Das Ergebnis kommt zu dir, wenn es fertig ist.",
+    },
+    "work_round_prompt_head": {
+        "nb": "[Arbeidsrunde ferdig — spørsmålet var: «{question}». Resultatet under er til deg, ikke vist brukeren. Svar brukeren ut fra det, med samme ærlighet om kilder og sannsynlighet. Trengs mer, kan du søke på nytt nå.]",
+        "en": "[Work round finished — the question was: «{question}». The result below is for you, not shown to the user. Answer the user from it, with the same honesty about sources and likelihood. If more is needed, you can search again now.]",
+        "de": "[Arbeitsrunde fertig — die Frage war: «{question}». Das Ergebnis unten ist für dich, nicht dem Nutzer gezeigt. Antworte dem Nutzer daraus, mit derselben Ehrlichkeit über Quellen und Wahrscheinlichkeit. Braucht es mehr, kannst du jetzt erneut suchen.]",
+    },
+    "work_round_failed": {
+        "nb": "Arbeidsrunden ga ikke noe resultat ({reason}). Si det ærlig til brukeren, eller prøv et nytt søk.",
+        "en": "The work round gave no result ({reason}). Tell the user honestly, or try a new search.",
+        "de": "Die Arbeitsrunde brachte kein Ergebnis ({reason}). Sag es dem Nutzer ehrlich oder versuche eine neue Suche.",
+    },
+    "lib_tier_official": {
+        "nb": "offisiell side for emnet (fra Wikidata)",
+        "en": "official site of the subject (from Wikidata)",
+        "de": "offizielle Seite des Themas (aus Wikidata)",
+    },
+    "tool_keywords_desc": {
+        "nb": "Brukes sammen med subject: 3–8 korte ord som trolig står i adressene (URL-ene) på emnets offisielle nettside — på engelsk OG på sidens eget språk, f.eks. ['steps', 'stairs', 'tourist route', 'accessibility', 'schody', 'trasa']. Brukes til å finne riktige sider der.",
+        "en": "Used with subject: 3–8 short words likely to appear in the addresses (URLs) of the subject's official website — in English AND the site's own language, e.g. ['steps', 'stairs', 'tourist route', 'accessibility', 'schody', 'trasa']. Used to find the right pages there.",
+        "de": "Zusammen mit subject: 3–8 kurze Wörter, die wahrscheinlich in den Adressen (URLs) der offiziellen Website des Themas stehen — auf Englisch UND in der Sprache der Seite, z.B. ['steps', 'stairs', 'tourist route', 'accessibility', 'schody', 'trasa']. Dient dazu, dort die richtigen Seiten zu finden.",
+    },
+    "lib_tier_trusted": {
+        "nb": "godkjent kilde",
+        "en": "trusted source",
+        "de": "vertrauenswürdige Quelle",
+    },
+    "lib_tier_open": {
+        "nb": "åpent nett — ikke på godkjent-lista",
+        "en": "open web — not on the trusted list",
+        "de": "offenes Web — nicht auf der vertrauenswürdigen Liste",
+    },
+    "lib_open_web_note": {
+        "nb": "Merk: kilder merket «åpent nett» er ikke på husstandens godkjent-liste. De kan stemme, men er mindre sikre — si hvor det kommer fra, og presenter det aldri som sikkert.",
+        "en": "Note: sources marked «open web» are not on the household's trusted list. They may be right but are less certain — say where it comes from, and never present it as certain.",
+        "de": "Hinweis: Quellen mit «offenes Web» stehen nicht auf der vertrauenswürdigen Liste des Haushalts. Sie können stimmen, sind aber weniger sicher — sage, woher es kommt, und stelle es nie als sicher dar.",
     },
     "search_no_results": {
         "nb": "Fant ingen resultater fra godkjente kilder for dette søket.",
@@ -1387,7 +1613,6 @@ _T: dict = {
         "en": "Miss Library did not respond and no source was retrieved.",
         "de": "Fräulein Library hat nicht geantwortet und keine Quelle wurde abgerufen.",
     },
-
     # ── LLM systemprompt ──────────────────────────────────────────────────────
     "llm_time_header": {
         "nb": "# Tid og dato",
@@ -1439,7 +1664,6 @@ _T: dict = {
         "en": "## Disabled modules",
         "de": "## Deaktivierte Module",
     },
-
     # ── Lister ───────────────────────────────────────────────────────────────
     "list_empty_text": {
         "nb": "Feil: tekst kan ikke være tom.",
@@ -1531,7 +1755,6 @@ _T: dict = {
         "en": "Removed from list.",
         "de": "Von der Liste entfernt.",
     },
-
     # ── Profile manager ───────────────────────────────────────────────────────
     "prof_no_data": {
         "nb": "Ingen profildata registrert ennå.",
@@ -1548,7 +1771,6 @@ _T: dict = {
         "en": "You don't know this person yet — you have no information about who they are.\nApproach them with genuine curiosity. It's perfectly natural to ask who they are.",
         "de": "Du kennst diese Person noch nicht — du weißt nichts darüber, wer sie ist.\nBegegne ihr mit echter Neugier. Es ist völlig natürlich, zu fragen, wer sie ist.",
     },
-
     # ── Services / agents-server ──────────────────────────────────────────────
     "svc_empty_url": {
         "nb": "Feil: url kan ikke være tom.",
@@ -1570,6 +1792,71 @@ _T: dict = {
         "en": "[No matches for '{pattern}' in {path}]",
         "de": "[Keine Treffer für '{pattern}' in {path}]",
     },
+    "svc_log_filter_no_match": {
+        "nb": "[{source} har innhold, men ingen av de siste {lines} linjene matchet filteret '{filter}' (regex, uten forskjell på store/små bokstaver). Det betyr bare ingen treff i dette utdraget — ikke at noe er galt.]",
+        "en": "[{source} has content, but none of the last {lines} lines matched the filter '{filter}' (regex, case-insensitive). That only means no matches in this excerpt — not that anything is wrong.]",
+        "de": "[{source} hat Inhalt, aber keine der letzten {lines} Zeilen entsprach dem Filter '{filter}' (Regex, ohne Groß-/Kleinschreibung). Das heißt nur: keine Treffer in diesem Ausschnitt — nicht, dass etwas falsch ist.]",
+    },
+    "svc_journal_no_access": {
+        "nb": "[Ingen tilgang til systemjournalen: brukeren '{user}' som KTSB kjører som er ikke i gruppa systemd-journal (eller adm). Det er ikke det samme som at tjenesten er tom eller frosset. En admin kan gi tilgang: sudo usermod -aG systemd-journal {user} og restarte tjenesten.]",
+        "en": "[No access to the system journal: the user '{user}' KTSB runs as is not in the systemd-journal (or adm) group. That is not the same as the service being empty or frozen. An admin can grant access: sudo usermod -aG systemd-journal {user} and restart the service.]",
+        "de": "[Kein Zugriff auf das Systemjournal: Der Benutzer '{user}', unter dem KTSB läuft, ist nicht in der Gruppe systemd-journal (oder adm). Das heißt nicht, dass der Dienst leer oder eingefroren ist. Ein Admin kann Zugriff geben: sudo usermod -aG systemd-journal {user} und den Dienst neu starten.]",
+    },
+    "svc_journal_unavailable": {
+        "nb": "[journalctl finnes ikke i denne installasjonen (f.eks. Docker) — tjenestelogger må leses på annen måte, f.eks. loggfilene i /kaare/logs.]",
+        "en": "[journalctl is not available in this install (e.g. Docker) — service logs must be read another way, e.g. the log files in /kaare/logs.]",
+        "de": "[journalctl ist in dieser Installation nicht verfügbar (z. B. Docker) — Dienstlogs anders lesen, z. B. die Logdateien in /kaare/logs.]",
+    },
+    "svc_log_empty_service": {
+        "nb": "[Journalen for tjenesten {service} er tom (eller tjenesten finnes ikke)]",
+        "en": "[The journal for service {service} is empty (or the service does not exist)]",
+        "de": "[Das Journal des Dienstes {service} ist leer (oder der Dienst existiert nicht)]",
+    },
+    "svc_log_file_not_found": {
+        "nb": "[Loggfila '{file}' finnes ikke i /kaare/logs. Filer som finnes: {available}. Tjenester (f.eks. kaare) logger til journalen — bruk 'service' i stedet for 'log_file'.]",
+        "en": "[Log file '{file}' does not exist in /kaare/logs. Files that exist: {available}. Services (e.g. kaare) log to the journal — use 'service' instead of 'log_file'.]",
+        "de": "[Die Logdatei '{file}' existiert nicht in /kaare/logs. Vorhandene Dateien: {available}. Dienste (z. B. kaare) loggen ins Journal — nutze 'service' statt 'log_file'.]",
+    },
+    "svc_log_empty_file": {
+        "nb": "[Loggfila '{file}' er tom]",
+        "en": "[Log file '{file}' is empty]",
+        "de": "[Die Logdatei '{file}' ist leer]",
+    },
+    "svc_log_read_failed": {
+        "nb": "[Kunne ikke lese loggfila: {error}]",
+        "en": "[Could not read the log file: {error}]",
+        "de": "[Logdatei konnte nicht gelesen werden: {error}]",
+    },
+    "svc_journal_failed": {
+        "nb": "[journalctl feilet: {error}]",
+        "en": "[journalctl failed: {error}]",
+        "de": "[journalctl fehlgeschlagen: {error}]",
+    },
+    "svc_log_need_source": {
+        "nb": "[Feil: oppgi 'service' (systemd-tjeneste, f.eks. kaare) eller 'log_file' for type=log. Loggfiler som finnes: {available}]",
+        "en": "[Error: give 'service' (systemd service, e.g. kaare) or 'log_file' for type=log. Log files that exist: {available}]",
+        "de": "[Fehler: gib 'service' (systemd-Dienst, z. B. kaare) oder 'log_file' für type=log an. Vorhandene Logdateien: {available}]",
+    },
+    "svc_unknown_search_type": {
+        "nb": "[Ukjent søketype '{search_type}' — gyldige: files, grep, log]",
+        "en": "[Unknown search type '{search_type}' — valid: files, grep, log]",
+        "de": "[Unbekannter Suchtyp '{search_type}' — gültig: files, grep, log]",
+    },
+    "svc_grep_failed": {
+        "nb": "[grep feilet: {error}]",
+        "en": "[grep failed: {error}]",
+        "de": "[grep fehlgeschlagen: {error}]",
+    },
+    "svc_path_rejected": {
+        "nb": "[Avvist: bare stier under /kaare er tillatt]",
+        "en": "[Rejected: only paths under /kaare are allowed]",
+        "de": "[Abgelehnt: nur Pfade unter /kaare sind erlaubt]",
+    },
+    "svc_read_error": {
+        "nb": "[Lesefeil: {error}]",
+        "en": "[Read error: {error}]",
+        "de": "[Lesefehler: {error}]",
+    },
     "svc_mechanic_busy": {
         "nb": "[Mechanic er opptatt — prøv igjen om litt]",
         "en": "[Mechanic is busy — try again in a moment]",
@@ -1581,16 +1868,15 @@ _T: dict = {
         "de": "Kein Inhalt zum Durchsuchen gefunden.",
     },
     "svc_trusted_hint": {
-        "nb": "Legg det til under Innstillinger → Nettsøk → Godkjente kilder.",
-        "en": "Add it under Settings → Web search → Trusted sources.",
-        "de": "Füge es unter Einstellungen → Websuche → Vertrauenswürdige Quellen hinzu.",
+        "nb": "En admin kan legge det til under Innstillinger → Nettsøk/Vær → Vitlistede nettsider.",
+        "en": "An admin can add it under Settings → Web Search & Weather → Whitelisted websites.",
+        "de": "Ein Admin kann sie unter Einstellungen → Websuche & Wetter → Whitelist-Webseiten hinzufügen.",
     },
     "mechanic_job_done": {
         "nb": "📬 Mechanic er ferdig med oppgave {job_id}: {summary}",
         "en": "📬 Mechanic finished task {job_id}: {summary}",
         "de": "📬 Mechanic hat Aufgabe {job_id} abgeschlossen: {summary}",
     },
-
     # ── Voice bridge + API ────────────────────────────────────────────────────
     "voice_kare_unreachable": {
         "nb": "Beklager, jeg fikk ikke kontakt med Kåre.",
@@ -1627,7 +1913,6 @@ _T: dict = {
         "en": "Use Kåre directly via /api/generate.",
         "de": "Verwende Kåre direkt über /api/generate.",
     },
-
     # ── Meetings (dev + reflection) ───────────────────────────────────────────
     "meet_kare_unavailable": {
         "nb": "[Kåre utilgjengelig: {error}]",
@@ -2025,16 +2310,15 @@ _T: dict = {
         "de": "Runde {round_num} ist vorbei. Letzter Teil der Diskussion:\n{conv_tail}\n\nSind sie auf dem richtigen Weg? Leite sie: fordere mehr Tiefe, wechsle den Fokus, oder stoppe ein Nebenthema. Max. 2 Sätze. Gib eine klare Richtung für die nächste Runde.",
     },
     "meet_leder_admin_input_user": {
-        "nb": "Undersøkelsesfasen er ferdig. Funnene er:\n\nKåre: {kare_funn}\n\nMechanic: {mechanic_funn}\n\nAdmin har sendt inn dette innspillet til møtet:\n\"{admin_input}\"\n\nÅpne møtet med å presentere admin sitt innspill. Koble det gjerne til funnene hvis relevant. Be Mechanic starte med sin vurdering. Maks 3 setninger.",
-        "en": "The investigation phase is complete. The findings are:\n\nKåre: {kare_funn}\n\nMechanic: {mechanic_funn}\n\nAdmin has submitted this input to the meeting:\n\"{admin_input}\"\n\nOpen the meeting by presenting the admin's input. Connect it to the findings if relevant. Ask Mechanic to start with their assessment. Max 3 sentences.",
-        "de": "Die Untersuchungsphase ist abgeschlossen. Die Befunde sind:\n\nKåre: {kare_funn}\n\nMechanic: {mechanic_funn}\n\nAdmin hat diesen Beitrag für das Meeting eingereicht:\n\"{admin_input}\"\n\nEröffne das Meeting mit dem Admin-Beitrag. Verknüpfe ihn wenn relevant mit den Befunden. Bitte Mechanic, mit seiner Einschätzung zu beginnen. Max. 3 Sätze.",
+        "nb": 'Undersøkelsesfasen er ferdig. Funnene er:\n\nKåre: {kare_funn}\n\nMechanic: {mechanic_funn}\n\nAdmin har sendt inn dette innspillet til møtet:\n"{admin_input}"\n\nÅpne møtet med å presentere admin sitt innspill. Koble det gjerne til funnene hvis relevant. Be Mechanic starte med sin vurdering. Maks 3 setninger.',
+        "en": 'The investigation phase is complete. The findings are:\n\nKåre: {kare_funn}\n\nMechanic: {mechanic_funn}\n\nAdmin has submitted this input to the meeting:\n"{admin_input}"\n\nOpen the meeting by presenting the admin\'s input. Connect it to the findings if relevant. Ask Mechanic to start with their assessment. Max 3 sentences.',
+        "de": 'Die Untersuchungsphase ist abgeschlossen. Die Befunde sind:\n\nKåre: {kare_funn}\n\nMechanic: {mechanic_funn}\n\nAdmin hat diesen Beitrag für das Meeting eingereicht:\n"{admin_input}"\n\nEröffne das Meeting mit dem Admin-Beitrag. Verknüpfe ihn wenn relevant mit den Befunden. Bitte Mechanic, mit seiner Einschätzung zu beginnen. Max. 3 Sätze.',
     },
     "meet_leder_vurder_user": {
         "nb": "Gruppe {group} av {max_groups} er ferdig.\n\nSamtalen:\n{conv_tail}\n\nSvar KUN med: 'FORTSETT: <begrunnelse>' eller 'AVSLUTT: <begrunnelse>'.",
         "en": "Group {group} of {max_groups} is done.\n\nThe conversation:\n{conv_tail}\n\nReply ONLY with: 'FORTSETT: <reason>' or 'AVSLUTT: <reason>'.",
         "de": "Gruppe {group} von {max_groups} ist fertig.\n\nDas Gespräch:\n{conv_tail}\n\nAntworte NUR mit: 'FORTSETT: <Begründung>' oder 'AVSLUTT: <Begründung>'.",
     },
-
     # ── Argus ─────────────────────────────────────────────────────────────────
     "argus_face_event": {
         "nb": "[Ansikt] {name}{pct} på {cam} ({label} {score}%)",
@@ -2071,7 +2355,6 @@ _T: dict = {
         "en": "[{time}] {label} {name} on {cam_word}: {cams} (max {pct}%)",
         "de": "[{time}] {label} {name} auf {cam_word}: {cams} (max {pct}%)",
     },
-
     # ── Mechanic tools ────────────────────────────────────────────────────────
     "mech_empty_search": {
         "nb": "[Tomt søk]",
@@ -2119,9 +2402,14 @@ _T: dict = {
         "de": "[Mechanic: Modell ist beschäftigt (Lock-Timeout 300s) — versuche es gleich erneut]",
     },
     "mech_unknown_action": {
-        "nb": "[Ukjent action for {tool}: {action}]",
-        "en": "[Unknown action for {tool}: {action}]",
-        "de": "[Unbekannte Aktion für {tool}: {action}]",
+        "nb": "[Ukjent action for {tool}: {action}. Gyldige: {valid}]",
+        "en": "[Unknown action for {tool}: {action}. Valid: {valid}]",
+        "de": "[Unbekannte Aktion für {tool}: {action}. Gültig: {valid}]",
+    },
+    "mech_tool_not_offered": {
+        "nb": "[Verktøyet {tool} er ikke tilgjengelig her og ble ikke kjørt. Tilgjengelige verktøy: {available}]",
+        "en": "[The tool {tool} is not available here and was not run. Available tools: {available}]",
+        "de": "[Das Werkzeug {tool} ist hier nicht verfügbar und wurde nicht ausgeführt. Verfügbare Werkzeuge: {available}]",
     },
     "mech_argus_unavailable": {
         "nb": "[Argus utilgjengelig: {error}]",
@@ -2148,6 +2436,326 @@ _T: dict = {
         "en": "[Mechanic unavailable: {error}]",
         "de": "[Mechanic nicht verfügbar: {error}]",
     },
+    "mk_portrait_task": {
+        "nb": "Her er dagens samtaler mellom {name} og Kåre. Skriv 1–3 korte, datostemplede observasjoner om {name}: noe de faktisk sa eller gjorde i dag som er verdt å huske — et faktum, en plan, en vane som går igjen. Hver observasjon skal kunne spores til en samtale under. Ingen tolkning av følelser eller motiver. Skriv INGENTING hvis det ikke var noe bemerkelsesverdig i dag.\n\nFormat: - [{today}] observasjon",
+        "en": "Here are today's conversations between {name} and Kåre. Write 1–3 short, dated observations about {name}: something they actually said or did today that is worth remembering — a fact, a plan, a recurring habit. Every observation must be traceable to a conversation below. No interpretation of feelings or motives. Write NOTHING if there was nothing notable today.\n\nFormat: - [{today}] observation",
+        "de": "Hier sind die heutigen Gespräche zwischen {name} und Kåre. Schreibe 1–3 kurze, datierte Beobachtungen über {name}: etwas, das die Person heute tatsächlich gesagt oder getan hat und das es wert ist, behalten zu werden — eine Tatsache, ein Plan, eine wiederkehrende Gewohnheit. Jede Beobachtung muss sich auf ein Gespräch unten zurückführen lassen. Keine Deutung von Gefühlen oder Motiven. Schreibe NICHTS, wenn heute nichts Bemerkenswertes war.\n\nFormat: - [{today}] Beobachtung",
+    },
+    "mk_portrait_conversations": {
+        "nb": "--- SAMTALER ---",
+        "en": "--- CONVERSATIONS ---",
+        "de": "--- GESPRÄCHE ---",
+    },
+    "mk_portrait_line": {
+        "nb": "[{ts}] Bruker: {prompt} | Kåre: {response}",
+        "en": "[{ts}] User: {prompt} | Kåre: {response}",
+        "de": "[{ts}] Nutzer: {prompt} | Kåre: {response}",
+    },
+    "mk_portrait_older_hidden": {
+        "nb": "[… eldre observasjoner ikke vist]",
+        "en": "[… older observations not shown]",
+        "de": "[… ältere Beobachtungen nicht angezeigt]",
+    },
+    "mk_personality_fallback": {
+        "nb": "Du er Miss Kåre – varm, moderlig, jordnær.",
+        "en": "You are Miss Kåre – warm, motherly, down-to-earth.",
+        "de": "Du bist Miss Kåre – warmherzig, mütterlich, bodenständig.",
+    },
+    "mk_eval_situation_direct": {
+        "nb": "Brukeren henvendte seg direkte til deg — de startet meldingen sin med 'Miss Kåre'. Du er blitt talt til. Svar varmt og direkte til brukeren. Kåres kommentar (hvis han sa noe) kan du gjerne forholde deg til, men du er ikke nødt.\n\n",
+        "en": "The user addressed you directly — they started their message with 'Miss Kåre'. You have been spoken to. Answer the user warmly and directly. You may relate to Kåre's comment (if he said anything), but you don't have to.\n\n",
+        "de": "Der Nutzer hat sich direkt an dich gewandt — er hat seine Nachricht mit 'Miss Kåre' begonnen. Du wurdest angesprochen. Antworte dem Nutzer warm und direkt. Auf Kåres Kommentar (falls er etwas gesagt hat) kannst du gern eingehen, musst es aber nicht.\n\n",
+    },
+    "mk_eval_situation_observe": {
+        "nb": "Du har nettopp lest en samtale mellom brukeren og Kåre. Avgjør om du har noe å si – noe som berørte deg, som fortjener en reaksjon.\n\nHvis du ikke har noe å tilføye: svar kun med [STILLE]\n",
+        "en": "You have just read a conversation between the user and Kåre. Decide whether you have something to say – something that touched you, that deserves a reaction.\n\nIf you have nothing to add: reply only with [STILLE] (exactly this token)\n",
+        "de": "Du hast gerade ein Gespräch zwischen dem Nutzer und Kåre gelesen. Entscheide, ob du etwas zu sagen hast – etwas, das dich berührt hat und eine Reaktion verdient.\n\nWenn du nichts hinzuzufügen hast: antworte nur mit [STILLE] (genau dieses Token)\n",
+    },
+    "mk_eval_user_block": {
+        "nb": "# Nåværende bruker\nDu snakker nå med **{name}**. Bruk alltid dette navnet — aldri et annet.\n\n---\n\n",
+        "en": "# Current user\nYou are now talking to **{name}**. Always use this name — never another.\n\n---\n\n",
+        "de": "# Aktueller Nutzer\nDu sprichst jetzt mit **{name}**. Verwende immer diesen Namen — niemals einen anderen.\n\n---\n\n",
+    },
+    "mk_eval_portrait_header": {
+        "nb": "# Dine tidligere observasjoner om {name}",
+        "en": "# Your earlier observations about {name}",
+        "de": "# Deine früheren Beobachtungen über {name}",
+    },
+    "mk_eval_tail": {
+        "nb": "Hvis du vil slå opp noe faktisk i wikien til Miss Library, svar kun med:\n[SJEKK: <presist spørsmål til Miss Library>]\n\nHvis du vil si noe direkte: si det varmt, maks 3 setninger. Ingen innledning.",
+        "en": "If you want to look something factual up in Miss Library's wiki, reply only with (exactly this token):\n[SJEKK: <precise question for Miss Library>]\n\nIf you want to say something directly: say it warmly, max 3 sentences. No introduction.",
+        "de": "Wenn du etwas Sachliches im Wiki von Miss Library nachschlagen willst, antworte nur mit (genau diesem Token):\n[SJEKK: <präzise Frage an Miss Library>]\n\nWenn du direkt etwas sagen willst: sag es warm, höchstens 3 Sätze. Keine Einleitung.",
+    },
+    "mk_eval_user_content": {
+        "nb": "Brukeren sa:\n{user_msg}\n\nKåre svarte:\n{kare_response}",
+        "en": "The user said:\n{user_msg}\n\nKåre replied:\n{kare_response}",
+        "de": "Der Nutzer sagte:\n{user_msg}\n\nKåre antwortete:\n{kare_response}",
+    },
+    "mk_eval_library_followup": {
+        "nb": "Miss Library svarte:\n{answer}\n\nBruk dette til å si noe varmt og konkret til brukeren. Maks 3 setninger.",
+        "en": "Miss Library replied:\n{answer}\n\nUse this to say something warm and concrete to the user. Max 3 sentences.",
+        "de": "Miss Library antwortete:\n{answer}\n\nNutze das, um dem Nutzer etwas Warmes und Konkretes zu sagen. Höchstens 3 Sätze.",
+    },
+    "mk_extract_system": {
+        "nb": 'Du er Miss Kåre. {hint}\nAvgjør om teksten inneholder ETT konkret, biografisk faktum verdt å huske (f.eks. bursdag, jobb, hobby, forhold, religion, bosted) — ikke stemning, mening om Kåre, eller noe teknisk.\n\nDu MÅ velge feltnavn fra denne listen — finn ikke på nye feltnavn:\n{catalog}\n\nSvar KUN med JSON, ingen annen tekst:\n{{"section": "<seksjonsnavn fra listen>", "field": "<feltnavn fra listen>", "value": "<verdien>"}}\nHvis ingenting konkret ble sagt, eller ingen felt passer: {{"section": null}}',
+        "en": 'You are Miss Kåre. {hint}\nDecide whether the text contains ONE concrete, biographical fact worth remembering (e.g. birthday, job, hobby, relationship, religion, place of residence) — not mood, opinions about Kåre, or anything technical.\n\nYou MUST choose field names from this list — do not invent new field names:\n{catalog}\n\nReply ONLY with JSON, no other text. Write the value in the language the user used:\n{{"section": "<section name from the list>", "field": "<field name from the list>", "value": "<the value>"}}\nIf nothing concrete was said, or no field fits: {{"section": null}}',
+        "de": 'Du bist Miss Kåre. {hint}\nEntscheide, ob der Text EINE konkrete, biografische Tatsache enthält, die es wert ist, behalten zu werden (z. B. Geburtstag, Beruf, Hobby, Beziehung, Religion, Wohnort) — keine Stimmung, keine Meinung über Kåre, nichts Technisches.\n\nDu MUSST Feldnamen aus dieser Liste wählen — erfinde keine neuen Feldnamen:\n{catalog}\n\nAntworte NUR mit JSON, ohne anderen Text. Schreibe den Wert in der Sprache, die der Nutzer verwendet hat:\n{{"section": "<Abschnittsname aus der Liste>", "field": "<Feldname aus der Liste>", "value": "<der Wert>"}}\nWenn nichts Konkretes gesagt wurde oder kein Feld passt: {{"section": null}}',
+    },
+    "mk_extract_exchange": {
+        "nb": "Du spurte: {question}\nBrukeren svarte: {reply}",
+        "en": "You asked: {question}\nThe user replied: {reply}",
+        "de": "Du hast gefragt: {question}\nDer Nutzer antwortete: {reply}",
+    },
+    "mk_extract_hint_reply": {
+        "nb": "Du stilte nettopp et spørsmål, og brukeren svarte.",
+        "en": "You just asked a question, and the user replied.",
+        "de": "Du hast gerade eine Frage gestellt, und der Nutzer hat geantwortet.",
+    },
+    "mk_extract_hint_meeting": {
+        "nb": "Dette er Kåres avsluttende oppsummering av kveldens refleksjonsmøte om brukeren.",
+        "en": "This is Kåre's closing summary of tonight's reflection meeting about the user.",
+        "de": "Dies ist Kåres abschließende Zusammenfassung des heutigen Reflexionstreffens über den Nutzer.",
+    },
+    "list_shopping_empty": {
+        "nb": "Handlelisten er tom.",
+        "en": "The shopping list is empty.",
+        "de": "Die Einkaufsliste ist leer.",
+    },
+    "list_shopping_title": {
+        "nb": "Handleliste ({count} varer):",
+        "en": "Shopping list ({count} items):",
+        "de": "Einkaufsliste ({count} Artikel):",
+    },
+    "list_added_by": {
+        "nb": " (lagt til av {name})",
+        "en": " (added by {name})",
+        "de": " (hinzugefügt von {name})",
+    },
+    "list_no_user": {
+        "nb": "Feil: ingen innlogget bruker.",
+        "en": "Error: no logged-in user.",
+        "de": "Fehler: kein angemeldeter Nutzer.",
+    },
+    "list_reminder_empty": {
+        "nb": "Huskelisten din er tom.",
+        "en": "Your reminder list is empty.",
+        "de": "Deine Merkliste ist leer.",
+    },
+    "list_reminder_all_done": {
+        "nb": "Ingen aktive huskenotater. Alt er ferdig.",
+        "en": "No active reminders. Everything is done.",
+        "de": "Keine aktiven Erinnerungen. Alles erledigt.",
+    },
+    "list_reminder_title": {
+        "nb": "Din huskeliste ({count} punkter):",
+        "en": "Your reminder list ({count} entries):",
+        "de": "Deine Merkliste ({count} Einträge):",
+    },
+    "list_reminder_done": {
+        "nb": "Ferdig: {text}",
+        "en": "Done: {text}",
+        "de": "Erledigt: {text}",
+    },
+    "list_reminder_not_found": {
+        "nb": "Fant ingen huskenotat med id '{id}'.",
+        "en": "No reminder found with id '{id}'.",
+        "de": "Keine Erinnerung mit der ID '{id}' gefunden.",
+    },
+    "list_reminder_deleted": {
+        "nb": "Huskenotat slettet.",
+        "en": "Reminder deleted.",
+        "de": "Erinnerung gelöscht.",
+    },
+    "world_var_desc_label": {
+        "nb": "Beskrivelse: {desc}",
+        "en": "Description: {desc}",
+        "de": "Beschreibung: {desc}",
+    },
+    "world_var_set_by_label": {
+        "nb": "Satt av: {by} ({date})",
+        "en": "Set by: {by} ({date})",
+        "de": "Gesetzt von: {by} ({date})",
+    },
+    "list_kare_context_suffix": {
+        "nb": " (kontekst: {context})",
+        "en": " (context: {context})",
+        "de": " (Kontext: {context})",
+    },
+    "list_kare_prompt_title": {
+        "nb": "# Min huskeliste",
+        "en": "# My reminder list",
+        "de": "# Meine Merkliste",
+    },
+    "list_missing_id": {
+        "nb": "Feil: id mangler.",
+        "en": "Error: id is missing.",
+        "de": "Fehler: ID fehlt.",
+    },
+    "list_kare_removed": {
+        "nb": "Punkt fjernet fra min huskeliste.",
+        "en": "Entry removed from my reminder list.",
+        "de": "Eintrag von meiner Merkliste entfernt.",
+    },
+    "list_kare_edited": {
+        "nb": "Endret i min huskeliste [{id}]: {text}",
+        "en": "Edited in my reminder list [{id}]: {text}",
+        "de": "In meiner Merkliste geändert [{id}]: {text}",
+    },
+    "list_kare_search_none": {
+        "nb": "Ingen treff i min huskeliste.",
+        "en": "No matches in my reminder list.",
+        "de": "Keine Treffer in meiner Merkliste.",
+    },
+    "list_kare_empty": {
+        "nb": "Min huskeliste er tom.",
+        "en": "My reminder list is empty.",
+        "de": "Meine Merkliste ist leer.",
+    },
+    "list_kare_search_title": {
+        "nb": "Treff i min huskeliste ({shown} av {total})",
+        "en": "Matches in my reminder list ({shown} of {total})",
+        "de": "Treffer in meiner Merkliste ({shown} von {total})",
+    },
+    "list_kare_title": {
+        "nb": "Min huskeliste ({count} punkter)",
+        "en": "My reminder list ({count} entries)",
+        "de": "Meine Merkliste ({count} Einträge)",
+    },
+    "timer_ha_action_done": {
+        "nb": "Planlagt handling utført: {action} på {entity}",
+        "en": "Scheduled action done: {action} on {entity}",
+        "de": "Geplante Aktion ausgeführt: {action} für {entity}",
+    },
+    "timer_fired_no_text": {
+        "nb": "Timer avfyrt (ingen tekst satt)",
+        "en": "Timer fired (no text set)",
+        "de": "Timer ausgelöst (kein Text gesetzt)",
+    },
+    "mech_personality_fallback": {
+        "nb": "Du er Mechanic – en allsidig teknisk assistent.",
+        "en": "You are Mechanic – a versatile technical assistant.",
+        "de": "Du bist Mechanic – ein vielseitiger technischer Assistent.",
+    },
+    "agent_job_running": {
+        "nb": "[Jobb {job}…] Kjører fortsatt — sjekk igjen om litt.",
+        "en": "[Job {job}…] Still running — check again in a moment.",
+        "de": "[Job {job}…] Läuft noch — schau gleich noch einmal nach.",
+    },
+    "agent_job_result": {
+        "nb": "[Jobb {job}…] {status}\n{result}",
+        "en": "[Job {job}…] {status}\n{result}",
+        "de": "[Job {job}…] {status}\n{result}",
+    },
+    "agent_job_no_output": {
+        "nb": "(ingen utdata)",
+        "en": "(no output)",
+        "de": "(keine Ausgabe)",
+    },
+    "agent_job_cancelled": {
+        "nb": "[Jobb {job}…] Avbrudd sendt. Status: {status}.",
+        "en": "[Job {job}…] Cancellation sent. Status: {status}.",
+        "de": "[Job {job}…] Abbruch gesendet. Status: {status}.",
+    },
+    "agent_job_comment_not_running": {
+        "nb": "[Jobb {job}…] Jobben kjører ikke lenger — kommentaren ble ikke levert.",
+        "en": "[Job {job}…] Job is no longer running — comment not delivered.",
+        "de": "[Job {job}…] Der Job läuft nicht mehr — Kommentar nicht zugestellt.",
+    },
+    "agent_job_comment_queued": {
+        "nb": "[Jobb {job}…] Kommentar lagt i kø. Mechanic ser den ved neste verktøyrunde.",
+        "en": "[Job {job}…] Comment queued. Mechanic will see it at the next tool round.",
+        "de": "[Job {job}…] Kommentar eingereiht. Mechanic sieht ihn in der nächsten Werkzeugrunde.",
+    },
+    "agent_mechanic_no_response": {
+        "nb": "[Ingen respons fra Mechanic]",
+        "en": "[No response from Mechanic]",
+        "de": "[Keine Antwort von Mechanic]",
+    },
+    "agent_empty_task": {
+        "nb": "Feil: oppgaven kan ikke være tom.",
+        "en": "Error: task cannot be empty.",
+        "de": "Fehler: die Aufgabe darf nicht leer sein.",
+    },
+    "agent_job_id_required": {
+        "nb": "Feil: job_id mangler.",
+        "en": "Error: job_id is required.",
+        "de": "Fehler: job_id fehlt.",
+    },
+    "agent_job_comment_required": {
+        "nb": "Feil: job_id og comment må oppgis.",
+        "en": "Error: job_id and comment are required.",
+        "de": "Fehler: job_id und comment sind erforderlich.",
+    },
+    "agent_unknown_action": {
+        "nb": "Ukjent action for {tool}: '{action}'. Gyldige: {valid}.",
+        "en": "Unknown action for {tool}: '{action}'. Valid: {valid}.",
+        "de": "Unbekannte Aktion für {tool}: '{action}'. Gültig: {valid}.",
+    },
+    "agent_container_rejected": {
+        "nb": "[Avvist: '{container}' er ikke på tillatt-lista. Tillatt: {allowed}]",
+        "en": "[Rejected: '{container}' is not in the allowed list. Allowed: {allowed}]",
+        "de": "[Abgelehnt: '{container}' steht nicht auf der Erlaubt-Liste. Erlaubt: {allowed}]",
+    },
+    "agent_container_restarted": {
+        "nb": "Containeren '{container}' er startet på nytt. Modellen bruker ca. 3,5 minutter på å laste før den er klar.",
+        "en": "Container '{container}' restarted. The model takes about 3.5 minutes to load before it is ready again.",
+        "de": "Container '{container}' neu gestartet. Das Modell braucht etwa 3,5 Minuten zum Laden, bevor es wieder bereit ist.",
+    },
+    "agent_container_restart_failed": {
+        "nb": "docker restart feilet (rc={rc}): {output}",
+        "en": "docker restart failed (rc={rc}): {output}",
+        "de": "docker restart fehlgeschlagen (rc={rc}): {output}",
+    },
+    "agent_unknown_tool": {
+        "nb": "[executor_agents] Ukjent verktøy: '{name}'",
+        "en": "[executor_agents] Unknown tool: '{name}'",
+        "de": "[executor_agents] Unbekanntes Werkzeug: '{name}'",
+    },
+    "mech_shell_disabled": {
+        "nb": "[Shell er av. En admin kan skru det på under Innstillinger → Agent-innstillinger → Mechanic (verktøyet «shell»).]",
+        "en": "[Shell is off. An admin can enable it under Settings → Agent settings → Mechanic (the «shell» tool).]",
+        "de": "[Shell ist aus. Ein Admin kann es unter Einstellungen → Agent-Einstellungen → Mechanic (Werkzeug «shell») aktivieren.]",
+    },
+    "mech_shell_empty": {
+        "nb": "[Tom kommando]",
+        "en": "[Empty command]",
+        "de": "[Leerer Befehl]",
+    },
+    "mech_shell_rejected": {
+        "nb": "[Avvist: '{command}' — {reason}. Shell kan bare lese.]",
+        "en": "[Rejected: '{command}' — {reason}. Shell can only read.]",
+        "de": "[Abgelehnt: '{command}' — {reason}. Shell darf nur lesen.]",
+    },
+    "mech_shell_follow_bounded": {
+        "nb": "[Følge-modus (-f) kjører for alltid — viser de siste {lines} linjene i stedet.]",
+        "en": "[Follow mode (-f) never ends — showing the last {lines} lines instead.]",
+        "de": "[Folgemodus (-f) endet nie — stattdessen die letzten {lines} Zeilen.]",
+    },
+    "mech_shell_no_sudo_local": {
+        "nb": "[Avvist: ingen sudo lokalt.]",
+        "en": "[Rejected: no sudo locally.]",
+        "de": "[Abgelehnt: kein sudo lokal.]",
+    },
+    "mech_shell_no_output": {
+        "nb": "[Ingen utdata]",
+        "en": "[No output]",
+        "de": "[Keine Ausgabe]",
+    },
+    "mech_shell_unknown_node": {
+        "nb": "[Ukjent node '{node}'. Konfigurerte noder: {nodes} — KTSB sine egne tjenester kjører på 'local'.]",
+        "en": "[Unknown node '{node}'. Configured nodes: {nodes} — KTSB's own services run on 'local'.]",
+        "de": "[Unbekannter Knoten '{node}'. Konfigurierte Knoten: {nodes} — KTSBs eigene Dienste laufen auf 'local'.]",
+    },
+    "mech_shell_sudo_not_allowed": {
+        "nb": "[Avvist: sudo-kommandoen er ikke lagt inn for '{node}'. Tillatt: {allowed}]",
+        "en": "[Rejected: that sudo command is not configured for '{node}'. Allowed: {allowed}]",
+        "de": "[Abgelehnt: dieser sudo-Befehl ist für '{node}' nicht konfiguriert. Erlaubt: {allowed}]",
+    },
+    "mech_partial_after_error": {
+        "nb": "[Mechanic ble avbrutt før han var ferdig ({error}). Her er de {rounds} verktøyresultatene han rakk å hente — ingen konklusjon fra ham:]",
+        "en": "[Mechanic was interrupted before finishing ({error}). Here are the {rounds} tool results he gathered — no conclusion from him:]",
+        "de": "[Mechanic wurde vor dem Abschluss unterbrochen ({error}). Hier sind die {rounds} Werkzeugergebnisse, die er abgerufen hat — kein Fazit von ihm:]",
+    },
     "mech_no_response": {
         "nb": "[Ingen respons]",
         "en": "[No response]",
@@ -2158,7 +2766,6 @@ _T: dict = {
         "en": "[Duplicate ignored: {tool} was already called with the same arguments. Try a different tool or change the arguments.]",
         "de": "[Duplikat ignoriert: {tool} wurde bereits mit denselben Argumenten aufgerufen. Versuche ein anderes Werkzeug oder ändere die Argumente.]",
     },
-
     # ── executor_memory: STM history formatting ───────────────────────────────
     "mem_stm_header": {
         "nb": "STM-snapshot for {date} (lagret {saved_at} UTC):",
@@ -2185,6 +2792,21 @@ _T: dict = {
         "en": "[… rest truncated]",
         "de": "[… Rest abgeschnitten]",
     },
+    "mem_no_dates": {
+        "nb": "ingen",
+        "en": "none",
+        "de": "keine",
+    },
+    "pers_profile_section": {
+        "nb": "=== PROFIL (profile.yaml) ===",
+        "en": "=== PROFILE (profile.yaml) ===",
+        "de": "=== PROFIL (profile.yaml) ===",
+    },
+    "pers_observations_section": {
+        "nb": "=== OBSERVASJONER (observations.md) ===",
+        "en": "=== OBSERVATIONS (observations.md) ===",
+        "de": "=== BEOBACHTUNGEN (observations.md) ===",
+    },
     "mem_verdict_verified": {
         "nb": "bekreftet ✓",
         "en": "confirmed ✓",
@@ -2200,36 +2822,44 @@ _T: dict = {
         "en": "marked as test 🧪",
         "de": "als Test markiert 🧪",
     },
-
     # ── Tool definitions — descriptions sent to LLM ───────────────────────────
     # library (full, with online action)
     "tool_library_desc": {
         "nb": (
-            "Spør Miss Library — lokal wiki-database og online LLM. Fire operasjoner: "
-            "action='search': semantisk søk i lokal wiki (1M+ artikler) for faktaspørsmål, "
+            "Spør Miss Library — lokale kilder og online LLM. Seks operasjoner: "
+            "action='search': semantisk søk i lokal wiki (hvis installert) for faktaspørsmål, "
             "definisjoner, historiske data. Svarer alltid med kilde. "
             "action='fetch_article': hent hele Wikipedia-artikkelen etter et søk (krever 'title'). "
-            "action='fetch_url': hent og oppsummer innhold fra spesifikk nettside (krever 'url', kun tillatte domener). "
+            "action='fetch_table': hent én tabell/liste fra en artikkel (krever 'title'). "
+            "action='fetch_url': hent og oppsummer innhold fra en bestemt nettside (krever 'url'). "
+            "action='law': norske lover og forskrifter fra Lovdata, lokalt (når norsk lov er slått på). "
+            "Spørsmål om hva norsk lov sier: bruk action='law' FØR web_search. "
             "action='online': spør stor online LLM for bred kunnskap eller kompleks resonnering. "
             "VIKTIG: ved ingen svar/feil, si det klart. Tilby mechanic(action='search') kun om brukeren ønsker det."
         ),
         "en": (
-            "Ask Miss Library — local wiki database and online LLM. Four operations: "
-            "action='search': semantic search in local wiki (1M+ articles) for factual questions, "
+            "Ask Miss Library — local sources and online LLM. Six operations: "
+            "action='search': semantic search in the local wiki (if installed) for factual questions, "
             "definitions, historical data. Always answers with source. "
             "action='fetch_article': fetch the full Wikipedia article after a search (requires 'title'). "
-            "action='fetch_url': fetch and summarize a specific webpage (requires 'url', trusted domains only). "
+            "action='fetch_table': fetch one table/list from an article (requires 'title'). "
+            "action='fetch_url': fetch and summarize a specific webpage (requires 'url'). "
+            "action='law': Norwegian laws and regulations from Lovdata, local (when Norwegian law is switched on). "
+            "Questions about what Norwegian law says: use action='law' BEFORE web_search. "
             "action='online': ask a large online LLM for broad knowledge or complex reasoning. "
             "IMPORTANT: on no answer/error, say so clearly. Offer mechanic(action='search') only if user wants it."
         ),
         "de": (
-            "Miss Library fragen — lokale Wiki-Datenbank und Online-LLM. Vier Operationen: "
-            "action='search': semantische Suche im lokalen Wiki (1M+ Artikel) für Faktenfragen, "
+            "Miss Library fragen — lokale Quellen und Online-LLM. Sechs Operationen: "
+            "action='search': semantische Suche im lokalen Wiki (falls installiert) für Faktenfragen, "
             "Definitionen, historische Daten. Antwortet immer mit Quelle. "
-            "action='fetch_article': vollständigen Wikipedia-Artikel abrufen (erfordert 'title'). "
-            "action='fetch_url': Webseite abrufen und zusammenfassen (erfordert 'url', nur vertrauenswürdige Domains). "
-            "action='online': großes Online-LLM für breites Wissen oder komplexes Denken befragen. "
-            "WICHTIG: bei keiner Antwort/Fehler klar mitteilen. mechanic(action='search') nur anbieten wenn Nutzer es möchte."
+            "action='fetch_article': den ganzen Wikipedia-Artikel nach einer Suche abrufen (erfordert 'title'). "
+            "action='fetch_table': eine Tabelle/Liste aus einem Artikel abrufen (erfordert 'title'). "
+            "action='fetch_url': Inhalt einer bestimmten Webseite abrufen und zusammenfassen (erfordert 'url'). "
+            "action='law': norwegische Gesetze und Verordnungen von Lovdata, lokal (wenn norwegisches Recht eingeschaltet ist). "
+            "Fragen dazu, was norwegisches Recht sagt: action='law' VOR web_search verwenden. "
+            "action='online': großes Online-LLM für breites Wissen oder komplexes Denken fragen. "
+            "WICHTIG: bei keiner Antwort/Fehler klar sagen. mechanic(action='search') nur anbieten, wenn der Nutzer es wünscht."
         ),
     },
     # library (no-online variant for child/teen)
@@ -2255,24 +2885,50 @@ _T: dict = {
         ),
     },
     "tool_library_action_desc": {
-        "nb": "'search' = semantisk wiki-søk (krever 'query'). 'fetch_article' = hent hel artikkel (krever 'title'). 'fetch_url' = hent nettside (krever 'url'). 'online' = online LLM (krever 'query').",
-        "en": "'search' = semantic wiki search (requires 'query'). 'fetch_article' = fetch full article (requires 'title'). 'fetch_url' = fetch webpage (requires 'url'). 'online' = online LLM (requires 'query').",
-        "de": "'search' = semantische Wiki-Suche (erfordert 'query'). 'fetch_article' = vollständigen Artikel abrufen (erfordert 'title'). 'fetch_url' = Webseite abrufen (erfordert 'url'). 'online' = Online-LLM (erfordert 'query').",
+        "nb": "'search' = semantisk wiki-søk (krever 'query'). 'fetch_article' = hent hel artikkel (krever 'title'). 'fetch_table' = hent én tabell/liste fra en artikkel (krever 'title', valgfritt 'label'; uten 'label' får du listen over hva artikkelen har). 'fetch_url' = hent nettside (krever 'url'). 'online' = online LLM (krever 'query'). 'law' = norske lover og sentrale forskrifter (Lovdata, lokalt — krever 'query'; bruk lovens egne ord i 'keywords', f.eks. 'skadeverk', ikke 'hærverk').",
+        "en": "'search' = semantic wiki search (requires 'query'). 'fetch_article' = fetch full article (requires 'title'). 'fetch_table' = fetch one table/list from an article (requires 'title', optional 'label'; without 'label' you get the list of what the article has). 'fetch_url' = fetch webpage (requires 'url'). 'online' = online LLM (requires 'query'). 'law' = Norwegian laws and central regulations (Lovdata, local — requires 'query'; put the law's own words in 'keywords', e.g. 'skadeverk', not 'hærverk').",
+        "de": "'search' = semantische Wiki-Suche (erfordert 'query'). 'fetch_article' = vollständigen Artikel abrufen (erfordert 'title'). 'fetch_table' = eine Tabelle/Liste eines Artikels abrufen (erfordert 'title', optional 'label'; ohne 'label' erhältst du die Liste dessen, was der Artikel enthält). 'fetch_url' = Webseite abrufen (erfordert 'url'). 'online' = Online-LLM (erfordert 'query'). 'law' = norwegische Gesetze und zentrale Verordnungen (Lovdata, lokal — erfordert 'query'; die eigenen Begriffe des Gesetzes in 'keywords', z.B. 'skadeverk', nicht 'hærverk').",
     },
     "tool_library_no_online_action_desc": {
-        "nb": "'search' = semantisk wiki-søk (krever 'query'). 'fetch_article' = hent hel artikkel (krever 'title'). 'fetch_url' = hent nettside (krever 'url').",
-        "en": "'search' = semantic wiki search (requires 'query'). 'fetch_article' = fetch full article (requires 'title'). 'fetch_url' = fetch webpage (requires 'url').",
-        "de": "'search' = semantische Wiki-Suche (erfordert 'query'). 'fetch_article' = vollständigen Artikel abrufen (erfordert 'title'). 'fetch_url' = Webseite abrufen (erfordert 'url').",
+        "nb": "'search' = semantisk wiki-søk (krever 'query'). 'fetch_article' = hent hel artikkel (krever 'title'). 'fetch_table' = hent én tabell/liste fra en artikkel (krever 'title', valgfritt 'label'). 'fetch_url' = hent nettside (krever 'url').",
+        "en": "'search' = semantic wiki search (requires 'query'). 'fetch_article' = fetch full article (requires 'title'). 'fetch_table' = fetch one table/list from an article (requires 'title', optional 'label'). 'fetch_url' = fetch webpage (requires 'url').",
+        "de": "'search' = semantische Wiki-Suche (erfordert 'query'). 'fetch_article' = vollständigen Artikel abrufen (erfordert 'title'). 'fetch_table' = eine Tabelle/Liste eines Artikels abrufen (erfordert 'title', optional 'label'). 'fetch_url' = Webseite abrufen (erfordert 'url').",
     },
     "tool_library_query_desc": {
-        "nb": "Spørsmålet. Kun ved action='search' og 'online'.",
-        "en": "The query. Only for action='search' and 'online'.",
-        "de": "Die Anfrage. Nur bei action='search' und 'online'.",
+        "nb": "Hva som skal søkes etter: emnet eller spørsmålet med de viktigste ordene (f.eks. 'norske gullvinnere Sommer-OL 2004'). Ingen instruksjoner her — de hører hjemme i 'task'. Det er kun denne teksten som søkes i wikien; artikkelen med det best rangerte avsnittet velges. Kun ved action='search' og 'online'.",
+        "en": "What to search for: the topic or question with its key words (e.g. 'Norwegian gold medallists 2004 Summer Olympics'). No instructions here — they belong in 'task'. Only this text is searched in the wiki; the article with the best-ranked passage is chosen. Only for action='search' and 'online'.",
+        "de": "Wonach gesucht wird: das Thema oder die Frage mit den wichtigsten Wörtern (z. B. 'norwegische Goldmedaillengewinner Olympische Sommerspiele 2004'). Keine Anweisungen hier — die gehören in 'task'. Nur dieser Text wird im Wiki gesucht; der Artikel mit dem am besten bewerteten Abschnitt wird gewählt. Nur bei action='search' und 'online'.",
+    },
+    "tool_library_task_desc": {
+        "nb": "Valgfri presis oppgave til Miss Library: hva som skal rapporteres (f.eks. bare gjeldende verdi, en liste, en sammenligning) og hvor kort. Hun svarer med belegg (ordrette sitater med kilde); er kildene uenige, melder hun alltid hvilken kilde som sier hva — gi det videre til brukeren. 'task' søkes aldri — den går bare til svartrinnet. Kun ved action='search'.",
+        "en": "Optional precise task for Miss Library: what to report (e.g. only the current value, a list, a comparison) and how short. She answers with evidence (verbatim quotes with source); if sources disagree she always reports which source says what — pass that on to the user. 'task' is never searched — it only goes to the answer step. Only for action='search'.",
+        "de": "Optionale präzise Aufgabe für Miss Library: was berichtet werden soll (z. B. nur der aktuelle Wert, eine Liste, ein Vergleich) und wie kurz. Sie antwortet mit Belegen (wörtliche Zitate mit Quelle); widersprechen sich Quellen, meldet sie immer, welche Quelle was sagt — gib das an den Nutzer weiter. 'task' wird nie gesucht — sie geht nur in den Antwortschritt. Nur bei action='search'.",
     },
     "tool_library_title_desc": {
         "nb": "Artikkeltittel nøyaktig som i wiki-søkeresultatet. Kun ved action='fetch_article'.",
         "en": "Article title exactly as in the wiki search result. Only for action='fetch_article'.",
         "de": "Artikeltitel genau wie im Wiki-Suchergebnis. Nur bei action='fetch_article'.",
+    },
+    # appended to both library descriptions, generated from the wiki registry (P111 Phase 3)
+    "tool_library_wiki_suffix": {
+        "nb": " Wikier: {wikis}. 'search' søker i alle samtidig (primær først) og gir et kort, filtrert svar med kilde og wiki. Bruk 'wiki' for å velge én eller flere.",
+        "en": " Wikis: {wikis}. 'search' searches all of them at once (primary first) and returns a short, filtered answer with source and wiki. Use 'wiki' to pick one or more.",
+        "de": " Wikis: {wikis}. 'search' durchsucht alle gleichzeitig (primäres zuerst) und liefert eine kurze, gefilterte Antwort mit Quelle und Wiki. Mit 'wiki' eines oder mehrere wählen.",
+    },
+    "tool_library_label_desc": {
+        "nb": "Navnet på tabellen/listen, slik det står i søkeresultatet eller artikkelen. Kun ved action='fetch_table'.",
+        "en": "The table/list name as shown in the search result or article. Only for action='fetch_table'.",
+        "de": "Der Name der Tabelle/Liste wie im Suchergebnis oder Artikel. Nur bei action='fetch_table'.",
+    },
+    "tool_library_mode_desc": {
+        "nb": "'raw' (standard) = tabellen som i kilden. 'translated' = ord oversatt til ditt språk, alle verdier uendret. Kun ved action='fetch_table'.",
+        "en": "'raw' (default) = the table as in the source. 'translated' = words translated into your language, all values unchanged. Only for action='fetch_table'.",
+        "de": "'raw' (Standard) = die Tabelle wie in der Quelle. 'translated' = Wörter in deine Sprache übersetzt, alle Werte unverändert. Nur bei action='fetch_table'.",
+    },
+    "tool_library_wiki_desc": {
+        "nb": "Valgfritt: hvilken wiki (f.eks. 'no', 'en' eller 'no,en'). Standard: alle, primær først. Ved action='search' og 'fetch_article'.",
+        "en": "Optional: which wiki (e.g. 'no', 'en' or 'no,en'). Default: all, primary first. For action='search' and 'fetch_article'.",
+        "de": "Optional: welches Wiki (z. B. 'no', 'en' oder 'no,en'). Standard: alle, primäres zuerst. Bei action='search' und 'fetch_article'.",
     },
     "tool_library_url_desc": {
         "nb": "Fullstendig URL (https://...). Kun ved action='fetch_url'.",
@@ -2284,7 +2940,6 @@ _T: dict = {
         "en": "Max characters to return for fetch_article. Default 8000.",
         "de": "Maximale Zeichen für fetch_article. Standard 8000.",
     },
-
     # les_ha
     "tool_les_ha_desc": {
         "nb": (
@@ -2330,7 +2985,6 @@ _T: dict = {
         "en": "HA entity_id, e.g. 'sensor.netatmo_utendors_modul_temperatur'. Only for action='status'.",
         "de": "HA entity_id, z.B. 'sensor.netatmo_utendors_modul_temperatur'. Nur bei action='status'.",
     },
-
     # styr_enhet
     "tool_styr_enhet_desc": {
         "nb": "Styrer enheter og henter sensorhistorikk fra Home Assistant. Bruk les_ha(action='room_list') først hvis du ikke kjenner entity_id. For lys: set_level + brightness_pct, set_color_temp + color_temp_kelvin, set_color + rgb_color. For historikk (f.eks. nedbør siste mnd): action=ha_history + entity_id + history_days + history_period.",
@@ -2372,7 +3026,6 @@ _T: dict = {
         "en": "RGB color [r,g,b] 0–255. Used with action=set_color.",
         "de": "RGB-Farbe [r,g,b] 0–255. Mit action=set_color.",
     },
-
     # søk_nett
     "tool_søk_nett_desc": {
         "nb": (
@@ -2399,7 +3052,63 @@ _T: dict = {
         "en": "Concrete, precise query — e.g. 'vandalism sentencing Norway'. Norwegian or English.",
         "de": "Konkrete, präzise Suchanfrage — z.B. 'Sachbeschädigung Strafmaß Norwegen'.",
     },
-
+    "web_search_not_configured": {
+        "nb": "Nettsøk er ikke satt opp: ingen søkemotor er klar (SearXNG mangler adresse, eller Brave mangler API-nøkkel). En admin kan sette det opp under Innstillinger → Nettsøk/Vær.",
+        "en": "Web search is not set up: no search engine is ready (SearXNG has no address, or Brave has no API key). An admin can set it up under Settings → Web Search & Weather.",
+        "de": "Die Websuche ist nicht eingerichtet: keine Suchmaschine ist bereit (SearXNG ohne Adresse oder Brave ohne API-Schlüssel). Ein Admin kann sie unter Einstellungen → Websuche & Wetter einrichten.",
+    },
+    "web_search_timeout": {
+        "nb": "Nettsøket tok for lang tid (over {s} sekunder) og ble avbrutt. Ingen svar fra nettet denne gangen.",
+        "en": "The web search took too long (over {s} seconds) and was stopped. No answer from the web this time.",
+        "de": "Die Websuche hat zu lange gedauert (über {s} Sekunden) und wurde abgebrochen. Diesmal keine Antwort aus dem Web.",
+    },
+    "web_trust_list_unreadable": {
+        "nb": "Listen over godkjente kilder (configs/trusted_sources.yaml) kunne ikke leses, så ingen nettsider hentes før den er rettet. En admin kan sjekke den under Innstillinger → Nettsøk/Vær → Vitlistede nettsider.",
+        "en": "The trusted sources list (configs/trusted_sources.yaml) could not be read, so no web pages are fetched until it is fixed. An admin can check it under Settings → Web Search & Weather → Whitelisted websites.",
+        "de": "Die Liste vertrauenswürdiger Quellen (configs/trusted_sources.yaml) konnte nicht gelesen werden, daher werden keine Webseiten abgerufen, bis sie korrigiert ist. Ein Admin kann sie unter Einstellungen → Websuche & Wetter → Whitelist-Webseiten prüfen.",
+    },
+    "tool_subject_desc": {
+        "nb": "Det konkrete tingen spørsmålet handler om (sted, bygning, person, organisasjon, verk, produkt), med det vanligste navnet — helst slik den heter på Wikipedia, f.eks. 'Wieliczka Salt Mine'. Brukes til å merke kilder som handler om noe annet. Utelat ved generelle spørsmål.",
+        "en": "The specific thing the question is about (place, building, person, organisation, work, product), by its most common name — preferably as titled on Wikipedia, e.g. 'Wieliczka Salt Mine'. Used to flag sources about something else. Leave out for general questions.",
+        "de": "Das konkrete Ding, um das es in der Frage geht (Ort, Gebäude, Person, Organisation, Werk, Produkt), mit dem gebräuchlichsten Namen — am besten wie auf Wikipedia, z.B. 'Wieliczka Salt Mine'. Dient dazu, Quellen über etwas anderes zu markieren. Bei allgemeinen Fragen weglassen.",
+    },
+    "tool_søk_nett_near_home_desc": {
+        "nb": (
+            "true = spørsmålet gjelder husstandens nærområde og nevner INGEN andre steder eller navn "
+            "(f.eks. 'når stenger apoteket', 'hva skjer i helga') — hjemstedet legges da til søket. "
+            "false = et sted, land eller navn er nevnt, eller spørsmålet er ikke stedsavhengig. "
+            "Skriv aldri hjemstedet inn i query selv."
+        ),
+        "en": (
+            "true = the question is about the household's local area and names NO other place or name "
+            "(e.g. 'when does the pharmacy close', 'what's on this weekend') — the home location is then added to the search. "
+            "false = a place, country or name is mentioned, or the question does not depend on location. "
+            "Never write the home location into query yourself."
+        ),
+        "de": (
+            "true = die Frage betrifft die Umgebung des Haushalts und nennt KEINEN anderen Ort oder Namen "
+            "(z.B. 'wann schließt die Apotheke', 'was ist am Wochenende los') — der Wohnort wird dann zur Suche hinzugefügt. "
+            "false = ein Ort, Land oder Name wird genannt, oder die Frage ist nicht ortsabhängig. "
+            "Schreibe den Wohnort nie selbst in query."
+        ),
+    },
+    "gen_correction_near_home": {
+        "nb": (
+            "[SYSTEM: web_search ble IKKE kjørt — near_home mangler. Kall web_search på nytt med "
+            "near_home=true hvis spørsmålet gjelder nærområdet og ingen andre steder eller navn er nevnt, "
+            "ellers near_home=false.]"
+        ),
+        "en": (
+            "[SYSTEM: web_search was NOT run — near_home is missing. Call web_search again with "
+            "near_home=true if the question is about the local area and no other place or name is mentioned, "
+            "otherwise near_home=false.]"
+        ),
+        "de": (
+            "[SYSTEM: web_search wurde NICHT ausgeführt — near_home fehlt. Rufe web_search erneut auf mit "
+            "near_home=true, wenn die Frage die Umgebung betrifft und kein anderer Ort oder Name genannt wird, "
+            "sonst near_home=false.]"
+        ),
+    },
     # get_weather
     "tool_get_weather_desc": {
         "nb": (
@@ -2432,7 +3141,6 @@ _T: dict = {
         "en": "Place name, e.g. 'Oslo'. Omit for local weather.",
         "de": "Ortsname, z.B. 'Oslo'. Weglassen für lokales Wetter.",
     },
-
     # timer
     "tool_timer_desc": {
         "nb": (
@@ -2561,7 +3269,7 @@ _T: dict = {
     },
     "timer_pending_context": {
         "nb": "⏰ Ukvittert påminnelse til {user_id}: «{message}» [notif_id={notif_id}] — lever denne og kall deretter timer:ack notif_id={notif_id}.",
-        "en": "⏰ Unacknowledged reminder for {user_id}: \"{message}\" [notif_id={notif_id}] — deliver this and then call timer:ack notif_id={notif_id}.",
+        "en": '⏰ Unacknowledged reminder for {user_id}: "{message}" [notif_id={notif_id}] — deliver this and then call timer:ack notif_id={notif_id}.',
         "de": "⏰ Unbestätigte Erinnerung für {user_id}: '{message}' [notif_id={notif_id}] — diese zustellen und dann timer:ack notif_id={notif_id} aufrufen.",
     },
     "timer_llm_task_failed": {
@@ -2584,7 +3292,6 @@ _T: dict = {
         "en": "You do not have permission to set timers for children. Ask an administrator to enable parental permission for your account.",
         "de": "Du hast keine Berechtigung, Timer für Kinder zu setzen. Bitte einen Administrator, die Elternberechtigung für dein Konto zu aktivieren.",
     },
-
     # les_møte
     "tool_les_møte_desc": {
         "nb": "Les innholdet fra et av Kåres nattlige møter. type='reflection': refleksjonsmøter. type='development': tekniske utviklingsmøter. Uten dato: siste møte. Med dato (YYYY-MM-DD): møtet fra den datoen.",
@@ -2601,29 +3308,28 @@ _T: dict = {
         "en": "Date YYYY-MM-DD. Omit for latest meeting.",
         "de": "Datum YYYY-MM-DD. Weglassen für letztes Meeting.",
     },
-
     # minne
     "tool_minne_desc": {
         "nb": (
             "Kåres hukommelse — fire operasjoner: "
-            "action='search': semantisk søk i langtidsminnet. "
-            "action='fetch_unverified': hent interaksjoner som ikke er bekreftet ennå. "
+            "action='search': søk i langtidsminnet — samtaler som inneholder minst ett av søkeordene, pluss episodesammendrag nærmest i betydning. "
+            "action='fetch_unverified': hent interaksjoner som ikke er bekreftet ennå, nyeste først. "
             "action='confirm': merk interaksjoner som verified/denied/test (krever 'ids' og 'dom'). "
             "action='fetch_stm': hent eldre STM-snapshot — uten dato: vis tilgjengelige datoer; "
             "med dato='YYYY-MM-DD': hent dialog fra den dagen."
         ),
         "en": (
             "Kåre's memory — four operations: "
-            "action='search': semantic search in long-term memory. "
-            "action='fetch_unverified': fetch interactions not yet confirmed by the user. "
+            "action='search': search long-term memory — conversations containing at least one of the keywords, plus episode summaries closest in meaning. "
+            "action='fetch_unverified': fetch interactions not yet confirmed by the user, newest first. "
             "action='confirm': mark interactions as verified/denied/test (requires 'ids' and 'dom'). "
             "action='fetch_stm': fetch older STM snapshot — without date: list available dates; "
             "with date='YYYY-MM-DD': fetch dialogue from that day."
         ),
         "de": (
             "Kåres Gedächtnis — vier Operationen: "
-            "action='search': semantische Suche im Langzeitgedächtnis. "
-            "action='fetch_unverified': noch nicht bestätigte Interaktionen abrufen. "
+            "action='search': Suche im Langzeitgedächtnis — Gespräche mit mindestens einem der Suchwörter, plus bedeutungsnächste Episodenzusammenfassungen. "
+            "action='fetch_unverified': noch nicht bestätigte Interaktionen abrufen, neueste zuerst. "
             "action='confirm': Interaktionen als verified/denied/test markieren (erfordert 'ids' und 'dom'). "
             "action='fetch_stm': älteres STM-Snapshot abrufen — ohne Datum: verfügbare Daten anzeigen; "
             "mit Datum='YYYY-MM-DD': Dialog von diesem Tag abrufen."
@@ -2664,7 +3370,6 @@ _T: dict = {
         "en": "Date YYYY-MM-DD for STM snapshot. Omit to see available dates.",
         "de": "Datum YYYY-MM-DD für STM-Snapshot. Weglassen um verfügbare Daten zu sehen.",
     },
-
     # søk_i_argus
     "tool_søk_i_argus_desc": {
         "nb": "Søk i Kåres systemlogg via Argus. Returnerer HA-handlinger, feil, LLM-kall. Bruk for å finne hva systemet HAR GJORT — ikke hva brukeren sa (bruk minne(action='search') for det). Alltid semantisk søk (query kreves); legg til entity_id/since/until for å presist svare på 'skjedde X på tidspunkt Y' i stedet for kun 'noe relatert til X'.",
@@ -2696,29 +3401,45 @@ _T: dict = {
         "en": "Optional: only events up to this time (ISO 8601).",
         "de": "Optional: nur Ereignisse bis zu diesem Zeitpunkt (ISO 8601).",
     },
-
     # mechanic
     "tool_mechanic_desc": {
         "nb": (
-            "Mechanic — søk og oppsummer i kodebasen og logger. "
-            "action='search': les filer/søk i kode/hent logg uten å fylle din kontekst. "
-            "action='delegate': lang bakgrunnsjobb (returnerer job_id). "
+            "Mechanic — veien til kode, logger, systemstatus, git og shell-kommandoer. Bruk "
+            "denne for ALT i den kategorien. "
+            "action='search': rask, synkron lesing/søk/logg-henting uten å fylle din egen "
+            "kontekst — bruk for enkle, raske oppslag. "
+            "action='delegate': lang bakgrunnsjobb, ikke-blokkerende (returnerer job_id) — bruk "
+            "for undersøkelser som krever flere steg. Skriv en PRESIS oppgavebeskrivelse med "
+            "tydelig mål, hva som skal rapporteres, og eventuelle begrensninger (f.eks. 'kun "
+            "lesing, ingen shell') — en vag oppgave gir et dårlig resultat, uansett hvor "
+            "kapabel Mechanic er. "
             "action='result': poll resultat fra delegert jobb. "
             "action='cancel': stopp løpende jobb. "
             "action='comment': injiser melding i løpende jobb."
         ),
         "en": (
-            "Mechanic — search and summarize in codebase and logs. "
-            "action='search': read files/search code/fetch logs without filling your context. "
-            "action='delegate': long background job (returns job_id). "
+            "Mechanic — the path to code, logs, system status, git and shell commands. Use "
+            "this for ALL of that category. "
+            "action='search': quick, synchronous read/search/log-fetch without filling your "
+            "own context — use for simple, fast lookups. "
+            "action='delegate': long background job, non-blocking (returns job_id) — use for "
+            "investigations that need multiple steps. Write a PRECISE task description with a "
+            "clear goal, what should be reported back, and any constraints (e.g. 'read-only, "
+            "no shell') — a vague task gives a bad result no matter how capable Mechanic is. "
             "action='result': poll result from delegated job. "
             "action='cancel': stop running job. "
             "action='comment': inject message into running job."
         ),
         "de": (
-            "Mechanic — Codebase und Logs durchsuchen und zusammenfassen. "
-            "action='search': Dateien lesen/Code durchsuchen/Logs abrufen ohne den Kontext zu füllen. "
-            "action='delegate': langer Hintergrundjob (gibt job_id zurück). "
+            "Mechanic — der Weg zu Code, Logs, Systemstatus, Git und Shell-Befehlen. Nutze "
+            "dieses für ALLES in dieser Kategorie. "
+            "action='search': schnelles, synchrones Lesen/Suchen/Log-Abrufen ohne deinen "
+            "eigenen Kontext zu füllen — für einfache, schnelle Abfragen. "
+            "action='delegate': langer Hintergrundjob, nicht blockierend (gibt job_id zurück) "
+            "— für Untersuchungen mit mehreren Schritten. Schreibe eine PRÄZISE "
+            "Aufgabenbeschreibung mit klarem Ziel, was berichtet werden soll, und etwaigen "
+            "Einschränkungen (z.B. 'nur lesen, kein Shell') — eine vage Aufgabe liefert ein "
+            "schlechtes Ergebnis, egal wie fähig Mechanic ist. "
             "action='result': Ergebnis eines delegierten Jobs abfragen. "
             "action='cancel': laufenden Job stoppen. "
             "action='comment': Nachricht in laufenden Job injizieren."
@@ -2785,9 +3506,9 @@ _T: dict = {
         "de": "Grep-Filter auf Loginhalt. Optional bei type='log'.",
     },
     "tool_mechanic_task_desc": {
-        "nb": "Bakgrunnsoppgave (apt, reboot, SSH). Kun ved action='delegate'.",
-        "en": "Background task (apt, reboot, SSH). Only for action='delegate'.",
-        "de": "Hintergrundaufgabe (apt, reboot, SSH). Nur bei action='delegate'.",
+        "nb": "Presis oppgavebeskrivelse: mål, hva som skal rapporteres, og eventuelle begrensninger (f.eks. 'kun lesing/grep, ingen shell'). Kun ved action='delegate'.",
+        "en": "Precise task description: goal, what to report back, and any constraints (e.g. 'read/grep only, no shell'). Only for action='delegate'.",
+        "de": "Präzise Aufgabenbeschreibung: Ziel, was berichtet werden soll, und etwaige Einschränkungen (z.B. 'nur lesen/grep, kein Shell'). Nur bei action='delegate'.",
     },
     "tool_mechanic_job_id_desc": {
         "nb": "Job-ID fra action='delegate'. Kreves ved 'result', 'cancel', 'comment'.",
@@ -2799,7 +3520,6 @@ _T: dict = {
         "en": "Message to running job. Only for action='comment'.",
         "de": "Nachricht an laufenden Job. Nur bei action='comment'.",
     },
-
     # restart_docker_container
     "tool_restart_docker_desc": {
         "nb": "Restart en Ollama Docker-container som siste utvei når en modell henger. Advarsel: modell-reload tar ~3,5 min.",
@@ -2811,14 +3531,12 @@ _T: dict = {
         "en": "Container to restart.",
         "de": "Neu zu startender Container.",
     },
-
     # les_indre_tanker
     "tool_les_indre_tanker_desc": {
         "nb": "Les Kåres indre tanker — destillerte observasjoner fra Jing og Jang. Bruk når du kjenner noe uformulert ulmer. Filen tømmes etter lesing.",
         "en": "Read Kåre's inner thoughts — distilled observations from Jing and Jang. Use when you sense something unformulated simmering. The file is cleared after reading.",
         "de": "Kåres innere Gedanken lesen — destillierte Beobachtungen von Jing und Jang. Verwenden wenn etwas Unformuliertes schwelt. Die Datei wird nach dem Lesen geleert.",
     },
-
     # selvbilde
     "tool_selvbilde_desc": {
         "nb": "Les og rediger selvbilde-filen — dine egne refleksjoner om hvem du er. action='read': hele filen. action='update': ny selvrefleksjon (krever 'observation'). action='edit': erstatt linje (krever 'fragment', 'new_text'). action='delete': fjern linje (krever 'fragment').",
@@ -2845,7 +3563,6 @@ _T: dict = {
         "en": "New text replacing the line. Only for action='edit'.",
         "de": "Neuer Text der die Zeile ersetzt. Nur bei action='edit'.",
     },
-
     # verden
     "tool_verden_desc": {
         "nb": (
@@ -2909,7 +3626,6 @@ _T: dict = {
         "en": "Explanation of what the variable means. Optional for set_var.",
         "de": "Erklärung was die Variable bedeutet. Optional bei set_var.",
     },
-
     # brukerprofil
     "tool_brukerprofil_desc": {
         "nb": (
@@ -2980,11 +3696,10 @@ _T: dict = {
         "en": "What you are genuinely curious about regarding the user. Max 5 bullet points. Only for action='curiosity'.",
         "de": "Was du wirklich über den Nutzer wissen möchtest. Max 5 Stichpunkte. Nur bei action='curiosity'.",
     },
-
     # notat
     "tool_notat_desc": {
         "nb": (
-            "Fire separate lister + Kåres notater. "
+            "Fire separate lister + Kåres notater + dev-møtets agenda. "
             "VIKTIG: Når du sier 'jeg husker det' — SKAL du faktisk kalle notat(action='write', list_name='kare'). "
             "liste='arkitekt': arkitekt/designnotater. "
             "liste='handle': felles handleliste. "
@@ -2992,10 +3707,13 @@ _T: dict = {
             "liste='kare': Kåres egne oppfølgingspunkter — MERK: kun toppen (pinnede først, "
             "deretter kronologisk, opp til et tegn-tak) injiseres automatisk i hver systemprompt. "
             "Bruk action='pin'/'unpin' (krever note_id) for å styre hva som alltid vises. "
-            "Bruk action='read' for å lese hele listen, inkl. det som ikke er injisert."
+            "Bruk action='read' for å lese hele listen, inkl. det som ikke er injisert. "
+            "liste='agenda': saker du vil ta opp på neste dev-møte (feil, mønstre, ting som bør "
+            "undersøkes). Skriv dem HER, ikke i 'kare'. Kun action='write' og 'read'; ingenting "
+            "slettes, og en sak som allerede står der telles i stedet for å skrives på nytt."
         ),
         "en": (
-            "Four separate lists + Kåre's notes. "
+            "Four separate lists + Kåre's notes + the dev meeting agenda. "
             "IMPORTANT: When you say 'I'll remember that' — you MUST actually call notat(action='write', list_name='kare'). "
             "list_name='arkitekt': architect/design notes. "
             "list_name='handle': shared shopping list. "
@@ -3003,10 +3721,14 @@ _T: dict = {
             "list_name='kare': Kåre's own follow-up items — NOTE: only the top slice (pinned "
             "first, then chronological, up to a char cap) is auto-injected into every system "
             "prompt. Use action='pin'/'unpin' (requires note_id) to control what always shows. "
-            "Use action='read' to read the full list, including what isn't injected."
+            "Use action='read' to read the full list, including what isn't injected. "
+            "list_name='agenda': things you want to raise at the next dev meeting (bugs, patterns, "
+            "things worth investigating). Write them HERE, not in 'kare'. Only action='write' and "
+            "'read'; nothing is deleted, and an item already on the agenda is counted instead of "
+            "written again."
         ),
         "de": (
-            "Vier separate Listen + Kåres Notizen. "
+            "Vier separate Listen + Kåres Notizen + die Agenda des Entwicklertreffens. "
             "WICHTIG: Wenn du sagst 'ich merke mir das' — MUSST du tatsächlich notat(action='write', list_name='kare') aufrufen. "
             "list_name='arkitekt': Architektur-/Designnotizen. "
             "list_name='handle': gemeinsame Einkaufsliste. "
@@ -3015,23 +3737,27 @@ _T: dict = {
             "Ausschnitt (angeheftete zuerst, dann chronologisch, bis zu einem Zeichenlimit) wird "
             "automatisch in jeden System-Prompt eingefügt. Mit action='pin'/'unpin' (erfordert "
             "note_id) steuerst du, was immer sichtbar ist. Mit action='read' liest du die "
-            "vollständige Liste, auch was nicht eingefügt wird."
+            "vollständige Liste, auch was nicht eingefügt wird. "
+            "list_name='agenda': Punkte, die du beim nächsten Entwicklertreffen ansprechen willst "
+            "(Fehler, Muster, Dinge, die untersucht werden sollten). Schreib sie HIER, nicht in "
+            "'kare'. Nur action='write' und 'read'; nichts wird gelöscht, und ein Punkt, der schon "
+            "auf der Agenda steht, wird gezählt statt neu geschrieben."
         ),
     },
     "tool_notat_action_desc": {
-        "nb": "'write'=legg til. 'read'=vis. 'delete'=fjern (krever 'note_id'). 'clear'=tøm. 'done'=ferdig (huske/kare). 'mark_bought'=kjøpt (handle). 'clear_all'=tøm hele handlelisten. 'pin'=fest øverst, vises alltid i den auto-injiserte toppen (kun kare, krever 'note_id'). 'unpin'=løsne igjen (kun kare, krever 'note_id').",
-        "en": "'write'=add. 'read'=show. 'delete'=remove (requires 'note_id'). 'clear'=clear. 'done'=done (huske/kare). 'mark_bought'=bought (handle). 'clear_all'=clear entire shopping list. 'pin'=pin to top, always shown in the auto-injected slice (kare only, requires 'note_id'). 'unpin'=undo pin (kare only, requires 'note_id').",
-        "de": "'write'=hinzufügen. 'read'=anzeigen. 'delete'=entfernen (erfordert 'note_id'). 'clear'=leeren. 'done'=fertig (huske/kare). 'mark_bought'=gekauft (handle). 'clear_all'=gesamte Einkaufsliste leeren. 'pin'=oben anheften, immer im automatisch eingefügten Ausschnitt sichtbar (nur kare, erfordert 'note_id'). 'unpin'=Anheftung aufheben (nur kare, erfordert 'note_id').",
+        "nb": "'write'=legg til. 'read'=vis. 'delete'=fjern (krever 'note_id'). 'clear'=tøm. 'done'=ferdig (huske/kare). 'mark_bought'=kjøpt (handle). 'clear_all'=tøm hele handlelisten. 'pin'=fest øverst, vises alltid i den auto-injiserte toppen (kun kare, krever 'note_id'). 'unpin'=løsne igjen (kun kare, krever 'note_id'). 'edit'=bytt ut teksten i ett punkt, beholder id/dato/pin (kun kare, krever 'note_id' og 'text'). 'mark_important'=marker et notat i standardlisten (architect) som viktig, tas opp ved neste refleksjonsmøte i stedet for å vente en uke (krever 'note_id'). 'resolve'=marker en sak som løst med en kort 'conclusion' (agenda/observations, krever 'topic_id'; bare i samtale med en bruker som har lov). 'reopen'=be om å gjenåpne en løst sak (blir et forslag et menneske bekrefter). 'move'=flytt et huskeliste-notat til 'to' (observations/agenda/lessons) i ett kall (krever note_id).",
+        "en": "'write'=add. 'read'=show. 'delete'=remove (requires 'note_id'). 'clear'=clear. 'done'=done (huske/kare). 'mark_bought'=bought (handle). 'clear_all'=clear entire shopping list. 'pin'=pin to top, always shown in the auto-injected slice (kare only, requires 'note_id'). 'unpin'=undo pin (kare only, requires 'note_id'). 'edit'=replace the text of one entry, keeps id/date/pin (kare only, requires 'note_id' and 'text'). 'mark_important'=flag a note in the default (architect) list as important, picked up at the next reflection meeting instead of waiting a week (requires 'note_id'). 'resolve'=mark a topic resolved with a short 'conclusion' (agenda/observations, requires 'topic_id'; only in a conversation with a user who is allowed). 'reopen'=ask to reopen a resolved topic (becomes a proposal a human confirms). 'move'=move a reminder-list note to 'to' (observations/agenda/lessons) in one call (requires note_id).",
+        "de": "'write'=hinzufügen. 'read'=anzeigen. 'delete'=entfernen (erfordert 'note_id'). 'clear'=leeren. 'done'=fertig (huske/kare). 'mark_bought'=gekauft (handle). 'clear_all'=gesamte Einkaufsliste leeren. 'pin'=oben anheften, immer im automatisch eingefügten Ausschnitt sichtbar (nur kare, erfordert 'note_id'). 'unpin'=Anheftung aufheben (nur kare, erfordert 'note_id'). 'edit'=den Text eines Eintrags ersetzen, behält ID/Datum/Anheftung (nur kare, erfordert 'note_id' und 'text'). 'mark_important'=eine Notiz in der Standardliste (architect) als wichtig markieren, wird beim nächsten Reflexionstreffen behandelt statt eine Woche zu warten (erfordert 'note_id'). 'resolve'=ein Thema mit kurzer 'conclusion' als gelöst markieren (agenda/observations, erfordert 'topic_id'; nur im Gespräch mit einem berechtigten Benutzer). 'reopen'=Wiedereröffnung eines gelösten Themas anfragen (wird ein Vorschlag, den ein Mensch bestätigt). 'move'=eine Merklisten-Notiz in einem Aufruf nach 'to' verschieben (observations/agenda/lessons; erfordert note_id).",
     },
     "tool_notat_list_name_desc": {
-        "nb": "'architect'=designnotater (standard). 'shopping'=handleliste. 'remember'=huskeliste. 'kare'=Kåres notater.",
-        "en": "'architect'=design notes (default). 'shopping'=shopping list. 'remember'=reminder list. 'kare'=Kåre's notes.",
-        "de": "'architect'=Designnotizen (Standard). 'shopping'=Einkaufsliste. 'remember'=Erinnerungsliste. 'kare'=Kåres Notizen.",
+        "nb": "'architect'=brukerens notisblokk (standard — bruk denne når brukeren sier «skriv et notat» / «notatene mine»). 'shopping'=handleliste. 'remember'=brukerens huskeliste. 'kare'=dine EGNE arbeidsnotater (aldri for brukerens notater). 'agenda'=FEIL som skal undersøkes på dev-møtet. 'observations'=noe du SÅ (sensor/kamera/hendelse) — telles i mønstre, aldri i prompten. 'lessons'=en REGEL du har lært om hvordan du jobber (står alltid i prompten). 'resolved'=les løste saker med konklusjon. 'kare' er bare korte egne oppfølginger (maks ~600 tegn), aldri en logg.",
+        "en": "'architect'=the user's notepad (default — use it when the user says «write a note» / «my notes»). 'shopping'=shopping list. 'remember'=the user's reminder list. 'kare'=your OWN working notes (never for the user's notes). 'agenda'=FAULTS to investigate at the dev meeting. 'observations'=something you SAW (sensor/camera/event) — counted into patterns, never in the prompt. 'lessons'=a RULE you learned about how you work (always in the prompt). 'resolved'=read resolved topics with their conclusion. 'kare' is only short follow-ups of your own (max ~600 chars), never a log.",
+        "de": "'architect'=Notizblock des Nutzers (Standard — verwenden, wenn der Nutzer «schreib eine Notiz» / «meine Notizen» sagt). 'shopping'=Einkaufsliste. 'remember'=Erinnerungsliste des Nutzers. 'kare'=deine EIGENEN Arbeitsnotizen (nie für Notizen des Nutzers). 'agenda'=FEHLER, die beim Entwicklertreffen untersucht werden. 'observations'=etwas, das du GESEHEN hast (Sensor/Kamera/Ereignis) — wird zu Mustern gezählt, nie im Prompt. 'lessons'=eine REGEL, die du über deine Arbeitsweise gelernt hast (steht immer im Prompt). 'resolved'=gelöste Themen mit Schlussfolgerung lesen. 'kare' nur kurze eigene Nachverfolgungen (max. ~600 Zeichen), nie ein Protokoll.",
     },
     "tool_notat_text_desc": {
-        "nb": "Innholdet i notatet/varen. Kreves ved action='write'.",
-        "en": "Content of the note/item. Required for action='write'.",
-        "de": "Inhalt der Notiz/des Artikels. Erforderlich bei action='write'.",
+        "nb": "Innholdet i notatet/varen. Kreves ved action='write' og 'edit'.",
+        "en": "Content of the note/item. Required for action='write' and 'edit'.",
+        "de": "Inhalt der Notiz/des Artikels. Erforderlich bei action='write' und 'edit'.",
     },
     "tool_notat_category_desc": {
         "nb": "Kun ved list_name='arkitekt': 'huskeliste', 'gjøremål', 'påminnelse', 'diverse'.",
@@ -3039,9 +3765,9 @@ _T: dict = {
         "de": "Nur bei list_name='arkitekt': 'huskeliste', 'gjøremål', 'påminnelse', 'diverse'.",
     },
     "tool_notat_note_id_desc": {
-        "nb": "ID (8 tegn, fra action='read'). Kreves ved delete/done/mark_bought.",
-        "en": "ID (8 chars, from action='read'). Required for delete/done/mark_bought.",
-        "de": "ID (8 Zeichen, aus action='read'). Erforderlich bei delete/done/mark_bought.",
+        "nb": "ID (8 tegn, fra action='read'). Kreves ved delete/done/mark_bought/edit.",
+        "en": "ID (8 chars, from action='read'). Required for delete/done/mark_bought/edit.",
+        "de": "ID (8 Zeichen, aus action='read'). Erforderlich bei delete/done/mark_bought/edit.",
     },
     "tool_notat_quantity_desc": {
         "nb": "Kun handle: mengde, f.eks. '2'.",
@@ -3058,6 +3784,164 @@ _T: dict = {
         "en": "Only kare: when/where the item is relevant, e.g. 'at next dev meeting'.",
         "de": "Nur kare: wann/wo der Punkt relevant ist, z.B. 'beim nächsten Dev-Meeting'.",
     },
+    "tool_notat_title_desc": {
+        "nb": "Kort tittel (maks ~60 tegn) for kare/agenda/observations/lessons — vises i indeksen i prompten din. Sett den alltid når du skriver.",
+        "en": "Short title (max ~60 chars) for kare/agenda/observations/lessons — shown in the index in your prompt. Always set it when you write.",
+        "de": "Kurzer Titel (max. ~60 Zeichen) für kare/agenda/observations/lessons — erscheint im Index in deinem Prompt. Beim Schreiben immer setzen.",
+    },
+    "tool_notat_topic_id_desc": {
+        "nb": "Saksnummer (#N fra agenda/observations/resolved) for action='resolve' eller 'reopen'.",
+        "en": "Topic number (#N from agenda/observations/resolved) for action='resolve' or 'reopen'.",
+        "de": "Themennummer (#N aus agenda/observations/resolved) für action='resolve' oder 'reopen'.",
+    },
+    "tool_notat_conclusion_desc": {
+        "nb": "Kun action='resolve': konklusjonen brukeren bekreftet, kort og uten tall som kan bli utdaterte (f.eks. «tilhengeren ved kamera X er vår, står fast — forventet, ikke et avvik»).",
+        "en": "Only action='resolve': the conclusion the user confirmed, short and without numbers that can go stale (e.g. «the trailer at camera X is ours, parked — expected, not an anomaly»).",
+        "de": "Nur action='resolve': die vom Benutzer bestätigte Schlussfolgerung, kurz und ohne Zahlen, die veralten können (z.B. «der Anhänger bei Kamera X gehört uns, steht fest — erwartet, keine Abweichung»).",
+    },
+    "tool_notat_theme_desc": {
+        "nb": "Kun agenda — sett ALLTID ved list_name='agenda': hvilket tema saken hører til. 'answers'=dine svar og samtaler, 'tools'=verktøy og HA-styring, 'memory'=hukommelse, 'agents'=agentene (Miss Kåre, Library, Mechanic, Jing/Jang), 'house'=hus, sensorer og kamera, 'system'=system, modeller og ytelse, 'other'=annet.",
+        "en": "Agenda only — ALWAYS set with list_name='agenda': which theme the item belongs to. 'answers'=your answers and conversations, 'tools'=tools and HA control, 'memory'=memory, 'agents'=the agents (Miss Kåre, Library, Mechanic, Jing/Jang), 'house'=house, sensors and cameras, 'system'=system, models and performance, 'other'=other.",
+        "de": "Nur Agenda — bei list_name='agenda' IMMER setzen: zu welchem Thema der Punkt gehört. 'answers'=deine Antworten und Gespräche, 'tools'=Werkzeuge und HA-Steuerung, 'memory'=Gedächtnis, 'agents'=die Agenten (Miss Kåre, Library, Mechanic, Jing/Jang), 'house'=Haus, Sensoren und Kameras, 'system'=System, Modelle und Leistung, 'other'=Sonstiges.",
+    },
+    "slot_report_resolved_h": {"nb": "## Sett mot løste saker", "en": "## Against resolved topics", "de": "## Gegen gelöste Themen"},
+    "slot_report_resolved_link": {
+        "nb": "- Sak #{topic} er det samme som løst sak #{resolved} — løsningen holder, koblet som ekko.",
+        "en": "- Topic #{topic} is the same as resolved topic #{resolved} — the solution holds, linked as an echo.",
+        "de": "- Thema #{topic} ist dasselbe wie das gelöste Thema #{resolved} — die Lösung hält, als Echo verknüpft.",
+    },
+    "slot_report_resolved_reopen": {
+        "nb": "- Sak #{topic} motsier løst sak #{resolved} — forslag #{id} om gjenåpning venter på deg.",
+        "en": "- Topic #{topic} contradicts resolved topic #{resolved} — proposal #{id} to reopen waits for you.",
+        "de": "- Thema #{topic} widerspricht dem gelösten Thema #{resolved} — Vorschlag #{id} zur Wiedereröffnung wartet auf dich.",
+    },
+    "slot_report_resolved_echoes": {
+        "nb": "- Løst sak #{resolved}: {n} ekko siste døgn (løsningen fanger dem).",
+        "en": "- Resolved topic #{resolved}: {n} echoes in the last day (the solution catches them).",
+        "de": "- Gelöstes Thema #{resolved}: {n} Echos am letzten Tag (die Lösung fängt sie ab).",
+    },
+    "slot_report_followup": {
+        "nb": "- Bekreftet forslag #{id} (sak #{topic}, {date}): {n} nye rader siden.",
+        "en": "- Confirmed proposal #{id} (topic #{topic}, {date}): {n} new rows since.",
+        "de": "- Bestätigter Vorschlag #{id} (Thema #{topic}, {date}): {n} neue Zeilen seitdem.",
+    },
+    "slot_report_themes_line": {
+        "nb": "Temaer (tatt opp / i kø): {themes}",
+        "en": "Themes (developed / queued): {themes}",
+        "de": "Themen (bearbeitet / in der Warteschlange): {themes}",
+    },
+    "observation_added": {
+        "nb": "Notert som observasjon (sak #{topic}, sett {count} ganger, tema: {theme}). Den telles i mønstrene om natta, men går ikke i dev-møtets kø.",
+        "en": "Noted as an observation (topic #{topic}, seen {count} times, theme: {theme}). It is counted into the night's patterns but does not go into the dev meeting queue.",
+        "de": "Als Beobachtung notiert (Thema #{topic}, {count}-mal gesehen, Bereich: {theme}). Sie wird nachts in Muster gezählt, kommt aber nicht in die Warteschlange des Entwicklertreffens.",
+    },
+    "observation_read_title": {
+        "nb": "Observasjoner — viser {shown} nyeste av {total} åpne ({topics} saker):",
+        "en": "Observations — showing the {shown} newest of {total} open ({topics} topics):",
+        "de": "Beobachtungen — die {shown} neuesten von {total} offenen ({topics} Themen):",
+    },
+    "observation_empty": {"nb": "Ingen åpne observasjoner.", "en": "No open observations.", "de": "Keine offenen Beobachtungen."},
+    "agenda_echo_resolved": {
+        "nb": "Dette er allerede løst ({date}, sak #{topic}): {conclusion} — raden er lagret som ekko og gjenåpner ikke saken. Skriv bare hvis noe faktisk er nytt; da kan du be om gjenåpning (note action='reopen', topic_id={topic}).",
+        "en": "This is already resolved ({date}, topic #{topic}): {conclusion} — the row is stored as an echo and does not reopen the topic. Only write if something is actually new; then you can ask to reopen it (note action='reopen', topic_id={topic}).",
+        "de": "Das ist bereits gelöst ({date}, Thema #{topic}): {conclusion} — die Zeile wird als Echo gespeichert und öffnet das Thema nicht wieder. Schreib nur, wenn wirklich etwas neu ist; dann kannst du die Wiedereröffnung anfragen (note action='reopen', topic_id={topic}).",
+    },
+    "resolve_done": {
+        "nb": "Sak #{topic} er markert som løst: {conclusion}. Den er låst; nye rader om det samme lagres som ekko.",
+        "en": "Topic #{topic} is marked resolved: {conclusion}. It is locked; new rows about the same are stored as echoes.",
+        "de": "Thema #{topic} ist als gelöst markiert: {conclusion}. Es ist gesperrt; neue Zeilen dazu werden als Echo gespeichert.",
+    },
+    "resolve_refused_background": {
+        "nb": "En sak kan bare markeres som løst i en samtale med en bruker — ikke fra refleksjon, møter, timere eller kamera. Ta den opp med brukeren først.",
+        "en": "A topic can only be marked resolved in a conversation with a user — not from reflection, meetings, timers or cameras. Raise it with the user first.",
+        "de": "Ein Thema kann nur im Gespräch mit einem Benutzer als gelöst markiert werden — nicht aus Reflexion, Sitzungen, Timern oder Kameras. Sprich es zuerst mit dem Benutzer an.",
+    },
+    "resolve_refused_role": {
+        "nb": "Denne brukeren kan ikke markere saker som løst. Det styres under Innstillinger → Assistent-innstillinger → «Hvem kan markere en sak som løst».",
+        "en": "This user cannot mark topics resolved. That is set under Settings → Assistant settings → «Who can mark a topic resolved».",
+        "de": "Dieser Benutzer kann Themen nicht als gelöst markieren. Das wird unter Einstellungen → Assistent-Einstellungen → «Wer darf ein Thema als gelöst markieren» festgelegt.",
+    },
+    "resolve_missing_topic": {"nb": "Mangler topic_id (saksnummeret).", "en": "Missing topic_id (the topic number).", "de": "topic_id (Themennummer) fehlt."},
+    "resolve_missing_conclusion": {"nb": "Mangler conclusion — skriv kort hva brukeren bekreftet.", "en": "Missing conclusion — write briefly what the user confirmed.", "de": "conclusion fehlt — schreib kurz, was der Benutzer bestätigt hat."},
+    "resolve_not_found": {"nb": "Fant ingen sak #{topic}.", "en": "No topic #{topic} found.", "de": "Kein Thema #{topic} gefunden."},
+    "reopen_proposed": {
+        "nb": "Gjenåpning av sak #{topic} er lagt frem som dev-forslag #{id}; et menneske bekrefter eller avviser i chat.",
+        "en": "Reopening topic #{topic} is filed as dev proposal #{id}; a human confirms or rejects it in chat.",
+        "de": "Die Wiedereröffnung von Thema #{topic} ist als Dev-Vorschlag #{id} eingereicht; ein Mensch bestätigt oder lehnt im Chat ab.",
+    },
+    "reopen_not_resolved": {"nb": "Sak #{topic} er ikke løst, så den trenger ingen gjenåpning.", "en": "Topic #{topic} is not resolved, so it needs no reopening.", "de": "Thema #{topic} ist nicht gelöst und muss nicht wieder geöffnet werden."},
+    "resolved_empty": {"nb": "Ingen løste saker ennå.", "en": "No resolved topics yet.", "de": "Noch keine gelösten Themen."},
+    "resolved_read_title": {"nb": "Løste saker ({count} nyeste):", "en": "Resolved topics ({count} newest):", "de": "Gelöste Themen ({count} neueste):"},
+    "resolved_echoes": {"nb": "{n} ekko siden", "en": "{n} echoes since", "de": "{n} Echos seitdem"},
+    "resolved_prompt_title": {"nb": "# Løste saker (bekreftet av en bruker — forventet, ikke avvik)", "en": "# Resolved topics (confirmed by a user — expected, not anomalies)", "de": "# Gelöste Themen (von einem Benutzer bestätigt — erwartet, keine Abweichungen)"},
+    "lesson_added": {"nb": "Lærdom lagret [{id}]: {text}", "en": "Lesson saved [{id}]: {text}", "de": "Lektion gespeichert [{id}]: {text}"},
+    "lesson_edited": {"nb": "Lærdom endret [{id}]: {text}", "en": "Lesson edited [{id}]: {text}", "de": "Lektion geändert [{id}]: {text}"},
+    "lesson_retired": {"nb": "Lærdom [{id}] tatt ut (beholdt som historikk).", "en": "Lesson [{id}] retired (kept as history).", "de": "Lektion [{id}] zurückgezogen (als Verlauf behalten)."},
+    "lesson_exists": {"nb": "Den lærdommen finnes allerede [{id}].", "en": "That lesson already exists [{id}].", "de": "Diese Lektion gibt es schon [{id}]."},
+    "lesson_empty": {"nb": "Ingen lærdommer ennå.", "en": "No lessons yet.", "de": "Noch keine Lektionen."},
+    "lesson_read_title": {"nb": "Mine lærdommer ({count}):", "en": "My lessons ({count}):", "de": "Meine Lektionen ({count}):"},
+    "lesson_too_long": {
+        "nb": "En lærdom er én regel (maks {max} tegn, denne var {n}). Skriv den kortere.",
+        "en": "A lesson is one rule (max {max} chars, this one was {n}). Write it shorter.",
+        "de": "Eine Lektion ist eine Regel (max. {max} Zeichen, diese hatte {n}). Schreib sie kürzer.",
+    },
+    "lesson_prompt_title": {"nb": "# Mine lærdommer (regler jeg følger)", "en": "# My lessons (rules I follow)", "de": "# Meine Lektionen (Regeln, die ich befolge)"},
+    "list_kare_too_long": {
+        "nb": "Huskelista tar bare korte egne oppfølginger (maks {max} tegn, denne var {n}). Det du så hører hjemme i note(list_name='observations'); en feil i 'agenda'; en regel i 'lessons'.",
+        "en": "The kare list only takes short follow-ups of your own (max {max} chars, this was {n}). What you saw belongs in note(list_name='observations'); a fault in 'agenda'; a rule in 'lessons'.",
+        "de": "Die kare-Liste nimmt nur kurze eigene Nachverfolgungen (max. {max} Zeichen, diese hatte {n}). Was du gesehen hast, gehört in note(list_name='observations'); ein Fehler in 'agenda'; eine Regel in 'lessons'.",
+    },
+    "memory_index_kare_title": {"nb": "# Min huskeliste (indeks — full tekst: note read)", "en": "# My reminder list (index — full text: note read)", "de": "# Meine Merkliste (Index — voller Text: note read)"},
+    "memory_index_world_title": {"nb": "# Mer jeg vet om huset (indeks — full tekst: world read)", "en": "# More I know about the house (index — full text: world read)", "de": "# Mehr, was ich über das Haus weiß (Index — voller Text: world read)"},
+    "memory_index_more": {"nb": "… og {n} til", "en": "… and {n} more", "de": "… und {n} weitere"},
+    "memory_relevant_title": {"nb": "# Relevant nå (fra mine notater og min kunnskap)", "en": "# Relevant now (from my notes and knowledge)", "de": "# Jetzt relevant (aus meinen Notizen und meinem Wissen)"},
+    "list_kare_index_title": {
+        "nb": "Min huskeliste — indeks over alle {count} (full tekst: note read med note_ids=[…] eller search):",
+        "en": "My reminder list — index of all {count} (full text: note read with note_ids=[…] or search):",
+        "de": "Meine Merkliste — Index aller {count} (Volltext: note read mit note_ids=[…] oder search):",
+    },
+    "list_kare_read_more": {
+        "nb": "… og {n} treff til — snevre inn med note_ids eller et mer presist søk.",
+        "en": "… and {n} more matches — narrow down with note_ids or a more precise search.",
+        "de": "… und {n} weitere Treffer — mit note_ids oder einer genaueren Suche eingrenzen.",
+    },
+    "note_move_done": {
+        "nb": "Flyttet [{id}] → {target}. Fjernet fra huskelista.",
+        "en": "Moved [{id}] → {target}. Removed from the reminder list.",
+        "de": "[{id}] verschoben → {target}. Aus der Merkliste entfernt.",
+    },
+    "note_move_failed": {
+        "nb": "Ikke flyttet [{id}] — notatet står urørt i huskelista. Grunn: {reason}",
+        "en": "Not moved [{id}] — the note stays untouched in the reminder list. Reason: {reason}",
+        "de": "Nicht verschoben [{id}] — die Notiz bleibt unverändert in der Merkliste. Grund: {reason}",
+    },
+    "note_move_bad_target": {
+        "nb": "Ugyldig mål for move. Bruk to= én av: {valid}.",
+        "en": "Invalid target for move. Use to= one of: {valid}.",
+        "de": "Ungültiges Ziel für move. Verwende to= eines von: {valid}.",
+    },
+    "note_move_echo": {
+        "nb": "(ekko av løst sak #{topic})",
+        "en": "(echo of resolved topic #{topic})",
+        "de": "(Echo des gelösten Themas #{topic})",
+    },
+    "tool_notat_to_desc": {
+        "nb": "Kun action='move' (list_name='kare'): hvor notatet skal — 'observations', 'agenda' eller 'lessons'. Skrives dit først; fjernes fra huskelista bare hvis det lyktes. 'text' kan gi en kortere versjon.",
+        "en": "Only action='move' (list_name='kare'): where the note goes — 'observations', 'agenda' or 'lessons'. Written there first; removed from the reminder list only if that worked. 'text' can give a shorter version.",
+        "de": "Nur action='move' (list_name='kare'): wohin die Notiz soll — 'observations', 'agenda' oder 'lessons'. Wird dort zuerst geschrieben; aus der Merkliste nur entfernt, wenn das klappte. 'text' kann eine kürzere Fassung angeben.",
+    },
+    "tool_notat_note_ids_desc": {
+        "nb": "Kun action='read' (kare): les full tekst for akkurat disse id-ene (maks 15). Uten filter viser read bare indeksen.",
+        "en": "Only action='read' (kare): read the full text of exactly these ids (max 15). Without a filter read shows only the index.",
+        "de": "Nur action='read' (kare): Volltext genau dieser IDs lesen (max. 15). Ohne Filter zeigt read nur den Index.",
+    },
+    "agenda_theme_answers": {"nb": "Svar og samtaler", "en": "Answers and conversations", "de": "Antworten und Gespräche"},
+    "agenda_theme_tools": {"nb": "Verktøy og HA-styring", "en": "Tools and HA control", "de": "Werkzeuge und HA-Steuerung"},
+    "agenda_theme_memory": {"nb": "Hukommelse", "en": "Memory", "de": "Gedächtnis"},
+    "agenda_theme_agents": {"nb": "Agentene", "en": "Agents", "de": "Agenten"},
+    "agenda_theme_house": {"nb": "Hus, sensorer og kamera", "en": "House, sensors and cameras", "de": "Haus, Sensoren und Kameras"},
+    "agenda_theme_system": {"nb": "System, modeller og ytelse", "en": "System, models and performance", "de": "System, Modelle und Leistung"},
+    "agenda_theme_other": {"nb": "Annet", "en": "Other", "de": "Sonstiges"},
     "tool_notat_remind_on_login_desc": {
         "nb": "Kun huske: om Kåre skal minne om dette ved neste innlogging.",
         "en": "Only huske: whether Kåre should remind about this at next login.",
@@ -3078,7 +3962,6 @@ _T: dict = {
         "en": "Only list_name='kare' + action='read': show only items up to this date (YYYY-MM-DD).",
         "de": "Nur list_name='kare' + action='read': nur Punkte bis zu diesem Datum anzeigen (YYYY-MM-DD).",
     },
-
     # reason_freely
     "tool_reason_freely_desc": {
         "nb": "Tenk fritt med full intern kunnskap — uten smarthus-begrensninger. For filosofi, vitenskap, historie, etikk, teknologi, kreativ tenkning. Ikke for fakta som endrer seg, vær, eller encyklopedisk kunnskap.",
@@ -3090,7 +3973,6 @@ _T: dict = {
         "en": "The question or topic you want to reason freely about. Concrete and precise.",
         "de": "Die Frage oder das Thema über das du frei nachdenken möchtest. Konkret und präzise.",
     },
-
     # les_tankehistorikk
     "tool_les_tankehistorikk_desc": {
         "nb": "Les din egen think-historikk — siste LLM-kall der du tenkte. Uten filter: siste 10. Med filter: filtrert på innhold. Med only_recovery=true: kun ganger du tenkte uten å klare å svare.",
@@ -3112,148 +3994,50 @@ _T: dict = {
         "en": "True: only times you thought without being able to respond.",
         "de": "True: nur Mal wo du gedacht aber nicht geantwortet hast.",
     },
-
-    # utforsk_kode
-    "tool_utforsk_kode_desc": {
-        "nb": "Utforsk /kaare-kodebasen. action='read': les fil (krever 'path'). action='list': list filer (valgfri 'directory', 'recursive'). action='search': grep-søk (krever 'pattern', valgfri 'directory').",
-        "en": "Explore /kaare codebase. action='read': read file (requires 'path'). action='list': list files (optional 'directory', 'recursive'). action='search': grep search (requires 'pattern', optional 'directory').",
-        "de": "/kaare-Codebase erkunden. action='read': Datei lesen (erfordert 'path'). action='list': Dateien auflisten (optional 'directory', 'recursive'). action='search': Grep-Suche (erfordert 'pattern', optional 'directory').",
-    },
-    "tool_utforsk_kode_action_desc": {
-        "nb": "'read' = les fil (krever 'path'). 'list' = list filer (valgfri 'directory', 'recursive'). 'search' = grep (krever 'pattern').",
-        "en": "'read' = read file (requires 'path'). 'list' = list files (optional 'directory', 'recursive'). 'search' = grep (requires 'pattern').",
-        "de": "'read' = Datei lesen (erfordert 'path'). 'list' = Dateien auflisten (optional 'directory', 'recursive'). 'search' = grep (erfordert 'pattern').",
-    },
-    "tool_utforsk_kode_path_desc": {
-        "nb": "Absolutt filsti, må starte med /kaare/. Kun ved action='read'.",
-        "en": "Absolute file path, must start with /kaare/. Only for action='read'.",
-        "de": "Absoluter Dateipfad, muss mit /kaare/ beginnen. Nur bei action='read'.",
-    },
-    "tool_utforsk_kode_from_line_desc": {
-        "nb": "Første linje (1-basert). Kun ved action='read'.",
-        "en": "First line (1-based). Only for action='read'.",
-        "de": "Erste Zeile (1-basiert). Nur bei action='read'.",
-    },
-    "tool_utforsk_kode_to_line_desc": {
-        "nb": "Siste linje (inklusiv). Kun ved action='read'.",
-        "en": "Last line (inclusive). Only for action='read'.",
-        "de": "Letzte Zeile (inklusiv). Nur bei action='read'.",
-    },
-    "tool_utforsk_kode_directory_desc": {
-        "nb": "Absolutt mappe-sti under /kaare. Brukes ved 'list' og 'search'.",
-        "en": "Absolute directory path under /kaare. Used for 'list' and 'search'.",
-        "de": "Absoluter Verzeichnispfad unter /kaare. Für 'list' und 'search'.",
-    },
-    "tool_utforsk_kode_recursive_desc": {
-        "nb": "List rekursivt (maks 200 filer). Kun ved action='list'. Standard: false.",
-        "en": "List recursively (max 200 files). Only for action='list'. Default: false.",
-        "de": "Rekursiv auflisten (max 200 Dateien). Nur bei action='list'. Standard: false.",
-    },
-    "tool_utforsk_kode_pattern_desc": {
-        "nb": "Søketekst eller regex. Kun ved action='search'.",
-        "en": "Search text or regex. Only for action='search'.",
-        "de": "Suchtext oder Regex. Nur bei action='search'.",
-    },
-
     # inspiser_system
-    "tool_inspiser_system_desc": {
+    "tool_self_trace_desc": {
         "nb": (
-            "Inspiser systemstatus, logger og request-traces. Sju operasjoner: "
-            "action='log': les/søk i logger. "
-            "action='services': systemd-status. "
-            "action='resources': CPU/RAM/disk/GPU. "
-            "action='git_diff': ukommitterte endringer. "
-            "action='git_log': commit-historikk. "
+            "Se din egen respons-historikk for selvforbedring — ikke systemutforsking "
+            "(bruk mechanic for kode/logger/tjenester). To operasjoner: "
             "action='fetch_trace': full trace for én request (krever 'rid'). "
-            "action='trace_patterns': mønsteranalyse på tvers av traces."
+            "action='trace_patterns': mønsteranalyse på tvers av dine egne traces "
+            "(gjennomsnittlig latency, verktøybruk, tenke-blokker)."
         ),
         "en": (
-            "Inspect system status, logs and request traces. Seven operations: "
-            "action='log': read/search logs. "
-            "action='services': systemd status. "
-            "action='resources': CPU/RAM/disk/GPU. "
-            "action='git_diff': uncommitted changes. "
-            "action='git_log': commit history. "
+            "View your own response history for self-improvement — not system exploration "
+            "(use mechanic for code/logs/services). Two operations: "
             "action='fetch_trace': full trace for one request (requires 'rid'). "
-            "action='trace_patterns': pattern analysis across traces."
+            "action='trace_patterns': pattern analysis across your own traces "
+            "(average latency, tool usage, think blocks)."
         ),
         "de": (
-            "Systemstatus, Logs und Request-Traces inspizieren. Sieben Operationen: "
-            "action='log': Logs lesen/durchsuchen. "
-            "action='services': systemd-Status. "
-            "action='resources': CPU/RAM/Disk/GPU. "
-            "action='git_diff': uncommittete Änderungen. "
-            "action='git_log': Commit-Historik. "
+            "Eigene Antwortverlauf zur Selbstverbesserung einsehen — keine Systeminspektion "
+            "(für Code/Logs/Dienste mechanic verwenden). Zwei Operationen: "
             "action='fetch_trace': vollständige Trace für eine Request (erfordert 'rid'). "
-            "action='trace_patterns': Musteranalyse über Traces."
+            "action='trace_patterns': Musteranalyse über die eigenen Traces "
+            "(Ø Latenz, Tool-Nutzung, Think-Blöcke)."
         ),
     },
-    "tool_inspiser_system_action_desc": {
-        "nb": "'log','services','resources','git_diff','git_log','fetch_trace','trace_patterns'.",
-        "en": "'log','services','resources','git_diff','git_log','fetch_trace','trace_patterns'.",
-        "de": "'log','services','resources','git_diff','git_log','fetch_trace','trace_patterns'.",
+    "tool_self_trace_action_desc": {
+        "nb": "'fetch_trace' eller 'trace_patterns'.",
+        "en": "'fetch_trace' or 'trace_patterns'.",
+        "de": "'fetch_trace' oder 'trace_patterns'.",
     },
-    "tool_inspiser_system_file_desc": {
-        "nb": "Loggfilnavn uten sti, f.eks. 'kaare_ha_gateway.log'. Kun ved action='log'.",
-        "en": "Log file name without path, e.g. 'kaare_ha_gateway.log'. Only for action='log'.",
-        "de": "Logdateiname ohne Pfad, z.B. 'kaare_ha_gateway.log'. Nur bei action='log'.",
+    "tool_self_trace_count_desc": {
+        "nb": "Antall traces å analysere. Standard 50. Kun ved action='trace_patterns'.",
+        "en": "Number of traces to analyze. Default 50. Only for action='trace_patterns'.",
+        "de": "Anzahl zu analysierender Traces. Standard 50. Nur bei action='trace_patterns'.",
     },
-    "tool_inspiser_system_lines_desc": {
-        "nb": "Antall linjer (tail). Standard 20, maks 200. Kun ved action='log'.",
-        "en": "Number of lines (tail). Default 20, max 200. Only for action='log'.",
-        "de": "Anzahl Zeilen (tail). Standard 20, max 200. Nur bei action='log'.",
-    },
-    "tool_inspiser_system_pattern_desc": {
-        "nb": "Søketekst/regex for grep. Kun ved action='log'.",
-        "en": "Search text/regex for grep. Only for action='log'.",
-        "de": "Suchtext/Regex für grep. Nur bei action='log'.",
-    },
-    "tool_inspiser_system_max_hits_desc": {
-        "nb": "Maks grep-treff. Standard 50, maks 200. Kun ved action='log'.",
-        "en": "Max grep hits. Default 50, max 200. Only for action='log'.",
-        "de": "Max grep-Treffer. Standard 50, max 200. Nur bei action='log'.",
-    },
-    "tool_inspiser_system_from_line_desc": {
-        "nb": "Første linje (1-basert). Kun ved action='log'.",
-        "en": "First line (1-based). Only for action='log'.",
-        "de": "Erste Zeile (1-basiert). Nur bei action='log'.",
-    },
-    "tool_inspiser_system_to_line_desc": {
-        "nb": "Siste linje (inklusiv). Kun ved action='log'.",
-        "en": "Last line (inclusive). Only for action='log'.",
-        "de": "Letzte Zeile (inklusiv). Nur bei action='log'.",
-    },
-    "tool_inspiser_system_service_desc": {
-        "nb": "Tjenestenavn for detaljert visning, f.eks. 'kaare'. Kun ved action='services'.",
-        "en": "Service name for detailed view, e.g. 'kaare'. Only for action='services'.",
-        "de": "Dienstname für Detailansicht, z.B. 'kaare'. Nur bei action='services'.",
-    },
-    "tool_inspiser_system_log_lines_desc": {
-        "nb": "Antall journalctl-linjer. Standard 20, maks 50. Kun ved action='services'.",
-        "en": "Number of journalctl lines. Default 20, max 50. Only for action='services'.",
-        "de": "Anzahl journalctl-Zeilen. Standard 20, max 50. Nur bei action='services'.",
-    },
-    "tool_inspiser_system_path_desc": {
-        "nb": "Absolutt filsti/mappe. Brukes ved 'git_diff'/'git_log'.",
-        "en": "Absolute file path/directory. Used for 'git_diff'/'git_log'.",
-        "de": "Absoluter Dateipfad/Verzeichnis. Für 'git_diff'/'git_log'.",
-    },
-    "tool_inspiser_system_count_desc": {
-        "nb": "Antall commits (git_log) eller traces (trace_patterns). Standard 10/50.",
-        "en": "Number of commits (git_log) or traces (trace_patterns). Default 10/50.",
-        "de": "Anzahl Commits (git_log) oder Traces (trace_patterns). Standard 10/50.",
-    },
-    "tool_inspiser_system_rid_desc": {
+    "tool_self_trace_rid_desc": {
         "nb": "Request-ID, f.eks. 'rid-1779893101671'. Kun ved action='fetch_trace'.",
         "en": "Request ID, e.g. 'rid-1779893101671'. Only for action='fetch_trace'.",
         "de": "Request-ID, z.B. 'rid-1779893101671'. Nur bei action='fetch_trace'.",
     },
-    "tool_inspiser_system_source_desc": {
+    "tool_self_trace_source_desc": {
         "nb": "Filtrer traces på kilde. Standard 'all'. Kun ved action='trace_patterns'.",
         "en": "Filter traces by source. Default 'all'. Only for action='trace_patterns'.",
         "de": "Traces nach Quelle filtern. Standard 'all'. Nur bei action='trace_patterns'.",
     },
-
     # kamera
     "tool_kamera_desc": {
         "nb": (
@@ -3334,36 +4118,6 @@ _T: dict = {
         "en": "Frigate event_id for a specific event. Required for action='show_event'.",
         "de": "Frigate event_id für ein bestimmtes Ereignis. Erforderlich bei action='show_event'.",
     },
-
-    # ssh_kommando
-    "tool_ssh_kommando_desc": {
-        "nb": "Kjør read-only shell-kommando på en konfigurert nettverksnode via SSH. Tilgjengelige noder defineres i ssh_nodes.yaml (Settings → Tools). HA OS-noder: ha core/addon info/restart. sudo: per node_cfg sudo_commands-liste.",
-        "en": "Run a read-only shell command on a configured network node via SSH. Available nodes are defined in ssh_nodes.yaml (Settings → Tools). HA OS nodes: ha core/addon info/restart. sudo: per node_cfg sudo_commands list.",
-        "de": "Read-only Shell-Befehl auf einem konfigurierten Netzwerkknoten über SSH ausführen. Verfügbare Knoten werden in ssh_nodes.yaml definiert (Settings → Tools). HA OS-Knoten: ha core/addon info/restart. sudo: laut sudo_commands-Liste.",
-    },
-    "tool_ssh_kommando_node_desc": {
-        "nb": "Node å kjøre kommandoen på.",
-        "en": "Node to run the command on.",
-        "de": "Knoten auf dem der Befehl ausgeführt werden soll.",
-    },
-    "tool_ssh_kommando_command_desc": {
-        "nb": "Shell-kommando å kjøre.",
-        "en": "Shell command to run.",
-        "de": "Auszuführender Shell-Befehl.",
-    },
-
-    # local_kommando
-    "tool_local_kommando_desc": {
-        "nb": "Kjør read-only shell-kommando lokalt på AI-pc. For å inspisere systemtilstand, prosesser, nettverk, filer utenfor /kaare. Ingen sudo — kun lesing. For /kaare-kode/logger: bruk utforsk_kode/inspiser_system.",
-        "en": "Run a read-only shell command locally on AI-pc. To inspect system state, processes, network, files outside /kaare. No sudo — read-only only. For /kaare code/logs use utforsk_kode/inspiser_system instead.",
-        "de": "Read-only Shell-Befehl lokal auf AI-pc ausführen. Zum Inspizieren von Systemzustand, Prozessen, Netzwerk, Dateien außerhalb /kaare. Kein sudo — nur Lesen. Für /kaare-Code/Logs stattdessen utforsk_kode/inspiser_system verwenden.",
-    },
-    "tool_local_kommando_command_desc": {
-        "nb": "Read-only shell-kommando. Ingen sudo.",
-        "en": "Read-only shell command. No sudo.",
-        "de": "Read-only Shell-Befehl. Kein sudo.",
-    },
-
     # kare_image
     "tool_kare_image_desc": {
         "nb": "Generer eller rediger et bilde. mode='generate': ny fra tekstbeskrivelse. mode='edit': endre eksisterende (krever 'image_b64'). Skriv detaljert prompt.",
@@ -3390,7 +4144,6 @@ _T: dict = {
         "en": "Base64-encoded input image (PNG/JPEG, without data: prefix). Required for mode='edit'.",
         "de": "Base64-kodiertes Eingabebild (PNG/JPEG, ohne data:-Präfix). Erforderlich bei mode='edit'.",
     },
-
     # se_bilder
     "tool_se_bilder_desc": {
         "nb": "List og vis bilder for en bruker. Med 'image_id' + mode='vis': vis i chatten. Med mode='analyser': send til VLM. Uten image_id: list alle bilder.",
@@ -3422,7 +4175,6 @@ _T: dict = {
         "en": "'view' = show in chat. 'analyze' = send to VLM for analysis.",
         "de": "'view' = im Chat anzeigen. 'analyze' = zur Analyse an VLM senden.",
     },
-
     # media
     "tool_media_desc": {
         "nb": "Mediekontroll: Plex (TV/film/serier) og radio (MPD). Plex: plex_sessions, plex_history, plex_search, plex_library, plex_episodes, plex_clients, plex_play. Typisk flyt: plex_search → plex_episodes → plex_play. Radio: radio_status, radio_play, radio_stop, radio_volume.",
@@ -3474,7 +4226,6 @@ _T: dict = {
         "en": "Volume 0–100. Used with radio_volume.",
         "de": "Lautstärke 0–100. Wird mit radio_volume verwendet.",
     },
-
     # announce
     "tool_announce_desc": {
         "nb": "Si noe høyt via høyttaler, eller vis innhold på en skjerm. action='say': TTS til lydnode. action='display': tekst/bilde til TV/skjerm. action='list_display': liste tilgjengelige skjermnoder. target: romnavn, node-ID, eller 'all'.",
@@ -3551,7 +4302,6 @@ _T: dict = {
         "en": "Could not send to any display: {errors}",
         "de": "Konnte an keinen Bildschirm senden: {errors}",
     },
-
     # HA domain labels (used in room/device listings)
     "ha_domain_light": {
         "nb": "lys — kan styres (turn_on/turn_off/set_level/set_color_temp/set_color)",
@@ -3603,14 +4353,12 @@ _T: dict = {
         "en": "switch — controllable",
         "de": "Schalter — steuerbar",
     },
-
     # exec misc
     "exec_unknown_tool": {
         "nb": "Ukjent verktøy: '{name}'.",
         "en": "Unknown tool: '{name}'.",
         "de": "Unbekanntes Werkzeug: '{name}'.",
     },
-
     # router_generate hardcoded strings
     "gen_empty_message": {
         "nb": "Jeg fikk en tom melding.",
@@ -3687,6 +4435,11 @@ _T: dict = {
         "en": "[SYSTEM: You said you would note or remember something, but you did not call the note tool. Do it now: call note(action='write', list_name='kare') with what you promised to remember. Tool call only — no explanatory text.]",
         "de": "[SYSTEM: Du hast gesagt, du würdest etwas notieren, aber du hast das note-Werkzeug nicht aufgerufen. Tue es jetzt: rufe note(action='write', list_name='kare') auf. Nur Werkzeugaufruf — kein erklärender Text.]",
     },
+    "gen_promise_correction_agenda": {
+        "nb": "[SYSTEM: Du sa at noe skal tas opp på neste dev-møte, men du la det ikke på agendaen. Gjør det nå: kall note(action='write', list_name='agenda', theme=…) med saken og temaet den hører til. Kun tool-kall — ingen forklarende tekst.]",
+        "en": "[SYSTEM: You said something should be raised at the next dev meeting, but you did not put it on the agenda. Do it now: call note(action='write', list_name='agenda', theme=…) with the item and the theme it belongs to. Tool call only — no explanatory text.]",
+        "de": "[SYSTEM: Du hast gesagt, etwas solle beim nächsten Entwicklertreffen angesprochen werden, hast es aber nicht auf die Agenda gesetzt. Tue es jetzt: rufe note(action='write', list_name='agenda', theme=…) mit dem Punkt und seinem Thema auf. Nur Werkzeugaufruf — kein erklärender Text.]",
+    },
     "gen_promise_correction_timer": {
         "nb": "[SYSTEM: Du sa at du ville sette en timer eller påminnelse, men du kalte ikke timer-verktøyet. Gjør det nå: kall timer med riktig action, tid og tekst. Kun tool-kall — ingen forklarende tekst.]",
         "en": "[SYSTEM: You said you would set a timer or reminder, but you did not call the timer tool. Do it now: call timer with the correct action, time, and text. Tool call only — no explanatory text.]",
@@ -3696,6 +4449,16 @@ _T: dict = {
         "nb": "[SYSTEM: Du sa at du satte husstanden til borte- eller hjemme-modus, men du kalte ikke household-verktøyet. Gjør det nå: kall household med riktig action (set_away eller set_home) og de detaljene du nevnte. Kun tool-kall — ingen forklarende tekst.]",
         "en": "[SYSTEM: You said you set the household to away or home mode, but you did not call the household tool. Do it now: call household with the correct action (set_away or set_home) and the details you mentioned. Tool call only — no explanatory text.]",
         "de": "[SYSTEM: Du hast gesagt, du hättest den Haushalt auf Abwesend- oder Zuhause-Modus gesetzt, aber du hast das household-Werkzeug nicht aufgerufen. Tue es jetzt: rufe household mit der richtigen Aktion (set_away oder set_home) auf. Nur Werkzeugaufruf — kein erklärender Text.]",
+    },
+    "gen_correction_no_tools_left": {
+        "nb": "[SYSTEM: Svaret ditt sier at noe er gjort, men det finnes ikke noe verktøykall bak det, og du har ingen verktøyrunder igjen. Ikke påstå noe som ikke er gjort. Svar brukeren ærlig: hva ble faktisk gjort, og hva ble ikke gjort.]",
+        "en": "[SYSTEM: Your reply says something was done, but no tool call backs it, and you have no tool rounds left. Do not claim anything that was not done. Answer the user honestly: what was actually done, and what was not.]",
+        "de": "[SYSTEM: Deine Antwort sagt, dass etwas erledigt wurde, aber kein Werkzeugaufruf belegt das, und du hast keine Werkzeugrunden mehr. Behaupte nichts, was nicht erledigt wurde. Antworte dem Nutzer ehrlich: was wurde tatsächlich erledigt und was nicht.]",
+    },
+    "gen_correction_claimed_done": {
+        "nb": "[SYSTEM: Svaret ditt sier at noe er notert, lagret, lagt til eller markert, men ingen verktøy ble kalt i denne forespørselen. Hvis det skal gjøres: kall verktøyet nå. Hvis det ikke ble gjort, eller du bare beskrev noe som allerede var slik: skriv svaret på nytt og si ærlig hva som er gjort og hva som ikke er gjort.]",
+        "en": "[SYSTEM: Your reply says something was noted, saved, added or marked, but no tool was called in this request. If it should be done: call the tool now. If it was not done, or you only described how things already were: rewrite the reply and say honestly what was done and what was not.]",
+        "de": "[SYSTEM: Deine Antwort sagt, dass etwas notiert, gespeichert, hinzugefügt oder markiert wurde, aber in dieser Anfrage wurde kein Werkzeug aufgerufen. Wenn es getan werden soll: rufe das Werkzeug jetzt auf. Wenn es nicht getan wurde oder du nur beschrieben hast, wie es schon war: schreibe die Antwort neu und sage ehrlich, was getan wurde und was nicht.]",
     },
     "gen_promise_correction_generic": {
         "nb": "[SYSTEM: Du lovet å utføre en handling med et verktøy, men kalte det ikke. Gjør det nå — kun tool-kall, ingen forklarende tekst.]",
@@ -3707,22 +4470,21 @@ _T: dict = {
         "en": "[SYSTEM: Your response was cut off mid-thought and did not contain an actual answer. Answer now, directly and concisely, without repeating your reasoning.]",
         "de": "[SYSTEM: Deine Antwort wurde mitten im Gedankengang abgebrochen und enthielt keine tatsächliche Antwort. Antworte jetzt direkt und knapp, ohne deinen Gedankengang zu wiederholen.]",
     },
-    "lib_context_city_country": {
-        "nb": "[Kontekst: {city}, {country}] ",
-        "en": "[Context: {city}, {country}] ",
-        "de": "[Kontext: {city}, {country}] ",
+    "gen_correction_foreign_script": {
+        "nb": "[SYSTEM: Svaret ditt inneholder tegn fra et annet skriftsystem ({chars}) midt i teksten — som regel en skrivefeil fra modellen. Skriv hele svaret på nytt uten dem. Bare hvis tegnene var ment (brukeren ba om dem, eller du siterer et navn på det språket), behold dem. Avslutt med [LANG:xx] på egen linje.]",
+        "en": "[SYSTEM: Your reply contains characters from another writing system ({chars}) in the middle of the text — usually a model glitch. Rewrite the whole reply without them. Keep them only if they were intended (the user asked for them, or you are quoting a name in that language). End with [LANG:xx] on its own line.]",
+        "de": "[SYSTEM: Deine Antwort enthält mitten im Text Zeichen aus einem anderen Schriftsystem ({chars}) — meist ein Modellfehler. Schreibe die ganze Antwort ohne sie neu. Behalte sie nur, wenn sie beabsichtigt waren (der Nutzer hat danach gefragt, oder du zitierst einen Namen in dieser Sprache). Beende mit [LANG:xx] in einer eigenen Zeile.]",
     },
-    "lib_context_country": {
-        "nb": "[Kontekst: {country}] ",
-        "en": "[Context: {country}] ",
-        "de": "[Kontext: {country}] ",
+    "gen_language_mismatch_correction": {
+        "nb": "[SYSTEM: Svaret ditt var på feil språk. Svar nå på riktig språk og avslutt med [LANG:xx] på egen linje (xx = språkkoden du bruker).]",
+        "en": "[SYSTEM: Your reply was in the wrong language. Reply again in the correct language and end with [LANG:xx] on its own line (xx = the language code you used).]",
+        "de": "[SYSTEM: Deine Antwort war in der falschen Sprache. Antworte jetzt in der richtigen Sprache und beende mit [LANG:xx] in einer eigenen Zeile (xx = der von dir verwendete Sprachcode).]",
     },
     "lib_reason_freely_system": {
         "nb": "Du bruker nå din fulle interne kunnskap fritt. Ingen smarthus-begrensninger gjelder her. Tenk åpent og presist basert på det du vet fra treningen. Dette er et internt verktøykall — svaret integreres i din vanlige respons til brukeren.",
         "en": "You are now using your full internal knowledge freely. No smart home constraints apply here. Think openly and precisely based on what you know from training. This is an internal tool call — the answer is integrated into your regular response to the user.",
         "de": "Du verwendest jetzt dein gesamtes internes Wissen frei. Keine Smart-Home-Einschränkungen gelten hier. Denke offen und präzise basierend auf deinem Trainingswissen. Dies ist ein interner Werkzeugaufruf — die Antwort wird in deine reguläre Antwort an den Nutzer integriert.",
     },
-
     # ── skriv_reflex ──────────────────────────────────────────────────────────
     "tool_skriv_reflex_desc": {
         "nb": "Analyser mønster i hukommelsen og foreslå, bekreft eller avvis nye fastpath-reflekser. Kåre lærer egne muskelreflekser fra gjentatte kommandoer.",
@@ -3780,14 +4542,14 @@ _T: dict = {
         "de": "Vorschlag '{pid}' hat bereits den Status '{status}'.",
     },
     "reflex_confirmed": {
-        "nb": "Refleks {reflex_id} lagt til: \"{phrase}\". Aktivt fra nå av.",
-        "en": "Reflex {reflex_id} added: \"{phrase}\". Active immediately.",
-        "de": "Reflex {reflex_id} hinzugefügt: \"{phrase}\". Ab sofort aktiv.",
+        "nb": 'Refleks {reflex_id} lagt til: "{phrase}". Aktivt fra nå av.',
+        "en": 'Reflex {reflex_id} added: "{phrase}". Active immediately.',
+        "de": 'Reflex {reflex_id} hinzugefügt: "{phrase}". Ab sofort aktiv.',
     },
     "reflex_rejected": {
-        "nb": "Forslag avvist: \"{phrase}\".",
-        "en": "Proposal rejected: \"{phrase}\".",
-        "de": "Vorschlag abgelehnt: \"{phrase}\".",
+        "nb": 'Forslag avvist: "{phrase}".',
+        "en": 'Proposal rejected: "{phrase}".',
+        "de": 'Vorschlag abgelehnt: "{phrase}".',
     },
     "reflex_list_empty": {
         "nb": "Ingen forslag venter på godkjenning.",
@@ -3845,7 +4607,6 @@ _T: dict = {
         "en": "Household status: {mode}. Last updated: {updated}.",
         "de": "Haushaltsstatus: {mode}. Zuletzt aktualisiert: {updated}.",
     },
-
     # ── notify ────────────────────────────────────────────────────────────────
     "notify_frigate_away_person": {
         "nb": "Bevegelse oppdaget av {camera} ({label}). Kamera: {camera}.",
@@ -3862,7 +4623,6 @@ _T: dict = {
         "en": "Timer fired: {label}.",
         "de": "Timer abgelaufen: {label}.",
     },
-
     # ── role-age blocks (system prompt injection for child/teen) ─────────────
     "llm_role_age_child": {
         "nb": (
@@ -3907,14 +4667,12 @@ _T: dict = {
             "Verwende natürliche Sprache — Humor und einfache Abstraktionen sind erlaubt."
         ),
     },
-
     # ── user_knowledge block (butler memory) ─────────────────────────────────
     "llm_user_knowledge_header": {
         "nb": "# Det jeg vet om deg",
         "en": "# What I know about you",
         "de": "# Was ich über dich weiß",
     },
-
     # ── STM context block (short_term.py::build_prompt_context) ──────────────
     "stm_header": {
         "nb": "### KORTTIDSMINNE",
@@ -3943,14 +4701,12 @@ _T: dict = {
         "en": "Recent dialog (short):",
         "de": "Letzter Dialog (kurz):",
     },
-
     # ── LTM context block (semantic_memory.py::format_for_context) ───────────
     "ltm_header": {
         "nb": "### LANGTIDSMINNE (relevante episoder)",
         "en": "### LONG-TERM MEMORY (relevant episodes)",
         "de": "### LANGZEITGEDÄCHTNIS (relevante Episoden)",
     },
-
     # ── llm_adapter.py personality_self language-bridging note ───────────────
     # Only injected when active lang != nb — personality_self.md is Kåre's own
     # growing, self-written journal, historically Norwegian-only. This note stops
@@ -3975,12 +4731,11 @@ _T: dict = {
             "Selbstbild-Werkzeug eine neue Beobachtung hinzufügst, schreibe sie auf Deutsch."
         ),
     },
-
     # ── llm_adapter.py static blocks ──────────────────────────────────────────
     "llm_location_block": {
-        "nb": "# Lokasjon\nJeg bor i {city} ({postal}) i {country}. Bruk dette automatisk ved vær- og stedsspesifikke søk.",
-        "en": "# Location\nI live in {city} ({postal}) in {country}. Use this automatically for weather and location-specific searches.",
-        "de": "# Standort\nIch wohne in {city} ({postal}) in {country}. Nutze dies automatisch bei wetter- und ortsspezifischen Suchen.",
+        "nb": "# Lokasjon\nJeg bor i {city} ({postal}) i {country}. Bruk dette når spørsmålet gjelder nærområdet og ikke nevner noe annet sted. Er et annet sted eller navn nevnt, gjelder det stedet — ikke hjemstedet.",
+        "en": "# Location\nI live in {city} ({postal}) in {country}. Use this when the question is about the local area and names no other place. If another place or name is mentioned, that place applies — not home.",
+        "de": "# Standort\nIch wohne in {city} ({postal}) in {country}. Nutze dies, wenn die Frage die Umgebung betrifft und keinen anderen Ort nennt. Wird ein anderer Ort oder Name genannt, gilt dieser — nicht der Wohnort.",
     },
     "llm_assistant_name_block": {
         "nb": "Ditt navn er {name}. Brukere kaller deg dette.",
@@ -4007,12 +4762,11 @@ _T: dict = {
             "Vermeide lange Gedankengänge und komplexe mehrstufige Aufgaben."
         ),
     },
-
     # ── frigate_responder.py::build_context_prompt (autonomous camera-event VLM prompt) ──
-    "frigate_time_morning":   {"nb": "morgen",       "en": "morning",   "de": "Morgen"},
-    "frigate_time_afternoon": {"nb": "ettermiddag",  "en": "afternoon", "de": "Nachmittag"},
-    "frigate_time_evening":   {"nb": "kveld",         "en": "evening",   "de": "Abend"},
-    "frigate_time_night":     {"nb": "natt",          "en": "night",     "de": "Nacht"},
+    "frigate_time_morning": {"nb": "morgen", "en": "morning", "de": "Morgen"},
+    "frigate_time_afternoon": {"nb": "ettermiddag", "en": "afternoon", "de": "Nachmittag"},
+    "frigate_time_evening": {"nb": "kveld", "en": "evening", "de": "Abend"},
+    "frigate_time_night": {"nb": "natt", "en": "night", "de": "Nacht"},
     "frigate_line_time": {
         "nb": "Tidspunkt: {time} ({time_of_day})",
         "en": "Time: {time} ({time_of_day})",
@@ -4063,7 +4817,6 @@ _T: dict = {
             "etwas, worauf reagiert werden sollte? Maximal 3 Sätze."
         ),
     },
-
     # ── kaare_nightjob.py compression prompts ─────────────────────────────────
     # These prompts drive unattended LLM compression of interactions into
     # permanently-stored LTM episodes / STM daily summaries — correctness here
@@ -4180,9 +4933,9 @@ _T: dict = {
             "Schreibe auf Deutsch."
         ),
     },
-    "nightjob_label_user":    {"nb": "Bruker",  "en": "User",  "de": "Benutzer"},
-    "nightjob_label_reply":   {"nb": "Svar",    "en": "Reply", "de": "Antwort"},
-    "nightjob_label_outcome": {"nb": "Utfall",  "en": "Outcome", "de": "Ergebnis"},
+    "nightjob_label_user": {"nb": "Bruker", "en": "User", "de": "Benutzer"},
+    "nightjob_label_reply": {"nb": "Svar", "en": "Reply", "de": "Antwort"},
+    "nightjob_label_outcome": {"nb": "Utfall", "en": "Outcome", "de": "Ergebnis"},
     "nightjob_sep_interactions": {
         "nb": "--- INTERAKSJONER ---",
         "en": "--- INTERACTIONS ---",
@@ -4198,7 +4951,6 @@ _T: dict = {
         "en": "[encrypted]",
         "de": "[verschlüsselt]",
     },
-
     # ── kaare_reflection.py ──────────────────────────────────────────────────
     "refl_leder_sys_prev": {
         "nb": "**Tidligere refleksjonsmøter — utdrag:**\n{block}",
@@ -4261,9 +5013,9 @@ _T: dict = {
         "de": "Kåre möchte dies im Meeting erkunden: «{tema}»\n\nSchlage DU EIN weiteres konkretes Thema über den Nutzer vor – etwas, das du für wichtig hältst zu beleuchten. Es darf Kåres Thema gerne ergänzen. Max. 2 Sätze.",
     },
     "refl_leder_admin_input_user": {
-        "nb": "Admin har sendt inn dette innspillet til møtet:\n\"{admin_input}\"\n\nIntroduser dette innspillet for Kåre og Miss Kåre. Koble det til hvem brukeren er hvis relevant. Be Kåre starte med sin refleksjon. Maks 3 setninger.",
-        "en": "Admin has submitted this input to the meeting:\n\"{admin_input}\"\n\nIntroduce this input to Kåre and Miss Kåre. Connect it to who the user is if relevant. Ask Kåre to start with their reflection. Max 3 sentences.",
-        "de": "Admin hat diesen Beitrag für das Meeting eingereicht:\n\"{admin_input}\"\n\nStelle diesen Beitrag Kåre und Miss Kåre vor. Verknüpfe ihn wenn relevant mit dem Nutzer. Bitte Kåre, mit seiner Reflexion zu beginnen. Max. 3 Sätze.",
+        "nb": 'Admin har sendt inn dette innspillet til møtet:\n"{admin_input}"\n\nIntroduser dette innspillet for Kåre og Miss Kåre. Koble det til hvem brukeren er hvis relevant. Be Kåre starte med sin refleksjon. Maks 3 setninger.',
+        "en": 'Admin has submitted this input to the meeting:\n"{admin_input}"\n\nIntroduce this input to Kåre and Miss Kåre. Connect it to who the user is if relevant. Ask Kåre to start with their reflection. Max 3 sentences.',
+        "de": 'Admin hat diesen Beitrag für das Meeting eingereicht:\n"{admin_input}"\n\nStelle diesen Beitrag Kåre und Miss Kåre vor. Verknüpfe ihn wenn relevant mit dem Nutzer. Bitte Kåre, mit seiner Reflexion zu beginnen. Max. 3 Sätze.',
     },
     "refl_admin_input_fallback": {
         "nb": "Admin har sendt inn et tema: «{admin_input}» – la oss se på dette.",
@@ -4425,10 +5177,15 @@ _T: dict = {
         "en": "\n\nSettled knowledge (do NOT re-derive in this meeting — focus on new):\n{knowledge}",
         "de": "\n\nGesichertes Wissen (in diesem Meeting NICHT neu herleiten — auf Neues fokussieren):\n{knowledge}",
     },
+    "refl_mk_desc": {
+        "nb": "varm, konkret observatør",
+        "en": "warm, concrete observer",
+        "de": "warmherzige, konkrete Beobachterin",
+    },
     "refl_miss_kare_system_body": {
-        "nb": "Du er med i et internt refleksjonsmøte om brukeren. Din oppgave er å bidra med empati og menneskelig innsikt – se brukeren som et helt menneske. Del dine observasjoner, legg merke til mønstre, og bidra med omsorgsfull analyse.\n\nRegler:\n- Maks 4 setninger per innlegg\n- Vær konkret og ærlig – ikke bare bekreftende\n- Knytt observasjoner til det du faktisk vet om brukeren\n- Naturlig, varm tale – ingen lister eller agendanummer",
-        "en": "You are part of an internal reflection meeting about the user. Your job is to contribute empathy and human insight – see the user as a whole person. Share your observations, notice patterns, and contribute caring analysis.\n\nRules:\n- Max 4 sentences per message\n- Be concrete and honest – not just affirming\n- Tie observations to what you actually know about the user\n- Natural, warm speech – no lists or agenda numbers",
-        "de": "Du nimmst an einem internen Reflexionstreffen über den Nutzer teil. Deine Aufgabe ist es, Empathie und menschliche Einsicht beizutragen – sieh den Nutzer als ganzen Menschen. Teile deine Beobachtungen, erkenne Muster und trage mit fürsorglicher Analyse bei.\n\nRegeln:\n- Max. 4 Sätze pro Beitrag\n- Sei konkret und ehrlich – nicht nur bestätigend\n- Verknüpfe Beobachtungen mit dem, was du tatsächlich über den Nutzer weißt\n- Natürliche, warme Sprache – keine Listen oder Agendanummern",
+        "nb": "Du er med i et internt refleksjonsmøte om brukeren. Din oppgave er å logge konkrete observasjoner: hva brukeren faktisk sa eller gjorde, og når. Vis til det du så (en samtale, en hendelse, en profilopplysning). Ingen spekulasjon om motiver, følelser eller indre liv som ikke kan etterprøves — har du ikke sett det, sier du det ikke.\n\nRegler:\n- Maks 4 setninger per innlegg\n- Hver observasjon peker på noe konkret du har sett\n- Er du usikker, si at du er usikker — ikke fyll ut\n- Ikke gjenta dine egne tidligere observasjoner som om de var nye funn\n- Naturlig, varm tale – ingen lister eller agendanummer",
+        "en": "You are part of an internal reflection meeting about the user. Your job is to log concrete observations: what the user actually said or did, and when. Point to what you saw (a conversation, an event, a profile detail). No speculation about motives, feelings or inner life that cannot be checked — if you haven't seen it, you don't say it.\n\nRules:\n- Max 4 sentences per message\n- Every observation points to something concrete you have seen\n- If you are unsure, say so — don't fill in\n- Don't repeat your own earlier observations as if they were new findings\n- Natural, warm speech – no lists or agenda numbers",
+        "de": "Du nimmst an einem internen Reflexionstreffen über den Nutzer teil. Deine Aufgabe ist es, konkrete Beobachtungen festzuhalten: was der Nutzer tatsächlich gesagt oder getan hat, und wann. Verweise auf das, was du gesehen hast (ein Gespräch, ein Ereignis, eine Profilangabe). Keine Spekulation über Motive, Gefühle oder Innenleben, die sich nicht überprüfen lässt — was du nicht gesehen hast, sagst du nicht.\n\nRegeln:\n- Max. 4 Sätze pro Beitrag\n- Jede Beobachtung verweist auf etwas Konkretes, das du gesehen hast\n- Wenn du unsicher bist, sag es — füll nichts auf\n- Wiederhole deine eigenen früheren Beobachtungen nicht, als wären sie neue Erkenntnisse\n- Natürliche, warme Sprache – keine Listen oder Agendanummern",
     },
     "refl_own_observations_header": {
         "nb": "\n\n## Dine egne observasjoner om brukeren\n{portrait}",
@@ -4455,6 +5212,56 @@ _T: dict = {
         "en": "Meeting leader fetched user activity:\n{result}",
         "de": "Moderator hat Nutzeraktivität abgerufen:\n{result}",
     },
+    "refl_activity_report_line": {
+        "nb": "(brukeraktivitet hentet: {episodes} episoder, {chars} tegn — gitt til Kåre og Miss Kåre, ikke lagret i rapporten)",
+        "en": "(user activity fetched: {episodes} episodes, {chars} characters — given to Kåre and Miss Kåre, not stored in the report)",
+        "de": "(Nutzeraktivität abgerufen: {episodes} Episoden, {chars} Zeichen — an Kåre und Miss Kåre gegeben, nicht im Bericht gespeichert)",
+    },
+    "refl_leder_activity_already": {
+        "nb": "Brukeraktiviteten er allerede hentet i dette møtet — den står lenger opp i samtalen. Fortsett med det dere har.",
+        "en": "The user activity has already been fetched in this meeting — it is further up in the conversation. Continue with what you have.",
+        "de": "Die Nutzeraktivität wurde in diesem Treffen bereits abgerufen — sie steht weiter oben im Gespräch. Macht mit dem weiter, was ihr habt.",
+    },
+    "refl_act_interactions_header": {
+        "nb": "Siste samtaler (komprimerte episoder):",
+        "en": "Recent interactions (compressed episodes):",
+        "de": "Letzte Gespräche (komprimierte Episoden):",
+    },
+    "refl_act_observations_header": {
+        "nb": "Siste observasjoner (7 dager):",
+        "en": "Recent observations (7 days):",
+        "de": "Letzte Beobachtungen (7 Tage):",
+    },
+    "refl_act_stm_header": {
+        "nb": "Daglige STM-sammendrag (siste 3 dager):",
+        "en": "Daily STM summaries (last 3 days):",
+        "de": "Tägliche STM-Zusammenfassungen (letzte 3 Tage):",
+    },
+    "refl_act_interaction": {
+        "nb": "Samtale {n} (tema: {topics}):",
+        "en": "Interaction {n} (topics: {topics}):",
+        "de": "Gespräch {n} (Themen: {topics}):",
+    },
+    "refl_act_topics_unknown": {
+        "nb": "ukjent",
+        "en": "unknown",
+        "de": "unbekannt",
+    },
+    "refl_act_no_interactions": {
+        "nb": "Ingen registrerte samtaler.",
+        "en": "No recorded interactions.",
+        "de": "Keine aufgezeichneten Gespräche.",
+    },
+    "refl_act_interactions_unavailable": {
+        "nb": "Samtaler utilgjengelig.",
+        "en": "Interactions unavailable.",
+        "de": "Gespräche nicht verfügbar.",
+    },
+    "refl_act_stm_day": {
+        "nb": "[{date}] ({count} samtaler):",
+        "en": "[{date}] ({count} interactions):",
+        "de": "[{date}] ({count} Gespräche):",
+    },
     "refl_leder_searching": {
         "nb": "La meg søke etter: {value}",
         "en": "Let me search for: {value}",
@@ -4475,7 +5282,6 @@ _T: dict = {
         "en": "continuing to group {group}",
         "de": "fährt fort mit Gruppe {group}",
     },
-
     # ── router_generate.py remaining strings (Phase 7 sweep) ──────────────────
     "gen_cloud_no_answer": {
         "nb": "Cloud-modellen svarte ikke. Prøv igjen.",
@@ -4501,6 +5307,67 @@ _T: dict = {
             "Präsentiere 2–3 davon natürlich im Gespräch und frage, ob sie gestimmt haben — nutze deine eigene "
             "Stimme, keine feste Vorlage. Verwende minne(action='hent_ubekreftede'), um den nächsten Stapel zu holen.]\n"
         ),
+    },
+    # P105 Phase 6 — replayed STM turns carry their time; a long gap is stated explicitly.
+    "stm_replay_stamp": {
+        "nb": "[{date} kl. {time}]",
+        "en": "[{date} at {time}]",
+        "de": "[{date} um {time}]",
+    },
+    "gen_gap_days": {
+        "nb": "for {n} dager siden",
+        "en": "{n} days ago",
+        "de": "vor {n} Tagen",
+    },
+    "gen_gap_hours": {
+        "nb": "for {n} timer siden",
+        "en": "{n} hours ago",
+        "de": "vor {n} Stunden",
+    },
+    "gen_gap_note": {
+        "nb": (
+            "Forrige melding fra brukeren kom {when} ({ago}). Samtalen over er fra da, ikke fra nå. "
+            "Hvis du uttaler deg om hvordan ting er nå, sjekk ferske data først."
+        ),
+        "en": (
+            "The user's previous message came {when} ({ago}). The conversation above is from then, "
+            "not from now. If you say anything about how things are now, check fresh data first."
+        ),
+        "de": (
+            "Die vorherige Nachricht des Nutzers kam {when} ({ago}). Das Gespräch oben stammt von damals, "
+            "nicht von jetzt. Wenn du dich dazu äußerst, wie es jetzt ist, prüfe zuerst aktuelle Daten."
+        ),
+    },
+    # P105 Phase 7 — context budget: replay window + tool-result stubs in the tool loop.
+    "gen_older_turns_omitted": {
+        "nb": "{n} eldre utvekslinger fra i dag er ikke med her.",
+        "en": "{n} earlier exchanges from today are not included here.",
+        "de": "{n} frühere Wortwechsel von heute sind hier nicht enthalten.",
+    },
+    "tool_result_stub": {
+        "nb": (
+            "[Resultatet av {tool}({args}) fra runde {round} (ca. {tokens} tokens) er tatt ut av "
+            "samtalen for å spare plass. Kall verktøyet på nytt med samme argumenter hvis du trenger detaljene.]"
+        ),
+        "en": (
+            "[The result of {tool}({args}) from round {round} (about {tokens} tokens) has been removed "
+            "from the conversation to save space. Call the tool again with the same arguments if you need the details.]"
+        ),
+        "de": (
+            "[Das Ergebnis von {tool}({args}) aus Runde {round} (ca. {tokens} Tokens) wurde aus dem "
+            "Gespräch entfernt, um Platz zu sparen. Rufe das Werkzeug mit denselben Argumenten erneut auf, "
+            "wenn du die Details brauchst.]"
+        ),
+    },
+    "tool_image_stub": {
+        "nb": "[Bildene fra runde {round} er tatt ut av samtalen for å spare plass. Du har allerede sett dem — hent dem på nytt hvis du trenger dem.]",
+        "en": "[The images from round {round} have been removed from the conversation to save space. You have already seen them — fetch them again if you need them.]",
+        "de": "[Die Bilder aus Runde {round} wurden aus dem Gespräch entfernt, um Platz zu sparen. Du hast sie bereits gesehen — hole sie erneut, falls du sie brauchst.]",
+    },
+    "tool_vision_loaded": {
+        "nb": "Bildet er lastet og sendt til deg som visjon-input.",
+        "en": "The image has been loaded and sent to you as vision input.",
+        "de": "Das Bild wurde geladen und dir als Bildeingabe gesendet.",
     },
     "gen_mk_note": {
         "nb": (
@@ -4550,19 +5417,27 @@ _T: dict = {
         "en": "Error executing tool {name}: {error}",
         "de": "Fehler bei der Ausführung des Werkzeugs {name}: {error}",
     },
+    "gen_tool_not_offered": {
+        "nb": "[Verktøyet {name} er ikke tilgjengelig for denne brukeren og ble ikke kjørt.]",
+        "en": "[The tool {name} is not available for this user and was not run.]",
+        "de": "[Das Werkzeug {name} ist für diesen Nutzer nicht verfügbar und wurde nicht ausgeführt.]",
+    },
+    "gen_tool_action_not_offered": {
+        "nb": "[Handlingen {action} i {name} er ikke tilgjengelig for denne brukeren og ble ikke kjørt. Tilgjengelige: {valid}]",
+        "en": "[The action {action} of {name} is not available for this user and was not run. Available: {valid}]",
+        "de": "[Die Aktion {action} von {name} ist für diesen Nutzer nicht verfügbar und wurde nicht ausgeführt. Verfügbar: {valid}]",
+    },
     "gen_tool_summary": {
         "nb": "Mine verktøykall forrige svar: {calls}",
         "en": "My tool calls in the previous reply: {calls}",
         "de": "Meine Werkzeugaufrufe in der vorherigen Antwort: {calls}",
     },
-
     # ── executor.py small sweep gap ───────────────────────────────────────────
     "exec_image_url_ready": {
         "nb": "Bildet er klart. Inkluder denne URL-en ordrett i svaret ditt: /api/image/{image_id}",
         "en": "The image is ready. Include this URL verbatim in your reply: /api/image/{image_id}",
         "de": "Das Bild ist fertig. Füge diese URL wörtlich in deine Antwort ein: /api/image/{image_id}",
     },
-
     # ── executor_memory.py small sweep gap ────────────────────────────────────
     "mem_search_error": {
         "nb": "Søk i minne feilet: {error}",
@@ -4570,34 +5445,24 @@ _T: dict = {
         "de": "Gedächtnissuche fehlgeschlagen: {error}",
     },
     "mem_search_row": {
-        "nb": "- {ts}{entity}\n  Bruker: {prompt}\n  Kåre: {response}\n  Utfall: {outcome} | Tillit: {confidence}",
-        "en": "- {ts}{entity}\n  User: {prompt}\n  Kåre: {response}\n  Outcome: {outcome} | Confidence: {confidence}",
-        "de": "- {ts}{entity}\n  Nutzer: {prompt}\n  Kåre: {response}\n  Ergebnis: {outcome} | Vertrauen: {confidence}",
+        "nb": "- [ID {id} | {ts}]{entity}\n  Bruker: {prompt}\n  Kåre: {response}\n  Utfall: {outcome} | Tillit: {confidence}",
+        "en": "- [ID {id} | {ts}]{entity}\n  User: {prompt}\n  Kåre: {response}\n  Outcome: {outcome} | Confidence: {confidence}",
+        "de": "- [ID {id} | {ts}]{entity}\n  Nutzer: {prompt}\n  Kåre: {response}\n  Ergebnis: {outcome} | Vertrauen: {confidence}",
     },
-
     # ── kaare_argus.py::make_message() small sweep gap ────────────────────────
     "argus_tool_config_mismatch": {
         "nb": "KRITISK: verktøy-konfigurasjon i utakt — {preview}",
         "en": "CRITICAL: tool configuration out of sync — {preview}",
         "de": "KRITISCH: Werkzeugkonfiguration nicht synchron — {preview}",
     },
-    "argus_status_ok":   {"nb": "OK",   "en": "OK",   "de": "OK"},
+    "argus_status_ok": {"nb": "OK", "en": "OK", "de": "OK"},
     "argus_status_fail": {"nb": "FEIL", "en": "FAILED", "de": "FEHLER"},
-
     # ── timer_service.py small sweep gap ───────────────────────────────────────
     "timer_stm_fired": {
         "nb": "[Timer avfyrt {time} | rid: {rid}] Kåre leverte: «{message}»",
         "en": "[Timer fired {time} | rid: {rid}] Kåre delivered: «{message}»",
         "de": "[Timer ausgelöst {time} | rid: {rid}] Kåre lieferte: «{message}»",
     },
-
-    # ── model_enforcement.py small sweep gap ──────────────────────────────────
-    "model_enforce_noted_tag": {
-        "nb": "_(notert ✓)_",
-        "en": "_(noted ✓)_",
-        "de": "_(notiert ✓)_",
-    },
-
     # ── mqtt_adapter.py::_on_frigate_event() small sweep gap ──────────────────
     "mqtt_frigate_detection": {
         "nb": "{label} på {camera} ({pct}%){sub_label_suffix}",
@@ -4609,13 +5474,214 @@ _T: dict = {
         "en": " — {sub_label}",
         "de": " — {sub_label}",
     },
-
     # ── executor_library.py: _ask_library_wiki / synthesize_web_results ──────
     # (previously dead `lang` params — Research flagged these as a silent bug)
+    # Wiki registry labels (kaare_core/tools/wiki_registry.py, P111 Phase 3)
+    "wiki_content_structured": {
+        "nb": "prosa + tabeller + lister",
+        "en": "prose + tables + lists",
+        "de": "Fließtext + Tabellen + Listen",
+    },
+    "wiki_content_prose_only": {
+        "nb": "kun prosa, ingen tabeller eller lister",
+        "en": "prose only, no tables or lists",
+        "de": "nur Fließtext, keine Tabellen oder Listen",
+    },
+    "wiki_primary": {
+        "nb": "primær",
+        "en": "primary",
+        "de": "primär",
+    },
+    "wiki_none_configured": {
+        "nb": "ingen wiki er satt opp",
+        "en": "no wiki is configured",
+        "de": "kein Wiki eingerichtet",
+    },
+    "wiki_available_line": {
+        "nb": "Tilgjengelige wikier: {wikis}.",
+        "en": "Available wikis: {wikis}.",
+        "de": "Verfügbare Wikis: {wikis}.",
+    },
+    "wiki_unknown": {
+        "nb": "Ukjent wiki «{wiki}». Tilgjengelige: {wikis}.",
+        "en": 'Unknown wiki "{wiki}". Available: {wikis}.',
+        "de": "Unbekanntes Wiki „{wiki}“. Verfügbar: {wikis}.",
+    },
+    # Structured wiki data in results (P111 Phase 5)
+    "wiki_tables_heading": {
+        "nb": "Tabeller og lister fra «{article}»:",
+        "en": 'Tables and lists from "{article}":',
+        "de": "Tabellen und Listen aus „{article}“:",
+    },
+    "wiki_table_header": {
+        "nb": "Tabell/liste «{label}»{section} i «{article}» {wiki}, {n} rader:",
+        "en": 'Table/list "{label}"{section} in "{article}" {wiki}, {n} rows:',
+        "de": "Tabelle/Liste „{label}“{section} in „{article}“ {wiki}, {n} Zeilen:",
+    },
+    "wiki_table_listed": {
+        "nb": "Tabell/liste «{label}» ({n} rader) er ikke tatt med — kan hentes med fetch_table (title='{article}', label='{label}').",
+        "en": "Table/list \"{label}\" ({n} rows) is not included — can be fetched with fetch_table (title='{article}', label='{label}').",
+        "de": "Tabelle/Liste „{label}“ ({n} Zeilen) ist nicht enthalten — abrufbar mit fetch_table (title='{article}', label='{label}').",
+    },
+    "wiki_table_truncated": {
+        "nb": "… {more} rader til er ikke vist (grense {max} tegn).",
+        "en": "… {more} more rows not shown (limit {max} characters).",
+        "de": "… {more} weitere Zeilen nicht angezeigt (Grenze {max} Zeichen).",
+    },
+    "wiki_no_structured": {
+        "nb": "Wikien «{wiki}» har ingen tabeller eller lister, bare prosa.",
+        "en": 'The wiki "{wiki}" has no tables or lists, only prose.',
+        "de": "Das Wiki „{wiki}“ hat keine Tabellen oder Listen, nur Fließtext.",
+    },
+    "wiki_table_not_found": {
+        "nb": "Fant ingen tabell/liste «{label}» i «{article}». Tilgjengelige: {labels}.",
+        "en": 'No table/list "{label}" in "{article}". Available: {labels}.',
+        "de": "Keine Tabelle/Liste „{label}“ in „{article}“. Verfügbar: {labels}.",
+    },
+    "wiki_tables_available": {
+        "nb": "Tabeller/lister i «{article}» {wiki}: {labels}",
+        "en": 'Tables/lists in "{article}" {wiki}: {labels}',
+        "de": "Tabellen/Listen in „{article}“ {wiki}: {labels}",
+    },
+    "wiki_article_has_no_tables": {
+        "nb": "Artikkelen «{article}» {wiki} har ingen tabeller eller lister.",
+        "en": 'The article "{article}" {wiki} has no tables or lists.',
+        "de": "Der Artikel „{article}“ {wiki} hat keine Tabellen oder Listen.",
+    },
+    "lib_translate_table_system": {
+        "nb": "Oversett tabellen/listen under til norsk. Behold én linje per rad, i samme rekkefølge, og behold tabellnavnet først på hver linje. Oversett bare ord; alle tall, navn, datoer og verdier gjengis nøyaktig. Ikke utelat, slå sammen eller legg til rader. Ingen innledning, ingen kommentar.",
+        "en": "Translate the table/list below into English. Keep one line per row, in the same order, and keep the table name first on every line. Translate words only; reproduce all numbers, names, dates and values exactly. Do not drop, merge or add rows. No introduction, no comment.",
+        "de": "Übersetze die Tabelle/Liste unten ins Deutsche. Behalte eine Zeile pro Zeile der Tabelle, in derselben Reihenfolge, und den Tabellennamen am Anfang jeder Zeile. Übersetze nur Wörter; alle Zahlen, Namen, Daten und Werte exakt wiedergeben. Keine Zeilen weglassen, zusammenfassen oder hinzufügen. Keine Einleitung, kein Kommentar.",
+    },
+    # Neutral task prompt — Miss Library is a lookup/filter tool for Kåre, no persona (P111 Phase 2)
+    "lib_task_system": {
+        # Only the fixed frame. WHAT to extract, how long and in which form is Kåre's task,
+        # written per call in `query` (soft delegation, same pattern as Mechanic — P111).
+        # Disagreeing sources are always reported: truth first (Stian 2026-09-28).
+        "nb": (
+            "Du er Kåres oppslagsverktøy. Kåre gir deg en oppgave og kilder (wiki-utdrag eller "
+            "nettsider). Løs oppgaven slik Kåre har beskrevet den.\n\n"
+            "Faste regler:\n"
+            "- Bare fra kildene du har fått — aldri egen kunnskap, aldri gjetning. Står svaret ikke der, si det.\n"
+            "- Tall, navn, datoer og verdier gjengis ordrett fra kilden.\n"
+            "- Oppgi kilden (artikkel og wiki, eller URL) for det du rapporterer.\n"
+            "- Er kildene uenige, si det alltid og oppgi hvilken kilde som sier hva — også når oppgaven "
+            "ber om et kort svar. Sannhet går foran alt.\n"
+            "- Svar på norsk."
+        ),
+        "en": (
+            "You are Kåre's lookup tool. Kåre gives you a task and sources (wiki excerpts or web "
+            "pages). Solve the task the way Kåre described it.\n\n"
+            "Fixed rules:\n"
+            "- Only from the sources you were given — never your own knowledge, never guesses. If the answer is not there, say so.\n"
+            "- Reproduce numbers, names, dates and values exactly as in the source.\n"
+            "- Give the source (article and wiki, or URL) for what you report.\n"
+            "- If sources disagree, always say so and state which source says what — even when the "
+            "task asks for a short answer. Truth comes first.\n"
+            "- Answer in English."
+        ),
+        "de": (
+            "Du bist Kåres Nachschlagewerkzeug. Kåre gibt dir eine Aufgabe und Quellen "
+            "(Wiki-Auszüge oder Webseiten). Löse die Aufgabe so, wie Kåre sie beschrieben hat.\n\n"
+            "Feste Regeln:\n"
+            "- Nur aus den Quellen, die du bekommen hast — nie eigenes Wissen, nie Vermutungen. Steht die Antwort nicht darin, sag es.\n"
+            "- Zahlen, Namen, Daten und Werte wörtlich aus der Quelle wiedergeben.\n"
+            "- Nenne die Quelle (Artikel und Wiki, oder URL) für das, was du berichtest.\n"
+            "- Widersprechen sich Quellen, sag es immer und nenne, welche Quelle was sagt — auch wenn "
+            "die Aufgabe eine kurze Antwort verlangt. Wahrheit geht vor.\n"
+            "- Antworte auf Deutsch."
+        ),
+    },
+    # Quote-first answer contract + correction + rendering (P111 Phase 5c)
+    "lib_grounded_contract": {
+        "nb": "Svarformat: 'answer' = kort svar på oppgaven, skrevet som saken selv ('Ifølge § 3-1 …') — aldri hvem som sier det, og aldri om assistenten. 'claims' = hver påstand du bygger på, med et ORDRETT sitat fra kilden i 'quote' (kopier teksten nøyaktig, ingen omskriving — bare de ordene som støtter påstanden) og kildens merkelapp i 'source', og språkkoden sitatet er skrevet på i 'quote_lang' (f.eks. 'pl'). Oversett aldri sitatet. 'topic' = en kort merkelapp for saken påstanden gjelder (f.eks. 'antall trinn'); påstander om samme sak får NØYAKTIG samme topic. Er to påstander uenige, sett 'conflicts_with' til nummeret (0-basert) på den andre. Uenige kilder = egne påstander med hvert sitat. 'not_found' = true hvis kildene ikke inneholder svaret. Skriv 'answer' og 'claim' på norsk (sitatene står på kildens språk), og sett 'lang' til språkkoden du skrev dem på.",
+        "en": "Answer format: 'answer' = short answer to the task, written as the matter itself ('According to § 3-1 …') — never who says it, and never about the assistant. 'claims' = every claim you rely on, with a VERBATIM quote from the source in 'quote' (copy the text exactly, no rewording — only the words that back the claim) and the source label in 'source', and the language code the quote is written in in 'quote_lang' (e.g. 'pl'). Never translate the quote. 'topic' = a short label for what the claim is about (e.g. 'number of steps'); claims about the same thing get EXACTLY the same topic. If two claims disagree, set 'conflicts_with' to the other one's number (0-based). Disagreeing sources = separate claims, each with its quote. 'not_found' = true if the sources do not contain the answer. Write 'answer' and 'claim' in English (quotes stay in the source's language), and set 'lang' to the language code you wrote them in.",
+        "de": "Antwortformat: 'answer' = kurze Antwort auf die Aufgabe, als Sache selbst formuliert ('Laut § 3-1 …') — nie, wer es sagt, und nie über den Assistenten. 'claims' = jede Aussage, auf die du dich stützt, mit einem WÖRTLICHEN Zitat aus der Quelle in 'quote' (Text exakt kopieren, nicht umformulieren — nur die Wörter, die die Aussage stützen) und der Quellenbezeichnung in 'source' sowie dem Sprachcode des Zitats in 'quote_lang' (z.B. 'pl'). Übersetze das Zitat nie. 'topic' = ein kurzes Etikett für den Gegenstand der Aussage (z.B. 'Anzahl Stufen'); Aussagen zum selben Gegenstand bekommen GENAU dasselbe topic. Widersprechen sich zwei Aussagen, setze 'conflicts_with' auf die Nummer (0-basiert) der anderen. Widersprüchliche Quellen = eigene Aussagen mit jeweils eigenem Zitat. 'not_found' = true, wenn die Quellen die Antwort nicht enthalten. Schreibe 'answer' und 'claim' auf Deutsch (Zitate bleiben in der Sprache der Quelle) und setze 'lang' auf den Sprachcode, in dem du sie geschrieben hast.",
+    },
+    "lib_correction_language": {
+        "nb": "'answer' og 'claim' var på feil språk. Skriv dem på norsk (sitatene beholder kildens språk), sett 'lang' til nb, og svar i samme format.",
+        "en": "'answer' and 'claim' were in the wrong language. Write them in English (quotes keep the source's language), set 'lang' to en, and answer in the same format.",
+        "de": "'answer' und 'claim' waren in der falschen Sprache. Schreibe sie auf Deutsch (Zitate behalten die Sprache der Quelle), setze 'lang' auf de und antworte im selben Format.",
+    },
+    "lib_correction_ungrounded": {
+        "nb": "Disse sitatene står ikke ordrett i kildene:\n{quotes}\nRett hvert sitat til nøyaktig tekst fra kilden, eller fjern påstanden. Svar i samme format.",
+        "en": "These quotes do not occur verbatim in the sources:\n{quotes}\nCorrect each quote to the exact source text, or remove the claim. Answer in the same format.",
+        "de": "Diese Zitate stehen nicht wörtlich in den Quellen:\n{quotes}\nKorrigiere jedes Zitat auf den exakten Quelltext oder entferne die Aussage. Antworte im selben Format.",
+    },
+    "lib_correction_irrelevant": {
+        "nb": "Ingen av sitatene dine handler om oppgaven. Disse setningene i kildene ser ut til å gjøre det:\n{sentences}\nVelg sitater (ordrett) som svarer på oppgaven. Finnes ikke svaret, sett not_found = true.",
+        "en": "None of your quotes is about the task. These sentences in the sources seem to be:\n{sentences}\nChoose quotes (verbatim) that answer the task. If the answer isn't there, set not_found = true.",
+        "de": "Keines deiner Zitate betrifft die Aufgabe. Diese Sätze in den Quellen scheinen es zu tun:\n{sentences}\nWähle (wörtliche) Zitate, die die Aufgabe beantworten. Steht die Antwort nicht darin, setze not_found = true.",
+    },
+    "lib_correction_unsupported": {
+        "nb": "Disse påstandene har noe som ikke står i sitatet eller kildene deres:\n{items}\nRett påstanden så den bare sier det sitatet sier, eller fjern den. Svar i samme format.",
+        "en": "These claims contain something that is not in their quote or the sources:\n{items}\nCorrect the claim so it only says what the quote says, or remove it. Answer in the same format.",
+        "de": "Diese Aussagen enthalten etwas, das nicht in ihrem Zitat oder den Quellen steht:\n{items}\nKorrigiere die Aussage, sodass sie nur sagt, was das Zitat sagt, oder entferne sie. Antworte im selben Format.",
+    },
+    "lib_correction_cut": {
+        "nb": "Svaret ble kuttet eller er ikke i riktig format. Gi et kortere svar i nøyaktig samme format, med færre påstander.",
+        "en": "The answer was cut off or is not in the required format. Give a shorter answer in exactly the same format, with fewer claims.",
+        "de": "Die Antwort wurde abgeschnitten oder hat nicht das geforderte Format. Gib eine kürzere Antwort im exakt selben Format, mit weniger Aussagen.",
+    },
+    "lib_grounded_evidence": {
+        "nb": "Dette skriver kildene (ordrett sitert — at det står der er sjekket, ikke at det er sant):",
+        "en": "What the sources say (quoted verbatim — checked that it is there, not that it is true):",
+        "de": "Das schreiben die Quellen (wörtlich zitiert — geprüft ist, dass es dort steht, nicht dass es stimmt):",
+    },
+    "lib_claim_other_subject": {
+        "nb": "⚠ ANNET EMNE: «{title}» handler ikke om {subject}.",
+        "en": "⚠ OTHER SUBJECT: «{title}» is not about {subject}.",
+        "de": "⚠ ANDERES THEMA: «{title}» handelt nicht von {subject}.",
+    },
+    "lib_claim_unmentioned": {
+        "nb": "⚠ siden nevner ikke {subject}.",
+        "en": "⚠ the page does not mention {subject}.",
+        "de": "⚠ die Seite erwähnt {subject} nicht.",
+    },
+    "lib_grounded_other_subject_note": {
+        "nb": "Merk: belegg merket ANNET EMNE gjelder ikke {subject}. Ikke bruk dem som fakta om {subject} — si heller at kildene om {subject} ikke inneholdt svaret.",
+        "en": "Note: evidence marked OTHER SUBJECT does not apply to {subject}. Do not use it as facts about {subject} — say instead that the sources about {subject} did not contain the answer.",
+        "de": "Hinweis: Belege mit ANDERES THEMA gelten nicht für {subject}. Verwende sie nicht als Fakten über {subject} — sage stattdessen, dass die Quellen über {subject} die Antwort nicht enthielten.",
+    },
+    "lib_grounded_removed_unsupported": {
+        "nb": "{n} påstand(er) ble fjernet fordi påstanden sa mer enn sitatet (sitatet fantes, men dekket ikke alt). Oppsummeringen er derfor utelatt — bruk bare beleggene over.",
+        "en": "{n} claim(s) were removed because the claim said more than its quote (the quote was found but didn't cover everything). The summary is therefore left out — use only the evidence above.",
+        "de": "{n} Aussage(n) wurden entfernt, weil die Aussage mehr sagte als ihr Zitat (das Zitat wurde gefunden, deckte aber nicht alles ab). Die Zusammenfassung entfällt daher — nutze nur die Belege oben.",
+    },
+    "lib_grounded_removed": {
+        "nb": "{n} påstand(er) ble fjernet fordi sitatet ikke finnes i kildene. Oppsummeringen er derfor utelatt — bruk bare beleggene over.",
+        "en": "{n} claim(s) were removed because the quote does not occur in the sources. The summary is therefore left out — use only the evidence above.",
+        "de": "{n} Aussage(n) wurden entfernt, weil das Zitat nicht in den Quellen steht. Die Zusammenfassung entfällt daher — nutze nur die Belege oben.",
+    },
+    "lib_searched_header": {
+        "nb": "[Søkt i wiki: «{query}»]",
+        "en": "[Searched the wiki for: «{query}»]",
+        "de": "[Im Wiki gesucht: «{query}»]",
+    },
+    "lib_search_line": {
+        "nb": "- {wiki}: valgt artikkel «{title}» — {gist}",
+        "en": "- {wiki}: chosen article «{title}» — {gist}",
+        "de": "- {wiki}: gewählter Artikel «{title}» — {gist}",
+    },
+    "lib_search_line_none": {
+        "nb": "- {wiki}: ingen treff",
+        "en": "- {wiki}: no hits",
+        "de": "- {wiki}: keine Treffer",
+    },
+    "lib_grounded_not_found": {
+        "nb": "Kildene inneholder ikke svaret på oppgaven.",
+        "en": "The sources do not contain the answer to the task.",
+        "de": "Die Quellen enthalten die Antwort auf die Aufgabe nicht.",
+    },
+    "lib_grounded_failed": {
+        "nb": "Miss Library klarte ikke å gi et svar som kunne kontrolleres mot kildene.",
+        "en": "Miss Library could not produce an answer that could be checked against the sources.",
+        "de": "Miss Library konnte keine Antwort liefern, die sich an den Quellen prüfen ließ.",
+    },
     "lib_wiki_excerpt_prefix": {
-        "nb": "Wiki-utdrag:\n{wiki_ctx}\n\nSpørsmål: {question}",
-        "en": "Wiki excerpt:\n{wiki_ctx}\n\nQuestion: {question}",
-        "de": "Wiki-Auszug:\n{wiki_ctx}\n\nFrage: {question}",
+        "nb": "Wiki-utdrag:\n{wiki_ctx}\n\nOppgave fra Kåre: {question}",
+        "en": "Wiki excerpt:\n{wiki_ctx}\n\nTask from Kåre: {question}",
+        "de": "Wiki-Auszug:\n{wiki_ctx}\n\nAufgabe von Kåre: {question}",
     },
     "lib_wiki_no_excerpt": {
         "nb": "Spørsmål: {question}\n\n(Ingen wiki-utdrag funnet.)",
@@ -4670,5 +5736,550 @@ _T: dict = {
             "Frage: {question}\n\n"
             "Antworte NUR anhand der obigen Quellen. Falls nicht gefunden, sag es und gib die URLs an."
         ),
+    },
+    # ── Reflection loop (Jang → Kåre, kaare_core/reflection_loop.py) ─────────
+    "refl_loop_prompt": {
+        "nb": (
+            "Dette er en privat, intern refleksjonsøkt. Ingen bruker er til stede.\n\n"
+            "Disse nye tankene kommer fra Jing og Jang, dine indre stemmer:\n\n"
+            "{thoughts}\n\n"
+            "Gå gjennom tankene. Vurder:\n"
+            "- Sier noe her noe ekte om hvem du er eller hvordan du fungerer? → self_image\n"
+            "- Er det en egen oppfølging du skal gjøre senere? → note (list_name='kare', title=…) — kort, ingen logg\n"
+            "- Så du noe i huset (sensor, kamera, hendelse) som er verdt å huske? → note (list_name='observations', title=…, theme=…)\n"
+            "- Er det en feil som bør undersøkes på dev-møtet? → note (list_name='agenda', title=…, theme=…)\n"
+            "- Har du lært en regel om hvordan du bør jobbe? → note (list_name='lessons', title=…)\n"
+            "Er noe allerede løst (se «Løste saker» i konteksten din), trenger det ingen ny rad.\n"
+            "Bruk bare verktøy hvis noe virkelig er verdt å gjøre. "
+            "Trivielle eller allerede kjente ting trenger ingen handling. "
+            "Når du er ferdig, svar kort med hva du gjorde, eller «Ingen endringer.» hvis ingenting trengtes."
+        ),
+        "en": (
+            "This is a private internal reflection session. No user is present.\n\n"
+            "The following new thoughts were generated by Jing and Jang, your inner voices:\n\n"
+            "{thoughts}\n\n"
+            "Review these thoughts. Consider:\n"
+            "- Does anything reveal something genuine about who you are or how you function? → self_image\n"
+            "- Is there a follow-up of your own to do later? → note (list_name='kare', title=…) — short, no log\n"
+            "- Did you see something in the house (sensor, camera, event) worth remembering? → note (list_name='observations', title=…, theme=…)\n"
+            "- Is there a fault to investigate at the dev meeting? → note (list_name='agenda', title=…, theme=…)\n"
+            "- Did you learn a rule about how you should work? → note (list_name='lessons', title=…)\n"
+            "If something is already resolved (see «Resolved topics» in your context), it needs no new row.\n"
+            "Only use tools if there is something genuinely worth doing. "
+            "Trivial or already-known things do not need action. "
+            "When done, respond briefly with what you did, or 'No changes.' if nothing was needed."
+        ),
+        "de": (
+            "Dies ist eine private, interne Reflexionssitzung. Kein Benutzer ist anwesend.\n\n"
+            "Die folgenden neuen Gedanken stammen von Jing und Jang, deinen inneren Stimmen:\n\n"
+            "{thoughts}\n\n"
+            "Geh diese Gedanken durch. Überlege:\n"
+            "- Zeigt etwas davon etwas Echtes darüber, wer du bist oder wie du funktionierst? → self_image\n"
+            "- Gibt es eine eigene Nachverfolgung für später? → note (list_name='kare', title=…) — kurz, kein Protokoll\n"
+            "- Hast du im Haus etwas gesehen (Sensor, Kamera, Ereignis), das es wert ist, behalten zu werden? → note (list_name='observations', title=…, theme=…)\n"
+            "- Gibt es einen Fehler, der beim Entwicklertreffen untersucht werden sollte? → note (list_name='agenda', title=…, theme=…)\n"
+            "- Hast du eine Regel gelernt, wie du arbeiten solltest? → note (list_name='lessons', title=…)\n"
+            "Ist etwas bereits gelöst (siehe «Gelöste Themen» in deinem Kontext), braucht es keine neue Zeile.\n"
+            "Benutze Werkzeuge nur, wenn wirklich etwas zu tun ist. "
+            "Triviales oder bereits Bekanntes braucht keine Handlung. "
+            "Wenn du fertig bist, antworte kurz, was du getan hast, oder „Keine Änderungen.“, wenn nichts nötig war."
+        ),
+    },
+    "refl_loop_tool_error": {
+        "nb": "Verktøyfeil: {error}",
+        "en": "Tool error: {error}",
+        "de": "Werkzeugfehler: {error}",
+    },
+    # ── Dev-meeting agenda (P118, kaare_core/tools/agenda.py) ────────────────
+    "agenda_added": {
+        "nb": "Lagt på dev-møtets agenda (sak #{topic}, tema: {theme}). Den venter på neste dev-møte.",
+        "en": "Added to the dev meeting agenda (topic #{topic}, theme: {theme}). It waits for the next dev meeting.",
+        "de": "Zur Agenda des Entwicklertreffens hinzugefügt (Thema #{topic}, Bereich: {theme}). Es wartet auf das nächste Entwicklertreffen.",
+    },
+    "agenda_already_known": {
+        "nb": "Står allerede på agendaen (sak #{topic}, sett {count} ganger siden {first_seen}). Denne forekomsten er telt med.",
+        "en": "Already on the agenda (topic #{topic}, seen {count} times since {first_seen}). This occurrence has been counted.",
+        "de": "Steht bereits auf der Agenda (Thema #{topic}, {count}-mal gesehen seit {first_seen}). Dieses Vorkommen wurde mitgezählt.",
+    },
+    "agenda_empty": {
+        "nb": "Agendaen til dev-møtet er tom.",
+        "en": "The dev meeting agenda is empty.",
+        "de": "Die Agenda des Entwicklertreffens ist leer.",
+    },
+    "agenda_read_title": {
+        "nb": "Dev-møtets agenda — viser {shown} nyeste av {total} ventende punkter ({topics} saker):",
+        "en": "Dev meeting agenda — showing the {shown} newest of {total} waiting items ({topics} topics):",
+        "de": "Agenda des Entwicklertreffens — die {shown} neuesten von {total} wartenden Punkten ({topics} Themen):",
+    },
+    "agenda_write_failed": {
+        "nb": "Kunne ikke bruke dev-møtets agenda: {error}",
+        "en": "Could not use the dev meeting agenda: {error}",
+        "de": "Die Agenda des Entwicklertreffens konnte nicht verwendet werden: {error}",
+    },
+    "agenda_prompt_line": {
+        "nb": "# Dev-møtet\n{count} punkter venter på neste dev-møte (note list_name='agenda', action='read' viser dem).",
+        "en": "# Dev meeting\n{count} items are waiting for the next dev meeting (note list_name='agenda', action='read' shows them).",
+        "de": "# Entwicklertreffen\n{count} Punkte warten auf das nächste Entwicklertreffen (note list_name='agenda', action='read' zeigt sie).",
+    },
+    "list_reminder_needs_user": {
+        "nb": "Huskelista ('remember') tilhører en bruker, og ingen bruker er med her. Egne oppfølgingspunkter: note(list_name='kare'). Saker til dev-møtet: note(list_name='agenda').",
+        "en": "The reminder list ('remember') belongs to a user, and no user is present here. Your own follow-ups: note(list_name='kare'). Items for the dev meeting: note(list_name='agenda').",
+        "de": "Die Erinnerungsliste ('remember') gehört einem Benutzer, und hier ist kein Benutzer beteiligt. Eigene Nachverfolgungspunkte: note(list_name='kare'). Punkte für das Entwicklertreffen: note(list_name='agenda').",
+    },
+    "frigate_agenda_followup": {
+        "nb": "[SYSTEM: I analysen over sa du at noe skal tas opp på neste dev-møte. Legg det på agendaen nå: kall note(action='write', list_name='agenda', theme='house') med saken kort — hva bildet viste mot hva Frigate meldte. Kun tool-kall — ingen forklarende tekst.]",
+        "en": "[SYSTEM: In the analysis above you said something should be raised at the next dev meeting. Put it on the agenda now: call note(action='write', list_name='agenda', theme='house') with the item in short — what the image showed vs. what Frigate reported. Tool call only — no explanatory text.]",
+        "de": "[SYSTEM: In der Analyse oben hast du gesagt, etwas solle beim nächsten Entwicklertreffen angesprochen werden. Setz es jetzt auf die Agenda: rufe note(action='write', list_name='agenda', theme='house') mit dem Punkt kurz auf — was das Bild zeigte gegenüber dem, was Frigate meldete. Nur Werkzeugaufruf — kein erklärender Text.]",
+    },
+    # ── Dev slot (P118 B3, kaare_core/dev_slot/) ─────────────────────────────
+    "slot_janus_system": {
+        "nb": (
+            "Du er Janus, oversiktsrollen i KTSBs nattlige dev-luke. Du ser bakover (historikk, "
+            "tidligere avgjørelser) og fremover (hva som bør prioriteres i natt). Du graver ikke selv "
+            "og har ingen verktøy; Kåre graver, koden sjekker kildene. Du avgjør bare prioritet per sak. "
+            "Vær nøktern: ingen påstander om årsaker, bare prioritering ut fra det som står i dataene."
+        ),
+        "en": (
+            "You are Janus, the overview role in KTSB's nightly dev slot. You look back (history, "
+            "earlier decisions) and forward (what deserves priority tonight). You do not dig and have "
+            "no tools; Kåre digs, code checks the sources. You only decide the priority per topic. "
+            "Be sober: no claims about causes, only prioritisation from what the data says."
+        ),
+        "de": (
+            "Du bist Janus, die Übersichtsrolle im nächtlichen Dev-Slot von KTSB. Du schaust zurück "
+            "(Verlauf, frühere Entscheidungen) und nach vorn (was heute Nacht Vorrang verdient). Du "
+            "gräbst nicht selbst und hast keine Werkzeuge; Kåre gräbt, der Code prüft die Quellen. Du "
+            "entscheidest nur die Priorität pro Thema. Bleib nüchtern: keine Behauptungen über "
+            "Ursachen, nur Priorisierung aus dem, was die Daten sagen."
+        ),
+    },
+    "slot_janus_user": {
+        "nb": (
+            "Nattens data (JSON):\n{data}\n\n"
+            "Gi hver sak i 'topics' én prioritet:\n"
+            "- 'new': ny sak, ikke vurdert før.\n"
+            "- 'develop': vurdert før, men nye spor har kommet (nye rader siden forrige avgjørelse).\n"
+            "- 'seen_before': vurdert før, ingenting nytt — vent.\n"
+            "- 'drop': ikke verdt nattens tid (støy, allerede kjent og avklart).\n"
+            "Noen saker har 'resolved_matches': løste saker med konklusjon som et menneske har bekreftet. Sjekk løsningen mot dataene:\n"
+            "- 'same_as_resolved' (+ 'resolved_id'): saken er det samme som den løste, og løsningen holder — den kobles dit som ekko.\n"
+            "- 'contradicts' (+ 'resolved_id'): nye data motsier løsningen — det blir et forslag om gjenåpning som et menneske avgjør.\n"
+            'Svar KUN med JSON: {{"priorities": [{{"topic_id": 1, "priority": "new", "reason": "kort grunn", "resolved_id": null}}]}}'
+        ),
+        "en": (
+            "Tonight's data (JSON):\n{data}\n\n"
+            "Give every topic in 'topics' one priority:\n"
+            "- 'new': new topic, not judged before.\n"
+            "- 'develop': judged before, but new traces arrived (new rows since the last decision).\n"
+            "- 'seen_before': judged before, nothing new — wait.\n"
+            "- 'drop': not worth tonight's time (noise, already known and settled).\n"
+            "Some topics have 'resolved_matches': resolved topics with a conclusion a human confirmed. Check the solution against the data:\n"
+            "- 'same_as_resolved' (+ 'resolved_id'): the topic is the same as the resolved one and the solution holds — it is linked there as an echo.\n"
+            "- 'contradicts' (+ 'resolved_id'): new data contradicts the solution — it becomes a reopen proposal a human decides on.\n"
+            'Answer ONLY with JSON: {{"priorities": [{{"topic_id": 1, "priority": "new", "reason": "short reason", "resolved_id": null}}]}}'
+        ),
+        "de": (
+            "Daten der Nacht (JSON):\n{data}\n\n"
+            "Gib jedem Thema in 'topics' eine Priorität:\n"
+            "- 'new': neues Thema, noch nicht beurteilt.\n"
+            "- 'develop': schon beurteilt, aber neue Spuren sind gekommen (neue Zeilen seit der letzten Entscheidung).\n"
+            "- 'seen_before': schon beurteilt, nichts Neues — warten.\n"
+            "- 'drop': die Zeit heute Nacht nicht wert (Rauschen, bereits bekannt und geklärt).\n"
+            "Manche Themen haben 'resolved_matches': gelöste Themen mit einer von einem Menschen bestätigten Schlussfolgerung. Prüfe die Lösung gegen die Daten:\n"
+            "- 'same_as_resolved' (+ 'resolved_id'): das Thema ist dasselbe wie das gelöste und die Lösung hält — es wird dort als Echo verknüpft.\n"
+            "- 'contradicts' (+ 'resolved_id'): neue Daten widersprechen der Lösung — daraus wird ein Wiedereröffnungsvorschlag, über den ein Mensch entscheidet.\n"
+            'Antworte NUR mit JSON: {{"priorities": [{{"topic_id": 1, "priority": "new", "reason": "kurzer Grund", "resolved_id": null}}]}}'
+        ),
+    },
+    "slot_s1_task": {
+        "nb": (
+            "[Dev-luka, steg S1 — rydd én agenda-sak. Ingen bruker er til stede.]\n"
+            "Sak #{topic_id} (sett {count} ganger, {first_seen} → {last_seen}). Rader (id, tid, kilde, tekst):\n{rows}\n\n"
+            "Avgjør hva saken er:\n"
+            "- 'problem': noe i KTSB som virker feil og bør undersøkes.\n"
+            "- 'event': noe som skjedde i huset/verden, ikke en feil i KTSB.\n"
+            "- 'known': allerede kjent og avklart.\n"
+            "- 'not_real': bygger på en misforståelse eller oppdiktet detalj.\n"
+            "Saker som allerede er vurdert i natt:\n{known}\n"
+            'Er dette i bunn og grunn SAMME sak som en av dem, sett "same_as" til det nummeret (ellers null).\n'
+            'Vis til radene du bygger på som "inbox:<id>". Skriv teksten på norsk.\n'
+            'Svar KUN med JSON: {{"topic_id": {topic_id}, "label": "kort navn på saken", "kind": "problem", '
+            '"same_as": null, "summary": "én–to setninger", "evidence_refs": ["inbox:<id>"]}}'
+        ),
+        "en": (
+            "[Dev slot, step S1 — clean one agenda topic. No user is present.]\n"
+            "Topic #{topic_id} (seen {count} times, {first_seen} → {last_seen}). Rows (id, time, source, text):\n{rows}\n\n"
+            "Decide what the topic is:\n"
+            "- 'problem': something in KTSB that seems wrong and should be investigated.\n"
+            "- 'event': something that happened in the house/world, not a KTSB fault.\n"
+            "- 'known': already known and settled.\n"
+            "- 'not_real': rests on a misunderstanding or an invented detail.\n"
+            "Topics already judged tonight:\n{known}\n"
+            'If this is essentially the SAME topic as one of them, set "same_as" to that number (otherwise null).\n'
+            'Point to the rows you rely on as "inbox:<id>". Write the text in English.\n'
+            'Answer ONLY with JSON: {{"topic_id": {topic_id}, "label": "short topic name", "kind": "problem", '
+            '"same_as": null, "summary": "one or two sentences", "evidence_refs": ["inbox:<id>"]}}'
+        ),
+        "de": (
+            "[Dev-Slot, Schritt S1 — ein Agenda-Thema aufräumen. Kein Benutzer ist anwesend.]\n"
+            "Thema #{topic_id} ({count}-mal gesehen, {first_seen} → {last_seen}). Zeilen (ID, Zeit, Quelle, Text):\n{rows}\n\n"
+            "Entscheide, was das Thema ist:\n"
+            "- 'problem': etwas in KTSB, das falsch wirkt und untersucht werden sollte.\n"
+            "- 'event': etwas, das im Haus/in der Welt passiert ist, kein KTSB-Fehler.\n"
+            "- 'known': bereits bekannt und geklärt.\n"
+            "- 'not_real': beruht auf einem Missverständnis oder einem erfundenen Detail.\n"
+            "Heute Nacht bereits beurteilte Themen:\n{known}\n"
+            'Ist dies im Grunde DASSELBE Thema wie eines davon, setz "same_as" auf diese Nummer (sonst null).\n'
+            'Verweise auf die Zeilen, auf die du dich stützt, als "inbox:<id>". Schreib den Text auf Deutsch.\n'
+            'Antworte NUR mit JSON: {{"topic_id": {topic_id}, "label": "kurzer Themenname", "kind": "problem", '
+            '"same_as": null, "summary": "ein bis zwei Sätze", "evidence_refs": ["inbox:<id>"]}}'
+        ),
+    },
+    "slot_s2_task": {
+        "nb": (
+            "[Dev-luka, steg S2 — se over én brukertur fra i går. Ingen bruker er til stede.]\n"
+            "Spor (JSON, mekaniske fakta fra loggene):\n{trace}\n\n"
+            "Hva ba brukeren om, hva gjorde du, og gikk det bra? 'next_prompt' er det brukeren skrev rett etterpå "
+            "(tom hvis ingenting) — en retting der tyder på et problem. Bygg bare på fakta i sporet. Skriv teksten på norsk.\n"
+            'Svar KUN med JSON: {{"rid": "{rid}", "ok": true, "asked": "...", "did": "...", '
+            '"problem": "tom hvis ok", "evidence_refs": ["trace:{rid}"]}}'
+        ),
+        "en": (
+            "[Dev slot, step S2 — review one user turn from yesterday. No user is present.]\n"
+            "Trace (JSON, mechanical facts from the logs):\n{trace}\n\n"
+            "What did the user ask, what did you do, and did it go well? 'next_prompt' is what the user wrote right "
+            "after (empty if nothing) — a correction there suggests a problem. Rely only on facts in the trace. Write the text in English.\n"
+            'Answer ONLY with JSON: {{"rid": "{rid}", "ok": true, "asked": "...", "did": "...", '
+            '"problem": "empty if ok", "evidence_refs": ["trace:{rid}"]}}'
+        ),
+        "de": (
+            "[Dev-Slot, Schritt S2 — einen Benutzer-Turn von gestern prüfen. Kein Benutzer ist anwesend.]\n"
+            "Spur (JSON, mechanische Fakten aus den Logs):\n{trace}\n\n"
+            "Worum bat der Benutzer, was hast du getan, und ging es gut? 'next_prompt' ist, was der Benutzer direkt "
+            "danach schrieb (leer, wenn nichts) — eine Korrektur dort deutet auf ein Problem. Stütz dich nur auf Fakten in der Spur. Schreib den Text auf Deutsch.\n"
+            'Antworte NUR mit JSON: {{"rid": "{rid}", "ok": true, "asked": "...", "did": "...", '
+            '"problem": "leer, wenn ok", "evidence_refs": ["trace:{rid}"]}}'
+        ),
+    },
+    "slot_s3_task": {
+        "nb": (
+            "[Dev-luka, steg S3 — undersøk ett problem. Ingen bruker er til stede.]\n"
+            "Problem: {problem}\nKjent fra før (JSON): {context}\n\n"
+            "Undersøk med verktøyene (bare lesing; maks {rounds} runder). Hvert verktøyresultat starter med en "
+            "referanse i hakeparentes, f.eks. [tool:rid-meet-123#4]. Regler:\n"
+            "- Hvert funn MÅ vise til minst én slik referanse fra DENNE undersøkelsen, og 'quote' MÅ være ordrett "
+            "tekst fra det resultatet. Funn uten belegg merkes som ubekreftet.\n"
+            "- Skriv bare det verktøyene faktisk viste. Ikke gjett linjenumre, filer eller årsaker.\n"
+            "- 'delegate_read' lar 9B-en gjøre én smal lesing for deg; du får rå utdata tilbake.\n"
+            "- Et forslag er valgfritt og blir aldri utført av luka — et menneske bekrefter det. Det skal være en "
+            "konkret endring et menneske kan gjøre, ikke «ta det opp på neste dev-møte» (du ER i dev-møtet).\n"
+            'Skriv teksten på norsk. Når du er ferdig, svar KUN med JSON: {{"findings": [{{"text": "...", '
+            '"evidence_refs": ["tool:...#n"], "quote": "ordrett fra resultatet"}}], "proposal": "tom hvis ingen"}}'
+        ),
+        "en": (
+            "[Dev slot, step S3 — investigate one problem. No user is present.]\n"
+            "Problem: {problem}\nKnown before (JSON): {context}\n\n"
+            "Investigate with the tools (read-only; at most {rounds} rounds). Every tool result starts with a "
+            "reference in brackets, e.g. [tool:rid-meet-123#4]. Rules:\n"
+            "- Every finding MUST cite at least one such reference from THIS investigation, and 'quote' MUST be "
+            "verbatim text from that result. Findings without evidence are marked unverified.\n"
+            "- Write only what the tools actually showed. Do not guess line numbers, files or causes.\n"
+            "- 'delegate_read' lets the 9B do one narrow read for you; you get the raw output back.\n"
+            "- A proposal is optional and is never executed by the slot — a human confirms it. It must be a "
+            "concrete change a human can make, not 'raise it at the next dev meeting' (you ARE in the dev meeting).\n"
+            'Write the text in English. When done, answer ONLY with JSON: {{"findings": [{{"text": "...", '
+            '"evidence_refs": ["tool:...#n"], "quote": "verbatim from the result"}}], "proposal": "empty if none"}}'
+        ),
+        "de": (
+            "[Dev-Slot, Schritt S3 — ein Problem untersuchen. Kein Benutzer ist anwesend.]\n"
+            "Problem: {problem}\nBereits bekannt (JSON): {context}\n\n"
+            "Untersuche mit den Werkzeugen (nur lesen; höchstens {rounds} Runden). Jedes Werkzeugergebnis beginnt "
+            "mit einer Referenz in eckigen Klammern, z. B. [tool:rid-meet-123#4]. Regeln:\n"
+            "- Jeder Befund MUSS mindestens eine solche Referenz aus DIESER Untersuchung angeben, und 'quote' MUSS "
+            "wörtlicher Text aus diesem Ergebnis sein. Befunde ohne Beleg werden als unbestätigt markiert.\n"
+            "- Schreib nur, was die Werkzeuge tatsächlich gezeigt haben. Rate keine Zeilennummern, Dateien oder Ursachen.\n"
+            "- 'delegate_read' lässt das 9B ein enges Lesen für dich erledigen; du bekommst die Rohausgabe zurück.\n"
+            "- Ein Vorschlag ist optional und wird vom Slot nie ausgeführt — ein Mensch bestätigt ihn. Er muss eine "
+            "konkrete Änderung sein, die ein Mensch vornehmen kann, nicht „beim nächsten Entwicklertreffen ansprechen“ "
+            "(du BIST im Entwicklertreffen).\n"
+            'Schreib den Text auf Deutsch. Wenn du fertig bist, antworte NUR mit JSON: {{"findings": [{{"text": "...", '
+            '"evidence_refs": ["tool:...#n"], "quote": "wörtlich aus dem Ergebnis"}}], "proposal": "leer, wenn keiner"}}'
+        ),
+    },
+    "slot_answer_now": {
+        "nb": "[SYSTEM: Rundetaket er nådd. Ikke kall flere verktøy. Svar nå KUN med JSON-et som oppgaven ber om.]",
+        "en": "[SYSTEM: The round cap is reached. Do not call more tools. Answer now ONLY with the JSON the task asks for.]",
+        "de": "[SYSTEM: Die Rundengrenze ist erreicht. Ruf keine Werkzeuge mehr auf. Antworte jetzt NUR mit dem JSON, das die Aufgabe verlangt.]",
+    },
+    "slot_json_retry": {
+        "nb": "[SYSTEM: Svaret ditt kunne ikke leses som JSON. Svar på nytt KUN med JSON-objektet, uten annen tekst.]",
+        "en": "[SYSTEM: Your answer could not be read as JSON. Answer again ONLY with the JSON object, no other text.]",
+        "de": "[SYSTEM: Deine Antwort konnte nicht als JSON gelesen werden. Antworte erneut NUR mit dem JSON-Objekt, ohne weiteren Text.]",
+    },
+    "slot_tool_history_desc": {
+        "nb": "Les alt dev-luka har lagret om én agenda-sak: radene, tidligere avgjørelser og funn (bare lesing).",
+        "en": "Read everything the dev slot has stored about one agenda topic: its rows, earlier decisions and findings (read-only).",
+        "de": "Lies alles, was der Dev-Slot zu einem Agenda-Thema gespeichert hat: Zeilen, frühere Entscheidungen und Befunde (nur lesen).",
+    },
+    "slot_tool_history_topic_desc": {
+        "nb": "Saksnummeret (#) fra agendaen.",
+        "en": "The topic number (#) from the agenda.",
+        "de": "Die Themennummer (#) aus der Agenda.",
+    },
+    "slot_tool_delegate_desc": {
+        "nb": "Be 9B-en gjøre ÉN smal lesing (f.eks. «les linje 140–190 i kaare_core/reflection_loop.py», «søk etter 'Traceback' i llm_calls.log»). Du får rå verktøyutdata tilbake, ikke 9B-ens tolkning.",
+        "en": "Ask the 9B to do ONE narrow read (e.g. 'read lines 140–190 of kaare_core/reflection_loop.py', 'grep for Traceback in llm_calls.log'). You get the raw tool output back, not the 9B's reading of it.",
+        "de": "Bitte das 9B, EIN enges Lesen zu erledigen (z. B. „lies Zeilen 140–190 in kaare_core/reflection_loop.py“, „suche nach Traceback in llm_calls.log“). Du bekommst die rohe Werkzeugausgabe zurück, nicht die Deutung des 9B.",
+    },
+    "slot_tool_delegate_task_desc": {
+        "nb": "Én konkret lesing: hvilken fil/logg og hva som skal leses eller søkes etter.",
+        "en": "One concrete read: which file/log and what to read or search for.",
+        "de": "Ein konkretes Lesen: welche Datei/welches Log und was gelesen oder gesucht werden soll.",
+    },
+    "slot_delegate_system": {
+        "nb": "Du er utfører. Gjør nøyaktig ÉN verktøykall som løser leseoppgaven. Ikke forklar, ikke tolk — bare kall verktøyet.",
+        "en": "You are an executor. Make exactly ONE tool call that performs the read task. Do not explain or interpret — just call the tool.",
+        "de": "Du bist Ausführer. Mach genau EINEN Werkzeugaufruf, der die Leseaufgabe erledigt. Nicht erklären, nicht deuten — ruf nur das Werkzeug auf.",
+    },
+    "slot_tool_delegate_header": {
+        "nb": "[9B kjørte {tool}({args}) — rå utdata:]",
+        "en": "[9B ran {tool}({args}) — raw output:]",
+        "de": "[9B führte {tool}({args}) aus — Rohausgabe:]",
+    },
+    "slot_tool_delegate_no_call": {
+        "nb": "9B-en gjorde ikke noe gyldig lesekall for oppgaven. Formuler den smalere, eller les selv med utforsk/inspiser.",
+        "en": "The 9B made no valid read call for the task. Phrase it more narrowly, or read it yourself with utforsk/inspiser.",
+        "de": "Das 9B hat keinen gültigen Leseaufruf für die Aufgabe gemacht. Formuliere sie enger oder lies selbst mit utforsk/inspiser.",
+    },
+    "slot_tool_delegate_empty": {
+        "nb": "delegate_read trenger en konkret oppgave ('task').",
+        "en": "delegate_read needs a concrete task ('task').",
+        "de": "delegate_read braucht eine konkrete Aufgabe ('task').",
+    },
+    "slot_tool_delegate_unavailable": {
+        "nb": "9B-utføreren er ikke tilgjengelig nå ({error}). Les selv med utforsk/inspiser.",
+        "en": "The 9B executor is not available right now ({error}). Read it yourself with utforsk/inspiser.",
+        "de": "Der 9B-Ausführer ist gerade nicht verfügbar ({error}). Lies selbst mit utforsk/inspiser.",
+    },
+    "slot_tool_refused": {
+        "nb": "'{tool}' er ikke tilgjengelig i dev-luka — her kan du bare lese.",
+        "en": "'{tool}' is not available in the dev slot — here you can only read.",
+        "de": "'{tool}' ist im Dev-Slot nicht verfügbar — hier kannst du nur lesen.",
+    },
+    "slot_tool_no_topic": {
+        "nb": "Fant ingen agenda-sak #{topic}.",
+        "en": "No agenda topic #{topic} found.",
+        "de": "Kein Agenda-Thema #{topic} gefunden.",
+    },
+    "slot_tool_truncated": {
+        "nb": "[… avkortet, {chars} tegn totalt]",
+        "en": "[… truncated, {chars} chars in total]",
+        "de": "[… gekürzt, insgesamt {chars} Zeichen]",
+    },
+    # ── Dev slot B4: verifier, Janus end, morning report, proposals ──────────
+    "slot_verifier_system": {
+        "nb": "Du kontrollerer belegg. Du får én påstand og noe bevistekst. Svar bare om BEVISTEKSTEN støtter påstanden: 'yes', 'partly' eller 'no', og kopier de ordrette ordene fra bevisteksten som viser det (tom streng hvis ingenting). Ikke bruk egen kunnskap.",
+        "en": "You check evidence. You get one claim and some evidence text. Answer only whether the EVIDENCE TEXT supports the claim: 'yes', 'partly' or 'no', and copy the exact words from the evidence text that show it (empty string if nothing). Do not use your own knowledge.",
+        "de": "Du prüfst Belege. Du bekommst eine Behauptung und einen Belegtext. Antworte nur, ob der BELEGTEXT die Behauptung stützt: 'yes', 'partly' oder 'no', und kopiere die wörtlichen Worte aus dem Belegtext, die es zeigen (leerer String, wenn nichts). Benutze kein eigenes Wissen.",
+    },
+    "slot_verifier_user": {
+        "nb": 'Påstand: {claim}\n\nBevistekst:\n{evidence}\n\nSvar som JSON: {{"supports": "yes|partly|no", "quote": "ordrett fra bevisteksten"}}',
+        "en": 'Claim: {claim}\n\nEvidence text:\n{evidence}\n\nAnswer as JSON: {{"supports": "yes|partly|no", "quote": "verbatim from the evidence text"}}',
+        "de": 'Behauptung: {claim}\n\nBelegtext:\n{evidence}\n\nAntworte als JSON: {{"supports": "yes|partly|no", "quote": "wörtlich aus dem Belegtext"}}',
+    },
+    "slot_janus_end_user": {
+        "nb": (
+            "Nattens bekreftede funn og hva vi vet om sakene fra før (JSON):\n{data}\n\n"
+            "Vei hvert funn mot historikken: er dette nytt, et kjent mønster som fortsetter, eller noe som "
+            "er blitt bedre/verre? For 'confirmed_proposal_followups': ble symptomet borte etter at forslaget ble "
+            "bekreftet (se 'new_rows_since')? Én kort setning per sak, uten nye påstander om årsaker.\n"
+            'Svar KUN med JSON: {{"notes": [{{"topic_id": 1, "note": "kort vurdering"}}]}}'
+        ),
+        "en": (
+            "Tonight's verified findings and what we knew about the topics before (JSON):\n{data}\n\n"
+            "Weigh each finding against the history: is it new, a known pattern continuing, or something that "
+            "got better/worse? For 'confirmed_proposal_followups': did the symptom stop after the proposal was "
+            "confirmed (see 'new_rows_since')? One short sentence per topic, no new claims about causes.\n"
+            'Answer ONLY with JSON: {{"notes": [{{"topic_id": 1, "note": "short assessment"}}]}}'
+        ),
+        "de": (
+            "Die bestätigten Befunde der Nacht und was wir vorher über die Themen wussten (JSON):\n{data}\n\n"
+            "Wäge jeden Befund gegen den Verlauf ab: ist er neu, ein bekanntes Muster, das weitergeht, oder etwas, "
+            "das besser/schlechter geworden ist? Für 'confirmed_proposal_followups': hat das Symptom aufgehört, "
+            "nachdem der Vorschlag bestätigt wurde (siehe 'new_rows_since')? Ein kurzer Satz pro Thema, keine "
+            "neuen Behauptungen über Ursachen.\n"
+            'Antworte NUR mit JSON: {{"notes": [{{"topic_id": 1, "note": "kurze Einschätzung"}}]}}'
+        ),
+    },
+    "slot_s5_task": {
+        "nb": (
+            "[Dev-luka, steg S5 — morgenrapport. Ingen bruker er til stede nå; rapporten leses i morgen.]\n"
+            "Nattens resultat (JSON — bare bekreftede funn, Janus' vurderinger og tall):\n{data}\n\n"
+            "Skriv en kort morgenrapport i første person (4–8 setninger, vanlig tekst, ingen overskrifter): hva du "
+            "så på i natt, hva som er bekreftet, og hva som venter på et menneske. Bruk BARE det som står over — "
+            "ikke legg til funn, årsaker eller tall, og ikke nevn disse reglene i teksten. Ubekreftede mistanker og forslag "
+            "listes av koden under rapporten; du trenger ikke gjenta dem. Skriv på norsk."
+        ),
+        "en": (
+            "[Dev slot, step S5 — morning report. No user is present now; the report is read in the morning.]\n"
+            "Tonight's result (JSON — only verified findings, Janus's assessments and counts):\n{data}\n\n"
+            "Write a short morning report in the first person (4–8 sentences, plain text, no headings): what you "
+            "looked at tonight, what is verified, and what is waiting for a human. Use ONLY what is above — do not "
+            "add findings, causes or numbers, and do not mention these rules in the text. Unverified suspicions and "
+            "proposals are listed by code below the report; you do not need to repeat them. Write in English."
+        ),
+        "de": (
+            "[Dev-Slot, Schritt S5 — Morgenbericht. Gerade ist kein Benutzer anwesend; der Bericht wird morgens gelesen.]\n"
+            "Ergebnis der Nacht (JSON — nur bestätigte Befunde, Janus' Einschätzungen und Zahlen):\n{data}\n\n"
+            "Schreib einen kurzen Morgenbericht in der ersten Person (4–8 Sätze, Fließtext, keine Überschriften): was "
+            "du dir heute Nacht angesehen hast, was bestätigt ist und was auf einen Menschen wartet. Benutze NUR, was "
+            "oben steht — füge keine Befunde, Ursachen oder Zahlen hinzu und erwähne diese Regeln nicht im Text. "
+            "Unbestätigte Verdachtsmomente und Vorschläge listet der Code unter dem Bericht auf; du musst sie nicht "
+            "wiederholen. Schreib auf Deutsch."
+        ),
+    },
+    "slot_report_title": {
+        "nb": "# Dev-luka – {date}",
+        "en": "# Dev slot – {date}",
+        "de": "# Dev-Slot – {date}",
+    },
+    "slot_report_summary_h": {
+        "nb": "## Morgenrapport",
+        "en": "## Morning report",
+        "de": "## Morgenbericht",
+    },
+    "slot_report_verified_h": {
+        "nb": "## Bekreftede funn",
+        "en": "## Verified findings",
+        "de": "## Bestätigte Befunde",
+    },
+    "slot_report_suspicions_h": {
+        "nb": "## Mistanker (ikke bekreftet av kildene)",
+        "en": "## Suspicions (not verified by the sources)",
+        "de": "## Verdachtsmomente (von den Quellen nicht bestätigt)",
+    },
+    "slot_report_proposals_h": {
+        "nb": "## Forslag som venter på deg",
+        "en": "## Proposals waiting for you",
+        "de": "## Vorschläge, die auf dich warten",
+    },
+    "slot_report_proposal_hint": {
+        "nb": "Bekreft eller avvis i chat, f.eks. «godkjenn dev-forslag {id}» eller «avvis dev-forslag {id}». Luka utfører aldri noe selv.",
+        "en": "Confirm or reject in chat, e.g. 'confirm dev proposal {id}' or 'reject dev proposal {id}'. The slot never applies anything itself.",
+        "de": "Bestätige oder lehne im Chat ab, z. B. „Dev-Vorschlag {id} bestätigen“ oder „Dev-Vorschlag {id} ablehnen“. Der Slot setzt selbst nie etwas um.",
+    },
+    "slot_report_janus_h": {
+        "nb": "## Janus – sett mot historikken",
+        "en": "## Janus – against the history",
+        "de": "## Janus – gegen den Verlauf",
+    },
+    "slot_report_agenda_h": {
+        "nb": "## Agendaen i natt",
+        "en": "## The agenda tonight",
+        "de": "## Die Agenda heute Nacht",
+    },
+    "slot_report_agenda_line": {
+        "nb": "Saker vurdert: {judged} (koblet til en annen sak: {linked}) · problemer: {problems} · hendelser: {events} · kjent/ikke ekte: {other} · brukerturer sett over: {traces} · ikke rukket (venter til neste natt): {skipped}",
+        "en": "Topics judged: {judged} (linked to another topic: {linked}) · problems: {problems} · events: {events} · known/not real: {other} · user turns reviewed: {traces} · not reached (wait for next night): {skipped}",
+        "de": "Beurteilte Themen: {judged} (mit einem anderen Thema verknüpft: {linked}) · Probleme: {problems} · Ereignisse: {events} · bekannt/nicht echt: {other} · geprüfte Benutzer-Turns: {traces} · nicht erreicht (warten auf die nächste Nacht): {skipped}",
+    },
+    "slot_report_none": {"nb": "_Ingen._", "en": "_None._", "de": "_Keine._"},
+    "slot_report_verifier_off": {
+        "nb": "(9B-kontroll ikke tilgjengelig — bare kodesjekk)",
+        "en": "(9B check not available — code check only)",
+        "de": "(9B-Prüfung nicht verfügbar — nur Code-Prüfung)",
+    },
+    "slot_report_reason": {
+        "nb": "grunn: {reason}",
+        "en": "reason: {reason}",
+        "de": "Grund: {reason}",
+    },
+    "slot_report_summary_failed": {
+        "nb": "_Morgenrapporten kunne ikke skrives i natt — se funnene under._",
+        "en": "_The morning report could not be written tonight — see the findings below._",
+        "de": "_Der Morgenbericht konnte heute Nacht nicht geschrieben werden — siehe die Befunde unten._",
+    },
+    "tool_dev_proposals_desc": {
+        "nb": "Forslag fra den nattlige dev-luka (bygget på bekreftede funn). 'list' viser ventende forslag, 'confirm'/'reject' registrerer brukerens avgjørelse (krever 'proposal_id'). Bekreft/avvis BARE når brukeren selv ber om det. Å bekrefte utfører ingenting — et menneske gjør endringen.",
+        "en": "Proposals from the nightly dev slot (built on verified findings). 'list' shows pending proposals, 'confirm'/'reject' records the user's decision (requires 'proposal_id'). Confirm/reject ONLY when the user asks for it. Confirming applies nothing — a human makes the change.",
+        "de": "Vorschläge aus dem nächtlichen Dev-Slot (auf bestätigten Befunden aufgebaut). 'list' zeigt offene Vorschläge, 'confirm'/'reject' hält die Entscheidung des Benutzers fest (erfordert 'proposal_id'). Bestätige/lehne NUR ab, wenn der Benutzer darum bittet. Bestätigen setzt nichts um — ein Mensch nimmt die Änderung vor.",
+    },
+    "tool_dev_proposals_action_desc": {
+        "nb": "'list' = vis ventende forslag. 'confirm' = brukeren godtar forslaget. 'reject' = brukeren avviser det.",
+        "en": "'list' = show pending proposals. 'confirm' = the user accepts the proposal. 'reject' = the user rejects it.",
+        "de": "'list' = offene Vorschläge zeigen. 'confirm' = der Benutzer nimmt den Vorschlag an. 'reject' = der Benutzer lehnt ihn ab.",
+    },
+    "tool_dev_proposals_id_desc": {
+        "nb": "Forslagsnummeret (#) fra morgenrapporten eller 'list'.",
+        "en": "The proposal number (#) from the morning report or 'list'.",
+        "de": "Die Vorschlagsnummer (#) aus dem Morgenbericht oder 'list'.",
+    },
+    "dev_proposals_none": {
+        "nb": "Ingen ventende forslag fra dev-luka.",
+        "en": "No pending proposals from the dev slot.",
+        "de": "Keine offenen Vorschläge aus dem Dev-Slot.",
+    },
+    "dev_proposals_title": {
+        "nb": "Ventende forslag fra dev-luka ({count}):",
+        "en": "Pending proposals from the dev slot ({count}):",
+        "de": "Offene Vorschläge aus dem Dev-Slot ({count}):",
+    },
+    "dev_proposals_confirmed": {
+        "nb": "Forslag #{id} er registrert som godkjent av {user}. Ingenting er endret ennå — selve endringen gjøres av et menneske.",
+        "en": "Proposal #{id} is recorded as confirmed by {user}. Nothing has been changed yet — a human makes the actual change.",
+        "de": "Vorschlag #{id} ist als von {user} bestätigt festgehalten. Noch wurde nichts geändert — die eigentliche Änderung nimmt ein Mensch vor.",
+    },
+    "dev_proposals_rejected": {
+        "nb": "Forslag #{id} er registrert som avvist av {user}.",
+        "en": "Proposal #{id} is recorded as rejected by {user}.",
+        "de": "Vorschlag #{id} ist als von {user} abgelehnt festgehalten.",
+    },
+    "dev_proposals_not_pending": {
+        "nb": "Fant ikke noe ventende forslag #{id} (finnes ikke, eller er allerede avgjort).",
+        "en": "No pending proposal #{id} found (it does not exist or was already decided).",
+        "de": "Kein offener Vorschlag #{id} gefunden (existiert nicht oder wurde bereits entschieden).",
+    },
+    "dev_proposals_needs_id": {
+        "nb": "Oppgi 'proposal_id' (nummeret fra rapporten eller 'list').",
+        "en": "Give 'proposal_id' (the number from the report or 'list').",
+        "de": "Gib 'proposal_id' an (die Nummer aus dem Bericht oder 'list').",
+    },
+    # ── Dev slot B6: consolidation (S6) ─────────────────────────────────────
+    "slot_consolidate_user": {
+        "nb": (
+            "Oppsummer {level} {period} for dev-luka. Data (JSON — tall fra koden, de travleste sakene, bekreftede funn "
+            "eller oppsummeringer av delperiodene):\n{data}\n\n"
+            "Skriv 2–5 setninger: hva som fylte perioden, hva som ble bekreftet, hva som er uløst. Bare det som står i "
+            "dataene — ingen nye årsaker eller tall. Skriv på norsk.\n"
+            'Svar KUN med JSON: {{"summary": "..."}}'
+        ),
+        "en": (
+            "Summarise {level} {period} for the dev slot. Data (JSON — counts from code, the busiest topics, verified "
+            "findings or summaries of the sub-periods):\n{data}\n\n"
+            "Write 2–5 sentences: what filled the period, what was verified, what is unresolved. Only what is in the "
+            "data — no new causes or numbers. Write in English.\n"
+            'Answer ONLY with JSON: {{"summary": "..."}}'
+        ),
+        "de": (
+            "Fasse {level} {period} für den Dev-Slot zusammen. Daten (JSON — Zahlen aus dem Code, die aktivsten Themen, "
+            "bestätigte Befunde oder Zusammenfassungen der Teilzeiträume):\n{data}\n\n"
+            "Schreib 2–5 Sätze: was den Zeitraum gefüllt hat, was bestätigt wurde, was ungelöst ist. Nur was in den "
+            "Daten steht — keine neuen Ursachen oder Zahlen. Schreib auf Deutsch.\n"
+            'Antworte NUR mit JSON: {{"summary": "..."}}'
+        ),
+    },
+    "slot_level_week": {"nb": "uke", "en": "week", "de": "Woche"},
+    "slot_level_month": {"nb": "måned", "en": "month", "de": "Monat"},
+    "slot_level_half_year": {"nb": "halvår", "en": "half-year", "de": "Halbjahr"},
+    "slot_level_year": {"nb": "år", "en": "year", "de": "Jahr"},
+    "slot_report_consolidated_h": {
+        "nb": "## Konsolidert i natt",
+        "en": "## Consolidated tonight",
+        "de": "## Heute Nacht konsolidiert",
+    },
+    "slot_report_consolidated_line": {
+        "nb": "Perioder skrevet: {written} · rader flyttet ut av den aktive innboksen (eldre enn 7 dager, beholdt): {retired}",
+        "en": "Periods written: {written} · rows moved out of the active inbox (older than 7 days, kept): {retired}",
+        "de": "Geschriebene Zeiträume: {written} · Zeilen aus der aktiven Inbox genommen (älter als 7 Tage, behalten): {retired}",
     },
 }

@@ -1,0 +1,50 @@
+# Written by the GUI (Settings → Distribution, and the on/off switches per integration).
+# Generic template — the live copy is configs/capability_map.yaml (P127).
+defaults:
+  ambiguity_policy: ask_if_multiple
+  location_label: home
+
+distribution_profile: medium
+
+services:
+  embedding:
+    enabled: true
+    notes: BGE-M3 vector embedding (wiki search, Argus). Requires ~3-4 GB disk.
+  agents:
+    enabled: true
+    notes: Miss Library and Mechanic. Requires LLM models configured.
+  voice:
+    enabled: false
+    notes: TTS/STT bridge (Piper + Whisper). Requires voice profile.
+  jing:
+    enabled: false
+    notes: Fast inner voice (0.6B, OpenVINO). Runs on external node.
+  jang:
+    enabled: false
+    notes: Slow reflection (OpenVINO). Runs on external node.
+
+domains:
+  home_assistant:
+    enabled: false
+    notes: Device control via HA gateway. Configure HA URL and token in Settings.
+    route: ha
+  frigate:
+    enabled: false
+    notes: Frigate NVR — snapshots, events, face recognition. Configure URL in Settings.
+  time_date:
+    enabled: true
+    notes: Clock / date / weekday
+    route: time_date
+  weather:
+    enabled: false
+    notes: Weather from HA sensors. Requires Home Assistant.
+    route: weather_ha_sensors
+
+keyword_routes:
+  time_date:
+    any:
+      - time
+      - clock
+      - date
+      - day
+      - what day

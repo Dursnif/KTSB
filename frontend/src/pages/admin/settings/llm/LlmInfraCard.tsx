@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,21 +15,19 @@ export function LlmInfraCard({ dockerControl, onDockerControlChange }: {
 }) {
   const { t } = useTranslation();
   const [vramEntries, setVramEntries] = useState<VramEntry[]>([]);
-  const [vramLoading, setVramLoading] = useState(false);
+  const [vramLoading, setVramLoading] = useState(true); // first load runs on mount
   const [toggling, setToggling] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
 
-  const loadVram = async () => {
-    setVramLoading(true);
-    try {
-      const res = await apiGetVramOverview();
-      setVramEntries(res.entries);
-    } catch { /* ignore */ } finally {
-      setVramLoading(false);
-    }
-  };
+  const fetchVram = useCallback(() =>
+    apiGetVramOverview()
+      .then(res => setVramEntries(res.entries))
+      .catch(() => { /* ignore */ })
+      .finally(() => setVramLoading(false)), []);
 
-  useEffect(() => { loadVram(); }, []);
+  useEffect(() => { fetchVram(); }, [fetchVram]);
+
+  const reloadVram = () => { setVramLoading(true); fetchVram(); };
 
   const handleToggle = async (v: boolean) => {
     setToggling(true);
@@ -85,7 +83,7 @@ export function LlmInfraCard({ dockerControl, onDockerControlChange }: {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label className="text-sm font-medium">{t("settings.llm.vram_overview")}</Label>
-            <Button variant="ghost" size="sm" onClick={loadVram} disabled={vramLoading} className="h-7 px-2 text-xs">
+            <Button variant="ghost" size="sm" onClick={reloadVram} disabled={vramLoading} className="h-7 px-2 text-xs">
               {vramLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RotateCcw className="h-3 w-3 mr-1" />}
               {t("settings.llm.vram_refresh")}
             </Button>

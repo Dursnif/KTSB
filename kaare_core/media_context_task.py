@@ -13,15 +13,16 @@ from pathlib import Path
 
 import httpx
 
+from kaare_core.config import get_service
+
 logger = logging.getLogger("media_context_task")
 
 _PLEX_CACHE_PATH = Path("/kaare/state/plex_cache.json")
-_POLL_INTERVAL   = 60  # seconds
+_POLL_INTERVAL = 60  # seconds
 
 
 def _plex_cfg() -> dict:
     try:
-        from kaare_core.config import get_service
         return get_service("media", "plex") or {}
     except Exception:
         return {}
@@ -49,8 +50,8 @@ def _write_cache(data: dict) -> None:
 
 
 async def _poll_plex() -> None:
-    cfg   = _plex_cfg()
-    url   = cfg.get("url", "")
+    cfg = _plex_cfg()
+    url = cfg.get("url", "")
     token = _plex_token()
     if not url or not token:
         return
@@ -71,7 +72,7 @@ async def _poll_plex() -> None:
         if state not in ("playing", "buffering"):
             continue
         title = item.get("title", "")
-        show  = item.get("grandparentTitle", "")
+        show = item.get("grandparentTitle", "")
         display = f"{show} – {title}" if show else title
         sessions.append({"title": display, "state": state})
 

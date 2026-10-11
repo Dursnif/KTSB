@@ -52,6 +52,9 @@
     "restarting": "Starter om...",
     "container_restarted": "Konteiner restartet",
     "restart_failed": "Restart feilet",
+    "vllm_loading": "Laster modell…",
+    "vllm_rolling_back": "Feilet – gjenoppretter forrige konteiner…",
+    "vllm_rolled_back": "Ny konteiner startet ikke – forrige konteiner er gjenopprettet",
     "test": "Test",
     "testing": "Tester…",
     "copy": "Kopier",
@@ -128,6 +131,32 @@
           "en": "English",
           "de": "Deutsch"
         }
+      },
+      "network": {
+        "title": "Nettverk og tilgang",
+        "description": "Hvilke adresser som regnes som hjemme og VPN, hvilke reverse proxyer KTSB stoler på, og om API-dokumentasjonen er åpen. Endringer gjelder med en gang.",
+        "local_subnets_label": "Lokale subnett",
+        "local_subnets_hint": "Hjemmenettet, kommaseparert (f.eks. 192.168.0.0/24). Herfra regnes brukere som hjemme.",
+        "vpn_subnet_label": "VPN-subnett",
+        "vpn_subnet_hint": "Adressene WireGuard-klienter får (f.eks. 10.0.0.0/24).",
+        "trusted_proxies_label": "Betrodde proxyer",
+        "trusted_proxies_hint": "Bare disse kan oppgi klientens adresse (X-Forwarded-For). IP, subnett eller vertsnavn, kommaseparert. Standard: caddy, 127.0.0.1, ::1. Legg til din egen reverse proxy her.",
+        "api_docs_label": "API-dokumentasjon",
+        "api_docs_hint": "Åpner /docs, /redoc og /openapi.json. Av som standard — kartet over alle endepunkter er nyttig for en angriper."
+      },
+      "logs": {
+        "title": "Logger og data",
+        "description": "Hvor ofte logger skrives til disk, og hvor lenge samtaler og minner beholdes.",
+        "flush_label": "Skriveintervall for logger (sekunder)",
+        "flush_hint": "Logglinjer samles i minnet og skrives til disk samlet. Lave tall gir mange små skrivinger (mer IO, raskere slitasje på SD-kort). Høye tall betyr at flere linjer kan gå tapt ved strømbrudd. 0 = skriv hver linje med en gang. Anbefalt: 2–10.",
+        "flush_warn_low": "Mange små skrivinger til disk — mer IO, og raskere slitasje på SD-kort/eMMC.",
+        "flush_warn_high": "Ved strømbrudd eller krasj kan opptil {{seconds}} sekunder med logglinjer gå tapt.",
+        "interactions_label": "Behold samtaler (dager)",
+        "episodes_label": "Behold episoder/minner (dager)",
+        "think_label": "Behold tankehistorikk (dager)",
+        "retention_hint": "0 = behold for alltid (disken vokser). Et tall = eldre data slettes for godt om natta, og Kåre kan ikke lenger huske eller slå det opp.",
+        "retention_warn_low": "Svært kort: alt eldre enn {{days}} dager slettes for godt hver natt.",
+        "load_error": "Kunne ikke hente innstillingene."
       }
     },
     "ha": {
@@ -137,7 +166,9 @@
         "url_label": "Home Assistant URL",
         "url_hint": "F.eks. http://192.168.0.x:8123",
         "timeout_label": "Timeout (sekunder)",
-        "timeout_hint": "Maks ventetid per HA-kall"
+        "timeout_hint": "Maks ventetid per HA-kall",
+        "enabled_label": "Home Assistant på",
+        "enabled_hint": "Av: Kåre styrer ingen enheter og leser ingen HA-sensorer. Slås på av oppsettet når URL og token er lagret. Ny URL eller nytt token tas i bruk med en gang."
       },
       "token": {
         "title": "Home Assistant Token",
@@ -204,13 +235,13 @@
       "subtitle": "Meldinger mellom agenter",
       "refresh": "Oppdater",
       "loading": "Laster…",
-      "empty": "Ingen agent-kommunikasjon logget ennå. Skjer første gang Kåre spør en agent om noe.",
-      "question": "Spørsmål",
-      "answer": "Svar"
+      "empty": "Ingen agent-kommunikasjon logget ennå. Skjer første gang Kåre spør en agent om noe."
     },
     "llm": {
       "description": "Én seksjon per LLM-rolle. Lagres i configs/llm.yaml. Restart berørt tjeneste etter endring.",
       "ctx_warning": "Alle kall til samme Ollama-instans MÅ bruke identisk num_ctx — mismatch tvinger full modell-reload (~3,5 min).",
+      "model_missing": "Modellen «{{model}}» er ikke lastet ned i Ollama — rollen virker ikke før den er lastet ned.",
+      "model_unreachable": "Får ikke kontakt med {{url}} — kan ikke sjekke om modellen er lastet ned.",
       "whisper_lang_note": "STT-språk følger chat-språket (kare_language, satt under Generelt) — ingen egen bryter her.",
       "whisper_lang_warning": "Modellen \"{{model}}\" støtter sannsynligvis kun {{supported}} — ikke \"{{lang}}\". STT kan bli unøyaktig.",
       "whisper_backend_hint": "faster_whisper fungerer på alle plattformer (CPU/GPU). openvino krever Intel Arc GPU og OpenVINO GenAI — brukes med NbAiLab/nb-whisper-large.",
@@ -218,7 +249,7 @@
       "restart_restarted": "Restartet",
       "restart_generic_error": "Feil ved restart",
       "restart_needed_hint": "Restart er nødvendig for at endringer skal tre i kraft.",
-      "memembed_title": "Semantisk minne (MiniLM)",
+      "memembed_title": "Semantisk minne",
       "memembed_intro": "384-dim embedding for semantisk minnesøk. Bruker {{model}} (ONNX).",
       "memembed_files": "Modellen må ligge lokalt — plasser disse filene i mappen under:",
       "memembed_model_dir_label": "Modellmappe",
@@ -251,17 +282,6 @@
       "whisper_fw_select": "CPU universell (faster-whisper)",
       "whisper_modeldir_label": "Modellmappe (OpenVINO IR)",
       "whisper_modeldir_hint": "Sti til ferdig konvertert OpenVINO IR-modell. Inneholder openvino_encoder_model.xml, openvino_decoder_model.xml osv.",
-      "whisper_ov_preset_label": "NbAiLab/nb-whisper-large (OpenVINO IR, konvertert)",
-      "whisper_ov_preset_note": "Norsk (Nasjonalbiblioteket) — brukes nå",
-      "whisper_ov_disclaimer": "{{model}} er OpenVINO IR-konvertert og lever lokalt på disk. Modellen støtter {{tokenNo}} og {{tokenNn}} — ikke {{tokenNb}}. Fungerer best når chat-språket (Generelt) er satt til Norsk.",
-      "whisper_model_label": "Modell",
-      "whisper_model_hint": "HuggingFace-modellnavn eller sti til CTranslate2-konvertert modell. Lastes ned automatisk ved første oppstart.",
-      "whisper_fw_preset_best": "Beste kvalitet (OpenAI)",
-      "whisper_fw_preset_faster": "Raskere, nesten like god",
-      "whisper_fw_preset_balanced": "God balanse",
-      "whisper_fw_preset_fast_less_accurate": "Rask, lavere nøyaktighet",
-      "whisper_fw_norsk_optimized_title": "Norsk-optimalisert (NbAiLab):",
-      "whisper_fw_norsk_optimized_body": "Bruk {{model}} med OpenVINO-backend (konvertert modell finnes allerede lokalt). For faster-whisper må den konverteres: {{cmd}}",
       "whisper_compute_label": "Beregningstype",
       "whisper_compute_hint": "int8 anbefales for de fleste. float16/int8_float16 krever GPU. float32 fungerer på CPU uten spesial-maskinvare.",
       "whisper_compute_int8": "int8 – standard (anbefalt)",
@@ -299,6 +319,7 @@
       "image_provider_hint": "Hvilken type bildegenererings-tjeneste",
       "image_timeout_hint": "Maks ventetid per bildegenerering. Tom = ingen grense.",
       "ollama_params": "Ollama inference-parametere",
+      "agent_pool_note": "Delt agent-pool ({{roles}}): tenking, kontekst og sampling er felles for alle disse rollene — endrer du her, endres det for alle. Bare maks svarlengde (num_predict) er per rolle.",
       "vllm_params": "vLLM inference-parametere",
       "vllm_docker_params": "vLLM Docker-parametere — krever omstart av containeren for å tre i kraft",
       "reason_freely_title": "Reason Freely-verktøy",
@@ -309,9 +330,9 @@
       "think_unset": "Ikke satt",
       "think_enabled": "Aktivert (full tenking)",
       "think_disabled": "Deaktivert",
-      "role_fallback_desc": "Steg 2 av 3 — aktiveres om 27B feiler, sky-LLM er siste utvei",
+      "role_fallback_desc": "Steg 2 — tar over når hovedmodellen ikke svarer. Sky brukes bare når du ber om det («spør på nett»).",
       "share_with_label": "Del modell med Miss Kåre",
-      "share_with_active_note": "Mechanic deler modell og innstillinger med Miss Kåre. Endre i Miss Kåre-kortet. Krever omstart av kaare.service for å tre i kraft.",
+      "share_with_active_note": "Mechanic deler modell og innstillinger med Miss Kåre. Endre i Miss Kåre-kortet. Endringen gjelder med en gang.",
       "providers": {
         "ollama": "Ollama (lokal)",
         "vllm": "vLLM (lokal, OpenAI-kompatibel)",
@@ -489,7 +510,77 @@
         "remote_section_hint": "Den eksterne maskinen sender Jing/Jang-tanker hit. Kopier token til maskinens configs/services.yaml (inner_voices.push_token).",
         "push_token": "Push-token",
         "generate_token": "Generer ny"
-      }
+      },
+      "basic_mode_note": "Grunnmodus: denne modellen klarer samtale, men verktøybruken er upålitelig. For KTSB slik det er ment: 27B på en GPU med 24 GB+.",
+      "memembed_intro2": "Lar Kåre finne gamle samtaler etter mening, ikke bare ord — også når du spør på et annet språk enn minnet ble skrevet på. Velg størrelse: større modell gir bedre treff, men bruker mer disk og minne.",
+      "memembed_tier_small": "Liten",
+      "memembed_tier_medium": "Medium",
+      "memembed_tier_large": "Stor",
+      "memembed_tier_legacy": "Tidligere standard",
+      "memembed_note_minilm_int8": "Raskest og minst. Passer for svake maskiner (Raspberry Pi, mini-PC).",
+      "memembed_note_mpnet": "Tydelig bedre treff på norsk, engelsk og tysk. Anbefalt når maskinen har noen GB ledig minne.",
+      "memembed_note_bge_m3": "Best treff. Bruker Embedding-tjenesten (BGE-M3) som også brukes til wikien — ingen egen nedlasting her, men tregere per søk.",
+      "memembed_note_minilm": "Modellen KTSB brukte før. Fungerer, men svakest på norsk.",
+      "memembed_points": "{{n}} minner indeksert",
+      "memembed_active": "I bruk",
+      "memembed_downloaded": "Lastet ned",
+      "memembed_download_btn": "Last ned",
+      "memembed_use_btn": "Bruk denne",
+      "memembed_needs_embedding": "Slå på kortet «Embedding (BGE-M3)» lenger opp på denne siden først.",
+      "memembed_switch_warning": "Minnesøket bygges om fra de lagrede samtalene. Det tar fra noen sekunder til noen minutter, og søket er svakere mens det pågår. Ingen minner slettes, og det gamle søket beholdes, så du kan bytte tilbake når som helst. Minner som ikke kan leses (kryptert uten nøkkel) blir ikke med i det nye søket.",
+      "memembed_switch_confirm": "Bytt og bygg om",
+      "memembed_download_done": "Lastet ned — trykk «Bruk denne» for å ta den i bruk.",
+      "memembed_switch_done": "Ferdig: {{indexed}} av {{total}} minner indeksert.",
+      "memembed_switch_skipped": "{{n}} kunne ikke leses og er ikke med.",
+      "memembed_phase_start": "Starter …",
+      "memembed_phase_download": "Laster ned",
+      "memembed_phase_config": "Lagrer valget …",
+      "memembed_phase_restart": "Starter minnetjenesten på nytt med den nye modellen …",
+      "memembed_phase_reindex": "Bygger minnesøket",
+      "memembed_phase_done": "Avslutter …",
+      "memembed_err_permission": "Får ikke skrive til modellmappen. Velg en annen under «Modellagring» (Ekspert), eller gi KTSB skrivetilgang til mappen.",
+      "memembed_err_download_failed": "Nedlastingen feilet. Sjekk internettforbindelsen og prøv igjen.",
+      "memembed_err_service_not_ready": "Minnetjenesten kom ikke opp med den nye modellen. Den forrige modellen er satt tilbake.",
+      "memembed_err_reindex_failed": "Ombyggingen av minnesøket feilet. Prøv «Bruk denne» igjen.",
+      "memembed_err_not_downloaded": "Modellen er ikke lastet ned ennå.",
+      "memembed_err_embedding_service_off": "Embedding-tjenesten (BGE-M3) er av. Slå den på først.",
+      "memembed_err_generic": "Noe gikk galt. Prøv igjen.",
+      "memembed_model_dir_hint": "Valgfritt: les modellen i bruk fra en annen mappe. Tomt = mappen den ble lastet ned til.",
+      "models_dir_title": "Modellagring",
+      "models_dir_label": "Mappe for nedlastede modeller",
+      "models_dir_hint": "Hit legger KTSB modeller du laster ned fra denne siden (hver funksjon får sin egen undermappe). I Docker: /kaare/models = mappa models/ ved siden av docker-compose.yml.",
+      "stt_title": "Whisper (tale-til-tekst)",
+      "stt_intro_nb": "Gjør tale om til tekst. For norsk brukes Nasjonalbibliotekets NB-Whisper, som er langt bedre på bokmål enn standardmodellen i alle størrelser. Kjører på CPU.",
+      "stt_intro_other": "Gjør tale om til tekst med OpenAIs flerspråklige Whisper, som er sterk på engelsk og tysk. Kjører på CPU.",
+      "stt_note_small": "Rask nok for de fleste maskiner — anbefalt start.",
+      "stt_note_medium": "Bedre i støy, men et par sekunder per setning på en vanlig CPU.",
+      "stt_note_large": "Best, men treg på CPU — for kraftige maskiner.",
+      "stt_custom_label": "Egen modell",
+      "stt_custom_field_label": "Annen modell",
+      "stt_custom_field_hint": "Hugging Face-navn (org/navn) eller lenke til en CTranslate2-konvertert Whisper (faster-whisper). Sjekkes før nedlasting.",
+      "stt_openvino_active": "I bruk nå: OpenVINO-modellen «{{model}}» (Ekspert). Velger du en modell under, går talegjenkjenningen over til CPU.",
+      "stt_switch_warning": "Talegjenkjenningen starter på nytt med denne modellen — stemmestyring er borte i noen sekunder.",
+      "stt_switch_from_openvino": "Den bytter fra OpenVINO (iGPU) til CPU; du kan bytte tilbake under Ekspert → Backend.",
+      "stt_switch_confirm": "Bytt modell",
+      "stt_download_done": "Lastet ned — trykk «Bruk denne» for å ta den i bruk.",
+      "stt_switch_done": "Byttet — talegjenkjenningen laster modellen (store modeller tar litt tid første gang).",
+      "stt_phase_check": "Sjekker modellen på Hugging Face …",
+      "stt_err_not_found": "Fant ikke den modellen på Hugging Face.",
+      "stt_err_not_ct2": "Modellen er ikke en CTranslate2-konvertering (mangler model.bin/config.json) og kan ikke brukes av faster-whisper.",
+      "stt_err_bad_repo": "Skriv et Hugging Face-navn (org/navn) eller en huggingface.co-lenke.",
+      "stt_err_not_downloaded": "Modellen er ikke lastet ned ennå.",
+      "stt_err_restart_failed": "Valget er lagret, men talegjenkjenningen kunne ikke startes på nytt. Bruk «Restart tjeneste» (Ekspert).",
+      "stt_err_permission": "Får ikke skrive til modellmappen. Velg en annen under «Modellagring» (Ekspert), eller gi KTSB skrivetilgang.",
+      "stt_err_download_failed": "Nedlastingen feilet. Sjekk internettforbindelsen og prøv igjen.",
+      "stt_threads_label": "CPU-tråder",
+      "stt_threads_hint": "Auto = halvparten av kjernene (minst 2, høyst 8). Målt: 4→8 tråder gir 10–25 % raskere svar; flere enn 8 hjelper sjelden. Krever restart av tjenesten.",
+      "stt_threads_auto": "Auto (anbefalt)",
+      "memembed_selected": "Valgt — ikke i gang",
+      "media_host_label": "LAN-adresse for høyttalere",
+      "media_host_hint": "Adressen høyttalere på nettet (ESP32, Chromecast, Home Assistant-mediaspillere) henter Kåres lyd fra. Tomt = oppdages automatisk (nå: {{detected}}).",
+      "media_host_hint_docker": "Adressen høyttalere på nettet (ESP32, Chromecast, Home Assistant-mediaspillere) henter Kåres lyd fra. I Docker kan den ikke oppdages — skriv inn LAN-adressen til maskinen KTSB kjører på.",
+      "media_host_use": "Bruk {{host}}",
+      "media_host_not_applied": "Lagret. Taletjenesten svarte ikke — adressen tas i bruk når den starter."
     },
     "nettsok": {
       "weather": {
@@ -557,13 +648,13 @@
       },
       "websearch": {
         "title": "Nettsøk",
-        "description": "Velg søkeprovider. DDG krever ingen konfigurasjon og er standard. SearXNG krever en kjørende instans. Brave krever API-nøkkel. Lagres i configs/services.yaml.",
+        "description": "Velg søkemotor. SearXNG (selvhostet, ingen nøkkel) er standard og følger med i Docker. Brave krever API-nøkkel. KTSB identifiserer seg ærlig, følger robots.txt og henter aldri fra interne adresser.",
         "provider_label": "Provider",
-        "provider_hint": "Primær søkeleverandør. DDG fungerer uten nøkkel.",
+        "provider_hint": "Primær søkemotor. SearXNG virker uten nøkkel (Docker: http://searxng:8080).",
         "fallback_label": "Fallback",
-        "fallback_hint": "Brukes automatisk hvis primær-provideren feiler eller returnerer 0 treff.",
+        "fallback_hint": "Brukes automatisk hvis primær-motoren feiler eller gir 0 treff. «Ingen» = ingen reserve.",
         "searxng_url_label": "SearXNG URL",
-        "searxng_url_hint": "URL til din SearXNG-instans (f.eks. http://localhost:8888).",
+        "searxng_url_hint": "Adressen til SearXNG. I Docker: http://searxng:8080 (følger med). Ellers din egen instans.",
         "fetch_count_label": "Antall treff å hente",
         "fetch_count_hint": "Totalt antall resultater å be om fra provider",
         "max_results_label": "Maks kilder brukt",
@@ -576,15 +667,62 @@
         "brave_lang_hint": "BCP 47-språkkode (no, en, de, …).",
         "brave_key_label": "Brave API-nøkkel",
         "brave_key_unset_hint": "Ikke satt — kreves kun om Brave er valgt som provider",
-        "hot_reload_hint": "Kjør hot-reload i Vedlikehold for at endringer skal aktiveres"
+        "hot_reload_hint": "Endringer gjelder med en gang etter lagring.",
+        "fallback_none": "Ingen",
+        "total_timeout_label": "Maks tid per søk (s)",
+        "total_timeout_hint": "Hele søket — motor, sidehenting og oppsummering — avbrytes etter dette, og Kåre får beskjed.",
+        "fetch_timeout_label": "Tidsfrist per side (s)",
+        "fetch_timeout_hint": "Hvor lenge én nettside får bruke på å svare.",
+        "max_bytes_label": "Maks sidestørrelse (byte)",
+        "max_bytes_hint": "Større sider avvises. Bare tekst/HTML leses.",
+        "host_interval_label": "Pause mellom kall til samme side (s)",
+        "host_interval_hint": "Høflighet: minst så lang tid mellom to forespørsler til samme nettsted.",
+        "cache_ttl_label": "Husk hentede sider (s)",
+        "cache_ttl_hint": "Hvor lenge en hentet side gjenbrukes fra minnet før den hentes på nytt.",
+        "cache_max_label": "Maks sider i minnet",
+        "cache_max_hint": "Antall hentede sider som huskes samtidig (bare i RAM, ikke på disk).",
+        "trusted_slots_label": "Plasser for godkjente kilder",
+        "trusted_slots_hint": "Av «Maks kilder brukt» får godkjente kilder så mange plasser først; åpent nett fyller resten.",
+        "paid_calls_label": "Betalte søk i dag (siden siste omstart):",
+        "official_timeout_label": "Tid for offisiell side (s)",
+        "official_timeout_hint": "Hvor lenge KTSB leter etter emnets offisielle nettside (via Wikidata) før søket går videre uten.",
+        "background_timeout_label": "Tid for arbeidsrunde (s)",
+        "background_timeout_hint": "Hvor lenge et søk Kåre sender ut i bakgrunnen får holde på. Kåre svarer deg med en gang og kommer tilbake med resultatet."
       },
       "trusted": {
         "title": "Vitlistede nettsider",
-        "description": "Kun disse domenene brukes når Kåre søker etter informasjon på nett. Lagres i configs/trusted_sources.yaml. Krever hot-reload for å aktiveres.",
-        "hot_reload_hint": "Endringer i vitlistede nettsider aktiveres ved å kjøre «Hot-reload» i Vedlikehold-fanen.",
+        "description": "Domenene under er husstandens godkjente kilder — de får plassene først og merkes «godkjent kilde». Velg hva slags kilde hvert domene er og hvor mye du stoler på det. Endringer gjelder med en gang.",
+        "hot_reload_hint": "Endringer gjelder med en gang etter lagring — ingen hot-reload trengs. Domener lagres uten http://, www. og sti.",
         "short_desc_placeholder": "Kort beskrivelse",
         "domain_format_hint": "Uten http:// og www.",
-        "new_category_placeholder": "ny_kategori_nøkkel"
+        "new_category_placeholder": "ny_kategori_nøkkel",
+        "open_web_label": "Bruk åpent nett",
+        "open_web_hint": "På: treff utenfor lista brukes også, men merkes «åpent nett» og veier mindre. Av: bare domenene under brukes.",
+        "blocked_title": "Blokkerte nettsider",
+        "blocked_hint": "Disse domenene brukes aldri — verken i søk eller når Kåre åpner en lenke. Lagres med en gang.",
+        "type_public_authority": "Offentlig myndighet",
+        "type_encyclopedia": "Leksikon / oppslagsverk",
+        "type_newsroom": "Nyhetsredaksjon",
+        "type_research": "Fagmiljø / forskning",
+        "type_official": "Offisiell side for noe",
+        "type_other_serious": "Annet seriøst nettsted",
+        "trust_high": "Høy",
+        "trust_normal": "Normal",
+        "trust_low": "Lav",
+        "caution_label": "Hvor forsiktig skal Kåre være med det han finner?",
+        "caution_hint": "Forsiktig: Kåre krever mer før noe kalles «sannsynlig», og ber deg oftere sjekke selv. Balansert: standard. Åpen: litt mindre krav.",
+        "caution_careful": "Forsiktig",
+        "caution_balanced": "Balansert",
+        "caution_open": "Åpen"
+      },
+      "law": {
+        "title": "Norsk lov (Lovdata)",
+        "description": "Gjeldende lover og sentrale forskrifter fra Lovdatas åpne datasett (NLOD 2.0). Lastes ned én gang per natt og søkes lokalt — KTSB henter aldri sider fra lovdata.no, slik Lovdata ønsker. Kåre bruker det når et spørsmål gjelder norsk lov.",
+        "enabled_label": "Bruk norsk lov",
+        "enabled_hint": "Slå på for å laste ned og søke i lovene. Første nedlasting: trykk «Oppdater nå» (ca. 10 MB, noen sekunder).",
+        "status": "Sist oppdatert {{date}} — {{docs}} dokumenter, {{paras}} paragrafer.",
+        "status_none": "Ikke lastet ned ennå.",
+        "refresh": "Oppdater nå"
       }
     },
     "refleksjon": {
@@ -634,7 +772,7 @@
       },
       "selfimage": {
         "title": "Kåres selvbilde",
-        "description": "Kåre kan skrive observasjoner om seg selv til personality_self.md — en fil som former hvem han er over tid. Her styrer du hvilke brukere som kan påvirke dette selvbildet. Endringen trer i kraft umiddelbart.",
+        "description": "Kåre kan skrive observasjoner om seg selv til sitt selvbilde — kunnskap som former hvem han er over tid. Her styrer du hvilke brukere som kan påvirke dette gjennom samtale. Kåres egne, autonome observasjoner (fra refleksjon) er alltid tillatt, uavhengig av dette valget. Endringen trer i kraft umiddelbart.",
         "name_label": "Assistentnavn",
         "name_hint": "Navnet assistenten presenterer seg med. Injiseres i systemprompt ved hot-reload.",
         "hotword_label": "Hotword",
@@ -667,6 +805,45 @@
           "admin_only_label": "Kun admin",
           "admin_only_desc": "Kun admin-brukere kan godkjenne eller avvise forslag."
         }
+      },
+      "memory": {
+        "title": "Kåres hukommelse",
+        "description": "Hvordan Kåres skuffer (huskeliste, observasjoner, lærdommer, løste saker) kommer inn i prompten, og hvem som kan markere en sak som løst. Gjelder fra neste melding.",
+        "load_error": "Kunne ikke hente innstillingene.",
+        "resolve_roles_label": "Hvem kan markere en sak som løst",
+        "resolve_roles_hint": "Når en sak er avklart i en samtale, kan Kåre markere den som løst. Den låses, og nye observasjoner om det samme blir ekko i stedet for nye saker. Bakgrunnsløkker kan aldri gjøre dette.",
+        "roles": {
+          "admin": "Admin",
+          "adult": "Voksen",
+          "young_adult": "Ung voksen",
+          "teen": "Tenåring",
+          "child": "Barn"
+        },
+        "relevance_label": "«Relevant nå»",
+        "relevance_hint": "Søker i notatene og kunnskapen for hver melding og legger de mest relevante ved i full tekst. Krever en embedding-tjeneste: slå på kortet «BGE-M3 (Innvektinger)» eller «Semantisk minne» under Innstillinger → LLM/Modeller. Uten den vises bare indeksen.",
+        "relevance_inactive": "Inaktiv — ingen embedding-tjeneste er på. Slå på «BGE-M3 (Innvektinger)» eller «Semantisk minne» under Innstillinger → LLM/Modeller.",
+        "top_k_label": "Antall relevante treff",
+        "top_k_hint": "Hvor mange notater som legges ved i full tekst (standard 3).",
+        "lessons_max_chars_label": "Lærdommer (tegn)",
+        "lessons_max_chars_hint": "Tak for lærdom-blokka som alltid står i prompten.",
+        "lessons_write_max_chars_label": "Lengde per lærdom (tegn)",
+        "lessons_write_max_chars_hint": "Hvor lang én lærdom kan være når Kåre skriver den. En lærdom er én regel, ikke en historie.",
+        "core_facts_max_chars_label": "Kjernefakta (tegn)",
+        "core_facts_max_chars_hint": "Tak for de viktigste verdensfaktaene og løste saker som står som tekst; resten vises som indeks.",
+        "index_max_chars_label": "Indeks (tegn)",
+        "index_max_chars_hint": "Tak for indeksen over øvrige verdensfakta.",
+        "min_score_label": "Terskel for treff",
+        "min_score_hint": "Hvor likt et notat må være meldingen for å bli lagt ved (0–1, standard 0,50).",
+        "echo_min_score_label": "Terskel for ekko",
+        "echo_min_score_hint": "Hvor likt en ny rad må være en løst sak for å regnes som ekko (standard 0,60). Lavere fanger mer, men kan skjule ekte nye feil.",
+        "kare_injection_max_chars_label": "Huskeliste-indeks (tegn)",
+        "kare_injection_max_chars_hint": "Tak for indeksen over Kåres huskeliste i prompten.",
+        "kare_note_prompt_chars_label": "Per notat i prompten (tegn)",
+        "kare_note_prompt_chars_hint": "Ingen enkeltnotat kan ta mer enn dette.",
+        "kare_write_max_chars_label": "Maks lengde på huskeliste-notat",
+        "kare_write_max_chars_hint": "Lengre tekst avvises og Kåre bes bruke observasjoner, agenda eller lærdommer (standard 600).",
+        "kare_max_entries_label": "Maks antall huskeliste-notater",
+        "kare_max_entries_hint": "De eldste ufestede ryddes når lista er full."
       }
     },
     "integrasjoner": {
@@ -691,7 +868,7 @@
         "timeout_hint": "Maks ventetid per Plex-kall",
         "token_label": "Plex-token",
         "token_placeholder": "Lim inn nytt Plex-token",
-        "token_warning": "Tjenesterestart (kaare.service) kreves for at nytt Plex-token aktiveres."
+        "token_warning": "Nytt Plex-token tas i bruk med en gang."
       }
     },
     "distribusjon": {
@@ -747,6 +924,7 @@
       "miss_kare": {
         "label": "Miss Kåre",
         "description": "Evaluator – sitter i sidelinjen og kommenterer samtalen. Kan slå opp fakta hos Miss Library.",
+        "locked_personality_hint": "Miss Kåre har én fast personlighet, den samme i chat, i portrett-nattjobben og i refleksjonsmøtet. Den følger språket som er valgt for brukeren.",
         "roles": {
           "empatisk_label": "Empatisk",
           "empatisk_desc": "Varm og moderlig – fokus på brukerens følelsesliv og menneskelige side. Standard opptreden.",
@@ -772,7 +950,7 @@
         "søk_argus": "søk_argus",
         "søk_argus_desc": "Søk i Argusens hendelseslogg (Qdrant).",
         "shell": "shell",
-        "shell_desc": "Kjør shell-kommandoer lokalt eller på tilkoblede noder. Skru kun på hvis nødvendig.",
+        "shell_desc": "Mechanic kan kjøre lese-kommandoer lokalt eller på tilkoblede noder — bare lesing, aldri endre, skrive eller slette (kjeding som ; && $( > avvises). Dette er den eneste bryteren for shell. Hver kommando logges i audit-loggen.",
         "hukommelse": "hukommelse",
         "hukommelse_desc": "Mechanics personlige minne – beholdes mellom møter.",
         "spør_miss_library": "spør_miss_library",
@@ -825,7 +1003,13 @@
       "optional_badge": "Valgfritt",
       "description": "Kåre fungerer uten alle disse. Fyll inn det du har — eller hopp over og konfigurer via Innstillinger → Integrasjoner senere.",
       "save_finish": "Lagre og fullfør",
-      "skip": "Hopp over"
+      "skip": "Hopp over",
+      "ha_token_label": "Home Assistant token (long-lived)",
+      "ha_token_hint": "Lag det i Home Assistant: profilen din → Sikkerhet → Long-lived access tokens. Med URL og token slås Home Assistant på.",
+      "network_title": "Nettverk",
+      "subnet_label": "Ditt lokale nett",
+      "subnet_hint": "Foreslått ut fra hvor du kobler til fra. Enheter her regnes som «hjemme». Tomt = alle 192.168.x.x-nett. Kan endres i Innstillinger → Generelt → Nettverk og tilgang (Ekspert).",
+      "media_host_hint": "Bare for høyttalere på nettet (ESP32, Chromecast, Home Assistant). Foreslått: adressen du åpnet KTSB på. Kan endres under Innstillinger → LLM → Piper."
     },
     "ferdig": {
       "title": "Kåre er klar!",
@@ -976,16 +1160,16 @@
       "cat_kaare_memory": "Kåres personlige minner (semantisk søk)",
       "cat_argus_events": "Argus-logg (systemhendelser — kan være store)",
       "cat_personality": "Kåres personlighet (personality_self, verdensmodell)",
-      "cat_user_profiles": "Brukerprofiler (observasjoner, per-bruker data)",
-      "cat_notes_state": "Notater og tilstand (notatblokk, timere, møtetemaer)",
-      "cat_secrets": "Hemmeligheter (API-nøkler og tokens)",
-      "cat_images": "Genererte bilder (kan være store)",
+      "cat_user_profiles": "Brukerprofiler (observasjoner, per-bruker data, samtalearkiv)",
+      "cat_notes_state": "Notater og tilstand (notatblokk, timere, lister, møtetemaer, hjemmemodus, sikkerhetsrettelser)",
+      "cat_secrets": "Hemmeligheter (API-nøkler, tokens og VPN-klientnøkler)",
+      "cat_images": "Bilder (genererte og opplastede — kan være store)",
       "user_keys_required": "Påkrevd — inkluderes automatisk med krypterte kategorier",
-      "secrets_warning": "Denne ZIP-filen vil inneholde API-nøkler og tokens. Del aldri denne filen.",
+      "secrets_warning": "Denne ZIP-filen vil inneholde API-nøkler, tokens og VPN-klientnøkler. Del aldri denne filen.",
       "download_button": "Last ned sikkerhetskopi",
       "downloading": "Bygger ZIP…",
       "restore_section": "Gjenopprett fra sikkerhetskopi",
-      "restore_warning": "Dette vil overskrive gjeldende data. Kåre starter automatisk på nytt hvis minne gjenopprettes.",
+      "restore_warning": "Dette vil overskrive gjeldende data. Kåre starter automatisk på nytt hvis minne gjenopprettes. Systemnøkkelen følger aldri med i en backup: gjenoppretter du på en ny maskin, må hver bruker logge inn med PIN én gang før bakgrunnsjobbene (refleksjon, nattjobb) får tilgang til dataene deres igjen.",
       "restore_button": "Gjenopprett",
       "restoring": "Gjenoppretter…",
       "restore_ok": "Gjenopprettet: {{items}}",
@@ -1002,9 +1186,11 @@
       "max_reached": "Maks 5 backup-punkter er nådd",
       "restore_point_button": "Gjenopprett",
       "restore_point_title": "Gjenopprett fra backup-punkt",
-      "restore_point_warning": "Dette vil overskrive gjeldende data med backup-punkt «{{name}}». Bekreft med PIN.",
+      "restore_point_warning": "Dette vil overskrive gjeldende data med backup-punkt «{{name}}». Bekreft med PIN. Systemnøkkelen følger aldri med i en backup: gjenoppretter du på en ny maskin, må hver bruker logge inn med PIN én gang før bakgrunnsjobbene (refleksjon, nattjobb) får tilgang til dataene deres igjen.",
       "delete_point_confirm": "Vil du slette backup-punktet «{{name}}»?",
-      "saving_point": "Lagrer backup-punkt…"
+      "saving_point": "Lagrer backup-punkt…",
+      "pre_update_name": "Før oppdatering til {{version}}",
+      "pre_update_tag": "automatisk"
     },
     "github": {
       "title": "GitHub-publisering",
@@ -1013,8 +1199,8 @@
     "hardware": {
       "title": "Maskinvare",
       "description": "Detektert CPU, RAM, GPU og NPU. Kjør setup.sh på verten for full deteksjon.",
-      "button": "Oppdag maskinvare",
-      "refresh": "Oppdater",
+      "button": "Gjenkjenn maskinvare",
+      "refresh": "Gjenkjenn maskinvare",
       "loading": "Detekterer…",
       "detected_at": "Detektert",
       "source_host": "Vert-skript",
@@ -1030,40 +1216,6 @@
       "ram_gb": "{{gb}} GB",
       "note_gpu": "GPU oppdaget — aktiver ved å legge til COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml i .env og kjøre setup.sh",
       "error": "Kunne ikke hente maskinvareinfo"
-    },
-    "snapshots": {
-      "title": "Gjenopprettingspunkter",
-      "description": "Lagre navngitte snapshots av alle konfig-filer og gjenopprett dem ved behov.",
-      "name_placeholder": "Navn på snapshot…",
-      "save_button": "Lagre snapshot",
-      "saving": "Lagrer…",
-      "counter": "{{count}}/10 snapshots",
-      "max_reached": "Maks 10 nådd — slett ett punkt for å lagre nytt",
-      "empty": "Ingen snapshots lagret ennå.",
-      "restore_button": "Gjenopprett",
-      "delete_button": "Slett",
-      "restore_confirm": "Dette overskriver aktive konfig-filer med snapshot «{{name}}». Fortsette?",
-      "restore_ok": "Gjenopprettet: {{files}}",
-      "restore_error": "Feil ved gjenoppretting",
-      "delete_confirm": "Slett snapshot «{{name}}»?",
-      "delete_error": "Feil ved sletting",
-      "save_error": "Feil ved lagring",
-      "name_required": "Skriv inn et navn",
-      "export_button": "Eksporter",
-      "import_title": "Importer snapshot",
-      "import_description": "Last opp en tidligere eksportert konfig-zip for å gjenopprette den på en ny installasjon.",
-      "import_name_placeholder": "Navn på importert snapshot…",
-      "import_button": "Importer zip",
-      "importing": "Importerer…",
-      "import_ok": "Importert: {{count}} filer",
-      "import_error": "Feil ved import",
-      "import_bad_zip": "Ugyldig zip-fil",
-      "import_no_yaml": "Zip-filen inneholdt ingen konfig-filer",
-      "export_current_button": "Eksporter nåværende konfig",
-      "install_button": "Installer",
-      "download_button": "Last ned",
-      "select_hint": "Velg et snapshot for å installere eller laste ned",
-      "choose_file": "Velg fil"
     },
     "varsler": {
       "master": {
@@ -1086,6 +1238,58 @@
         "cameras_hint": "Tom = alle konfigurerte kameraer"
       },
       "events_link": "Se hendelser"
+    },
+    "update": {
+      "title": "Oppdater KTSB",
+      "description": "Installer en nyere KTSB-versjon fra GitHub. Før oppdateringen lagres et backup-punkt automatisk; hvis noe ikke starter riktig, settes forrige versjon tilbake av seg selv.",
+      "loading": "Henter status…",
+      "not_docker": "Oppdatering fra GUI gjelder Docker-installasjoner. Denne installasjonen kjører rett på maskinen og oppdateres utenom GUI-et.",
+      "unreachable": "Oppdateringstjenesten (kaare-updater) svarer ikke. Kjør «docker compose up -d» én gang i installasjonsmappa for å starte den.",
+      "running_version": "Kjører nå",
+      "unknown_version": "ukjent (bygget fra kildekode)",
+      "check_button": "Se etter oppdatering",
+      "check_failed": "Fikk ikke kontakt med GitHub. Sjekk internettforbindelsen og prøv igjen.",
+      "up_to_date": "Du har nyeste versjon.",
+      "available": "Ny versjon: {{version}}",
+      "show_notes": "Vis hva som er nytt",
+      "hide_notes": "Skjul",
+      "update_button": "Oppdater KTSB til {{version}}",
+      "confirm_title": "Oppdater til {{version}}?",
+      "confirm_text": "KTSB lagrer et backup-punkt, laster ned den nye versjonen og starter alle tjenester på nytt. Kåre er utilgjengelig i noen minutter. Går noe galt, settes forrige versjon tilbake automatisk. Skriv inn PIN for å fortsette.",
+      "confirm_button": "Oppdater",
+      "running": "Oppdaterer til {{version}} …",
+      "restarting": "KTSB starter på nytt — denne siden kobler seg til igjen av seg selv.",
+      "done": "Oppdatert til {{version}}.",
+      "reload": "Last siden på nytt",
+      "rolled_back": "Oppdateringen feilet, og KTSB er satt tilbake til {{version}}.",
+      "failed": "Oppdateringen ble ikke gjennomført. Ingenting er endret.",
+      "rollback_failed": "Oppdateringen feilet, og forrige versjon kunne heller ikke startes. Se logs/updater.log, eller kjør «docker compose up -d» i installasjonsmappa.",
+      "cause": "Årsak",
+      "data_hint": "Dataene dine er ikke rørt. Backup-punktet fra før oppdateringen ligger i listen under hvis du også vil sette dem tilbake.",
+      "rollback_button": "Gå tilbake til {{version}}",
+      "rollback_confirm_title": "Gå tilbake til forrige versjon?",
+      "rollback_confirm_text": "KTSB starter på nytt på {{version}}. Dataene dine beholdes som de er nå. Skriv inn PIN for å fortsette.",
+      "err_night_sequence_running": "Nattsekvensen kjører nå. Prøv igjen når den er ferdig.",
+      "err_busy": "En oppdatering pågår allerede.",
+      "err_no_home": "Installasjonsmappa er ikke satt opp for oppdatering fra GUI. Kjør setup.sh (Linux/macOS) eller setup.ps1 (Windows) én gang i installasjonsmappa, og deretter «docker compose up -d».",
+      "err_no_compose": "Oppdateringstjenesten finner ikke installasjonsmappa. Kjør setup.sh / setup.ps1 én gang på nytt, og deretter «docker compose up -d».",
+      "err_no_docker_socket": "Oppdateringstjenesten har ikke tilgang til Docker.",
+      "err_save_point_failed": "Kunne ikke lagre backup-punktet før oppdateringen. Ingenting er endret.",
+      "err_updater_unreachable": "Oppdateringstjenesten svarer ikke.",
+      "err_nothing_to_roll_back_to": "Det finnes ingen forrige versjon å gå tilbake til.",
+      "err_generic": "Noe gikk galt.",
+      "phase": {
+        "preflight": "Sjekker at oppdateringen kan kjøres",
+        "download": "Laster ned installasjonspakken",
+        "verify_bundle": "Sjekker signatur og sjekksum",
+        "swap": "Tar vare på gjeldende filer og legger inn de nye",
+        "pull": "Laster ned nye images (KTSB kjører imens)",
+        "verify_images": "Sjekker at alle images er signert av KTSB",
+        "start": "Starter KTSB på den nye versjonen",
+        "health": "Venter på at KTSB svarer",
+        "self_update": "Oppdaterer oppdateringstjenesten selv",
+        "rollback": "Setter forrige versjon tilbake"
+      }
     }
   },
   "dashboard": {
@@ -1114,7 +1318,9 @@
       "teen": "Ungdom",
       "young_adult": "Ung voksen",
       "adult": "Voksen",
-      "admin": "Admin"
+      "admin": "Admin",
+      "household": "Husstand",
+      "stranger": "Fremmed"
     }
   },
   "login": {
@@ -1259,7 +1465,8 @@
       "title": "Tool-tillatelser per rolle",
       "description": "Styr hvilke verktøy Kåre kan bruke per brukerrolle. Endringer trer i kraft umiddelbart.",
       "col_tool": "Verktøy",
-      "always_included": "Alltid inkludert (Kåres egne): selvbilde, verden, brukerprofil, les_indre_tanker, les_tankehistorikk",
+      "always_included": "Selvbilde, verden og brukerprofil er alltid med for vanlige brukere (låst ✓). For Husstand og Fremmed er de av som standard og kan slås på her.",
+      "admin_only": "Indre tanker og tankehistorikk kan inneholde andre brukeres samtaler og er bare for administrator (—).",
       "loading": "Laster tool-tillatelser…",
       "save": "Lagre endringer",
       "rollback": "Tilbakestill til standard",
@@ -1291,8 +1498,29 @@
         "local_kommando": "Lokal kommando",
         "restart_docker_container": "Restart Docker",
         "household": "Hjemme/borte-modus",
-        "write_reflex": "Godkjenn automasjon-forslag"
+        "write_reflex": "Godkjenn automasjon-forslag",
+        "world": "Verden (husfakta)",
+        "self_image": "Selvbilde",
+        "user_profile": "Brukerprofil",
+        "inner_thoughts": "Indre tanker",
+        "thought_history": "Tankehistorikk"
       }
+    },
+    "system": {
+      "global_user": {
+        "name": "Husstand (ukjent stemme)",
+        "desc": "En person inne i huset som ikke blir gjenkjent — mest sannsynlig noen i husstanden. Får vite det som er felles for huset, men ingen enkeltpersons egne data."
+      },
+      "unknown_user": {
+        "name": "Ukjent person",
+        "desc": "En person vi ikke stoler på, f.eks. ved en node ute eller ved døra. Får ikke vite noe om huset eller folkene der."
+      },
+      "no_actions": "Systembruker: kan ikke logge inn eller slettes. Verktøyene settes i tabellen under.",
+      "admin_note": "Innebygd administrator — bare PIN kan endres."
+    },
+    "groups": {
+      "default": "Standardbrukere",
+      "created": "Brukere"
     }
   },
   "user": {
@@ -1371,7 +1599,11 @@
       "default_user": "Standard bruker (valgfritt)",
       "cancel": "Avbryt",
       "save": "Lagre",
-      "mic_enabled": "Mikrofon (mic inn)"
+      "mic_enabled": "Mikrofon (mic inn)",
+      "trust": "Hvem snakker her når stemmen ikke kjennes igjen?",
+      "trust_indoor": "Inne — trolig noen i husstanden (Husstand)",
+      "trust_outdoor": "Ute / ved døra — en fremmed (Ukjent person)",
+      "trust_hint": "Gjelder bare når verken stemmegjenkjenning, én fast standardbruker eller PIN/frase sier hvem det er."
     }
   },
   "tools": {
@@ -1514,7 +1746,7 @@
     "reflection_tab": "Refleksjonsmøte",
     "dev_tab": "Utviklingsmøte",
     "reflection_tab_sub": "04:00 · Miss Kåre",
-    "dev_tab_sub": "05:30 · Mechanic",
+    "dev_tab_sub": "Etter refleksjonsmøtet · Janus + Kåre",
     "meetings_label": "Møter",
     "no_dates": "Ingen ennå",
     "loading": "Laster…",
@@ -1563,7 +1795,44 @@
     "leder_preset_analytisk": "Analytisk",
     "leder_preset_utfordrende": "Utfordrende",
     "leder_preset_egendefinert": "Egendefinert",
-    "no_eligible_reflection_users": "Unge voksne og voksne administrerer sine refleksjoner privat via bruker-GUI."
+    "no_eligible_reflection_users": "Unge voksne og voksne administrerer sine refleksjoner privat via bruker-GUI.",
+    "devslot_step": "Steg {{n}}/{{max}}: {{label}}",
+    "devslot_step_S0": "Samler agenda, brukerspor og helsesjekk",
+    "devslot_step_janus": "Janus prioriterer sakene",
+    "devslot_step_S1": "Kåre rydder agendaen",
+    "devslot_step_S2": "Kåre ser over brukerturer",
+    "devslot_step_S3": "Kåre undersøker problemer (kildene sjekkes)",
+    "devslot_step_S5": "Skriver morgenrapporten",
+    "settings_dev_slot_desc": "Dev-luka går hver natt rett etter refleksjonsmøtet. Kåre rydder agendaen, undersøker problemer med lese-verktøy, og bare funn med belegg i kildene regnes som bekreftet. Luka endrer aldri noe selv.",
+    "night_title": "Nattsekvens",
+    "night_desc": "Én gang hver natt rydder Kåre i hukommelsen, henter ny lovtekst fra Lovdata (hvis det er slått på), lager brukerportretter, går gjennom kunnskapen sin og holder refleksjonsmøtet og dev-luka — i den rekkefølgen. Her velger du når den starter.",
+    "night_start_label": "Starttid",
+    "night_start_hint": "Klokkeslett i husstandens tidssone ({{tz}}). Gjelder fra neste natt, uten omstart. Er maskinen av ved starttid, kjøres natten likevel hvis KTSB er oppe igjen innen 6 timer.",
+    "night_last_run": "Sist startet: natten til {{date}}",
+    "settings_dev_enabled": "Dev-luka aktivert",
+    "settings_time_budget": "Tidsbudsjett (minutter)",
+    "settings_time_budget_hint": "Sikkerhetstak: hvor lenge luka maks får jobbe per natt. Det som ikke rekkes, venter til neste natt.",
+    "settings_max_traces": "Maks brukerturer per natt",
+    "settings_max_traces_hint": "Hvor mange av gårsdagens samtaler Kåre ser over. 0 = hopp over.",
+    "settings_round_cap": "Maks verktøyrunder per sak",
+    "settings_round_cap_hint": "Hvor mange runder Kåre får til å undersøke ett problem.",
+    "devslot_step_S6": "Oppsummerer uke/måned/halvår/år",
+    "settings_topics_per_meeting": "Saker per møte",
+    "settings_topics_per_meeting_hint": "Hvor mange problemer Kåre går i dybden på per natt. Først én sak fra hvert tema, så fylles det opp. Hver sak tar noen minutter — øk tidsbudsjettet sammen med denne.",
+    "topic_theme": "Tema",
+    "topic_theme_auto": "Velg automatisk",
+    "theme_answers": "Svar og samtaler",
+    "theme_tools": "Verktøy og HA-styring",
+    "theme_memory": "Hukommelse",
+    "theme_agents": "Agentene",
+    "theme_house": "Hus, sensorer og kamera",
+    "theme_system": "System, modeller og ytelse",
+    "theme_other": "Annet",
+    "resolved_title": "Løste saker ({{count}})",
+    "resolved_empty": "Ingen saker er markert som løst ennå. Kåre kan gjøre det i en samtale når en sak er avklart.",
+    "resolved_meta": "Løst {{date}} av {{by}} · {{echoes}} ekko siden",
+    "settings_kare_tokens_hint": "Samme som «Maks tokens ut» i LLM-fanen, men bare for Kåres innlegg i møtet. Tenking teller med: selve innlegget er kort (ca. 100–600), resten er tenking. Under ca. 3000 gir ofte tomme svar. Anbefalt 6000–8192 (standard 8192). Høyere går, men en tur som går i ring tar da lengre tid.",
+    "settings_miss_kare_tokens_hint": "Samme som «Maks tokens ut» i LLM-fanen, men bare for Miss Kåres innlegg. Uten tenking (standard) er svarene ca. 100–250 tokens, så 1000–1500 gir god margin (standard 1500). Under ca. 300 kan svar kuttes midt i en setning. Slår du på tenking for henne, bruk samme verdier som for Kåre."
   },
   "user_sidebar": {
     "home": "{{name}}",
@@ -1752,7 +2021,9 @@
         "teen": "Ungdom — Nettilgang og mer av Kåre, med visse begrensninger.",
         "young_adult": "Ung voksen — Full tilgang bortsett fra admin-funksjoner.",
         "adult": "Voksen — Full tilgang til alle brukerfunksjoner.",
-        "admin": "Admin — Styrer hele systemet, inkludert innstillinger og andre brukere."
+        "admin": "Admin — Styrer hele systemet, inkludert innstillinger og andre brukere.",
+        "household": "Systemrolle for «Husstand (ukjent stemme)»: en person inne i huset som ikke blir gjenkjent, mest sannsynlig et husstandsmedlem. Ser det som er felles for huset (hvem som bor her, felles lister, om huset står på borte), men ingen enkeltpersons profil, minne, chat eller notater. Verktøy settes i tabellen under Brukere.",
+        "stranger": "Systemrolle for «Ukjent person»: en person vi ikke stoler på, f.eks. ved en node ute eller ved døra, og alt som ikke kan kobles til en kjent bruker. Får ikke vite noe om huset eller folkene der, ser bare samtalen som pågår, og har ingen HA-styring som standard."
       },
       "vpn_intro": "VPN-tilgangsnivå bestemmer hva brukeren kan gjøre utenfra hjemmenettverket:",
       "vpn": {
@@ -1779,16 +2050,13 @@
         "search_argus": "Søk i systemlogg og hendelseshistorikk",
         "read_meeting": "Les referater fra refleksjonsmøter",
         "mechanic": "Deleger tekniske oppgaver til Mechanic",
-        "explore_code": "Les filer og kode på systemet (kun admin)",
-        "inspect_system": "Sjekk tjenester, logger og ressursbruk",
-        "ssh_command": "Kjør kommandoer på andre maskiner i nettverket",
-        "local_command": "Kjør kommandoer direkte på AI-PC-en",
+        "self_trace": "Se egen respons-historikk for selvforbedring",
         "restart_docker_container": "Start Docker-containere på nytt",
         "household": "Sett hjemme/borte-modus for husstanden",
         "write_reflex": "Foreslå, godkjenne eller avvise Kåres selvlærte automasjoner (hvem som faktisk kan godkjenne/avvise styres separat under Innstillinger → Kåre)"
       },
       "pin": "PIN er en tallkode som beskytter kontoen (minimum 6 siffer). Brukes ved innlogging og for å låse opp private møtereferater.",
-  "recovery_key": "Recovery-nøkkelen er en 24-ords gjenopprettingsfrase vist én gang ved kontoopprettelse. Den lar brukeren gjenopprette tilgang til kryptert data hvis PIN-en glemmes — uten den er krypterte data tapt for godt. Kan utstedes på nytt her.",
+      "recovery_key": "Recovery-nøkkelen er en 24-ords gjenopprettingsfrase vist én gang ved kontoopprettelse. Den lar brukeren gjenopprette tilgang til kryptert data hvis PIN-en glemmes — uten den er krypterte data tapt for godt. Kan utstedes på nytt her.",
       "voice_reg": "Stemmeregistrering lar Kåre gjenkjenne hvem som snakker. Brukeren leser inn noen setninger og Kåre lærer stemmeprofilen.",
       "vpn_qr": "VPN-QR-koden inneholder alle innstillinger for å koble til hjemmenettverket fra utsiden. Skann koden i WireGuard-appen.",
       "warning_delete": "⚠ Sletting av bruker er irreversibel — all historikk og profil forsvinner permanent.",
@@ -1802,7 +2070,8 @@
       "item_2": "Fullstendig omstart — starter Kåre-tjenesten på nytt. Tar 5–30 sekunder.",
       "item_3": "Systemsjekk — verifiserer at alle tjenester svarer og tilkoblinger fungerer.",
       "item_4": "Hukommelseskompresjon — overfører kortidshukommelse (STM) til langtidshukommelse (LTM). Kjøres automatisk nattlig.",
-      "item_5": "Sikkerhetskopier — Opprett navngitte sikkerhetskopipunkter av hele installasjonen (databaser, minne, brukernøkler og innstillinger). Gjenopprett fra et lagret punkt (krever PIN) eller last ned som zip. Maks 5 punkter lagres. ⚠ Factory reset tilbakestiller alt til standard — krever PIN-bekreftelse."
+      "item_5": "Sikkerhetskopier — Opprett navngitte sikkerhetskopipunkter av hele installasjonen (databaser, minne, brukernøkler og innstillinger). Gjenopprett fra et lagret punkt (krever PIN) eller last ned som zip. Maks 5 punkter lagres. ⚠ Factory reset tilbakestiller alt til standard — krever PIN-bekreftelse. Systemnøkkelen følger aldri med i en backup: gjenoppretter du på en ny maskin, må hver bruker logge inn med PIN én gang før bakgrunnsjobbene (refleksjon, nattjobb) får tilgang til dataene deres igjen.",
+      "item_6": "Oppdater KTSB (Docker) — ser etter nyere versjoner på GitHub og installerer dem med ett klikk (krever PIN). Før oppdateringen lagres et backup-punkt automatisk (vises som «automatisk» i backup-listen, teller ikke mot de 5). Nye images sjekkes mot KTSBs signatur før de tas i bruk. Starter ikke alt riktig, settes forrige versjon tilbake av seg selv; dataene dine endres ikke av en oppdatering. Krever at setup.sh / setup.ps1 er kjørt i installasjonsmappa. Kjører ikke mens nattsekvensen pågår."
     },
     "verktoy": {
       "title": "Verktøy",
@@ -1841,7 +2110,8 @@
         "fire_tv": "Fire TV — Amazons TV-plattform (FireStick, Fire TV Cube)",
         "lg_tv": "LG TV — webOS, styrt via Home Assistant",
         "projector": "Projektor — kun skjerm, ingen lyd"
-      }
+      },
+      "trust": "Noder med mikrofon har et valg for hvem en ukjent stemme er. «Inne» betyr trolig noen i husstanden: Kåre svarer som til «Husstand (ukjent stemme)», som får vite det som er felles for huset, men ingen enkeltpersons egne data. «Ute / ved døra» betyr en fremmed: Kåre svarer som til «Ukjent person», som ikke får vite noe om huset og ikke kan styre HA. En satellitt som ikke er lagt inn her, behandles som ukjent person."
     },
     "kameraer": {
       "title": "Kameraer",
@@ -1860,7 +2130,7 @@
       "item_3": "Konfidens — Hvor mye historikk Kåre har å bygge avviksscoren på. Med under ca. to ukers data brukes ikke scoren i varslingsvurderingen ennå.",
       "item_4": "Korrigering — Merk en hendelse som normal eller unormal. Rettelsen tas med i neste natts baseline-beregning.",
       "item_5": "Hjemme/borte-modus — Når huset settes i «borte»-modus eskaleres kameravarsler (særlig ukjente objekter ved yttergrensen om natten), og Kåre kjenner automatisk igjen når noen er tilbake via GPS eller lokalnettverk.",
-  "item_6": "Angre og sortering — Klikk en kolonneoverskrift for å sortere hendelser innad i gruppen. Etter en korrigering (enkelt eller batch) vises en kort «angre»-knapp som gjenoppretter forrige tilstand."
+      "item_6": "Angre og sortering — Klikk en kolonneoverskrift for å sortere hendelser innad i gruppen. Etter en korrigering (enkelt eller batch) vises en kort «angre»-knapp som gjenoppretter forrige tilstand."
     },
     "agenter": {
       "title": "Agent Messages",
@@ -1876,11 +2146,13 @@
       "title": "Refleksjoner",
       "summary": "Kåres nattlige møter og selvutvikling",
       "body": "Kåre holder to møter hver natt. Det er hans måte å lære av dagen og vokse som assistent.",
-      "item_1": "Refleksjonsmøte (kl. 04:00) — Kåre og Miss Kåre gjennomgår dagens samtaler. Kåre oppdaterer selvbeskrivelse og verdensmodell.",
-      "item_2": "Utviklermøte (kl. 05:30) — Teknisk gjennomgang av systemhelse, feil og forbedringsforslag.",
+      "item_1": "Refleksjonsmøte (nattlig) — Kåre og Miss Kåre gjennomgår dagens samtaler. Kåre oppdaterer selvbeskrivelse og verdensmodell.",
+      "item_2": "Dev-luka (rett etter refleksjonsmøtet) — Kåre går gjennom agendaen sin (ting han selv har notert «ta opp på dev-møtet»), Janus prioriterer, Kåre undersøker problemer med lese-verktøy, og koden pluss en mindre modell sjekker at hvert funn har belegg. Morgenrapporten viser bekreftede funn, mistanker og forslag. Hver sak får et tema når den skrives (av Kåre selv, eller av faste regler når han ikke oppgir et), og luka tar saker fra alle temaer. Janus ser også løste saker: er en ny sak det samme som noe som er avklart, kobles den dit som ekko; motsier nye data løsningen, blir det et forslag om gjenåpning du avgjør.",
       "item_3": "PIN-beskyttelse — Møtereferater er låst med brukerens PIN. Kun du kan lese dine egne referater.",
-      "item_4": "Tema-felt — Du kan foreslå et tema Kåre tar opp i neste nattmøte.",
-      "item_5": "Miss Kåre-portrett — Miss Kåre bygger gradvis et psykologisk portrett av hver bruker basert på observasjoner over tid. Portretten injiseres i møtekonteksten for mer personlig analyse."
+      "item_4": "Tema-felt — Du kan foreslå et tema Kåre tar opp i neste nattmøte. For dev-luka velger du også hvilket tema saken hører til (eller lar det velges automatisk).",
+      "item_5": "Miss Kåre-portrett — Miss Kåre noterer korte, daterte observasjoner om hver bruker: ting de faktisk sa eller gjorde, som kan spores tilbake til en samtale. Ingen tolkning av følelser eller motiver. Notatene tas med i møtekonteksten.",
+      "item_6": "Forslag fra dev-luka — Luka endrer aldri noe selv. Forslag vises nummerert i rapporten; admin bekrefter eller avviser dem i chat («godkjenn dev-forslag 2»), og et menneske gjør selve endringen.",
+      "item_7": "Konsolidering — Når en uke, måned, halvår eller år er ferdig, teller koden hva som skjedde, og Janus skriver en kort oppsummering. Saker som har ligget åpne i mer enn 7 dager, flyttes ut av den aktive agendaen når uka er oppsummert — de slettes aldri."
     },
     "innst_basic_expert": {
       "title": "Innstillinger → Enkel/Ekspert-bryter",
@@ -1892,10 +2164,13 @@
     },
     "innst_generelt": {
       "title": "Innstillinger → Generelt",
-      "summary": "Lokasjon, tidssone og språk",
+      "summary": "Lokasjon, tidssone, språk og nettverk, logger og data",
       "item_1": "Lokasjon — Hjemsted brukes til værmeldinger, soloppgang/solnedgang og geografisk kontekst. Lagres lokalt.",
       "item_2": "Tidssone — Kåre bruker dette til å forstå tid og dato korrekt.",
-      "item_3": "Språk — Kåres svar-språk og GUI-språk. Velg mellom Norsk, Engelsk og Tysk."
+      "item_3": "Språk — Kåres svar-språk og GUI-språk. Velg mellom Norsk, Engelsk og Tysk.",
+      "item_4": "Nettverk og tilgang (Ekspert) — lokale subnett og VPN-subnett avgjør om en bruker regnes som hjemme. Betrodde proxyer er de eneste som kan oppgi klientens adresse; alt du selv har satt opp skal virke, alt annet stoppes. API-dokumentasjonen (/docs) er av som standard.",
+      "item_5": "Standard lokalt nett — Uten eget valg regnes alle 192.168.x.x-adresser som hjemme (ikke Docker-nettet 172.16–31.x og ikke VPN-nettet). Oppsettveiviseren foreslår ditt eget /24-nett ut fra hvor du kobler til fra; du bekrefter eller endrer det.",
+      "item_6": "Logger og data (Ekspert) — hvor ofte logger skrives til disk (samles i minnet; lavt tall = mer IO og SD-kort-slitasje, høyt tall = mer kan gå tapt ved strømbrudd; 0 = med en gang) og hvor mange dager samtaler, episoder og tankehistorikk beholdes (0 = for alltid; eldre data slettes for godt om natta)."
     },
     "innst_ha": {
       "title": "Innstillinger → Home Assistant",
@@ -1904,7 +2179,8 @@
       "item_1": "HA-URL — Adressen til Home Assistant på lokalnettverket (f.eks. http://192.168.0.x:8123).",
       "item_2": "Token — En engangsnøkkel du lager i HA under Profil → Langtidstoken. Kåre bruker denne for å autentisere seg.",
       "item_3": "Timeout — Hvor lenge Kåre venter på svar fra HA. Øk denne hvis nettverket er tregt.",
-      "item_4": "Tillatte handlinger — Avkrysningsliste over de 11 handlingene Kåre kan utføre mot HA (slå på/av, sett nivå, farge, temperatur osv). Ligger under Ekspert-nivå."
+      "item_4": "Tillatte handlinger — Avkrysningsliste over de 11 handlingene Kåre kan utføre mot HA (slå på/av, sett nivå, farge, temperatur osv). Ligger under Ekspert-nivå.",
+      "item_5": "Home Assistant på/av — Av betyr at Kåre ikke styrer enheter eller leser HA-sensorer. Oppsettveiviseren slår den på når URL og token lagres. Ny URL eller nytt token tas i bruk med en gang (gatewayen lastes på nytt)."
     },
     "innst_mqtt": {
       "title": "Innstillinger → MQTT / VPN",
@@ -1918,18 +2194,24 @@
       "title": "Innstillinger → LLM / Modeller",
       "summary": "Kåres AI-hjerne og støttemodeller",
       "body": "LLM (Large Language Model) er AI-modellen som gjør Kåre intelligent. Her konfigurerer du hvilke modeller som brukes til hva.",
-      "role_kare": "Kåre — Hovedmodellen. Svarer på alle spørsmål. Kjører lokalt på GPU.",
+      "role_kare": "Kåre — Hovedmodellen. Svarer på alle spørsmål. Med 27B på en GPU med 24 GB+ virker Kåre slik det er ment; med 9B eller mindre (standard på en ny installasjon) er det grunnmodus — samtale virker, verktøybruken er upålitelig. Kortet viser da en gul merknad.",
       "role_miss_kare": "Miss Kåre — Evaluatormodellen. Sjekker Kåres svar. Kjører på dedikert GPU.",
       "role_library": "Miss Library — Biblioteksmodellen. Søker i wiki og på nett.",
       "role_mechanic": "Mechanic — Teknisk assistent. Deler maskin med Miss Kåre.",
       "role_fallback": "Fallback — Brukes hvis hovedmodellen er utilgjengelig.",
       "role_sky": "Sky — Skybasert modell (DeepSeek) som sikkerhetsnet ved full lokal kapasitet.",
-      "item_1": "Whisper — Tale-til-tekst-modellen. Gjør stemmen din om til tekst Kåre kan forstå.",
-      "item_2": "Embedding — Lager søkbart minne. Brukes til semantisk hukommelsessøk.",
+      "item_1": "Whisper — Gjør stemmen din om til tekst. Norsk bruker Nasjonalbibliotekets NB-Whisper, andre språk OpenAIs Whisper. Velg Liten/Medium/Stor, «Last ned», så «Bruk denne» — eller skriv inn en annen modell (Hugging Face-navn eller lenke). Kjører på CPU; OpenVINO (Intel iGPU) er et manuelt Ekspert-valg utenfor Docker. Ekspert: CPU-tråder (Auto = halvparten av kjernene, høyst 8).",
+      "item_2": "Embedding (BGE-M3) — Lager søkbare vektorer for wikien og Argus. Kan også brukes som «Stor» modell for semantisk minne.",
       "item_3": "Lokal vs. sky — Lokale modeller er raskere og private. Sky er et sikkerhetsnet ved feil.",
       "item_4": "num_ctx — Kontekstvinduet. Hvor mye av samtalen modellen husker i én kjøring.",
       "item_5": "Piper (tekst-til-tale) — Kåres stemme. Tre språkseksjoner (norsk/engelsk/tysk) med ulike stemmepakker. Last ned, aktiver ønsket stemme og restart tjeneste for å ta den i bruk.",
-      "item_6": "Reason Freely-verktøy — Kåres eget verktøy for fri resonnering, vises nøstet inni Kåre (hoved)-kortet siden det deler samme modell. Ligger under Ekspert-nivå."
+      "item_6": "Reason Freely-verktøy — Kåres eget verktøy for fri resonnering, vises nøstet inni Kåre (hoved)-kortet siden det deler samme modell. Ligger under Ekspert-nivå.",
+      "item_7": "Agent-pool — Fallback, Miss Kåre, Miss Library og Mechanic kjører på samme lille modell og deler én felles innstilling (tenking, kontekst og sampling). Endrer du disse på ett av kortene, gjelder det alle fire. Bare maks svarlengde settes per rolle. Det hindrer at modellen lastes på nytt mellom jobbene.",
+      "item_8": "Modellsjekk — Hver Ollama-rolle sjekkes mot modellene som faktisk er lastet ned. Mangler modellen, vises et gult varsel på kortet (og i loggen ved oppstart); rollen virker ikke før modellen er lastet ned. «Får ikke kontakt» betyr bare at instansen ikke svarte på sjekken.",
+      "item_9": "vLLM-restart — Sampling (temperature, top_p, presence_penalty …) gjelder fra neste melding etter lagring, uten restart. Docker-parametere (kontekstlengde, KV-cache, GPU-minne) krever «Omstart Docker-konteiner». Knappen lager konteineren på nytt og venter til modellen er lastet (et par minutter). Starter den nye ikke, gjenopprettes den forrige automatisk.",
+      "item_10": "Semantisk minne — Lar Kåre finne gamle samtaler etter mening, også på tvers av norsk, engelsk og tysk. Tre størrelser: Liten (118 MB), Medium (1,1 GB, tydelig bedre) og Stor (bruker Embedding-tjenesten). «Last ned», så «Bruk denne»: minnesøket bygges om fra lagrede samtaler, ingenting slettes, og du kan bytte tilbake.",
+      "item_11": "Modellagring (Ekspert) — Mappen KTSB laster ned modeller til. Standard /kaare/models (i Docker: mappa models/ ved siden av docker-compose.yml).",
+      "item_12": "LAN-adresse for høyttalere (Piper-kortet) — Adressen høyttalere på nettet henter Kåres lyd fra. Tomt = oppdages automatisk utenfor Docker; i Docker må du skrive inn maskinens LAN-adresse (knappen foreslår adressen du åpnet KTSB på). Tas i bruk med en gang."
     },
     "innst_refleksjon": {
       "title": "Innstillinger → Refleksjon",
@@ -1937,16 +2219,24 @@
       "item_1": "Møteleder-stil — Tonen i møtene: Standard, Streng, Utforskende eller Egendefinert.",
       "item_2": "Aktivert/Deaktivert — Skru av refleksjonsmøter midlertidig.",
       "item_3": "Maks runder — Antall utvekslinger mellom Kåre og Miss Kåre per møte.",
-      "item_4": "Jang-intervall — Hvor ofte Jang sender tankemeldinger til Kåre mellom møtene."
+      "item_4": "Jang-intervall — Hvor ofte Jang sender tankemeldinger til Kåre mellom møtene.",
+      "item_5": "Dev-luka aktivert — Skru den nattlige dev-luka av eller på.",
+      "item_6": "Tidsbudsjett — Sikkerhetstak for hvor mange minutter dev-luka får per natt (standard 25). Det som ikke rekkes, tas neste natt.",
+      "item_7": "Maks brukerturer — Hvor mange av gårsdagens samtaler Kåre ser over per natt (standard 20).",
+      "item_8": "Maks verktøyrunder per sak — Hvor grundig Kåre får undersøke ett problem (standard 4).",
+      "item_9": "Nattsekvens → Starttid — Når nattarbeidet starter (standard 03:00, husstandens tidssone). Er maskinen av da, kjøres natten likevel hvis KTSB er oppe igjen innen 6 timer. Gjelder fra neste natt.",
+      "item_10": "Saker per møte — Hvor mange problemer dev-luka går i dybden på per natt (standard 3). Luka tar først én sak fra hvert tema (svar, verktøy, hukommelse, agenter, hus, system, annet) og fyller så opp, så ett støyende område ikke tar hele møtet. Hver sak tar noen minutter, så øk tidsbudsjettet sammen med denne.",
+      "item_11": "Maks tokens (Kåre / Miss Kåre) — Hvor mye hver av dem får skrive per innlegg i møtet. Gjelder bare møtet; i chatten gjelder «Maks tokens ut» i LLM-fanen. Tenking teller med i taket, så Kåre trenger mye mer enn selve innlegget: under ca. 3000 gir ofte tomme svar, 6000–8192 anbefales. Miss Kåre tenker ikke som standard og klarer seg med 1000–1500. Ikke det samme som kontekstlengden (hvor mye modellen kan lese)."
     },
     "innst_nett": {
       "title": "Innstillinger → Nettsøk og vær",
       "summary": "Søkeleverandør, vær og lokale sensorer",
-      "item_1": "Søkeleverandør — DuckDuckGo (standard, ingen konto), SearXNG (selvhostet) eller Brave Search.",
+      "item_1": "Søkemotor — SearXNG (standard, selvhostet, ingen nøkkel — følger med i Docker) eller Brave Search (API-nøkkel). DuckDuckGo er fjernet. Kåre kan sende et søk ut som arbeidsrunde: han svarer deg med en gang, og kommer tilbake i chatten med sitt eget svar når søket er ferdig (rådata vises aldri direkte og lagres ikke i korttidsminnet).",
       "item_2": "Vær-leverandør — met.no, OpenWeatherMap, PirateWeather, WeatherAPI eller lokale HA-sensorer.",
       "item_3": "Lokale HA-sensorer — Kåre kan lese innesensorer (temperatur, fuktighet) fra Home Assistant.",
       "item_4": "Tidevann — Tidevannsdata fra Kartverket (norske kystlokasjoner).",
-      "item_5": "Trusted sources — Domener Kåre foretrekker og filtrerer ved nettsøk."
+      "item_5": "Vitlistede nettsider — husstandens godkjente kilder får plassene først og merkes «godkjent kilde»; åpent nett (kan slås av) fyller resten og merkes som det. Hvert domene har en type og en tillit. Blokkerte nettsider brukes aldri. Uansett liste henter KTSB aldri sider på interne adresser (localhost, hjemmenett, VPN), følger robots.txt, og avviser store eller ikke-tekstlige filer. Kåre sier hvor sannsynlig noe er med faste ord (høyst sannsynlig / sannsynlig / usikkert / lite sannsynlig), regnet ut av koden fra hva slags kilder det er og hvor mange uavhengige som sier det samme; «Hvor forsiktig» flytter kravet.",
+      "item_6": "Norsk lov (Lovdata) — valgfritt. Gjeldende lover og sentrale forskrifter fra Lovdatas åpne datasett (NLOD 2.0), lastet ned én gang per natt og søkt lokalt; lovdata.no selv hentes aldri (Lovdata stenger roboter). Svar fra lovene regnes som offentlig myndighet og har alltid kildehenvisning til Lovdata."
     },
     "innst_bilder": {
       "title": "Innstillinger → Bilder",
@@ -1968,7 +2258,8 @@
       "item_7": "Komplett — Bruker all kontekst: indre tanker, selvbilde og verdensmodell.",
       "item_8": "Egendefinert — Du skriver Kåres personlighet selv.",
       "item_9": "Hvem påvirker Kåre — Velg hvilke brukere som kan forme Kåres personlighet gjennom samtaler.",
-      "item_10": "Kåres selvlærte automasjon — Velg hvem som kan godkjenne eller avvise automasjon-forslag Kåre selv foreslår ut fra vaner den ser i hjemmet."
+      "item_10": "Kåres selvlærte automasjon — Velg hvem som kan godkjenne eller avvise automasjon-forslag Kåre selv foreslår ut fra vaner den ser i hjemmet.",
+      "item_11": "Kåres hukommelse (Assistent-innstillinger) — «Hvem kan markere en sak som løst» (standard: bare admin): en sak som er avklart i samtale låses, og nye observasjoner om det samme blir ekko. I Ekspert: «Relevant nå» (notater som passer meldingen legges ved i full tekst), antall treff og terskler, tak for lærdommer, kjernefakta og indeks, lengde per lærdom, og huskelistas tak (lengde per notat, maks antall). «Relevant nå» krever en embedding-tjeneste (LLM/Modeller → «BGE-M3 (Innvektinger)» eller «Semantisk minne»); kortet viser «Inaktiv» når bryteren står på uten en."
     },
     "innst_integrasjoner": {
       "title": "Innstillinger → Integrasjoner",
@@ -1989,7 +2280,7 @@
       "title": "Innstillinger → Agent-innstillinger",
       "summary": "Konfigurer Mechanic og Miss Kåres rettigheter",
       "item_1": "Mechanic — Velg hvilke verktøy Mechanic kan bruke på vegne av Kåre.",
-      "item_2": "Miss Kåre — Velg om og hvordan Miss Kåre deltar i refleksjonsmøter.",
+      "item_2": "Miss Kåre — Slå av eller på om hun kan slå opp fakta hos Miss Library. Hun har én fast personlighet (den samme i chat, i portrett-nattjobben og i refleksjonsmøtet), og den følger språket som er valgt for brukeren.",
       "item_3": "Tool-matrise — Juster per brukerrolle hvilke verktøy som er tillatt. Endringer trer i kraft umiddelbart."
     },
     "innst_varsler": {
@@ -2044,7 +2335,7 @@
       "title": "SSH-noder",
       "body": "SSH-noder er maskiner i nettverket Kåre kan kjøre kommandoer på. Konfigurer her, bruk via «ssh_kommando»-verktøyet i chatten.",
       "item_1": "Nodetype: Linux/standard SSH (port 22, valgfri bruker) eller HA OS (port 2222, root, kun ha-kommandoer tillatt).",
-      "item_2": "Tillat sudo — Aktiver per node og legg til eksakt hvilke sudo-kommandoer som er tillatt. Kun listede kommandoer godtas.",
+      "item_2": "Tillat sudo — Aktiver per node og legg til eksakt hvilke sudo-kommandoer som er tillatt. Kun listede kommandoer godtas. Uten egne sudo-kommandoer kan Mechanic bare lese; en sudo-kommando du legger inn her får kjøre selv om den endrer noe (men aldri kjedet med ; && $( >).",
       "item_3": "Test tilkobling — Trykk knappen for å verifisere SSH-oppkoblingen direkte i GUI-et."
     },
     "verktoy_timer": {

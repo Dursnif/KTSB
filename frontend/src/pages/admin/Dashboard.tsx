@@ -148,6 +148,16 @@ function OnboardingBanner({ status }: { status: OnboardingStatus }) {
   );
 }
 
+/** Seconds since `since`, ticking every second (owns its clock so only this text re-renders). */
+function SecondsAgo({ since }: { since: Date }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <>{Math.max(0, Math.round((now - since.getTime()) / 1000))}</>;
+}
+
 export default function Dashboard() {
   const { t } = useTranslation();
   const [modules,     setModules]     = useState<{ name: string; enabled: boolean }[]>([]);
@@ -227,7 +237,7 @@ export default function Dashboard() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
         <div style={{ color: "#888", fontSize: 11, letterSpacing: 0.5 }}>
           {lastChecked
-            ? `${t("dashboard.last_checked")} ${Math.round((Date.now() - lastChecked.getTime()) / 1000)}s ${t("dashboard.ago")}`
+            ? <>{t("dashboard.last_checked")} <SecondsAgo since={lastChecked} />s {t("dashboard.ago")}</>
             : ""}
         </div>
         <button

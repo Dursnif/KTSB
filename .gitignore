@@ -1,3 +1,11 @@
+# Local configuration — written by the GUI, never committed (P127). Templates ship in configs_default/
+# and scripts/migrate_configs.py copies whatever is missing on every start.
+configs/*
+!configs/.gitkeep
+# Pre-P127 locations (moved to configs/): the repo-root capability map and the voice settings
+/capability_map.yaml
+services/voice/configs/voice_settings.yaml
+
 # Secrets and personal configuration — never commit
 configs/*.env
 configs/settings.yaml

@@ -9,7 +9,8 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { apiGetServices, apiPutFrigate, apiPutPlex, apiGetPlexToken, apiPutPlexToken } from "@/services/api";
-import { useSaveState, FieldRow, SaveFeedback, TestButton, MaskedInput, ExpertOnly } from "./shared";
+import { FieldRow, SaveFeedback, TestButton, MaskedInput, ExpertOnly } from "./shared";
+import { useSaveState } from "./useSaveState";
 
 export default function TabIntegrasjoner() {
   const { t } = useTranslation();

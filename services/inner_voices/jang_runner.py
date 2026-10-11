@@ -4,10 +4,10 @@ Runs every N minutes (from settings.yaml). Reads last N Jing blocks.
 Distills each category to 1-2 lines. Writes categorized output to inner_thoughts.txt.
 24-hour rolling retention. Keeps last turns_back blocks in jing_thoughts.txt as context.
 """
+
 import re
 import sys
 import time
-from pathlib import Path
 
 from common import (
     INNER_THOUGHTS,

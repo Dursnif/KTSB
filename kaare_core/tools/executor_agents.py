@@ -7,35 +7,53 @@ Exported: AGENT_TOOLS, dispatch()
 """
 
 import asyncio
+import getpass
 import json as _json
 import re
 import subprocess as _sp
-import yaml
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Dict
 from zoneinfo import ZoneInfo
 
 import httpx
 
 from kaare_core.agents.mechanic import job_store
 from kaare_core.agents.mechanic.tools import (
+    ANALYTIKER_TOOLS,
+    KRITIKER_TOOLS,
+    MAX_TOKENS,
+    MAX_TOOL_ROUNDS,
+    MECHANIC_MODEL,
+    MECHANIC_TOOLS,
+    MECHANIC_URL,
+    TIMEOUT,
+    UNDERSØKER_TOOLS,
     ask_with_tools,
-    MECHANIC_URL, MECHANIC_MODEL, MAX_TOOL_ROUNDS, TIMEOUT, MAX_TOKENS,
-    MECHANIC_TOOLS, UNDERSØKER_TOOLS, KRITIKER_TOOLS, ANALYTIKER_TOOLS,
-    execute_tool as _mechanic_execute_tool,
 )
-from kaare_core.config import get_service as _svc, get_llm_config as _llm_cfg, get_qdrant_api_key as _qdrant_key
-from kaare_core.memory.long_term import get_ltm
-from kaare_core.model_lock import lock_11445, LockTimeout
-from kaare_core.tools.i18n import t, get_lang
-from kaare_core.think_strip import strip_think_block
 from kaare_core.argus_query import build_argus_filter
+from kaare_core.background import spawn
+from kaare_core.config import get_llm_config as _llm_cfg
+from kaare_core.config import get_local_tz
+from kaare_core.config import get_qdrant_api_key as _qdrant_key
+from kaare_core.config import get_service as _svc
+from kaare_core.config import pool_call_options as _pool_opts
+from kaare_core.memory.long_term import get_ltm
+from kaare_core.model_lock import (
+    LockTimeout,
+    lock_agent_pool,
+    pool_order,
+    restartable_containers,
+    role_url,
+)
+from kaare_core.think_strip import strip_think_block
+from kaare_core.tools.i18n import get_lang, t
+from kaare_core.tools.shared_tools import english_content_note
+from kaare_core.tools.think_cache import log_think
 
-_SETTINGS_PATH  = Path("/kaare/configs/settings.yaml")
-_MECHANIC_DIR   = Path(__file__).parent.parent / "agents" / "mechanic"
+_SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
+_MECHANIC_DIR = Path(__file__).parent.parent / "agents" / "mechanic"
 _MAX_SEARCH_CHARS = 12000
-_ALLOWED_BASE   = "/kaare"
+_ALLOWED_BASE = "/kaare"
 
 AGENT_TOOLS = {
     "mechanic",
@@ -52,13 +70,10 @@ AGENT_TOOLS = {
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _local_tz() -> ZoneInfo:
-    try:
-        cfg = yaml.safe_load(_SETTINGS_PATH.read_text())
-        loc = cfg.get("location") or cfg.get("lokasjon", {})
-        return ZoneInfo(loc.get("timezone", "Europe/Oslo"))
-    except Exception:
-        return ZoneInfo("Europe/Oslo")
+    # Cached config, no disk read; legacy lokasjon.tidssone fallback; UTC when unset (P116 B19)
+    return get_local_tz()
 
 
 def _fmt_ts_local(ts_raw: str) -> str:
@@ -67,7 +82,7 @@ def _fmt_ts_local(ts_raw: str) -> str:
     try:
         dt = datetime.fromisoformat(ts_raw)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt.astimezone(_local_tz()).strftime("%Y-%m-%d %H:%M")
     except Exception:
         return ts_raw[:16].replace("T", " ")
@@ -89,7 +104,7 @@ def _load_mechanic_personality(role: str = "standard", lang: str = "nb") -> str:
         fallback = _MECHANIC_DIR / "personlighet.md"
         if fallback.exists():
             return fallback.read_text(encoding="utf-8")
-    return "Du er Mechanic – en allsidig teknisk assistent."
+    return t("mech_personality_fallback", lang)
 
 
 def _load_mechanic_memory() -> str:
@@ -103,26 +118,39 @@ def _load_mechanic_memory() -> str:
 def _tools_for_role(role: str) -> list:
     return {
         "undersøker": UNDERSØKER_TOOLS,
-        "kritiker":   KRITIKER_TOOLS,
+        "kritiker": KRITIKER_TOOLS,
         "analytiker": ANALYTIKER_TOOLS,
     }.get(role, MECHANIC_TOOLS)
 
 
 # ── Argus semantic search ─────────────────────────────────────────────────────
 
+
 async def _search_argus(
-    query: str, grense: int = 8, lang: str = "nb",
-    entity_id: str = "", since: str = "", until: str = "",
+    query: str,
+    grense: int = 8,
+    lang: str = "nb",
+    entity_id: str = "",
+    since: str = "",
+    until: str = "",
 ) -> str:
     if not query.strip():
         return t("agent_empty_query", lang)
     grense = max(1, min(grense, 20))
+    try:
+        embedding_on = bool((_svc("embedding") or {}).get("enabled", True))
+    except Exception:
+        embedding_on = True  # unknown → try the search and report a real error
+    if not embedding_on:
+        return t("agent_argus_embedding_off", lang)
     qdrant_url = _svc("storage", "qdrant")
-    embed_url  = _svc("ollama", "embed") + "/api/embed"
+    embed_url = _svc("ollama", "embed") + "/api/embed"
     payload_filter = build_argus_filter(entity_id, since, until)
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            emb_r = await client.post(embed_url, json={"model": "bge-m3", "input": query}, timeout=15.0)
+            emb_r = await client.post(
+                embed_url, json={"model": "bge-m3", "input": query}, timeout=15.0
+            )
             emb_r.raise_for_status()
             vector = emb_r.json()["embeddings"][0]
             body: dict = {"query": vector, "limit": grense, "with_payload": True}
@@ -144,8 +172,8 @@ async def _search_argus(
     lines = [t("agent_argus_results", lang, count=len(hits)) + "\n"]
     for h in hits:
         f = h.get("payload", {})
-        ts    = _fmt_ts_local(f.get("ts", ""))
-        msg   = f.get("message", "")
+        ts = _fmt_ts_local(f.get("ts", ""))
+        msg = f.get("message", "")
         level = f.get("level", "info")
         prefix = "⚠️ " if level == "warning" else "❌ " if level == "error" else ""
         lines.append(f"[{ts}] {prefix}{msg}")
@@ -153,6 +181,105 @@ async def _search_argus(
 
 
 # ── Mechanic search (file/grep/log fetch + one-shot summary) ─────────────────
+
+_LOG_DIR = Path("/kaare/logs")
+
+
+def _job_result_text(job_id: str, lang: str) -> str:
+    data = job_store.get_job(job_id)
+    status = data.get("status", "unknown")
+    if status == "running":
+        return t("agent_job_running", lang, job=job_id[:8])
+    return t(
+        "agent_job_result",
+        lang,
+        job=job_id[:8],
+        status=status.upper(),
+        result=data.get("result") or t("agent_job_no_output", lang),
+    )
+
+
+def _job_cancel_text(job_id: str, lang: str) -> str:
+    status = job_store.cancel_job(job_id).get("status", "unknown")
+    return t("agent_job_cancelled", lang, job=job_id[:8], status=status)
+
+
+def _job_comment_text(job_id: str, comment: str, lang: str) -> str:
+    data = job_store.inject_comment(job_id, comment)
+    if "not running" in (data.get("result") or ""):
+        return t("agent_job_comment_not_running", lang, job=job_id[:8])
+    return t("agent_job_comment_queued", lang, job=job_id[:8])
+
+
+def _filter_lines(text: str, log_filter: str) -> str:
+    """Keep lines matching `log_filter`. The model writes filters as regex ("ERROR|Traceback"),
+    so it is applied case-insensitively as a regex; an invalid regex falls back to a plain
+    substring match instead of failing the call."""
+    try:
+        rx = re.compile(log_filter, re.IGNORECASE)
+        return "\n".join(ln for ln in text.splitlines() if rx.search(ln))
+    except re.error:
+        needle = log_filter.lower()
+        return "\n".join(ln for ln in text.splitlines() if needle in ln.lower())
+
+
+def _available_logs() -> str:
+    """Log files that exist, with size — shown when the model asks for one that doesn't."""
+    try:
+        files = sorted(
+            f for f in _LOG_DIR.iterdir() if f.is_file() and f.suffix in (".log", ".jsonl", ".txt")
+        )
+    except OSError:
+        return ""
+    return ", ".join(f"{f.name} ({f.stat().st_size // 1024} KB)" for f in files)
+
+
+async def _run(cmd: list[str], timeout: int) -> str:
+    # subprocess.run blocks; run it in a worker thread so a slow journalctl/grep never
+    # stalls the event loop (rule 10).
+    result = await asyncio.to_thread(
+        _sp.run,
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+    )
+    return result.stdout.strip()
+
+
+_JOURNAL_NO_ACCESS_HINTS = (
+    "not seeing messages from other users",
+    "insufficient permissions",
+    "No journal files were opened",
+    "Permission denied",
+)
+
+
+async def _journal(service: str, n: int, lang: str) -> str:
+    """journalctl for one service. Separates «really empty» from «this user may not read the
+    journal» — without the group, journalctl prints only '-- No entries --' plus a hint on
+    stderr, which was thrown away, so Mechanic reported a frozen/empty service (P116 B29)."""
+    try:
+        result = await asyncio.to_thread(
+            _sp.run,
+            ["journalctl", "-u", service, "-n", str(n), "--no-pager"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+        )
+    except FileNotFoundError:
+        return t("svc_journal_unavailable", lang)
+    out, err = result.stdout.strip(), result.stderr.strip()
+    if out in ("", "-- No entries --") and any(h in err for h in _JOURNAL_NO_ACCESS_HINTS):
+        return t("svc_journal_no_access", lang, user=getpass.getuser())
+    if out in ("", "-- No entries --"):
+        return t("svc_log_empty_service", lang, service=service)
+    return out
+
 
 async def _fetch_search_content(
     search_type: str,
@@ -175,7 +302,7 @@ async def _fetch_search_content(
         for path_str in files[:5]:
             p = Path(path_str)
             if not p.is_absolute() or not str(p).startswith(_ALLOWED_BASE):
-                parts.append(f"### {path_str}\n[Rejected: only /kaare paths allowed]")
+                parts.append(f"### {path_str}\n{t('svc_path_rejected', lang)}")
                 continue
             try:
                 all_lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -185,12 +312,12 @@ async def _fetch_search_content(
                     chunk = all_lines[from_line - 1 : from_line + 299]
                 else:
                     chunk = all_lines
-                text = "\n".join(f"{i+1}: {l}" for i, l in enumerate(
-                    chunk, start=(from_line or 1) - 1
-                ))
+                text = "\n".join(
+                    f"{i + 1}: {ln}" for i, ln in enumerate(chunk, start=(from_line or 1) - 1)
+                )
                 parts.append(f"### {path_str}\n{text[:per_file]}")
             except Exception as e:
-                parts.append(f"### {path_str}\n[Read error: {e}]")
+                parts.append(f"### {path_str}\n{t('svc_read_error', lang, error=e)}")
         return "\n\n".join(parts)
 
     if search_type == "grep":
@@ -198,56 +325,89 @@ async def _fetch_search_content(
             return t("svc_no_grep_pattern", lang)
         search_dir = directory if directory.startswith(_ALLOWED_BASE) else _ALLOWED_BASE
         try:
-            result = _sp.run(
-                ["grep", "-rn", "-E",
-                 "--include=*.py", "--include=*.yaml", "--include=*.md",
-                 "--include=*.json", "--include=*.sh", "--include=*.toml",
-                 pattern, search_dir],
-                capture_output=True, text=True, encoding="utf-8", timeout=15,
+            out = await _run(
+                [
+                    "grep",
+                    "-rn",
+                    "-E",
+                    "--include=*.py",
+                    "--include=*.yaml",
+                    "--include=*.md",
+                    "--include=*.json",
+                    "--include=*.sh",
+                    "--include=*.toml",
+                    "--exclude-dir=*venv*",
+                    "--exclude-dir=node_modules",
+                    "--exclude-dir=__pycache__",
+                    "--exclude-dir=.git",
+                    pattern,
+                    search_dir,
+                ],
+                timeout=15,
             )
-            out = result.stdout.strip()
-            return out[:_MAX_SEARCH_CHARS] if out else t("svc_no_grep_results", lang, pattern=pattern, path=search_dir)
+            return (
+                out[:_MAX_SEARCH_CHARS]
+                if out
+                else t("svc_no_grep_results", lang, pattern=pattern, path=search_dir)
+            )
         except Exception as e:
-            return f"[Grep failed: {e}]"
+            return t("svc_grep_failed", lang, error=e)
 
     if search_type in ("log", "logg"):
         n = min(max(lines, 10), 500)
         if service:
             try:
-                result = _sp.run(
-                    ["journalctl", "-u", service, "-n", str(n), "--no-pager"],
-                    capture_output=True, text=True, timeout=15,
-                )
-                out = result.stdout.strip()
-                if log_filter and out:
-                    out = "\n".join(l for l in out.splitlines() if log_filter.lower() in l.lower())
-                return out[:_MAX_SEARCH_CHARS] if out else f"[Empty log for {service}]"
+                out = await _journal(service, n, lang)
+                if out.startswith("[") and out.endswith("]"):
+                    return out  # empty / no access / journalctl missing — already explained
+                if log_filter:
+                    out = _filter_lines(out, log_filter)
+                    if not out:
+                        return t(
+                            "svc_log_filter_no_match",
+                            lang,
+                            source=service,
+                            filter=log_filter,
+                            lines=n,
+                        )
+                return out[:_MAX_SEARCH_CHARS]
             except Exception as e:
-                return f"[journalctl failed: {e}]"
+                return t("svc_journal_failed", lang, error=e)
         if log_file:
-            log_path = Path("/kaare/logs") / Path(log_file).name
+            log_path = _LOG_DIR / Path(log_file).name
             if not log_path.exists():
-                return f"[Log file not found: {log_file}]"
-            try:
-                result = _sp.run(
-                    ["tail", "-n", str(n), str(log_path)],
-                    capture_output=True, text=True, timeout=10,
+                return t(
+                    "svc_log_file_not_found",
+                    lang,
+                    file=log_file,
+                    available=_available_logs() or "—",
                 )
-                out = result.stdout.strip()
-                if log_filter and out:
-                    out = "\n".join(l for l in out.splitlines() if log_filter.lower() in l.lower())
-                return out[:_MAX_SEARCH_CHARS] if out else f"[Empty log: {log_file}]"
+            try:
+                out = await _run(["tail", "-n", str(n), str(log_path)], timeout=10)
+                if not out:
+                    return t("svc_log_empty_file", lang, file=log_file)
+                if log_filter:
+                    out = _filter_lines(out, log_filter)
+                    if not out:
+                        return t(
+                            "svc_log_filter_no_match",
+                            lang,
+                            source=log_file,
+                            filter=log_filter,
+                            lines=n,
+                        )
+                return out[:_MAX_SEARCH_CHARS]
             except Exception as e:
-                return f"[Log read failed: {e}]"
-        return "[Error: specify 'service' or 'log_file' for type=log]"
+                return t("svc_log_read_failed", lang, error=e)
+        return t("svc_log_need_source", lang, available=_available_logs() or "—")
 
-    return "[Unknown search_type]"
+    return t("svc_unknown_search_type", lang, search_type=search_type)
 
 
-async def _mechanic_search(arguments: Dict, lang: str) -> str:
+async def _mechanic_search(arguments: dict, lang: str) -> str:
     """File/grep/log fetch followed by one-shot Mechanic summary."""
     search_type = arguments.get("type", arguments.get("search_type", "files"))
-    question    = arguments.get("query", arguments.get("question", "Summarize the content."))
+    question = arguments.get("query", arguments.get("question", "Summarize the content."))
 
     if not _llm_cfg("mechanic").get("enabled", True):
         return t("agent_mechanic_disabled", lang)
@@ -259,21 +419,33 @@ async def _mechanic_search(arguments: Dict, lang: str) -> str:
         except Exception:
             raw_files = []
 
+    def _as_int(val, default=None):
+        # LLM tool-call arguments arrive as JSON but numeric fields sometimes come through
+        # as strings (e.g. lines="50") — min()/max() on a mixed int/str pair raises
+        # TypeError, so every numeric arg from the model must be coerced here, not assumed.
+        if val is None or val == "":
+            return default
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            return default
+
     content = await _fetch_search_content(
         search_type=search_type,
         files=raw_files,
-        from_line=arguments.get("from_line"),
-        to_line=arguments.get("to_line"),
+        from_line=_as_int(arguments.get("from_line")),
+        to_line=_as_int(arguments.get("to_line")),
         pattern=arguments.get("pattern", ""),
         directory=arguments.get("directory", "/kaare"),
         service=arguments.get("service", ""),
         log_file=arguments.get("log_file", ""),
-        lines=arguments.get("lines", 100),
+        lines=_as_int(arguments.get("lines"), 100),
         log_filter=arguments.get("filter", ""),
         lang=lang,
     )
     if not content:
         return t("svc_no_content", lang)
+    content = english_content_note(lang) + content
 
     system = _load_mechanic_personality(lang=lang)
     memory = _load_mechanic_memory()
@@ -285,51 +457,64 @@ async def _mechanic_search(arguments: Dict, lang: str) -> str:
         "model": MECHANIC_MODEL,
         "stream": False,
         "think": False,
-        "options": {"temperature": 0.3, "num_ctx": 8192, "num_predict": 800},
+        "options": _pool_opts(_llm_cfg("mechanic"), {"num_predict": 800}),
         "messages": [
-            {"role": "system", "content": f"/no_think\n{system}"},
-            {"role": "user",   "content": user_msg},
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_msg},
         ],
     }
     try:
-        async with lock_11445("mechanic_search", max_wait=120):
-            async with httpx.AsyncClient(timeout=90.0) as client:
-                r = await client.post(MECHANIC_URL, json=payload,
-                                      headers={"x-kaare-source": "mechanic_search"})
-                r.raise_for_status()
-                content_out = r.json().get("message", {}).get("content", "").strip()
-                answer, _think_content, _think_closed = strip_think_block(content_out)
-                if _think_content:
-                    try:
-                        from kaare_core.tools.think_cache import log_think
-                        log_think(
-                            think_text=_think_content, response=answer, role="mechanic",
-                            model=MECHANIC_MODEL, recovered=False, rid=arguments.get("_rid", ""),
-                        )
-                    except Exception:
-                        pass
-                answer = answer or "[No response from Mechanic]"
+        async with (
+            lock_agent_pool(
+                pool_order(role_url("mechanic")), "mechanic_search", max_wait=120
+            ) as inst_url,
+            httpx.AsyncClient(timeout=90.0) as client,
+        ):
+            r = await client.post(
+                inst_url + "/api/chat",
+                json=payload,
+                headers={"x-kaare-source": "mechanic_search"},
+            )
+            r.raise_for_status()
+            content_out = r.json().get("message", {}).get("content", "").strip()
+            answer, _think_content, _think_closed = strip_think_block(content_out)
+            if _think_content:
                 try:
-                    asyncio.create_task(get_ltm().log_agent_message(
+                    log_think(
+                        think_text=_think_content,
+                        response=answer,
+                        role="mechanic",
+                        model=MECHANIC_MODEL,
+                        recovered=False,
+                        rid=arguments.get("_rid", ""),
+                    )
+                except Exception:
+                    pass
+            answer = answer or t("agent_mechanic_no_response", lang)
+            try:
+                spawn(
+                    get_ltm().log_agent_message(
                         from_agent="kare",
                         to_agent="mechanic",
                         query=question,
                         response=answer,
                         rid=arguments.get("_rid", ""),
                         user_id=arguments.get("_user_id", "global"),
-                    ))
-                except Exception:
-                    pass
-                return answer
+                    )
+                )
+            except Exception:
+                pass
+            return answer
     except LockTimeout:
         return t("svc_mechanic_busy", lang)
     except Exception as e:
-        return f"[Mechanic unavailable: {e}]"
+        return t("mech_mechanic_unavailable", lang, error=e)
 
 
 # ── Synchronous Mechanic ask (spør_mechanic) ──────────────────────────────────
 
-async def _ask_mechanic(task: str, arguments: Dict, lang: str) -> str:
+
+async def _ask_mechanic(task: str, arguments: dict, lang: str) -> str:
     if not task.strip():
         return t("agent_empty_query", lang)
     if not _llm_cfg("mechanic").get("enabled", True):
@@ -343,7 +528,7 @@ async def _ask_mechanic(task: str, arguments: Dict, lang: str) -> str:
 
     messages = [
         {"role": "system", "content": "\n\n".join(system_parts)},
-        {"role": "user",   "content": task},
+        {"role": "user", "content": task},
     ]
 
     try:
@@ -354,16 +539,20 @@ async def _ask_mechanic(task: str, arguments: Dict, lang: str) -> str:
             max_tool_rounds=MAX_TOOL_ROUNDS,
             timeout=TIMEOUT,
             max_tokens=MAX_TOKENS,
+            rid=arguments.get("_rid", ""),
+            lang=lang,
         )
         try:
-            asyncio.create_task(get_ltm().log_agent_message(
-                from_agent="kare",
-                to_agent="mechanic",
-                query=task,
-                response=answer,
-                rid=arguments.get("_rid", ""),
-                user_id=arguments.get("_user_id", "global"),
-            ))
+            spawn(
+                get_ltm().log_agent_message(
+                    from_agent="kare",
+                    to_agent="mechanic",
+                    query=task,
+                    response=answer,
+                    rid=arguments.get("_rid", ""),
+                    user_id=arguments.get("_user_id", "global"),
+                )
+            )
         except Exception:
             pass
         return answer if answer else t("agent_mechanic_nothing", lang)
@@ -373,8 +562,9 @@ async def _ask_mechanic(task: str, arguments: Dict, lang: str) -> str:
 
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
-async def dispatch(name: str, arguments: Dict) -> str:
-    lang    = get_lang(arguments.get("_user_id", "global"))
+
+async def dispatch(name: str, arguments: dict) -> str:
+    lang = get_lang(arguments.get("_user_id", "global"))
     user_id = arguments.get("_user_id", "global")
 
     # ── mechanic (unified action-based tool) ──────────────────────────────────
@@ -387,7 +577,7 @@ async def dispatch(name: str, arguments: Dict) -> str:
         if action == "delegate":
             task = arguments.get("task", "").strip()
             if not task:
-                return "Error: task cannot be empty."
+                return t("agent_empty_task", lang)
             if not _llm_cfg("mechanic").get("enabled", True):
                 return t("agent_mechanic_disabled", lang)
             job_id = await job_store.start_job(
@@ -395,52 +585,49 @@ async def dispatch(name: str, arguments: Dict) -> str:
                 role=arguments.get("role", "standard"),
                 context=arguments.get("context", ""),
                 user_id=user_id,
+                rid=arguments.get("_rid", ""),
             )
             try:
-                asyncio.create_task(get_ltm().log_agent_message(
-                    from_agent="kare", to_agent="mechanic",
-                    query=task, response=f"[delegated job_id={job_id}]",
-                    rid=arguments.get("_rid", ""), user_id=user_id,
-                ))
+                spawn(
+                    get_ltm().log_agent_message(
+                        from_agent="kare",
+                        to_agent="mechanic",
+                        query=task,
+                        response=f"[delegated job_id={job_id}]",
+                        rid=arguments.get("_rid", ""),
+                        user_id=user_id,
+                    )
+                )
             except Exception:
                 pass
-            return (
-                f"Job started. job_id={job_id}\n"
-                f"Mechanic is working in the background. "
-                f"Poll with mechanic(action='result', job_id='{job_id}'). "
-                f"You will also be notified automatically at the next conversation turn."
-            )
+            return t("agent_delegate_started", lang, job_id=job_id)
 
         if action == "result":
             job_id = arguments.get("job_id", "").strip()
             if not job_id:
-                return "Error: job_id is required."
-            data   = job_store.get_job(job_id)
-            status = data.get("status", "unknown")
-            result = data.get("result")
-            if status == "running":
-                return f"[Job {job_id[:8]}…] Still running — check again in a moment."
-            return f"[Job {job_id[:8]}…] {status.upper()}\n{result or '(no output)'}"
+                return t("agent_job_id_required", lang)
+            return _job_result_text(job_id, lang)
 
         if action == "cancel":
             job_id = arguments.get("job_id", "").strip()
             if not job_id:
-                return "Error: job_id is required."
-            data   = job_store.cancel_job(job_id)
-            status = data.get("status", "unknown")
-            return f"[Job {job_id[:8]}…] Cancellation sent. Status: {status}."
+                return t("agent_job_id_required", lang)
+            return _job_cancel_text(job_id, lang)
 
         if action == "comment":
-            job_id  = arguments.get("job_id", "").strip()
+            job_id = arguments.get("job_id", "").strip()
             comment = arguments.get("comment", "").strip()
             if not job_id or not comment:
-                return "Error: job_id and comment are required."
-            data = job_store.inject_comment(job_id, comment)
-            if "not running" in (data.get("result") or ""):
-                return f"[Job {job_id[:8]}…] Job is no longer running — comment not delivered."
-            return f"[Job {job_id[:8]}…] Comment queued. Mechanic will see it at the next tool round."
+                return t("agent_job_comment_required", lang)
+            return _job_comment_text(job_id, comment, lang)
 
-        return f"Unknown action for mechanic: '{action}'. Valid: search, delegate, result, cancel, comment."
+        return t(
+            "agent_unknown_action",
+            lang,
+            tool="mechanic",
+            action=action,
+            valid="search, delegate, result, cancel, comment",
+        )
 
     # ── search_argus ─────────────────────────────────────────────────────────
     if name in ("search_argus", "søk_i_argus"):
@@ -461,66 +648,58 @@ async def dispatch(name: str, arguments: Dict) -> str:
     if name == "deleger_til_mechanic":
         task = arguments.get("task", "").strip()
         if not task:
-            return "Error: task cannot be empty."
+            return t("agent_empty_task", lang)
         if not _llm_cfg("mechanic").get("enabled", True):
             return t("agent_mechanic_disabled", lang)
-        job_id = await job_store.start_job(task=task, user_id=user_id)
-        return (
-            f"Job started. job_id={job_id}\n"
-            f"Mechanic is working in the background. "
-            f"Poll with hent_mechanic_svar(job_id='{job_id}')."
+        job_id = await job_store.start_job(
+            task=task, user_id=user_id, rid=arguments.get("_rid", "")
         )
+        return t("agent_delegate_started", lang, job_id=job_id)
 
     if name == "hent_mechanic_svar":
         job_id = arguments.get("job_id", "").strip()
         if not job_id:
-            return "Error: job_id is required."
-        data   = job_store.get_job(job_id)
-        status = data.get("status", "unknown")
-        result = data.get("result")
-        if status == "running":
-            return f"[Job {job_id[:8]}…] Still running — check again in a moment."
-        return f"[Job {job_id[:8]}…] {status.upper()}\n{result or '(no output)'}"
+            return t("agent_job_id_required", lang)
+        return _job_result_text(job_id, lang)
 
     if name == "avbryt_mechanic":
         job_id = arguments.get("job_id", "").strip()
         if not job_id:
-            return "Error: job_id is required."
-        data   = job_store.cancel_job(job_id)
-        status = data.get("status", "unknown")
-        return f"[Job {job_id[:8]}…] Cancellation sent. Status: {status}."
+            return t("agent_job_id_required", lang)
+        return _job_cancel_text(job_id, lang)
 
     if name == "kommenter_mechanic":
-        job_id  = arguments.get("job_id", "").strip()
+        job_id = arguments.get("job_id", "").strip()
         comment = arguments.get("comment", "").strip()
         if not job_id or not comment:
-            return "Error: job_id and comment are required."
-        data = job_store.inject_comment(job_id, comment)
-        if "not running" in (data.get("result") or ""):
-            return f"[Job {job_id[:8]}…] Job is no longer running — comment not delivered."
-        return f"[Job {job_id[:8]}…] Comment queued. Mechanic will see it at the next tool round."
+            return t("agent_job_comment_required", lang)
+        return _job_comment_text(job_id, comment, lang)
 
     # ── restart_docker_container ──────────────────────────────────────────────
     if name == "restart_docker_container":
         container = arguments.get("container", "").strip()
-        _ALLOWED_CONTAINERS = ("ollama-kare", "ollama-miss_kare", "ollama-library")
-        if container not in _ALLOWED_CONTAINERS:
-            return (
-                f"[Rejected: '{container}' is not in the allowed list. "
-                f"Allowed: {', '.join(_ALLOWED_CONTAINERS)}]"
+        allowed = restartable_containers()
+        if container not in allowed:
+            return t(
+                "agent_container_rejected", lang, container=container, allowed=", ".join(allowed)
             )
         try:
-            result = _sp.run(
+            result = await asyncio.to_thread(
+                _sp.run,
                 ["docker", "restart", container],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             if result.returncode == 0:
-                return (
-                    f"Container '{container}' restarted. "
-                    "Model reload takes ~3.5 minutes before it is ready again."
-                )
-            return f"docker restart failed (rc={result.returncode}): {(result.stdout + result.stderr).strip()}"
+                return t("agent_container_restarted", lang, container=container)
+            return t(
+                "agent_container_restart_failed",
+                lang,
+                rc=result.returncode,
+                output=(result.stdout + result.stderr).strip(),
+            )
         except Exception as e:
-            return f"restart_docker_container failed: {e}"
+            return t("agent_container_restart_failed", lang, rc="—", output=e)
 
-    return f"[executor_agents] Unknown tool: '{name}'"
+    return t("agent_unknown_tool", lang, name=name)

@@ -5,39 +5,50 @@ og kjører lokal voice pipeline (TTS ack → opptak → STT → Kåre API → TT
 """
 
 import asyncio
-import io
-import json
 import logging
-import os
+import math
+import re as _re
 import subprocess
 import tempfile
 import time
 import uuid
 import wave
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-import math
-
+import aioesphomeapi
 import httpx
 import numpy as np
 import soundfile as sf
+import speaker_recognition as sr
+import uvicorn
 import yaml
-from kaare_core.voice.registry import VoiceProviderRegistry
-from kaare_core.voice.wyoming_server import WyomingServer
-from kaare_core.tools.i18n import t, get_lang, get_speech_lang
-from fastapi import FastAPI, BackgroundTasks, HTTPException, UploadFile, File
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from scipy.signal import resample_poly
-import uvicorn
+
+from kaare_core import log_buffer
+from kaare_core.background import spawn
+from kaare_core.config import ensure_config_file
+from kaare_core.service_auth import is_service_request, service_headers
+from kaare_core.tools.i18n import get_lang, get_speech_lang, t
+from kaare_core.voice.media_host import configured_media_host, in_container, media_host
+from kaare_core.voice.registry import VoiceProviderRegistry
+from kaare_core.voice.stt_models import cache_dir as stt_cache_dir
+from kaare_core.voice.stt_models import cpu_threads as stt_cpu_threads
+from kaare_core.voice.stt_models import resolve_model as resolve_stt_model
+from kaare_core.voice.tts_models import DEFAULT_VOICES, download_voice, piper_local_path, tts_lang
+from kaare_core.voice.wyoming_server import WyomingServer
 
 # ---------------------------------------------------------------------------
 # Konfig
 # ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).parent
-CONFIG_PATH = BASE_DIR / "configs" / "voice_settings.yaml"
+# configs/ like every other setting (P127) — before, services/voice/configs/ shipped the house's IP and
+# mic device and was baked into the image. A missing file is created from configs_default/.
+CONFIG_PATH = ensure_config_file(Path("/kaare/configs/voice_settings.yaml"))
 SERVICES_PATH = Path("/kaare/configs/services.yaml")
 
 with open(CONFIG_PATH) as f:
@@ -63,50 +74,84 @@ _enrollment_cfg = _main_cfg.get("voice_enrollment", {})
 ENROLLMENT_DIR = Path(_enrollment_cfg.get("dir", "/kaare/state/users"))
 SPEAKER_THRESHOLD = float(_enrollment_cfg.get("identification_threshold", 0.75))
 
-KAARE_API_URL  = cfg["kaare"]["api_url"]
-KAARE_TIMEOUT  = cfg["kaare"]["timeout"]
+# The main API's address comes from services.yaml (internal.kaare_api) — 127.0.0.1 at home,
+# http://kaare-api:8000 in Docker. Not from voice_settings.yaml, where a fixed 127.0.0.1 broke
+# login checks and voice → main agent in Docker (DT03, 2026-10-07).
+_KAARE_API_BASE = str(_svc.get("internal", {}).get("kaare_api") or "http://127.0.0.1:8000").rstrip(
+    "/"
+)
+KAARE_API_URL = f"{_KAARE_API_BASE}/api/generate"
+KAARE_TIMEOUT = cfg["kaare"]["timeout"]
 
-STT_BACKEND    = _voice_svc["stt"].get("backend", "openvino")
-STT_MODEL_DIR  = Path(_voice_svc["stt"]["model_dir"])
-STT_FW_MODEL   = _voice_svc["stt"].get("faster_whisper_model", "large-v3")
+STT_BACKEND = _voice_svc["stt"].get("backend", "openvino")
+STT_MODEL_DIR = Path(_voice_svc["stt"]["model_dir"])
+STT_FW_MODEL = resolve_stt_model(
+    _voice_svc["stt"].get("faster_whisper_model", ""), get_speech_lang()
+)
 STT_FW_COMPUTE = _voice_svc["stt"].get("faster_whisper_compute_type", "int8")
-VENV_PYTHON    = Path(_voice_svc["venv_python"])
-PIPER_BIN      = VENV_PYTHON  # called with -m piper.__main__
+STT_FW_THREADS = stt_cpu_threads(_voice_svc["stt"].get("cpu_threads", 0))
+VENV_PYTHON = Path(_voice_svc["venv_python"])
+PIPER_BIN = VENV_PYTHON  # called with -m piper.__main__
 MAX_RECORD_SEC = cfg["stt"]["max_record_seconds"]
-SILENCE_SEC    = cfg["stt"]["silence_threshold_seconds"]
-SILENCE_AMP    = cfg["stt"]["silence_amplitude_threshold"]
+SILENCE_SEC = cfg["stt"]["silence_threshold_seconds"]
+SILENCE_AMP = cfg["stt"]["silence_amplitude_threshold"]
 
-TTS_RATE       = _voice_svc["tts"]["sample_rate"]
+TTS_RATE = _voice_svc["tts"]["sample_rate"]
 
 # Multi-language TTS model map: lang code → Path. Falls back to nb.
 _tts_models_cfg: dict = _voice_svc.get("tts", {}).get("tts_models", {})
-_TTS_FALLBACK   = Path(_voice_svc["tts"]["voice"])
+_TTS_FALLBACK = Path(_voice_svc["tts"].get("voice") or "")
 _TTS_MODELS: dict[str, Path] = {}
 for _lang, _path in _tts_models_cfg.items():
-    if _path and Path(_path).exists():
+    if _path and Path(_path).is_file():
         _TTS_MODELS[_lang] = Path(_path)
     elif _lang == "nb":
         _TTS_MODELS["nb"] = _TTS_FALLBACK
 
-MIC_DEVICE     = cfg["audio"]["mic_device"]
-MIC_RATE       = cfg["audio"]["mic_sample_rate"]
-MIC_CHANNELS   = 1
-TARGET_RATE    = 16000
 
-CACHE_DIR      = BASE_DIR / cfg["fast_responses"]["cache_dir"]
-WAKE_ACK_WAV   = CACHE_DIR / "wake_ack_0.wav"
+def _ensure_household_voice() -> None:
+    """A fresh install ships no Piper voice (rule 24: must work from the defaults). If the household
+    language has no voice on disk, use — and if needed download — its default voice into
+    <models_dir>/voice/piper. Never raises: without a voice, TTS fails per request as before."""
+    global _TTS_FALLBACK
+    lang = tts_lang(get_speech_lang())
+    current = _TTS_MODELS.get(lang)
+    if current is not None and current.is_file():
+        return
+    name = DEFAULT_VOICES.get(lang)
+    if not name:
+        return
+    path = piper_local_path(name)
+    if not path.is_file():
+        try:
+            log.info("No TTS voice for '%s' — downloading default voice %s", lang, name)
+            path = download_voice(name)
+        except Exception as exc:
+            log.error("Default TTS voice download failed (%s): %s", name, exc)
+            return
+    _TTS_MODELS[lang] = path
+    if not _TTS_FALLBACK.is_file():
+        _TTS_FALLBACK = path
+    log.info("TTS voice for '%s': %s", lang, path)
 
-HTTP_PORT      = cfg["bridge"]["http_port"]
-BRIDGE_HOST    = cfg["bridge"]["serve_host"]
+
+MIC_DEVICE = cfg["audio"]["mic_device"]
+MIC_RATE = cfg["audio"]["mic_sample_rate"]
+MIC_CHANNELS = 1
+TARGET_RATE = 16000
+
+CACHE_DIR = BASE_DIR / cfg["fast_responses"]["cache_dir"]
+WAKE_ACK_WAV = CACHE_DIR / "wake_ack_0.wav"
+
+HTTP_PORT = cfg["bridge"]["http_port"]
 _duck_cfg: dict = cfg.get("duck", {})
 
-TMP_AUDIO_DIR  = Path("/tmp/kaare_tts")
+TMP_AUDIO_DIR = Path("/tmp/kaare_tts")
 TMP_AUDIO_DIR.mkdir(exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # TTS pronunciation lexicon
 # ---------------------------------------------------------------------------
-import re as _re
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -117,23 +162,23 @@ logging.basicConfig(
 )
 log = logging.getLogger("voice_bridge")
 
+_ensure_household_voice()  # needs `log`; before the first TTS request
+
 _ROUTE_LOG = Path("/kaare/logs/route_decisions.log")
+
 
 def _route_log_voice(rid: str, stage: str, **fields) -> None:
     """Write a voice pipeline event to route_decisions.log (same format as kaare_api)."""
     rec = {
-        "ts":        datetime.now(timezone.utc).isoformat(),
-        "rid":       rid,
-        "source":    "voice_bridge",
+        "ts": datetime.now(UTC).isoformat(),
+        "rid": rid,
+        "source": "voice_bridge",
         "subsystem": "routing",
-        "stage":     stage,
+        "stage": stage,
         **fields,
     }
-    try:
-        with open(_ROUTE_LOG, "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    except Exception as exc:
-        log.warning("_route_log_voice failed: %s", exc)
+    log_buffer.write(_ROUTE_LOG, rec)
+
 
 _LEXICON_PATHS: dict[str, Path] = {
     "nb": Path("/kaare/configs/tts_lexicon.yaml"),
@@ -152,7 +197,9 @@ def _load_lexicon(lang: str, path: Path) -> None:
             (_re.compile(rf"\b{_re.escape(word)}\b", _re.IGNORECASE), replacement)
             for word, replacement in subs.items()
         ]
-        log.info("TTS lexicon loaded for lang=%s: %d substitutions", lang, len(_tts_substitutions[lang]))
+        log.info(
+            "TTS lexicon loaded for lang=%s: %d substitutions", lang, len(_tts_substitutions[lang])
+        )
     except FileNotFoundError:
         _tts_substitutions[lang] = []
     except Exception as exc:
@@ -170,23 +217,43 @@ def _preprocess_tts(text: str, lang: str = "nb") -> str:
         text = pattern.sub(replacement, text)
     return text
 
+
 # ---------------------------------------------------------------------------
 # STT backend — openvino (Intel Arc GPU) or faster_whisper (universal CPU)
 # ---------------------------------------------------------------------------
 
+
 def _load_stt_backend():
     if STT_BACKEND == "faster_whisper":
-        from faster_whisper import WhisperModel
-        log.info("Laster faster-whisper model '%s' (compute_type=%s)...", STT_FW_MODEL, STT_FW_COMPUTE)
-        model = WhisperModel(STT_FW_MODEL, device="cpu", compute_type=STT_FW_COMPUTE)
-        log.info("faster-whisper klar.")
+        # PLC0415: optional dependency — only for the faster_whisper STT backend
+        from faster_whisper import WhisperModel  # noqa: PLC0415
+
+        log.info(
+            "Loading faster-whisper model '%s' (compute_type=%s, cpu_threads=%d)...",
+            STT_FW_MODEL,
+            STT_FW_COMPUTE,
+            STT_FW_THREADS,
+        )
+        # download_root = where the GUI downloads models (P126); on a volume in Docker, so a
+        # model is fetched once, not again on every container recreate.
+        model = WhisperModel(
+            STT_FW_MODEL,
+            device="cpu",
+            compute_type=STT_FW_COMPUTE,
+            cpu_threads=STT_FW_THREADS,
+            download_root=str(stt_cache_dir()),
+        )
+        log.info("faster-whisper ready.")
         return model
     # Default: openvino
-    import openvino_genai
+    # PLC0415: optional dependency — loaded only when this feature is used (rule 24)
+    import openvino_genai  # noqa: PLC0415
+
     log.info("Laster OpenVINO GenAI WhisperPipeline på Intel Arc GPU...")
     pipe = openvino_genai.WhisperPipeline(str(STT_MODEL_DIR), device="GPU")
     log.info("WhisperPipeline klar på Intel Arc GPU.")
     return pipe
+
 
 _stt_model = _load_stt_backend()
 
@@ -203,7 +270,9 @@ def _ensure_df() -> None:
     global _df_model, _df_state, DF_SR
     if _df_model is not None:
         return
-    from df.enhance import init_df
+    # PLC0415: optional dependency — loaded only when this feature is used (rule 24)
+    from df.enhance import init_df  # noqa: PLC0415
+
     log.info("Laster DeepFilterNet...")
     _df_model, _df_state, _ = init_df()
     DF_SR = _df_state.sr()
@@ -227,19 +296,25 @@ def process_audio(audio_16k: np.ndarray) -> np.ndarray:
     Input/output: 16000 Hz mono float32.
     """
     _ensure_df()
-    from df.enhance import enhance
+    # PLC0415: optional dependency — loaded only when this feature is used (rule 24)
+    from df.enhance import enhance  # noqa: PLC0415
+
     # Resample 16000 → 48000 (DeepFilterNet sitt format)
     gcd = np.gcd(DF_SR, TARGET_RATE)
     audio_48k = resample_poly(audio_16k, DF_SR // gcd, TARGET_RATE // gcd).astype(np.float32)
 
     # DeepFilterNet forventer (1, samples) tensor
-    import torch
+    # PLC0415: optional dependency — loaded only when this feature is used (rule 24)
+    import torch  # noqa: PLC0415
+
     tensor_in = torch.from_numpy(audio_48k).unsqueeze(0)
     tensor_out = enhance(_df_model, _df_state, tensor_in)
     audio_48k_clean = tensor_out.squeeze(0).numpy()
 
     # Resample tilbake 48000 → 16000
-    audio_16k_clean = resample_poly(audio_48k_clean, TARGET_RATE // gcd, DF_SR // gcd).astype(np.float32)
+    audio_16k_clean = resample_poly(audio_48k_clean, TARGET_RATE // gcd, DF_SR // gcd).astype(
+        np.float32
+    )
 
     # AGC: normaliser til målnivå basert på talesegmenter (ikke stille)
     speech_mask = np.abs(audio_16k_clean) > 0.02
@@ -262,6 +337,7 @@ _pipeline_lock = asyncio.Lock()
 # Lyd-hjelpefunksjoner
 # ---------------------------------------------------------------------------
 
+
 def play_wav(path: Path) -> None:
     """Play a WAV file via aplay (PipeWire/ALSA, handles resampling automatically)."""
     result = subprocess.run(["aplay", str(path)], capture_output=True)
@@ -278,13 +354,14 @@ def _reload_tts_models() -> None:
         models_cfg = svc.get("voice", {}).get("tts", {}).get("tts_models", {})
         new_map: dict[str, Path] = {}
         for lang, path in models_cfg.items():
-            if path and Path(path).exists():
+            if path and Path(path).is_file():
                 new_map[lang] = Path(path)
             elif lang == "nb":
                 new_map["nb"] = _TTS_FALLBACK
         if "nb" not in new_map:
             new_map["nb"] = _TTS_FALLBACK
         _TTS_MODELS = new_map
+        _ensure_household_voice()
         log.info("TTS models reloaded: %s", {k: str(v) for k, v in _TTS_MODELS.items()})
     except Exception as exc:
         log.error("Failed to reload TTS models: %s", exc)
@@ -293,7 +370,7 @@ def _reload_tts_models() -> None:
 def _resolve_tts_model(lang: str) -> Path:
     """Return the Piper model path for the given language, falling back to nb."""
     model = _TTS_MODELS.get(lang) or _TTS_MODELS.get("nb") or _TTS_FALLBACK
-    if not model.exists():
+    if not model.is_file():
         log.warning("TTS model for lang=%r not found at %s, using fallback", lang, model)
         return _TTS_FALLBACK
     return model
@@ -306,7 +383,15 @@ def speak(text: str, lang: str = "nb") -> None:
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         tmp_path = Path(tmp.name)
     try:
-        cmd = [str(VENV_PYTHON), "-m", "piper.__main__", "--model", str(model), "--output_file", str(tmp_path)]
+        cmd = [
+            str(VENV_PYTHON),
+            "-m",
+            "piper.__main__",
+            "--model",
+            str(model),
+            "--output_file",
+            str(tmp_path),
+        ]
         result = subprocess.run(cmd, input=text.encode(), capture_output=True, timeout=15)
         if result.returncode != 0:
             log.error("Piper failed: %s", result.stderr.decode())
@@ -351,10 +436,9 @@ async def play_on_esp32(wav_path: Path, node_id: str) -> None:
         log.error("Ingen host konfigurert for node %s", node_id)
         return
 
-    media_url = f"http://{BRIDGE_HOST}:{HTTP_PORT}/audio/{wav_path.name}"
+    media_url = f"{_media_base()}/{wav_path.name}"
     log.info("Kobler til ESP32 %s:%s for avspilling av %s", host, api_port, media_url)
 
-    import aioesphomeapi
     api = aioesphomeapi.APIClient(host, api_port, password=None, noise_psk=noise_psk)
     try:
         await api.connect(login=True)
@@ -400,7 +484,7 @@ async def play_on_ha_media_player(wav_path: Path, entity_id: str) -> None:
         log.error("HA credentials not configured — cannot play on '%s'", entity_id)
         return
 
-    media_url = f"http://{BRIDGE_HOST}:{HTTP_PORT}/audio/{wav_path.name}"
+    media_url = f"{_media_base()}/{wav_path.name}"
     payload = {
         "entity_id": entity_id,
         "media_content_id": media_url,
@@ -463,7 +547,7 @@ def record_audio(rid: str = "") -> np.ndarray:
     Stopper ved SILENCE_SEC stillhet eller maks MAX_RECORD_SEC.
     Returnerer mono 16kHz float32-array.
     """
-    import sounddevice as sd
+
     chunk = 2048  # samples per chunk
     silence_chunks_needed = int(SILENCE_SEC * MIC_RATE / chunk)
     max_chunks = int(MAX_RECORD_SEC * MIC_RATE / chunk)
@@ -476,10 +560,17 @@ def record_audio(rid: str = "") -> np.ndarray:
     n_chunks = 0
     stopped_by = "max_duration"
 
+    # PLC0415: optional dependency — sounddevice needs the PortAudio system library (local mic only, absent in Docker)
+    import sounddevice as sd  # noqa: PLC0415
+
     log.info("Starter opptak …")
-    with sd.InputStream(device=MIC_DEVICE, samplerate=MIC_RATE,
-                        channels=MIC_CHANNELS, dtype="float32",
-                        blocksize=chunk) as stream:
+    with sd.InputStream(
+        device=MIC_DEVICE,
+        samplerate=MIC_RATE,
+        channels=MIC_CHANNELS,
+        dtype="float32",
+        blocksize=chunk,
+    ) as stream:
         for _ in range(max_chunks):
             data, _ = stream.read(chunk)
             frames.append(data)
@@ -499,7 +590,8 @@ def record_audio(rid: str = "") -> np.ndarray:
                 silent_chunks = 0
 
     _route_log_voice(
-        rid, "stt_record_stats",
+        rid,
+        "stt_record_stats",
         stopped_by=stopped_by,
         silence_threshold=SILENCE_AMP,
         amp_min=round(amp_min, 4) if amp_min is not None else None,
@@ -511,27 +603,33 @@ def record_audio(rid: str = "") -> np.ndarray:
         return np.array([], dtype=np.float32)
 
     audio = np.concatenate(frames, axis=0)  # (N, 2)
-    mono  = audio[:, 0]                     # venstre kanal → mono
+    mono = audio[:, 0]  # venstre kanal → mono
 
     # Resample fra 44100 til 16000 Hz
     gcd = np.gcd(TARGET_RATE, MIC_RATE)
-    up  = TARGET_RATE // gcd
-    down = MIC_RATE   // gcd
+    up = TARGET_RATE // gcd
+    down = MIC_RATE // gcd
     resampled = resample_poly(mono, up, down).astype(np.float32)
 
     log.info("Opptak ferdig: %.1f s", len(resampled) / TARGET_RATE)
     return resampled
 
 
-
 _HALLUCINATIONS = {
     # Norwegian
-    "takk for at du så på.", "takk for titten.", "takk for meg.",
+    "takk for at du så på.",
+    "takk for titten.",
+    "takk for meg.",
     # English
-    "thank you for watching.", "thanks for watching!", "thanks for watching.",
-    "please subscribe.", "see you next time.", "bye.",
+    "thank you for watching.",
+    "thanks for watching!",
+    "thanks for watching.",
+    "please subscribe.",
+    "see you next time.",
+    "bye.",
     # German
-    "vielen dank fürs zuschauen.", "bis zum nächsten mal.",
+    "vielen dank fürs zuschauen.",
+    "bis zum nächsten mal.",
     "untertitelung aufgrund der amara.org-community",
 }
 
@@ -548,7 +646,9 @@ def _stt_language() -> str:
 
 
 def _transcribe_openvino(audio: np.ndarray) -> str:
-    import openvino_genai
+    # PLC0415: optional dependency — loaded only when this feature is used (rule 24)
+    import openvino_genai  # noqa: PLC0415
+
     config = openvino_genai.WhisperGenerationConfig(str(STT_MODEL_DIR / "generation_config.json"))
     config.task = "transcribe"
     config.language = f"<|{_stt_language()}|>"
@@ -587,7 +687,6 @@ def transcribe(audio: np.ndarray) -> str:
     return text
 
 
-
 async def ask_kaare(
     text: str,
     room: str = "",
@@ -610,28 +709,24 @@ async def ask_kaare(
     if resolved_user:
         payload["user_id"] = resolved_user
     context["speaker_result"] = {
-        "confirmed_by":   confirmed_by,
+        "confirmed_by": confirmed_by,
         "confirmed_user": resolved_user,
-        "best_guess":     best_guess,
-        "confidence":     round(speaker_confidence, 3),
-        "threshold":      SPEAKER_THRESHOLD,
+        "best_guess": best_guess,
+        "confidence": round(speaker_confidence, 3),
+        "threshold": SPEAKER_THRESHOLD,
     }
     payload["context"] = context
 
     async with httpx.AsyncClient(timeout=KAARE_TIMEOUT) as client:
         try:
-            resp = await client.post(KAARE_API_URL, json=payload)
+            # service token: only KTSB's own services may name the speaker (P120)
+            resp = await client.post(KAARE_API_URL, json=payload, headers=service_headers())
             resp.raise_for_status()
             data = resp.json()
             rid_received = data.get("rid", "")
             if rid_received:
                 log.info("Kåre RID: %s", rid_received)
-            answer = (
-                data.get("response")
-                or data.get("message")
-                or data.get("text")
-                or str(data)
-            )
+            answer = data.get("response") or data.get("message") or data.get("text") or str(data)
             log.info("Kåre svar: %s", answer)
             return answer
         except Exception as exc:
@@ -642,6 +737,7 @@ async def ask_kaare(
 # ---------------------------------------------------------------------------
 # Hoved voice pipeline
 # ---------------------------------------------------------------------------
+
 
 async def run_pipeline(node_id: str, room: str = "", default_user: str = "") -> None:
     """Komplett voice pipeline: ack → opptak → STT → Kåre → TTS → avspilling på ESP32."""
@@ -674,7 +770,6 @@ async def run_pipeline(node_id: str, room: str = "", default_user: str = "") -> 
     best_guess: str | None = None
     speaker_confidence = 0.0
     try:
-        import speaker_recognition as sr
         speaker_id, best_guess, speaker_confidence = await loop.run_in_executor(
             None, sr.identify, audio, ENROLLMENT_DIR, SPEAKER_THRESHOLD
         )
@@ -690,17 +785,23 @@ async def run_pipeline(node_id: str, room: str = "", default_user: str = "") -> 
         resolved_user = single_default
         confirmed_by = "default"
     else:
-        resolved_user = None
-        confirmed_by = "none"
+        resolved_user = _unidentified_identity(node_id)
+        confirmed_by = "node_trust"
     log.info(
         "Speaker resolution: confirmed_by=%s user=%s best_guess=%s confidence=%.3f",
-        confirmed_by, resolved_user, best_guess, speaker_confidence,
+        confirmed_by,
+        resolved_user,
+        best_guess,
+        speaker_confidence,
     )
-    _route_log_voice(rid, "stt_speaker",
-                     confirmed_by=confirmed_by,
-                     user=resolved_user,
-                     best_guess=best_guess,
-                     confidence=round(speaker_confidence, 3))
+    _route_log_voice(
+        rid,
+        "stt_speaker",
+        confirmed_by=confirmed_by,
+        user=resolved_user,
+        best_guess=best_guess,
+        confidence=round(speaker_confidence, 3),
+    )
 
     # 3. STT
     t_stt = time.time()
@@ -792,12 +893,26 @@ if _ha_token_path.exists():
             break
 
 
-_provider_registry = VoiceProviderRegistry(
-    bridge_host=BRIDGE_HOST,
-    bridge_port=HTTP_PORT,
-    ha_url=_HA_URL,
-    ha_token=_HA_TOKEN,
-)
+def _media_base() -> str:
+    """Base URL speakers on the LAN fetch our wav files from (GUI: voice.media_host, P127)."""
+    return f"http://{media_host()}:{HTTP_PORT}/audio"
+
+
+def _build_provider_registry() -> VoiceProviderRegistry:
+    return VoiceProviderRegistry(
+        bridge_host=media_host(),
+        bridge_port=HTTP_PORT,
+        ha_url=_HA_URL,
+        ha_token=_HA_TOKEN,
+    )
+
+
+if in_container() and not configured_media_host():
+    log.warning(
+        "No LAN address for speakers set — speakers on the LAN cannot fetch audio from inside a "
+        "container. Set it in Settings → LLM → Piper (LAN address for speakers)."
+    )
+_provider_registry = _build_provider_registry()
 
 
 def _room_for_node(node_id: str) -> str:
@@ -817,8 +932,79 @@ def _single_default_user(node_id: str) -> str | None:
     return val
 
 
+def _unidentified_identity(node_id: str) -> str:
+    """Who an unidentified speaker is at this node (P120): an indoor node → global_user (most
+    likely a household member), an outdoor node (`trust: outdoor`) or a node that is not in
+    nodes.yaml → unknown_user (untrusted). Default trust is indoor."""
+    node = _nodes.get(node_id)
+    if node is None:
+        return "unknown_user"
+    return (
+        "unknown_user" if str(node.get("trust", "indoor")).lower() == "outdoor" else "global_user"
+    )
+
+
+def _node_for_host(host: str) -> str | None:
+    """nodes.yaml node whose `host` is this IP (Wyoming satellites are known only by peer IP)."""
+    for node_id, node in _nodes.items():
+        if str(node.get("host", "")).strip() == host:
+            return node_id
+    return None
+
+
+# ── Access (P120 Phase 3) ─────────────────────────────────────────────────────
+# SERVICE: only KTSB's own services (service token) — speakers, voice profiles, reloads.
+# USER: a logged-in GUI user (browser mic / TTS) — the token is checked with the main API.
+# NODE: a node may start only its own microphone (request from its `host` in nodes.yaml),
+#       or a KTSB service may. /audio/{file} and /health stay open (random file names).
+_USER_TOKEN_TTL = 60.0
+_user_token_cache: dict[str, float] = {}
+
+
+def _require_service(request: Request) -> None:
+    if not is_service_request(request.headers):
+        raise HTTPException(status_code=401, detail="Service token required.")
+
+
+async def _require_user(request: Request) -> None:
+    if is_service_request(request.headers):
+        return
+    auth = request.headers.get("authorization") or ""
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Login required.")
+    now = time.monotonic()
+    if _user_token_cache.get(auth, 0) > now:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(f"{_KAARE_API_BASE}/api/auth/me", headers={"Authorization": auth})
+    except Exception as exc:
+        log.warning("Login check against the API failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Login check unavailable.") from exc
+    if r.status_code != 200:
+        raise HTTPException(status_code=401, detail="Login required.")
+    if len(_user_token_cache) > 500:
+        _user_token_cache.clear()
+    _user_token_cache[auth] = now + _USER_TOKEN_TTL
+
+
+def _node_or_service(node_id: str, request: Request) -> None:
+    if is_service_request(request.headers):
+        return
+    host = str(_nodes.get(node_id, {}).get("host", "")).strip()
+    client = request.client.host if request.client else ""
+    if not host or client != host:
+        log.warning(
+            "Mic trigger for node %s refused from %s (not the node's own host)", node_id, client
+        )
+        raise HTTPException(
+            status_code=403, detail="Only the node itself may start its microphone."
+        )
+
+
 @app.post("/wakeword/{node_id}", status_code=202)
-async def wakeword_trigger(node_id: str, background_tasks: BackgroundTasks):
+async def wakeword_trigger(node_id: str, background_tasks: BackgroundTasks, http: Request):
+    _node_or_service(node_id, http)
     """Trigger fra wakeword-deteksjon på en node."""
     log.info("Wakeword-trigger fra node: %s", node_id)
     background_tasks.add_task(
@@ -828,7 +1014,8 @@ async def wakeword_trigger(node_id: str, background_tasks: BackgroundTasks):
 
 
 @app.post("/button/{node_id}", status_code=202)
-async def button_trigger(node_id: str, background_tasks: BackgroundTasks):
+async def button_trigger(node_id: str, background_tasks: BackgroundTasks, http: Request):
+    _node_or_service(node_id, http)
     """Trigger fra knapptrykk på en node."""
     log.info("Knapp-trigger fra node: %s", node_id)
     background_tasks.add_task(
@@ -854,6 +1041,7 @@ async def health():
 # ---------------------------------------------------------------------------
 # Announce endpoint — called by Kåre's 'announce' tool
 # ---------------------------------------------------------------------------
+
 
 class SpeakRequest(BaseModel):
     text: str
@@ -912,7 +1100,7 @@ def _resolve_targets(target: str) -> list[str]:
                 selected.extend(audio_only if audio_only else audio_nodes)
 
         selected.extend(n for n in roomless if _has_audio(_nodes[n]))
-        return ["local"] + selected
+        return ["local", *selected]
 
     # Normalize target (spaces = underscores)
     tn = _norm(t)
@@ -929,7 +1117,8 @@ def _resolve_targets(target: str) -> list[str]:
 
     # Exact room name lookup
     room_nodes = [
-        nid for nid, ncfg in _nodes.items()
+        nid
+        for nid, ncfg in _nodes.items()
         if _norm(ncfg.get("room", "")) == tn and ncfg.get("enabled", True)
     ]
     if room_nodes:
@@ -943,9 +1132,9 @@ def _resolve_targets(target: str) -> list[str]:
 
     # Substring fallback — "alex" matches "soverom_alex"
     substring_nodes = [
-        nid for nid, ncfg in _nodes.items()
-        if ncfg.get("enabled", True)
-        and (tn in _norm(nid) or tn in _norm(ncfg.get("room", "")))
+        nid
+        for nid, ncfg in _nodes.items()
+        if ncfg.get("enabled", True) and (tn in _norm(nid) or tn in _norm(ncfg.get("room", "")))
     ]
     if substring_nodes:
         audio_nodes = [n for n in substring_nodes if _has_audio(_nodes[n])]
@@ -961,7 +1150,9 @@ def _resolve_targets(target: str) -> list[str]:
     return ["local"]
 
 
-async def _speak_background(text: str, target: str, volume: float | None = None, lang: str = "nb") -> None:
+async def _speak_background(
+    text: str, target: str, volume: float | None = None, lang: str = "nb"
+) -> None:
     """Generate TTS audio and play it on the requested target(s)."""
     loop = asyncio.get_event_loop()
     targets = _resolve_targets(target)
@@ -1008,7 +1199,9 @@ async def _speak_background(text: str, target: str, volume: float | None = None,
             if provider:
                 tasks.append(provider.speak(wav_path, node_cfg))
             else:
-                log.warning("Ingen provider for node-type '%s', hopper over node '%s'", node_type, t)
+                log.warning(
+                    "Ingen provider for node-type '%s', hopper over node '%s'", node_type, t
+                )
 
     t_play_start = time.monotonic()
     await asyncio.gather(*tasks, return_exceptions=True)
@@ -1031,24 +1224,33 @@ async def _speak_background(text: str, target: str, volume: float | None = None,
 
 
 @app.post("/speak", status_code=202)
-async def speak_endpoint(request: SpeakRequest, background_tasks: BackgroundTasks):
+async def speak_endpoint(
+    request: SpeakRequest, background_tasks: BackgroundTasks, _s: None = Depends(_require_service)
+):
     """Trigger speech output. Returns immediately; playback runs in background."""
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="text must not be empty")
-    log.info("Speak request: target=%r lang=%s text=%r...", request.target, request.lang, request.text[:60])
-    background_tasks.add_task(_speak_background, request.text, request.target, request.volume, request.lang)
+    log.info(
+        "Speak request: target=%r lang=%s text=%r...",
+        request.target,
+        request.lang,
+        request.text[:60],
+    )
+    background_tasks.add_task(
+        _speak_background, request.text, request.target, request.volume, request.lang
+    )
     return {"status": "ok", "target": request.target}
 
 
 @app.post("/reload_tts_models", status_code=200)
-async def reload_tts_models_endpoint():
+async def reload_tts_models_endpoint(_s: None = Depends(_require_service)):
     """Hot-reload TTS model map from services.yaml without restarting the bridge."""
     _reload_tts_models()
     return {"ok": True, "models": {k: str(v) for k, v in _TTS_MODELS.items()}}
 
 
 @app.get("/display_nodes")
-async def get_display_nodes_endpoint():
+async def get_display_nodes_endpoint(_s: None = Depends(_require_service)):
     """Return all enabled nodes that have has_display=true."""
     return [
         {"id": nid, **ncfg}
@@ -1057,8 +1259,17 @@ async def get_display_nodes_endpoint():
     ]
 
 
+@app.post("/reload_media_host", status_code=200)
+async def reload_media_host_endpoint(_s: None = Depends(_require_service)):
+    """Rebuild the speaker providers with the LAN address from services.yaml (GUI change, P127)."""
+    global _provider_registry
+    _provider_registry = _build_provider_registry()
+    log.info("Media host reloaded: %s", _media_base())
+    return {"ok": True, "media_base": _media_base()}
+
+
 @app.post("/reload_nodes", status_code=200)
-async def reload_nodes_endpoint():
+async def reload_nodes_endpoint(_s: None = Depends(_require_service)):
     """Hot-reload nodes.yaml without restarting the bridge."""
     global _nodes
     nodes_path = Path("/kaare/configs/nodes.yaml")
@@ -1075,12 +1286,13 @@ async def reload_nodes_endpoint():
 # Browser voice endpoints — STT (transcribe) and TTS file for frontend mic button
 # ---------------------------------------------------------------------------
 
+
 class TtsFileRequest(BaseModel):
     text: str
 
 
 @app.post("/transcribe")
-async def transcribe_endpoint(file: UploadFile = File(...)):
+async def transcribe_endpoint(file: UploadFile = File(...), _u: None = Depends(_require_user)):
     """Receive WebM/Opus audio from browser MediaRecorder, return Whisper transcription."""
     if not _STT_ENABLED:
         return {"text": "", "disabled": True}
@@ -1092,13 +1304,19 @@ async def transcribe_endpoint(file: UploadFile = File(...)):
         webm_path.write_bytes(audio_bytes)
 
         # Convert browser WebM/Opus → 16 kHz mono WAV that Whisper can read
-        conv = subprocess.run(
+        conv = await asyncio.to_thread(
+            subprocess.run,
             [
-                "/usr/bin/ffmpeg", "-y",
-                "-i", str(webm_path),
-                "-ar", "16000",
-                "-ac", "1",
-                "-f", "wav",
+                "/usr/bin/ffmpeg",
+                "-y",
+                "-i",
+                str(webm_path),
+                "-ar",
+                "16000",
+                "-ac",
+                "1",
+                "-f",
+                "wav",
                 str(wav_path),
             ],
             capture_output=True,
@@ -1122,20 +1340,26 @@ async def transcribe_endpoint(file: UploadFile = File(...)):
 
 
 @app.post("/tts_file")
-async def tts_file_endpoint(request: TtsFileRequest, background_tasks: BackgroundTasks):
+async def tts_file_endpoint(
+    request: TtsFileRequest, background_tasks: BackgroundTasks, _u: None = Depends(_require_user)
+):
     """Generate TTS WAV for the given text and return a URL the browser can play."""
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="text must not be empty")
 
     loop = asyncio.get_running_loop()
     try:
-        wav_path = await loop.run_in_executor(None, generate_speech_wav, request.text, get_speech_lang())
+        wav_path = await loop.run_in_executor(
+            None, generate_speech_wav, request.text, get_speech_lang()
+        )
     except Exception as exc:
         log.error("TTS generation failed: %s", exc)
-        raise HTTPException(status_code=500, detail="TTS generation failed")
+        raise HTTPException(status_code=500, detail="TTS generation failed") from exc
 
-    url = f"http://{BRIDGE_HOST}:{HTTP_PORT}/audio/{wav_path.name}"
-    log.info("Browser TTS file ready: %s", url)
+    # A path, not a URL: the browser prefixes its own route to the voice service (same origin /voice
+    # over HTTPS, :8011 over HTTP) — the LAN address for speakers is not the browser's business (P127).
+    path = f"/audio/{wav_path.name}"
+    log.info("Browser TTS file ready: %s", path)
 
     async def _cleanup_after_delay():
         await asyncio.sleep(60)
@@ -1143,20 +1367,22 @@ async def tts_file_endpoint(request: TtsFileRequest, background_tasks: Backgroun
         log.debug("Deleted browser TTS file: %s", wav_path)
 
     background_tasks.add_task(_cleanup_after_delay)
-    return {"url": url}
+    return {"path": path}
 
 
 # ---------------------------------------------------------------------------
 # Speaker enrollment endpoints
 # ---------------------------------------------------------------------------
 
+
 @app.post("/speaker/enroll/{username}")
-async def enroll_speaker(username: str, file: UploadFile = File(...)):
+async def enroll_speaker(
+    username: str, file: UploadFile = File(...), _s: None = Depends(_require_service)
+):
     """
     Receive a WAV file and save a voiceprint for the given user.
     Called by kaare_api proxy — admin only at the API level.
     """
-    import speaker_recognition as sr
 
     audio_bytes = await file.read()
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
@@ -1169,7 +1395,6 @@ async def enroll_speaker(username: str, file: UploadFile = File(...)):
 
     # Resample to 16 kHz if needed
     if samplerate != 16000:
-        from scipy.signal import resample_poly
         gcd = np.gcd(16000, samplerate)
         audio = resample_poly(audio, 16000 // gcd, samplerate // gcd).astype(np.float32)
 
@@ -1186,30 +1411,31 @@ async def enroll_speaker(username: str, file: UploadFile = File(...)):
         await loop.run_in_executor(None, sr.save_voiceprint, username, embedding, ENROLLMENT_DIR)
     except Exception as exc:
         log.error("Enrollment failed for '%s': %s", username, exc)
-        raise HTTPException(status_code=500, detail=f"Enrollment failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Enrollment failed: {exc}") from exc
 
     log.info("Enrolled speaker: %s (%d samples)", username, len(audio))
     return {"ok": True, "username": username, "samples": len(audio)}
 
 
 @app.delete("/speaker/enroll/{username}")
-async def delete_speaker(username: str):
+async def delete_speaker(username: str, _s: None = Depends(_require_service)):
     """Remove stored voiceprint for a user."""
-    import speaker_recognition as sr
+
     removed = sr.delete_voiceprint(username, ENROLLMENT_DIR)
     return {"ok": True, "removed": removed}
 
 
 @app.get("/speaker/status/{username}")
-async def speaker_status(username: str):
+async def speaker_status(username: str, _s: None = Depends(_require_service)):
     """Check whether a voiceprint exists for a user."""
-    import speaker_recognition as sr
+
     return {"username": username, "has_voiceprint": sr.has_voiceprint(username, ENROLLMENT_DIR)}
 
 
 # ---------------------------------------------------------------------------
 # Wyoming server — startup
 # ---------------------------------------------------------------------------
+
 
 async def _wyoming_stt(audio_bytes: bytes, rate: int) -> str:
     """STT-callback for Wyoming server: rå PCM bytes → transkript."""
@@ -1222,8 +1448,24 @@ async def _wyoming_stt(audio_bytes: bytes, rate: int) -> str:
     return await loop.run_in_executor(None, transcribe, audio_f32)
 
 
-async def _wyoming_ask_kaare(text: str, room: str) -> str:
-    return await ask_kaare(text, room=room)
+async def _wyoming_ask_kaare(text: str, peer_host: str) -> str:
+    """Wyoming satellites send no identity: the node is found by its IP, then its single
+    default user or its trust level decides who speaks (P120). An unknown satellite is
+    treated as unknown_user until it is added under Nodes."""
+    node_id = _node_for_host(peer_host)
+    if node_id is None:
+        log.warning(
+            "Wyoming: satellite %s is not in nodes.yaml — treated as unknown_user", peer_host
+        )
+        return await ask_kaare(text, resolved_user="unknown_user", confirmed_by="unknown_node")
+    single = _single_default_user(node_id)
+    return await ask_kaare(
+        text,
+        room=_room_for_node(node_id),
+        resolved_user=single or _unidentified_identity(node_id),
+        confirmed_by="default" if single else "node_trust",
+        node_id=node_id,
+    )
 
 
 @app.on_event("startup")
@@ -1243,7 +1485,7 @@ async def _startup_wyoming() -> None:
         kaare_fn=_wyoming_ask_kaare,
         tts_fn=generate_speech_wav,
     )
-    asyncio.create_task(server.start())
+    spawn(server.start())
 
 
 # ---------------------------------------------------------------------------

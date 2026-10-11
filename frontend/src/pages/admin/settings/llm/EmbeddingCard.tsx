@@ -7,7 +7,8 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CheckCircle2, XCircle, Loader2, RotateCcw, ChevronDown, ChevronUp } from "lucide-react";
 import { apiPutEmbeddingBackend, apiRestartService } from "@/services/api";
-import { useSaveState, FieldRow, SaveFeedback, ExpertOnly } from "../shared";
+import { FieldRow, SaveFeedback, ExpertOnly } from "../shared";
+import { useSaveState } from "../useSaveState";
 
 export type EmbServicesData = {
   device: string;
@@ -99,7 +100,7 @@ export function EmbeddingCard({ data, onSaved }: { data: EmbServicesData; onSave
         <CardContent className="space-y-5 pt-0">
         <ExpertOnly><>
           <div className="rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs text-blue-300/90">
-            {t("settings.llm.emb_info_box", { model: "BAAI/bge-m3", path: "/mnt/wiki/bge-m3-ov/" })}
+            {t("settings.llm.emb_info_box", { model: "BAAI/bge-m3", path: modelPath || "/kaare/models/bge-m3" })}
           </div>
 
           <FieldRow label="Backend" hint={t("settings.llm.emb_backend_hint")}>
@@ -159,7 +160,7 @@ export function EmbeddingCard({ data, onSaved }: { data: EmbServicesData; onSave
               <input
                 value={modelPath}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setModelPath(e.target.value)}
-                placeholder="/mnt/wiki/bge-m3-ov"
+                placeholder="/kaare/models/bge-m3"
                 className="flex h-9 w-64 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
               />
             </FieldRow>

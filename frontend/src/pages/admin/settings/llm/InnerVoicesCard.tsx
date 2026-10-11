@@ -7,7 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChevronDown, ChevronUp, Copy, RefreshCw } from "lucide-react";
 import { apiPutInnerVoices, type InnerVoicesData } from "@/services/api";
-import { SaveFeedback, useSaveState, ExpertOnly } from "../shared";
+import { SaveFeedback, ExpertOnly } from "../shared";
+import { useSaveState } from "../useSaveState";
+import { copyText } from "@/lib/clipboard";
 
 const PROVIDERS = ["openvino", "mlx", "cpu", "remote"] as const;
 
@@ -117,11 +119,11 @@ export function InnerVoicesCard({ data, onSaved }: { data: InnerVoicesData; onSa
     } catch { ss.error(); }
   };
 
-  const copyToken = () => {
-    navigator.clipboard.writeText(pushToken).then(() => {
+  const copyToken = async () => {
+    if (await copyText(pushToken)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    });
+    }
   };
 
   return (

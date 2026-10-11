@@ -1,0 +1,13 @@
+# BGE-M3 embedding service — OpenVINO runtime (device NPU or CPU). P132: the slim runtime.
+# No torch, transformers or optimum: tokenizers reads tokenizer.json directly, and the sparse head is
+# read from sparse_linear.npz (created once from sparse_linear.pt). The torch backend (device: torch,
+# e.g. the Docker image) uses requirements.txt instead.
+# Model-format-sensitive packages are pinned to the versions the stored vectors were made with.
+openvino==2026.1.0
+tokenizers==0.22.2
+numpy==2.4.4
+fastapi>=0.115.0
+uvicorn>=0.30.0
+pydantic>=2.5.0
+pyyaml>=6.0
+ruamel.yaml>=0.19.1  # config store: comment-preserving YAML writes (P134)

@@ -1,2 +1,2 @@
-export const BASE = `http://${window.location.hostname}:8000`;
+export { API_BASE as BASE } from "@/services/api";
 export const token = () => sessionStorage.getItem("kaare_token");

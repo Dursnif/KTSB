@@ -15,20 +15,22 @@ remote Docker test rig over the LAN — to replace manual click-testing:
 Never navigates away from what it's told to test and never resets/wipes
 anything — read-only against whatever state the target is already in.
 
-Usage:
-  PYTHONPATH=/kaare /kaare/venv/bin/python scripts/e2e_gui_test.py \\
-      --base-url http://192.168.0.194:5173 --username admin --pin ...
+One-time setup — Playwright is a dev dependency (requirements-dev.txt), not part of
+KTSB's runtime requirements.txt, so give it its own Python environment:
+  python3 -m venv <e2e-venv>
+  <e2e-venv>/bin/pip install -r requirements-dev.txt
+  <e2e-venv>/bin/python -m playwright install chromium
+
+Usage (<e2e-venv>/bin/python below):
+  python scripts/e2e_gui_test.py \\
+      --base-url http://192.168.0.x:5173 --username admin --pin ...
 
   # First login on a brand new, never-onboarded install (forces a PIN change):
-  PYTHONPATH=/kaare /kaare/venv/bin/python scripts/e2e_gui_test.py \\
-      --base-url http://192.168.0.194:5173 --username admin --pin 1234 --new-pin ...
+  python scripts/e2e_gui_test.py \\
+      --base-url http://192.168.0.x:5173 --username admin --pin 1234 --new-pin ...
 
   # Credentials can also come from the environment instead of argv:
-  KAARE_TEST_PIN=... /kaare/venv/bin/python scripts/e2e_gui_test.py --base-url ... --username admin
-
-One-time setup (already done on AI-PC's /kaare/venv):
-  /kaare/venv/bin/pip install playwright
-  /kaare/venv/bin/python -m playwright install chromium
+  KAARE_TEST_PIN=... python scripts/e2e_gui_test.py --base-url ... --username admin
 
 ⚠️  The onboarding-wizard walkthrough (--skip-onboarding not set) is built by
     reading the React source (Onboarding.tsx), not live-verified end-to-end —
@@ -46,10 +48,16 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+from playwright.sync_api import TimeoutError as PWTimeout
+from playwright.sync_api import sync_playwright
 
 GREEN, RED, YELLOW, CYAN, BOLD, RESET = (
-    "\033[92m", "\033[91m", "\033[93m", "\033[96m", "\033[1m", "\033[0m",
+    "\033[92m",
+    "\033[91m",
+    "\033[93m",
+    "\033[96m",
+    "\033[1m",
+    "\033[0m",
 )
 
 
@@ -70,20 +78,21 @@ def head(msg: str) -> str:
 
 
 ADMIN_PAGES = {
-    "dashboard":       "/admin",
-    "users":           "/admin/users",
-    "system":          "/admin/system",
-    "agent-messages":  "/admin/agent-messages",
-    "reflections":     "/admin/reflections",
-    "tools":           "/admin/tools",
-    "aliases":         "/admin/aliases",
-    "nodes":           "/admin/nodes",
-    "security":        "/admin/security",
-    "settings":        "/admin/settings",
+    "dashboard": "/admin",
+    "users": "/admin/users",
+    "system": "/admin/system",
+    "agent-messages": "/admin/agent-messages",
+    "reflections": "/admin/reflections",
+    "tools": "/admin/tools",
+    "aliases": "/admin/aliases",
+    "nodes": "/admin/nodes",
+    "security": "/admin/security",
+    "settings": "/admin/settings",
 }
 
 
 # ── Login (incl. forced first-login PIN change) ─────────────────────────────
+
 
 def do_login(page, base_url: str, username: str, pin: str, new_pin: str | None) -> str:
     """Returns one of: 'onboarding', 'admin', 'must_change_pin_no_new_pin',
@@ -119,6 +128,7 @@ def do_login(page, base_url: str, username: str, pin: str, new_pin: str | None) 
 
 # ── Onboarding wizard (unverified live — see module docstring) ──────────────
 
+
 def walk_onboarding(page, base_url: str) -> dict:
     result = {"ok": True, "steps": [], "created_test_user": None}
 
@@ -136,7 +146,9 @@ def walk_onboarding(page, base_url: str) -> dict:
     # stable, no bracket-syntax to escape) — scope everything to it instead.
     content = page.locator(".border-border.rounded-xl.p-6")
 
-    def wait_for_signature(expected_buttons: int, expected_inputs: int, timeout_s: float = 6.0) -> bool:
+    def wait_for_signature(
+        expected_buttons: int, expected_inputs: int, timeout_s: float = 6.0
+    ) -> bool:
         """Poll until the content panel's button/input counts match the next
         step's expected shape, or timeout. Real verification instead of a
         fixed sleep-and-hope — a wrong click (e.g. re-clicking a preset
@@ -144,7 +156,10 @@ def walk_onboarding(page, base_url: str) -> dict:
         this catches immediately instead of silently reporting 'ok'."""
         deadline = time.time() + timeout_s
         while time.time() < deadline:
-            if content.locator("button").count() == expected_buttons and content.locator("input").count() == expected_inputs:
+            if (
+                content.locator("button").count() == expected_buttons
+                and content.locator("input").count() == expected_inputs
+            ):
                 return True
             page.wait_for_timeout(150)
         return False
@@ -180,7 +195,7 @@ def walk_onboarding(page, base_url: str) -> dict:
 
         # Step 2 — Distribusjon: 4 buttons = 3 presets + submit (index 3, NOT 0).
         content.locator(".grid > button").nth(1).click()  # "medium" preset
-        content.get_by_role("button").nth(3).click()      # submit — after the 3 presets
+        content.get_by_role("button").nth(3).click()  # submit — after the 3 presets
         if not wait_for_signature(expected_buttons=4, expected_inputs=0):
             step_fail("distribusjon", f"didn't reach 'llm' step. Now: {describe_content()}")
             return result
@@ -218,6 +233,7 @@ def walk_onboarding(page, base_url: str) -> dict:
 
 # ── Admin page sweep ─────────────────────────────────────────────────────────
 
+
 def sweep_admin_pages(page, base_url: str, shots_dir: Path) -> list[dict]:
     results = []
     for key, path in ADMIN_PAGES.items():
@@ -245,7 +261,9 @@ def sweep_admin_pages(page, base_url: str, shots_dir: Path) -> list[dict]:
             landed_elsewhere = path not in page.url
             passed = not page_errors and not bad_responses and not landed_elsewhere
             entry = {
-                "page": key, "path": path, "ok": passed,
+                "page": key,
+                "path": path,
+                "ok": passed,
                 "console_errors": console_errors,
                 "page_errors": page_errors,
                 "bad_responses": bad_responses,
@@ -262,12 +280,18 @@ def sweep_admin_pages(page, base_url: str, shots_dir: Path) -> list[dict]:
                 page.screenshot(path=str(shot))
             except Exception:
                 shot = None
-            results.append({
-                "page": key, "path": path, "ok": False,
-                "console_errors": console_errors, "page_errors": page_errors,
-                "bad_responses": bad_responses, "error": f"timeout: {e}",
-                "screenshot": str(shot) if shot else None,
-            })
+            results.append(
+                {
+                    "page": key,
+                    "path": path,
+                    "ok": False,
+                    "console_errors": console_errors,
+                    "page_errors": page_errors,
+                    "bad_responses": bad_responses,
+                    "error": f"timeout: {e}",
+                    "screenshot": str(shot) if shot else None,
+                }
+            )
         finally:
             page.remove_listener("console", on_console)
             page.remove_listener("pageerror", on_pageerror)
@@ -277,15 +301,23 @@ def sweep_admin_pages(page, base_url: str, shots_dir: Path) -> list[dict]:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+
 def main():
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p.add_argument("--base-url", default="http://localhost:5173")
     p.add_argument("--username", default="admin")
     p.add_argument("--pin", default=os.environ.get("KAARE_TEST_PIN"))
     p.add_argument("--new-pin", default=os.environ.get("KAARE_TEST_NEW_PIN"))
-    p.add_argument("--skip-onboarding", action="store_true",
-                    help="Never attempt the onboarding wizard, even if the target lands there.")
-    p.add_argument("--headed", action="store_true", help="Show the browser window (default: headless).")
+    p.add_argument(
+        "--skip-onboarding",
+        action="store_true",
+        help="Never attempt the onboarding wizard, even if the target lands there.",
+    )
+    p.add_argument(
+        "--headed", action="store_true", help="Show the browser window (default: headless)."
+    )
     args = p.parse_args()
 
     if not args.pin:
@@ -312,7 +344,11 @@ def main():
             _write_report(run_dir, report)
             sys.exit(1)
         if state == "must_change_pin_no_new_pin":
-            print(err("Target is on the forced first-login PIN-change screen. Re-run with --new-pin to set one."))
+            print(
+                err(
+                    "Target is on the forced first-login PIN-change screen. Re-run with --new-pin to set one."
+                )
+            )
             browser.close()
             _write_report(run_dir, report)
             sys.exit(1)
@@ -327,7 +363,11 @@ def main():
 
         if state == "onboarding":
             if args.skip_onboarding:
-                print(warn("Target is unonboarded and --skip-onboarding is set. Nothing more to test."))
+                print(
+                    warn(
+                        "Target is unonboarded and --skip-onboarding is set. Nothing more to test."
+                    )
+                )
                 browser.close()
                 _write_report(run_dir, report)
                 sys.exit(0)
@@ -338,7 +378,11 @@ def main():
                 print(ok(s["step"]) if s["ok"] else err(f"{s['step']}: {s.get('reason')}"))
             if onb.get("created_test_user"):
                 u = onb["created_test_user"]
-                print(warn(f"Created test user '{u['username']}' (PIN {u['pin']}) — delete it via Admin → Users if not wanted."))
+                print(
+                    warn(
+                        f"Created test user '{u['username']}' (PIN {u['pin']}) — delete it via Admin → Users if not wanted."
+                    )
+                )
             if not onb["ok"]:
                 print(err("Onboarding wizard did not complete — stopping before the admin sweep."))
                 browser.close()
@@ -353,9 +397,11 @@ def main():
             if r["ok"]:
                 print(ok(r["page"]))
             else:
-                detail = r.get("error") or "; ".join(
-                    r["console_errors"] + r["page_errors"] + r["bad_responses"]
-                ) or f"landed on {r.get('landed_on')}"
+                detail = (
+                    r.get("error")
+                    or "; ".join(r["console_errors"] + r["page_errors"] + r["bad_responses"])
+                    or f"landed on {r.get('landed_on')}"
+                )
                 print(err(f"{r['page']}: {detail}"))
 
         browser.close()

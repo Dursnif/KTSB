@@ -12,7 +12,8 @@ import {
   type LlmRoleConfig,
 } from "@/services/api";
 import { PROVIDER_OPTIONS, LLM_ROLE_LABELS } from "./llm-constants";
-import { useSaveState, FieldRow, SaveFeedback, TestButton, MaskedInput, ExpertOnly } from "../shared";
+import { FieldRow, SaveFeedback, TestButton, MaskedInput, ExpertOnly } from "../shared";
+import { useSaveState } from "../useSaveState";
 
 export function ImageRoleCard({ role, config, onSaved }: { role: string; config: LlmRoleConfig; onSaved: () => void }) {
   const { t } = useTranslation();
