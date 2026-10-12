@@ -1075,16 +1075,32 @@ def load_latest_daily_summary(user_id: str = USER_GLOBAL, allow_system_key: bool
         conn.close()
 
 
-def load_recent_daily_summaries(days: int = 3, allow_system_key: bool = False) -> list[dict]:
-    """Return the last N daily summaries as list of {date, summary, interaction_count}."""
+def load_recent_daily_summaries(
+    days: int = 3, allow_system_key: bool = False, user_id: str | None = None
+) -> list[dict]:
+    """Return the last N daily summaries as list of {date, summary, interaction_count}.
+
+    With user_id, only that user's rows are returned. Callers that build context for one
+    user (the reflection meeting) must pass it — otherwise another user's summaries, decrypted
+    with the system key, end up in that user's meeting.
+    """
     conn = _get_conn()
     try:
-        rows = conn.execute(
-            """SELECT date, user_id, summary, interaction_count
-               FROM stm_daily_summary
-               ORDER BY date DESC LIMIT ?""",
-            (days,),
-        ).fetchall()
+        if user_id is not None:
+            rows = conn.execute(
+                """SELECT date, user_id, summary, interaction_count
+                   FROM stm_daily_summary
+                   WHERE user_id = ?
+                   ORDER BY date DESC LIMIT ?""",
+                (user_id, days),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT date, user_id, summary, interaction_count
+                   FROM stm_daily_summary
+                   ORDER BY date DESC LIMIT ?""",
+                (days,),
+            ).fetchall()
         return [
             {
                 "date": r[0],

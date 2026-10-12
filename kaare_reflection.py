@@ -299,10 +299,12 @@ def _get_recent_interactions(
         return t("refl_act_interactions_unavailable", lang)
 
 
-def _get_stm_daily_summaries(days: int = 3, lang: str | None = None) -> str:
-    """Fetch the last N daily STM summaries — compressed snapshots of recent days."""
+def _get_stm_daily_summaries(user_id: str, days: int = 3, lang: str | None = None) -> str:
+    """Fetch this user's last N daily STM summaries — compressed snapshots of recent days."""
     try:
-        entries = load_recent_daily_summaries(days=days, allow_system_key=True)
+        entries = load_recent_daily_summaries(
+            days=days, allow_system_key=True, user_id=user_id
+        )
         if not entries:
             return ""
         lines = []
@@ -326,7 +328,7 @@ def _get_user_context(user_id: str) -> tuple[str, str, str, str]:
     profile_text = yaml.dump(profile, allow_unicode=True, default_flow_style=False, sort_keys=False)
     observations_text = get_recent_observations(user_id, days=14, allow_system_key=True)
     interactions_text = _get_recent_interactions(n=5, user_id=user_id)
-    stm_text = _get_stm_daily_summaries(days=3)
+    stm_text = _get_stm_daily_summaries(user_id, days=3)
     return profile_text, observations_text, interactions_text, stm_text
 
 
@@ -438,7 +440,7 @@ async def _execute_leder_tool(name: str, arguments: dict) -> str:
             lang = _get_kare_language_r()
             interactions = _get_recent_interactions(n=10, user_id=_active_user_id, lang=lang)
             observations = get_recent_observations(_active_user_id, days=7, allow_system_key=True)
-            stm_summaries = _get_stm_daily_summaries(days=3, lang=lang)
+            stm_summaries = _get_stm_daily_summaries(_active_user_id, days=3, lang=lang)
             stm_section = (
                 f"\n\n{t('refl_act_stm_header', lang)}\n{stm_summaries}" if stm_summaries else ""
             )
