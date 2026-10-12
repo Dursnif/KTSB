@@ -2,7 +2,8 @@ name: Build and push Docker images
 
 on:
   push:
-    branches: [main]
+    # Only tags build: a release tag (vX.Y.Z) or a test tag (vX.Y.Z-rc1). A main push has no image tag to push
+    # since only release tags set :latest (v1.10.2: the main run failed with nothing to tag).
     tags: ["v*"]
   workflow_dispatch:
 
