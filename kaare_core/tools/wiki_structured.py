@@ -5,7 +5,7 @@ The prose in Qdrant carries a marker `[se liste: <label> #<ordinal>]` (en: `[see
 where a table or list stood; the rows live in one SQLite table `wiki_collections` keyed by
 `(article_id, ordinal)`. This module is the rigid, deterministic half of Miss Library:
 marker → row lookup → text where EVERY row carries its table's name (Option B, decided by
-Stian 2026-09-22), so two adjacent tables can never be read as one (P110 U15).
+2026-09-22), so two adjacent tables can never be read as one (P110 U15).
 
 Always article-first: there is no search over table content on its own (data-model fact).
 The database is a static file, opened read-only + immutable (no -wal/-shm next to it).
@@ -15,6 +15,8 @@ import json
 import re
 import sqlite3
 import threading
+
+from kaare_core.storage import sqlite_files
 
 # `[se liste: Medaljer – Sommer-OL 2004 Athen #2]` / `[see list: … #3]`
 MARKER_RE = re.compile(r"\[(?:se liste|see list): (.*?) #(\d+)\]")
@@ -47,7 +49,7 @@ def _conn(db_path: str) -> sqlite3.Connection:
     with _conns_lock:
         c = _conns.get(db_path)
         if c is None:
-            c = sqlite3.connect(
+            c = sqlite_files.connect(
                 f"file:{db_path}?mode=ro&immutable=1", uri=True, check_same_thread=False
             )
             _conns[db_path] = c

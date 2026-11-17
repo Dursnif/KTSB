@@ -2,6 +2,7 @@
 Executor for the 'household' tool — home/away state machine.
 """
 
+from kaare_core import receipts
 from kaare_core.config import today_local
 from kaare_core.tools.household_state import (
     read_household_state,
@@ -38,6 +39,27 @@ def _write_context_entry_for_admins(text: str, expires: str | None, trigger: str
 
 
 async def dispatch(name: str, arguments: dict, user_id: str = "global") -> str:
+    reply = await _dispatch(name, arguments, user_id)
+    if not RECEIPTS_ON or arguments.get("action") not in ("set_away", "set_home") or not _saved(reply, user_id):
+        return reply
+    lang = get_lang(user_id)
+    state = read_household_state()
+    mode = state.get("mode", "home")
+    what = t("rcpt_household_what", lang, mode=mode, ret=state.get("expected_return") or "—")
+    return reply + receipts.suffix("household", ref=f"household:{mode}:{state.get('last_updated') or '-'}", what=what,
+                                   where=t("rcpt_household_where", lang), who=user_id, lang=lang)
+
+
+RECEIPTS_ON = True  # one receipt from code for set_away / set_home
+
+
+def _saved(reply: str, user_id: str) -> bool:
+    lang = get_lang(user_id)
+    return reply in (t("tool_household_set_home_ok", lang), t("tool_household_set_away_ok_no_date", lang)) or \
+        reply.startswith(t("tool_household_set_away_ok", lang, ret="\0").split("\0")[0])
+
+
+async def _dispatch(name: str, arguments: dict, user_id: str = "global") -> str:
     lang = get_lang(user_id)
     action = arguments.get("action", "")
 

@@ -117,7 +117,7 @@ def result_label(w: dict, lang: str) -> str:
 
 
 def auto_resolve_max_rows() -> int:
-    """Tables/lists up to this many rows are put inline in a search result (Stian: 30)."""
+    """Tables/lists up to this many rows are put inline in a search result (30)."""
     try:
         return int(_cfg().get("auto_resolve_max_rows", 30))
     except (TypeError, ValueError):

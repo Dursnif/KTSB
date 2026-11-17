@@ -1,6 +1,6 @@
 """
-P121 Phase 4 — probability from sources, computed in code (Stian's model, D4–D10). The anchors
-Stian gave are the fasit: one government page 90 %, two 95 %, plus an independent serious site
+P121 Phase 4 — probability from sources, computed in code (the user's model, D4–D10). The anchors
+Userone gave are the fasit: one government page 90 %, two 95 %, plus an independent serious site
 99 %, never 100 % from the web; five random blogs stay capped; conflicts weigh against each other.
 
 Run with: cd /kaare && PYTHONPATH=/kaare venv/bin/python -m pytest tests/test_p121_phase4_probability.py -v
@@ -33,7 +33,7 @@ def OPEN(host):
     return {"tier": "open", "url": f"https://{host}/x"}
 
 
-# ── Stian's anchors (D7, D10.2) ─────────────────────────────────────────────
+# ── the user's anchors (D7, D10.2) ─────────────────────────────────────────────
 
 
 def test_one_government_page_is_90():

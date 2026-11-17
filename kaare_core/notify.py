@@ -24,9 +24,11 @@ from pathlib import Path
 import httpx
 import yaml
 
+from kaare_core.app_state import get_stm
 from kaare_core.config import get_service, get_settings, now_local
 from kaare_core.service_auth import service_headers
-from kaare_core.tools.i18n import get_lang
+from kaare_core.tools.i18n import get_lang, t
+from kaare_core.tools.timer_service import queue_chat_notification
 from kaare_core.users.profile_manager import load_profile
 
 logger = logging.getLogger("notify")
@@ -132,14 +134,22 @@ def _get_notify_channel(user_id: str) -> str:
 
 
 def _inject_stm(user_id: str, message: str) -> None:
+    """Chat delivery: the message goes to the user's chat queue (the GUI polls it, same pipe as timers) and into
+    Kåre's STM, so he knows what he told the user (thread 3). Never silent on failure (BUG-log 2026-10-08)."""
     try:
-        # PLC0415: broken import (get_stm lives in app_state) — kept as is, see BUG-log 2026-10-08
-        from kaare_core.memory.short_term import get_stm  # noqa: PLC0415
-
-        stm = get_stm(user_id)
-        stm.add_assistant(f"[Varsling]: {message}", source="notify")
+        queue_chat_notification(user_id, message, source_id="notify")
     except Exception as e:
-        logger.warning("[notify] STM inject failed for user '%s': %s", user_id, e)
+        logger.warning("[notify] chat queue failed for user '%s': %s — notification not shown in the chat", user_id, e)
+    try:
+        text = t(
+            "notify_stm_sent", _get_user_lang(user_id), time=now_local().strftime("%H:%M"), message=message[:300]
+        )
+        stm = get_stm(user_id)
+        stm.add_dialog(role="system", text=text, user_id=user_id)  # history
+        stm.add_pending_system_note(text, user_id=user_id)  # Kåre sees it on the next turn
+    except Exception as e:
+        logger.warning("[notify] STM inject failed for user '%s': %s — Kåre does not know about this notification",
+                       user_id, e)
 
 
 async def _push_notify(user_id: str, message: str) -> None:

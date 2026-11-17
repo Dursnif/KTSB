@@ -293,7 +293,7 @@ h1 {
   box-shadow: 0 2px 16px rgba(124, 106, 255, 0.07);
 }
 
-/* Settings: colored top border per tab — matches the dot color in TabsTrigger */
+/* Settings + Integrations: colored top border per tab — matches the dot color in TabsTrigger */
 .dark [data-tab="generelt"]     [data-slot="card"] { border-top: 2px solid #9c8d5e; }
 .dark [data-tab="ha"]           [data-slot="card"] { border-top: 2px solid #4db67a; }
 .dark [data-tab="mqtt"]         [data-slot="card"] { border-top: 2px solid #ff9f43; }
@@ -302,7 +302,8 @@ h1 {
 .dark [data-tab="nettsok"]      [data-slot="card"] { border-top: 2px solid #00cec9; }
 .dark [data-tab="bilder"]       [data-slot="card"] { border-top: 2px solid #e17055; }
 .dark [data-tab="kare"]         [data-slot="card"] { border-top: 2px solid #b8c6db; }
-.dark [data-tab="integrasjoner"] [data-slot="card"] { border-top: 2px solid #55efc4; }
+.dark [data-tab="frigate"]      [data-slot="card"] { border-top: 2px solid #55efc4; }
+.dark [data-tab="plex"]         [data-slot="card"] { border-top: 2px solid #e5a00d; }
 .dark [data-tab="distribusjon"] [data-slot="card"] { border-top: 2px solid #fdcb6e; }
 .dark [data-tab="agenter"]      [data-slot="card"] { border-top: 2px solid #74b9ff; }
 

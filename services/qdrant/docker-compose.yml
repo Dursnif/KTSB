@@ -1,6 +1,6 @@
 services:
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.20.0   # pinned (P145, 2026-10-27_170808) — change deliberately, test in testbase first
     container_name: kaare-qdrant
     restart: unless-stopped
     ports:

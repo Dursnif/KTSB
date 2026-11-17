@@ -21,6 +21,7 @@ import yaml
 
 from kaare_core import log_buffer
 from kaare_core.config import get_vllm_gpu_ids
+from kaare_core.storage import rawlog
 from kaare_core.tools.i18n import t
 
 _SENSITIVE_NAMES = {
@@ -35,13 +36,15 @@ _SENSITIVE_NAMES = {
 }
 
 _TOOL_CALLS_LOG = Path("/kaare/logs/tool_calls.log")
+LOG_DIR = Path("/kaare/logs")  # read per call (tests point it at tmp_path)
+_STREAM_FILES = {"ha_events.log": "ha_events", "frigate_mqtt.log": "frigate_mqtt"}  # P150: raw streams (rawlog)
 
 
 def log_tool_call(
     name: str, arguments: dict, result: str, duration_ms: int, source: str = "kare", rid: str = ""
 ) -> None:
     """Append one entry to tool_calls.log (rid-correlated, feeds trace_reader.py's
-    per-request trace used by inspect_system(fetch_trace/trace_patterns) — Kåre's own
+    per-request trace used by self_trace(fetch_trace/trace_patterns/recent) — Kåre's own
     self-improvement view). `rid` falls back to arguments["_rid"] if not given explicitly,
     matching executor.py's own convention for Kåre's tools."""
     try:
@@ -243,12 +246,24 @@ def read_log(arguments: dict, lang: str = "nb") -> str:
     n_lines = max(20, min(int(arguments.get("lines", arguments.get("linjer", 20))), 200))
     pattern = (arguments.get("pattern") or arguments.get("mønster") or "").strip()
     max_hits = min(int(arguments.get("max_hits", arguments.get("maks_treff", 50))), 200)
-    log_dir = Path("/kaare/logs")
+    log_dir = LOG_DIR
     log_files = sorted(f.name for f in log_dir.iterdir() if f.is_file()) if log_dir.exists() else []
+    # P150: the raw event streams live as day segments in logs/raw/<stream>/ — their old file names still work
+    streams = {name: s for name, s in _STREAM_FILES.items() if rawlog.segments(s)}
+    log_files = sorted({*log_files, *streams})
+    stream = streams.get(log_file)
 
     _lang_note = english_content_note(lang)
 
     if pattern:
+        if stream:
+            paths = [str(p) for _n, p in rawlog.segments(stream)]
+            grep_args = ["grep", "-n", "-H", "-E", "-m", str(max_hits), "--", pattern, *paths]
+            result = _sp.run(grep_args, capture_output=True, text=True, timeout=15)
+            out = result.stdout.strip()
+            if not out:
+                return t("sys_no_grep_results", lang, pattern=pattern, path=log_file)
+            return _lang_note + _annotate_grep_hits(out, single_file=None)[:4000]
         if log_file:
             log_p = log_dir / log_file
             if not log_p.exists():
@@ -258,14 +273,16 @@ def read_log(arguments: dict, lang: str = "nb") -> str:
                     filename=log_file,
                     files="\n".join(f"  {f}" for f in log_files),
                 )
-            grep_args = ["grep", "-n", "-m", str(max_hits), pattern, str(log_p)]
+            grep_args = ["grep", "-n", "-E", "-m", str(max_hits), "--", pattern, str(log_p)]
         else:
             grep_args = [
                 "grep",
                 "-rn",
+                "-E",  # T32b: «a|b» must mean alternation, as in utforsk/executor_agents
                 "-m",
                 str(max_hits),
                 "--include=*.log",
+                "--",
                 pattern,
                 str(log_dir),
             ]
@@ -298,7 +315,10 @@ def read_log(arguments: dict, lang: str = "nb") -> str:
                 parts.append(f"\n--- {_fn} ---\n{content}")
         return "\n".join(parts)[:6000]
 
-    p = _validate_path(str(log_dir / log_file), log_dir.resolve())
+    if stream:  # P150: reading «ha_events.log» means today's newest segment
+        p = rawlog.segments(stream)[-1][1]
+    else:
+        p = _validate_path(str(log_dir / log_file), log_dir.resolve())
     if p is None or not p.exists():
         return t(
             "sys_log_not_found",
@@ -541,7 +561,7 @@ _SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
 def _git_repo_path() -> Path:
     """Repo inspected by git_diff/git_log — configurable via settings.yaml (git_repo_path),
     defaults to the app root (a normal git working tree for a standard `git clone` install).
-    /kaare itself has no local git tracking on Stian's own install (deliberately removed
+    /kaare itself has no local git tracking on the author's own install (deliberately removed
     2026-08-29); his settings.yaml overrides this to point at the separate release repo."""
     try:
         cfg = yaml.safe_load(_SETTINGS_PATH.read_text())

@@ -153,6 +153,12 @@ fallback:
   provider: ollama
   stream: false
   timeout: 120
+frigate:
+  enabled: true
+  share_with: default
+frigate_conclude:
+  enabled: true
+  share_with: default
 image_edit:
   api_key_env: IMAGE_EDIT_API_KEY
   base_url: https://router.huggingface.co/hf-inference/models
@@ -193,37 +199,25 @@ miss_kare:
   stream: false
   timeout: 90
 reason_freely:
-  base_url: http://ollama:11434
-  keep_warm: false
-  model_role: kare
+  enabled: true
+  share_with: default
+jang:
+  api_key_env: JANG_API_KEY
+  base_url: ''
+  enabled: false
+  model_role: jang
   options:
-    max_tokens: 2048
-    num_ctx: 32768
-    num_predict: 2048
+    num_predict: 1000
     temperature: 0.7
-    top_p: 0.9
-  provider: ollama
-  stream: false
-  think: true
-vision:
-  base_url: http://ollama:11434
-  keep_warm: false
-  model_role: miss_kare
+  provider: vllm
+  timeout: 180
+jing:
+  api_key_env: JING_API_KEY
+  base_url: ''
+  enabled: false
+  model_role: jing
   options:
-    num_ctx: 32768
-    temperature: 0.3
-  provider: ollama
-  stream: false
-  system:
-    de: 'Du bist Kåres Kamerasicht. Beschreibe kurz und sachlich, was du auf dem Bild
-      siehst. Maximal 5-6 Sätze.
-
-      '
-    en: 'You are Kåre''s camera vision. Describe what you see in the image briefly
-      and factually. Max 5-6 sentences.
-
-      '
-    nb: 'Du er Kåre sitt kamerasyn. Beskriv hva du ser i bildet kort og faktabasert.
-      Maks 5-6 setninger.
-
-      '
+    num_predict: 300
+    temperature: 0.7
+  provider: vllm
+  timeout: 120

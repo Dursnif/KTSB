@@ -1,4 +1,4 @@
-"""P116 B33 — Mechanic's shell may only read (Stian 2026-10-01: «kun lese!!»)."""
+"""P116 B33 — Mechanic's shell may only read (2026-10-01: «kun lese!!»)."""
 
 import pytest
 

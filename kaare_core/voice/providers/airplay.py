@@ -21,7 +21,7 @@ class AirPlayProvider(BaseVoiceProvider):
         self._config = config
         self._media_base_url = media_base_url
 
-    async def speak(self, wav_path: Path, node_config: dict) -> None:
+    async def speak(self, wav_path: Path, node_config: dict) -> bool:
         # PLC0415: optional dependency — loaded only when this feature is used (rule 24)
         import pyatv  # noqa: PLC0415
 
@@ -31,7 +31,7 @@ class AirPlayProvider(BaseVoiceProvider):
         host = node_config.get("host", "")
         if not host:
             log.error("AirPlay provider: mangler host i node-config")
-            return
+            return False
 
         credentials = node_config.get("token")
         loop = asyncio.get_event_loop()
@@ -45,7 +45,7 @@ class AirPlayProvider(BaseVoiceProvider):
             )
         except Exception as exc:
             log.error("AirPlay: scan feilet på %s: %s", host, exc)
-            return
+            return False
 
         if not results:
             log.error(
@@ -53,7 +53,7 @@ class AirPlayProvider(BaseVoiceProvider):
                 "Sjekk at enheten er på nett og støtter AirPlay.",
                 host,
             )
-            return
+            return False
 
         config = results[0]
         if credentials:
@@ -64,8 +64,10 @@ class AirPlayProvider(BaseVoiceProvider):
             atv = await pyatv.connect(config, loop, protocol=const.Protocol.RAOP)
             log.info("AirPlay '%s' (%s) <- %s", config.name, host, wav_path.name)
             await atv.stream.stream_file(str(wav_path))
+            return True
         except Exception as exc:
             log.error("AirPlay provider feil på %s: %s", host, exc)
+            return False
         finally:
             if atv:
                 atv.close()

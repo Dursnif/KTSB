@@ -7,6 +7,7 @@ embedding:
   port: 11446
 frigate:
   camera_names: {}
+  mqtt_topic_prefix: frigate
   snapshot_timeout: 15
   timeout: 10
   url: ''
@@ -20,6 +21,8 @@ home_assistant:
     - call_service
     - automation_triggered
   timeout: 5
+  # Seconds to wait for HA to report an action's new state (slow Tuya/Zigbee lights); 0 = no wait
+  verify_seconds: 2
   url: ''
 inner_voices:
   node_label: Local
@@ -58,7 +61,6 @@ mqtt:
   port: 1883
   reconnect_interval: 30
   tls_enabled: false
-  topic_prefix: frigate
   zigbee_awareness: []
 notifications:
   enabled: true
@@ -70,7 +72,6 @@ ollama:
   kare: http://ollama:11434
   library: http://ollama:11434
   miss_kare: http://ollama:11434
-  proxy: http://ollama:11434
 storage:
   qdrant: http://qdrant:6333
 voice:

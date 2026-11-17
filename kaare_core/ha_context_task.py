@@ -19,10 +19,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from kaare_core.config import get_service
+from kaare_core.storage import rawlog
 
 logger = logging.getLogger("ha_context_task")
 
-_HA_EVENTS_LOG = Path("/kaare/logs/ha_events.log")
 _HA_CONTEXT_PATH = Path("/kaare/state/ha_context.json")
 _POLL_INTERVAL = 2.0  # seconds between file checks
 _SEED_BYTES = 200_000  # bytes to read on startup for state reconstruction
@@ -100,23 +100,6 @@ def _seed_state(entities: set[str], file_bytes: bytes) -> tuple[dict, list]:
     return entity_states, automations
 
 
-def _read_tail(path: Path, max_bytes: int) -> tuple[bytes, int]:
-    """Last max_bytes of the file and the file size (blocking — run in a thread)."""
-    with path.open("rb") as fh:
-        fh.seek(0, 2)
-        size = fh.tell()
-        fh.seek(max(0, size - max_bytes))
-        return fh.read(), size
-
-
-def _read_from(path: Path, pos: int) -> tuple[bytes, int]:
-    """Everything after pos and the new position (blocking — run in a thread)."""
-    with path.open("rb") as fh:
-        fh.seek(pos)
-        data = fh.read()
-        return data, fh.tell()
-
-
 async def start_ha_context_task() -> None:
     """Long-running background task. Exits early if no awareness_entities configured."""
     entities_list = _load_awareness_entities()
@@ -127,17 +110,17 @@ async def start_ha_context_task() -> None:
     entities = set(entities_list)
     logger.info("[ha_context] Tracking %d entities: %s", len(entities), ", ".join(sorted(entities)))
 
-    if not _HA_EVENTS_LOG.exists():
-        logger.info("[ha_context] ha_events.log not found — task idle")
+    if not rawlog.segments("ha_events"):
+        logger.info("[ha_context] no raw ha_events log — task idle")
         return
 
-    # Seed state from last _SEED_BYTES of log
+    # Seed state from the newest _SEED_BYTES across the raw segments (P150), then follow from the end
     try:
-        seed_bytes, file_pos = await asyncio.to_thread(_read_tail, _HA_EVENTS_LOG, _SEED_BYTES)
+        seed_bytes = (await asyncio.to_thread(rawlog.tail_text, "ha_events", _SEED_BYTES)).encode("utf-8")
     except Exception as e:
         logger.warning("[ha_context] Failed to seed from log: %s", e)
-        file_pos = _HA_EVENTS_LOG.stat().st_size if _HA_EVENTS_LOG.exists() else 0
         seed_bytes = b""
+    tail = await asyncio.to_thread(rawlog.Tail, "ha_events")
 
     entity_states, automations = _seed_state(entities, seed_bytes)
     state = {"entities": entity_states, "recent_automations": automations}
@@ -154,20 +137,13 @@ async def start_ha_context_task() -> None:
         try:
             await asyncio.sleep(_POLL_INTERVAL)
 
-            if not _HA_EVENTS_LOG.exists():
+            # P150: follows the raw day segments — a new day or a deleted old segment never resets it to 0
+            new_lines = await asyncio.to_thread(tail.read_new)
+            if not new_lines:
                 continue
-
-            current_size = _HA_EVENTS_LOG.stat().st_size
-            if current_size <= file_pos:
-                # Log rotated or unchanged
-                if current_size < file_pos:
-                    file_pos = 0
-                continue
-
-            new_bytes, file_pos = await asyncio.to_thread(_read_from, _HA_EVENTS_LOG, file_pos)
 
             changed = False
-            for line in new_bytes.decode("utf-8", errors="replace").splitlines():
+            for line in new_lines:
                 ev = _parse_line(line)
                 if not ev:
                     continue

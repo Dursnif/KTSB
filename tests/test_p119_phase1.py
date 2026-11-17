@@ -19,6 +19,9 @@ def fake_state(tmp_path, monkeypatch):
     )
     (tmp_path / "dev_meetings").mkdir()
     (tmp_path / "reflections").mkdir()
+    # J22: the reflection paths are module constants now (built at import) — redirect them too, never the live folder
+    monkeypatch.setattr(executor_memory, "REFLECTIONS_DIR", tmp_path / "reflections")
+    monkeypatch.setattr(executor_memory, "REFLECTION_LATEST", tmp_path / "reflection_latest.md")
     return tmp_path
 
 

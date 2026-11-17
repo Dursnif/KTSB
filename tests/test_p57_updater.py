@@ -45,9 +45,11 @@ def upd(tmp_path, monkeypatch):
 
 
 def test_parse_version(upd):
-    assert upd.parse_version("v1.10.2") == (1, 10, 2)
+    # DT04 R0.7: (major, minor, patch, final, rc) — was (1, 10, 2), and «v1.10.2-rc1» was refused; rc tags are
+    # versions now (ordering tested in tests/test_dt04_updater_rc.py)
+    assert upd.parse_version("v1.10.2") == (1, 10, 2, 1, 0)
     assert upd.parse_version("v1.10.10") > upd.parse_version("v1.10.9")
-    for bad in ("1.10.2", "v1.10", "v1.10.2-rc1", "latest", "", "v1.10.2; rm -rf /"):
+    for bad in ("1.10.2", "v1.10", "v1.10.2-beta1", "latest", "", "v1.10.2; rm -rf /"):
         assert upd.parse_version(bad) is None
 
 

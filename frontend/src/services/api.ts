@@ -227,6 +227,9 @@ export type KaareUser = {
   is_parent?: boolean;
   pin_required?: boolean;
   managed_children?: string | null;
+  plex_account_id?: number | null; // P140: linked Plex server account
+  frigate_tracking?: boolean; // P144-s02: «Frigate may track me» (default true)
+  frigate_faces?: string[]; // P144-s02: Frigate face names that are this person
   seed_phrase?: string; // present only once, when a keypair was just generated (create or first login)
 };
 
@@ -252,6 +255,8 @@ export type UpdateUserPayload = {
   is_parent?: boolean;
   pin_required?: boolean;
   managed_children?: string | null;
+  plex_account_id?: number; // P140: -1 = unlink
+  frigate_faces?: string[]; // P144-s02: [] = unlink
 };
 
 export async function apiGenerateTempPin(username: string): Promise<{ temp_pin: string; expires_minutes: number }> {
@@ -590,17 +595,17 @@ export async function apiRestartOllama(role: string): Promise<{ ok: boolean; con
 // ── Settings: Services ────────────────────────────────────────────────────────
 
 export type ServicesConfig = {
-  home_assistant: { url: string; timeout: number; enabled: boolean };
+  home_assistant: { url: string; timeout: number; verify_seconds?: number; enabled: boolean };
   mqtt: {
     host: string;
     port: number;
     username?: string;
     tls_enabled?: boolean;
-    topic_prefix?: string;
     client_id?: string;
     reconnect_interval?: number;
   };
-  frigate: { url: string; timeout: number; snapshot_timeout: number; enabled: boolean };
+  // P144-s19: Frigate's MQTT topic prefix sits with Frigate (absent on an older API)
+  frigate: { url: string; timeout: number; snapshot_timeout: number; enabled: boolean; mqtt_topic_prefix?: string };
   plex: { url: string; timeout: number };
   voice?: { stt_enabled?: boolean };
 };
@@ -610,9 +615,9 @@ export async function apiGetServices(): Promise<ServicesConfig> {
   return data;
 }
 
-export async function apiPutHa(payload: { url?: string; timeout?: number; enabled?: boolean }) {
+export async function apiPutHa(payload: { url?: string; timeout?: number; verify_seconds?: number; enabled?: boolean }) {
   const { data } = await api.put("/api/settings/services/ha", payload);
-  return data as { ok: boolean };
+  return data as { ok: boolean; applies?: string };
 }
 
 export async function apiPutMqtt(payload: {
@@ -621,12 +626,11 @@ export async function apiPutMqtt(payload: {
   username?: string;
   password?: string;
   tls_enabled?: boolean;
-  topic_prefix?: string;
   client_id?: string;
   reconnect_interval?: number;
 }) {
   const { data } = await api.put("/api/settings/services/mqtt", payload);
-  return data as { ok: boolean };
+  return data as { ok: boolean; applies?: string };
 }
 
 export async function apiGetVpnSettings(): Promise<{ duckdns_host: string; wg_port: number }> {
@@ -639,14 +643,14 @@ export async function apiPutVpnSettings(payload: { duckdns_host?: string; wg_por
   return data as { ok: boolean };
 }
 
-export async function apiPutFrigate(payload: { url?: string; timeout?: number; snapshot_timeout?: number; enabled?: boolean }) {
+export async function apiPutFrigate(payload: { url?: string; timeout?: number; snapshot_timeout?: number; enabled?: boolean; mqtt_topic_prefix?: string }) {
   const { data } = await api.put("/api/settings/services/frigate", payload);
-  return data as { ok: boolean };
+  return data as { ok: boolean; applies?: string };
 }
 
 export async function apiPutPlex(payload: { url?: string; timeout?: number }) {
   const { data } = await api.put("/api/settings/services/plex", payload);
-  return data as { ok: boolean };
+  return data as { ok: boolean; applies?: string };
 }
 
 export async function apiPutEmbeddingBackend(payload: {
@@ -656,7 +660,7 @@ export async function apiPutEmbeddingBackend(payload: {
   emb_enabled?: boolean;
 }) {
   const { data } = await api.put("/api/settings/services/embedding", payload);
-  return data as { ok: boolean };
+  return data as { ok: boolean; applies?: string };
 }
 
 export async function apiPutMemoryEmbedBackend(payload: {
@@ -664,7 +668,7 @@ export async function apiPutMemoryEmbedBackend(payload: {
   model_dir?: string;
 }) {
   const { data } = await api.put("/api/settings/services/memory-embed", payload);
-  return data as { ok: boolean };
+  return data as { ok: boolean; applies?: string };
 }
 
 export type MemoryEmbedModel = {
@@ -767,7 +771,7 @@ export async function apiPutVoiceBackend(payload: {
   model_dir?: string;
 }) {
   const { data } = await api.put("/api/settings/services/voice", payload);
-  return data as { ok: boolean };
+  return data as { ok: boolean; applies?: string };
 }
 
 // ── Settings: HA token ────────────────────────────────────────────────────────
@@ -788,6 +792,7 @@ export type HaBridgeConfig = {
   log_url: string;
   timeout: string;
   allowed_actions: string;
+  actions?: string[]; // every action the gateway knows (read-only, P139)
 };
 
 export async function apiGetHaBridge(): Promise<HaBridgeConfig> {
@@ -797,7 +802,7 @@ export async function apiGetHaBridge(): Promise<HaBridgeConfig> {
 
 export async function apiPutHaBridge(payload: Partial<HaBridgeConfig>) {
   const { data } = await api.put("/api/settings/ha-bridge", payload);
-  return data as { ok: boolean };
+  return data as { ok: boolean; applies?: string };
 }
 
 // ── Settings: Secrets ─────────────────────────────────────────────────────────
@@ -846,7 +851,7 @@ export async function apiSaveToolPermissions(data: ToolPermissions): Promise<{ o
 
 export type ServiceKey =
   | "kaare" | "gateway" | "semantic_embed" | "agents" | "embedding"
-  | "argus" | "voice" | "frontend" | "ha-log-bridge";
+  | "argus" | "voice" | "frontend" | "ha-log-bridge" | "jing" | "jang";
 
 export type AdminServiceStatus = {
   unit: string; active: boolean;
@@ -935,6 +940,17 @@ export async function apiUpdateStatus(): Promise<UpdateStatus> {
 
 export async function apiUpdateCheck(force = false): Promise<UpdateCheck> {
   const { data } = await api.post("/api/update/check", { force });
+  return data;
+}
+
+// DT04 R0.7: Maintenance → «Include test versions» (Expert, off by default).
+export async function apiGetUpdateSettings(): Promise<{ include_test_versions: boolean }> {
+  const { data } = await api.get("/api/update/settings");
+  return data;
+}
+
+export async function apiPutUpdateSettings(include_test_versions: boolean): Promise<{ include_test_versions: boolean }> {
+  const { data } = await api.put("/api/update/settings", { include_test_versions });
   return data;
 }
 
@@ -1249,14 +1265,14 @@ export async function apiPutNetwork(payload: Partial<NetworkSettings>): Promise<
 export type RetentionDays = {
   interactions_retention_days: number;
   episodes_retention_days: number;
-  think_cache_retention_days: number;
-};
+};  // P150: the think cache is kept by size (Logs/Storage), not by days
 
 export type LogsAndDataSettings = {
   flush_interval_seconds: number;
   retention: RetentionDays;
-  defaults: { flush_interval_seconds: number; retention: RetentionDays };
-  limits: { flush_max: number };
+  think_response_max_chars: number;   // P142: reply length kept in the think log
+  defaults: { flush_interval_seconds: number; retention: RetentionDays; think_response_max_chars: number };
+  limits: { flush_max: number; think_response_min: number; think_response_max: number };
   recommended: { flush_min: number; flush_max: number; retention_warn_below_days: number };
 };
 
@@ -1268,8 +1284,57 @@ export async function apiGetLogsAndData(): Promise<LogsAndDataSettings> {
 export async function apiPutLogsAndData(payload: {
   flush_interval_seconds?: number;
   retention?: Partial<RetentionDays>;
+  think_response_max_chars?: number;
 }): Promise<LogsAndDataSettings> {
   const { data } = await api.put("/api/settings/logs-and-data", payload);
+  return data;
+}
+
+// Settings → Logs/Storage (P150): size limits, oldest first, nothing deleted for being old.
+export type StorageGroup = {
+  key: string; used_mb: number; limit_mb: number | null; controlled: boolean;
+  classes: string[]; uncontrolled: string[]; per_user: boolean;
+  home: string;                    // "frigate" | "images" = set in that GUI place, not here
+};
+export type StorageClass = {
+  key: string; group: string; used_mb: number; limit_mb: number | null; controlled: boolean;
+  per_user: boolean; phase: string; home: string;
+};
+export type StorageDisk = {
+  mount: string; total_gb: number; free_gb: number; classes: string[]; used_by_ktsb_gb: number;
+  limits_gb: number; unlimited: string[]; over_commit: boolean;
+};
+
+export type DiskUsage = {
+  groups: StorageGroup[];
+  classes: StorageClass[];
+  disks: StorageDisk[];
+  users: number;
+  argus: {
+    limit_mb: number;              // 0 = off
+    default_mb: number;
+    max_mb: number;
+    confirmed: boolean;            // saved by the user in the GUI
+    floor_mb: number | null;       // upgrade guard: kept until the user saves a limit
+    used_mb: number;
+    points: number;
+    measured_by: "telemetry" | "estimate" | "unavailable";
+    last_run: null | {
+      ts?: string; status?: string; deleted?: number;
+      rolled_days?: number; first_day?: string; last_day?: string;
+    };
+  };
+};
+
+export async function apiGetDiskUsage(): Promise<DiskUsage> {
+  const { data } = await api.get("/api/settings/disk-usage");
+  return data;
+}
+
+export async function apiPutDiskUsage(
+  payload: { argus_events_mb?: number } | { group: string; limit_mb: number } | { class: string; limit_mb: number },
+): Promise<DiskUsage> {
+  const { data } = await api.put("/api/settings/disk-usage", payload);
   return data;
 }
 
@@ -1381,6 +1446,92 @@ export async function apiPutPlexToken(token: string) {
   return data as { ok: boolean; restart_required: boolean };
 }
 
+// P140: Plex listener state + server accounts (for linking a KTSB user)
+export type PlexListenerState = "starting" | "not_configured" | "connecting" | "connected" | "token_rejected" | "unreachable";
+
+export async function apiGetPlexStatus(): Promise<{ state: PlexListenerState; detail: string; since: number }> {
+  const { data } = await api.get("/api/settings/plex/status");
+  return data;
+}
+
+export async function apiGetPlexAccounts(): Promise<{ accounts: { id: number; name: string }[]; error: string }> {
+  const { data } = await api.get("/api/settings/plex/accounts");
+  return data;
+}
+
+// P144-s02: «Frigate may track me» + the Frigate face library for linking
+export type FrigateTracking = {
+  username: string;
+  tracking: boolean;
+  expressions?: boolean;  // P144-s27b: «Uttrykk og gester», same who-decides rule; absent on an old API
+  faces: string[];
+  decided_by: "self" | "guardian" | "admin" | "none";
+  can_edit: boolean;
+};
+
+export async function apiGetFrigateTracking(username: string): Promise<FrigateTracking> {
+  const { data } = await api.get(`/api/users/${username}/frigate`);
+  return data;
+}
+
+export async function apiPutFrigateTracking(username: string, tracking: boolean): Promise<FrigateTracking> {
+  const { data } = await api.put(`/api/users/${username}/frigate`, { tracking });
+  return data;
+}
+
+// P144-s27b: «Uttrykk og gester» for one person (same endpoint and rule as «Frigate kan spore meg»)
+export async function apiPutFrigateExpressions(username: string, expressions: boolean): Promise<FrigateTracking> {
+  const { data } = await api.put(`/api/users/${username}/frigate`, { expressions });
+  return data;
+}
+
+export async function apiGetFrigateFaces(): Promise<{ faces: string[]; error: "" | "not_configured" | "unreachable" }> {
+  const { data } = await api.get("/api/frigate/faces");
+  return data;
+}
+
+// ── Frigate user: face classification (P144-s05) ─────────────────────────────
+
+export type FaceClass = "household" | "safe_guest" | "not_welcome" | "unclassified";
+export type FaceAttributes = { beard: string; glasses: string; age_band: string; headwear_often: string };
+export type FrigateFaceRow = {
+  name: string;
+  class: FaceClass;
+  attributes: FaceAttributes;
+  in_library: boolean;
+  images: number;
+  linked_user: { username: string; display_name: string } | null;
+};
+export type FrigateFaceList = {
+  faces: FrigateFaceRow[];
+  unclassified_count: number;
+  unclassified_name_days: number;
+  classes: FaceClass[];
+  attribute_values: Record<keyof FaceAttributes, string[]>;
+  error: "" | "not_configured" | "unreachable";
+};
+
+export async function apiGetFrigateFaceList(): Promise<FrigateFaceList> {
+  const { data } = await api.get("/api/frigate_user/faces");
+  return data;
+}
+
+export async function apiPutFrigateFace(name: string, cls: FaceClass, attributes: Partial<FaceAttributes>): Promise<FrigateFaceRow> {
+  const { data } = await api.put(`/api/frigate_user/faces/${encodeURIComponent(name)}`, { class: cls, attributes });
+  return data;
+}
+
+export async function apiPutFrigateFaceSettings(unclassified_name_days: number): Promise<{ unclassified_name_days: number }> {
+  const { data } = await api.put("/api/frigate_user/settings", { unclassified_name_days });
+  return data;
+}
+
+/** One training image of a face as an object URL (header auth — never a token in the URL). Caller revokes it. */
+export async function apiGetFrigateFaceThumb(name: string): Promise<string> {
+  const { data } = await api.get(`/api/frigate_user/faces/${encodeURIComponent(name)}/thumb`, { responseType: "blob" });
+  return URL.createObjectURL(data);
+}
+
 // ── Settings: Aliases ─────────────────────────────────────────────────────────
 
 export type AliasesConfig = {
@@ -1397,6 +1548,70 @@ export async function apiGetAliases(): Promise<AliasesConfig> {
 export async function apiPutAliases(payload: Partial<AliasesConfig>) {
   const { data } = await api.put("/api/settings/aliases", payload);
   return data as { ok: boolean };
+}
+
+// ── Settings: Rooms (P137 place register) ──────────────────────────────────────
+
+export type ImportMode = "rooms_only" | "pick" | "assist" | "label" | "all";
+
+export type RoomsRaw = {
+  settings?: { import_mode?: ImportMode; import_label?: string; import_domains?: string[] };
+  places?: Record<string, { name?: string; floor?: string; synonyms?: string[]; hidden?: boolean; template_example?: boolean }>;
+  floors?: Record<string, { name?: string; level?: number; synonyms?: string[] }>;
+  things?: Record<string, { place?: string; note?: string; name?: string }>;
+};
+
+export type PlaceView = {
+  id: string; name: string; source: "ha" | "manual"; floor: string; synonyms: string[]; ha_aliases: string[];
+  hidden: boolean; template_example: boolean; things: number; unregistered: number;
+};
+export type FloorView = { id: string; name: string; source: "ha" | "manual"; level: number | null; synonyms: string[]; ha_aliases: string[] };
+export type ThingView = {
+  ref: string; name: string; source: "ha" | "mqtt" | "node" | "frigate" | "manual"; place: string; note: string;
+  domain: string; explicit: boolean; in_ha: boolean;
+  missing?: "" | "gone" | "orphan";  // HA has nothing by this id / only a leftover of it
+};
+export type RoomsView = {
+  settings: { import_mode: ImportMode; import_label: string; import_domains: string[] };
+  import_modes: ImportMode[];
+  ha: { state: string; last_sync: string | null; error: string; counts: Record<string, number>; connected: boolean };
+  floors: FloorView[];
+  places: PlaceView[];
+  things: ThingView[];
+  similar: { manual: string; ha: string }[];
+  collisions: Record<string, string[]>;
+  refs: Record<string, { place: string; name: string; registered: boolean; in_ha: boolean; ha_place: string; missing?: "" | "gone" | "orphan" }>;
+  nodes: Record<string, { place: string; note: string; room: string }>;
+  raw: RoomsRaw;
+};
+export type HaTreeEntity = { ref: string; name: string; domain: string; user_facing: boolean; exposed: boolean; labels: string[]; orphan?: boolean };
+export type HaTreeDevice = { id: string; name: string; entities: HaTreeEntity[] };
+export type HaTreeArea = { id: string; name: string; floor: string; devices: HaTreeDevice[] };
+export type HaTree = { areas: HaTreeArea[]; unplaced: HaTreeArea; labels: { id: string; name: string }[]; fetched_at: string };
+
+export async function apiGetRooms(): Promise<RoomsView> {
+  const { data } = await api.get("/api/settings/rooms");
+  return data;
+}
+
+export async function apiPutRooms(raw: RoomsRaw): Promise<RoomsView> {
+  const { data } = await api.put("/api/settings/rooms", raw);
+  return data;
+}
+
+export async function apiSyncRooms(): Promise<RoomsView> {
+  const { data } = await api.post("/api/settings/rooms/sync");
+  return data;
+}
+
+export async function apiLinkPlace(manual: string, ha: string): Promise<RoomsView> {
+  const { data } = await api.post("/api/settings/rooms/link", { manual, ha });
+  return data;
+}
+
+export async function apiGetHaTree(): Promise<HaTree> {
+  const { data } = await api.get("/api/settings/rooms/ha_tree");
+  return data;
 }
 
 // ── Settings: Nodes ───────────────────────────────────────────────────────────
@@ -1426,14 +1641,137 @@ export type NodeConfig = {
   mac?: string;
   adb_port?: number;
   tvoverlay_port?: number;
+  lead_in_ms?: number;          // N30: silence before a reply (cold speaker)
+  lead_in_playing_ms?: number;  // N30: silence when the speaker was already playing
   mic_enabled?: boolean;
   has_audio?: boolean;
   has_display?: boolean;
   token?: string;
   default_user?: string;
+  place?: string;          // P137: place id from the place register
+  location_note?: string;  // P137: where in the place the node stands
   trust?: "indoor" | "outdoor";   // who an unidentified speaker is here (P120)
+  audio_out?: string[] | "auto";  // P138: where the spoken reply goes ("local" = this machine)
+  image_out?: string[] | "auto";  // P138: screens tools show things on when no target is named
+  channels?: Record<string, NodeChannel>;  // P139: ways KTSB reaches this device (found by probing)
+  screen_max?: string;            // P151: largest live video this screen gets ("640x360" | "1280x720" | "1920x1080")
+  trigger?: NodeTrigger | null;   // P138: start this node's mic from a Home Assistant press
+  webhook_token?: string;         // P138: token for POST /trigger/{node} (HA automation fallback)
   enabled: boolean;
 };
+
+export type NodeTrigger =
+  | { kind: "ha_event"; event_type: string; match: Record<string, string | number>; label?: string }
+  | { kind: "entity"; entity_id: string; to?: string; label?: string };
+
+export type NodeTriggersStatus = {
+  state: "idle" | "not_configured" | "connected" | "error";
+  error: string;
+  nodes: Record<string, { ok: boolean; reason: string }>;
+};
+
+export async function apiNodeTriggersStatus(): Promise<NodeTriggersStatus> {
+  const { data } = await api.get("/api/settings/nodes/triggers/status");
+  return data;
+}
+
+export async function apiNodeTriggersLearn(): Promise<
+  { ok: true; trigger: NodeTrigger; admin: boolean } | { ok: false; reason: string; admin?: boolean; error?: string }
+> {
+  const { data } = await api.post("/api/settings/nodes/triggers/learn", {}, { timeout: 30000 });
+  return data;
+}
+
+export async function apiNodeWebhook(nodeId: string, action: "new" | "remove") {
+  const { data } = await api.post(`/api/settings/nodes/${encodeURIComponent(nodeId)}/webhook`, { action });
+  return data as { ok: boolean; token: string; url: string };
+}
+
+export type VoicePipelineSettings = {
+  end_of_speech: "auto" | "fixed";
+  silence_seconds: number;
+  silence_amplitude: number;
+  max_record_seconds: number;
+  duck_on_listen: boolean;
+  duck_volume: number;
+  duck_mpd: boolean;
+};
+
+export async function apiGetVoicePipeline(): Promise<VoicePipelineSettings> {
+  const { data } = await api.get("/api/settings/voice_pipeline");
+  return data;
+}
+
+export async function apiPutVoicePipeline(settings: Partial<VoicePipelineSettings>) {
+  const { data } = await api.put("/api/settings/voice_pipeline", settings);
+  return data as VoicePipelineSettings & { ok: boolean };
+}
+
+// N29 — is each node reachable now (Nodes page WiFi icon)
+export type NodeChannel = { enabled?: boolean; port?: number; found_at?: string; last_seen?: string; description_url?: string };  // description_url: DLNA only (DT04 R0.1)
+
+export type NodeStatus = {
+  status: "online" | "offline" | "unknown";
+  via: string;
+  detail: string;
+  checked_at: number;
+  channels?: Record<string, boolean>;  // P139: did each channel answer
+};
+
+export async function apiNodePair(nodeId: string, step: "start" | "finish" | "status", code = "") {
+  const { data } = await api.post(`/api/settings/nodes/${encodeURIComponent(nodeId)}/pair/${step}`, { code });
+  return data as { ok?: boolean; step?: string; error?: string; channel?: string; paired?: boolean };
+}
+
+// P151 — KTSB's screen page on a node (pairing a screen without Cast with the code it shows)
+export type ScreenStatus = {
+  enabled: boolean; paired: boolean; seen_recently: boolean; page_url: string;
+  content: { kind: string; camera?: string; title?: string; expires_in?: number; playing?: boolean } | null;
+};
+
+export async function apiNodeScreen(nodeId: string, step: "status" | "pair" | "unpair", code = "") {
+  const { data } = await api.post(`/api/settings/nodes/${encodeURIComponent(nodeId)}/screen/${step}`, { code });
+  return data as ScreenStatus & { ok?: boolean; off?: boolean; error?: string; was_paired?: boolean };
+}
+
+export async function apiGetScreens() {
+  const { data } = await api.get("/api/settings/screens");
+  return data as { enabled: boolean; live_minutes: number; rtsp_port: number };
+}
+
+export async function apiPutScreens(payload: { enabled: boolean; live_minutes: number; rtsp_port: number }) {
+  const { data } = await api.put("/api/settings/screens", payload);
+  return data as { ok: boolean };
+}
+
+export async function apiProbeNodeChannels(node: NodeConfig) {
+  const { data } = await api.post("/api/settings/nodes/probe_channels", { node });
+  return data as { found: Record<string, number>; channels: Record<string, NodeChannel> };
+}
+
+export async function apiGetNodesStatus(): Promise<Record<string, NodeStatus>> {
+  const { data } = await api.get("/api/settings/nodes/status");
+  return data.nodes ?? {};
+}
+
+// P138 4b — the KTSB Direct node's microphone (this machine)
+export type AudioInputDevice = { index: number; name: string; rate: number; channels: number; default: boolean };
+export type DirectAudioView = {
+  mic_device: string | number | null;
+  mic_sample_rate: number | null;
+  inputs: AudioInputDevice[];
+  error: "" | "no_audio_backend" | "no_input" | "scan_failed" | "bridge_unreachable";
+};
+
+export async function apiGetDirectAudio(): Promise<DirectAudioView> {
+  const { data } = await api.get("/api/settings/nodes/direct_audio");
+  return data;
+}
+
+export async function apiPutDirectAudio(mic_device: string | null) {
+  const { data } = await api.put("/api/settings/nodes/direct_audio", { mic_device });
+  return data as { ok: boolean; mic_device: string | null };
+}
 
 export async function apiGetNodes(): Promise<{ nodes: Record<string, NodeConfig> }> {
   const { data } = await api.get("/api/settings/nodes");
@@ -1447,7 +1785,7 @@ export async function apiPutNodes(nodes: Record<string, NodeConfig>) {
 
 export async function apiTestDisplayNode(nodeId: string) {
   const { data } = await api.post(`/api/settings/nodes/${encodeURIComponent(nodeId)}/test_display`);
-  return data as { ok: boolean; method?: string };
+  return data as { ok: boolean; method?: string; channel?: string; tried?: { channel: string; error: string }[] };
 }
 
 // ── Settings: SSH Nodes ───────────────────────────────────────────────────────
@@ -1548,6 +1886,57 @@ export async function apiPutAgentTools(payload: AgentToolsConfig) {
   return data as { ok: boolean };
 }
 
+// Model guard (P142): the enforcer box between KTSB and the LLM.
+export type EnforcerMode = "off" | "shadow" | "on";
+
+export type EnforcerProfileMode = {
+  profile: string;
+  default_mode: EnforcerMode;
+  mode: EnforcerMode;
+};
+
+export type EnforcerDetector = {
+  name: string;
+  kind: "reply" | "tool_call";
+  profiles: EnforcerProfileMode[];   // one switch per caller (P142 Phase 3)
+  on_fail: string;
+  on_empty: string;
+};
+
+export type EnforcerDetectorStats = {
+  retry: number;
+  shadow: number;
+  tool_correction: number;
+  outcomes: Record<string, number>;
+  last_ts: string;
+};
+
+export type EnforcerHit = {
+  ts: string;
+  rid: string;
+  detector: string;
+  event: string;
+  phrase: string;
+  outcome: string;
+};
+
+export type ModelEnforcerStatus = {
+  modes: EnforcerMode[];
+  detectors: EnforcerDetector[];
+  stats: { days: number; per_detector: Record<string, EnforcerDetectorStats>; recent: EnforcerHit[] };
+};
+
+export async function apiGetModelEnforcer(): Promise<ModelEnforcerStatus> {
+  const { data } = await api.get("/api/settings/model-enforcer");
+  return data;
+}
+
+// Keys are «profile:detector».
+export async function apiPutModelEnforcer(modes: Record<string, EnforcerMode>) {
+  const { data } = await api.put("/api/settings/model-enforcer", { modes });
+  return data as { ok: boolean; stored: Record<string, EnforcerMode> };
+}
+
 export type MeetingRolesConfig = {
   mechanic: string;
   mechanic_custom: string;
@@ -1600,8 +1989,8 @@ export async function apiPutPiperActivate(lang: string, model_path: string): Pro
 // ── Inner voices (Jing + Jang) ────────────────────────────────────────────────
 
 export type InnerVoicesData = {
-  jing: { provider: string; model_path: string; interval_seconds: number; max_tokens: number };
-  jang: { provider: string; model_path: string; interval_seconds: number; max_tokens: number; turns_back: number; inner_thoughts_retention_hours: number };
+  jing: { provider: string; model_path: string; push_url?: string; interval_seconds: number; max_tokens: number };
+  jang: { provider: string; model_path: string; push_url?: string; interval_seconds: number; max_tokens: number; turns_back: number };
   node_label: string;
   push_token: string;
 };
@@ -1614,8 +2003,10 @@ export async function apiGetInnerVoices(): Promise<InnerVoicesData> {
 export async function apiPutInnerVoices(payload: {
   jing_provider?: string;
   jing_model_path?: string;
+  jing_push_url?: string;
   jang_provider?: string;
   jang_model_path?: string;
+  jang_push_url?: string;
   node_label?: string;
   push_token?: string;
   generate_token?: boolean;
@@ -1725,4 +2116,355 @@ export async function apiDeleteNormalcyCorrect(body: {
 }) {
   const { data } = await api.delete("/api/normalcy/correct", { data: body });
   return data as { ok: boolean; removed: boolean };
+}
+
+// ── P144-s06a: the Frigate user's shadow pipe — switch + settings (configs/frigate_user.yaml) ──
+export type FrigateUserPipeSettings = {
+  enabled: boolean;
+  episode_gap_s: number;
+  episode_min_movement: number;
+  visit_gap_s: number;
+  visit_fold_interval_s: number;
+  l0_min_face_px: number;
+  l0_min_claim_score: number;
+  episode_frames_max_mb: number;   // P144-s11: whole frame sets per episode (0 = store none)
+  episode_frames_keep_mb: number;  // the one kept frame per episode
+  frigate_db_max_mb: number;       // P150: size limit of frigate.db (0 = off), oldest detail first
+  retention_dry_run: boolean;      // the night job logs what it would trim, deletes nothing
+  keep_unknown_plates: "7_days" | "always";
+  expressions?: boolean;           // P144-s27b: expression and gesture in the frame run (house switch); absent on an old API
+  questions?: { chat: boolean; wrong_rules?: boolean };   // J11 chat questions; J20 confirmed-wrong rules (absent on an old API)
+  episode_weather?: boolean;       // P144-s14: weather as code context (from Settings → Weather); absent on an old API
+  face_votes?: FaceVotesSettings;  // P144-s19: extra face recognition; absent on an old API
+  face_sensors?: FaceSensorsSettings;  // P144-s29b: how much each face sensor counts
+  conclude: {
+    idle_gate_s: number;
+    urgent_classes: string[];
+    urgent_when_away_person: boolean;
+    urgent_labels: string[];
+    max_attempts: number;
+    poll_s: number;
+    analyse_per_10min?: number;  // P144-s24: «Analyser» starts per 10 min (absent on an old API)
+    stuck_after_min?: number;  // N40: an episode open / without a conclusion this long «henger»
+  };
+};
+
+// ── P144-s19: extra face recognition (the second face sensor, Double Take first) ──
+export type FaceVotesSettings = {
+  enabled: boolean;
+  provider: "double_take";
+  topic_prefix: string;
+  rest_url: string;
+  min_confidence: number;
+};
+export type FaceVotesDetector = { detector: string; label: string; configured: boolean; last_seen_ts: number | null };
+// P144-s29b: face sensors as words — «When this sensor alone says a name, it is …»
+export type SensorTrust = "very_likely" | "likely" | "uncertain" | "unlikely" | "off";
+export type FaceSensorSetting = { mode: "auto" | "admin"; trust: SensorTrust; label: string; auto_learning?: boolean };
+export type FaceSensorsSettings = { auto_learning?: boolean; frigate: FaceSensorSetting; detectors: Record<string, FaceSensorSetting> };
+export type FaceSensorRow = {
+  sensor: string; provider: string | null; label: string; mode: "auto" | "admin"; trust: SensorTrust; word: string;
+  learned: number | null;  // P149: human «Var det deg?» answers behind this sensor (shadow: shown, not acted on)
+  learned_word?: string | null; learned_goal?: number | null;
+  acting?: boolean; auto_learning?: boolean;  // J2b: Auto uses the learned word now / this sensor's learning switch
+  last_seen_ts: number | null; counts: { votes: number; agree: number; disagree: number };
+};
+// P144 #9 / P149: the logged-in person's own «Var det deg?» questions (camera + time only) and their answers
+// J9: one list — «camera» (event, camera + time) and «theme» (a night-meeting theme set aside as a question)
+export type CameraQuestion = { kind?: "camera" | "theme"; id?: string; event_id?: string; camera?: string; ts?: number;
+  text?: string };
+export type CameraAnswer = "yes" | "no" | "private" | "unsure" | "skip";
+export async function apiGetMyCameraQuestions(): Promise<{ questions: CameraQuestion[] }> {
+  const { data } = await api.get("/api/frigate_user/questions/mine");
+  return data;
+}
+export async function apiAnswerCameraQuestion(event_id: string, answer: CameraAnswer,
+  kind: "camera" | "theme" = "camera"): Promise<{ ok: boolean }> {
+  const { data } = await api.post("/api/frigate_user/questions/answer", { event_id, answer, kind });
+  return data;
+}
+// P144 R139 / J12: «Er dette det samme?» — admin's house question about one thing on two cameras
+export type ThingQuestion = { kind: "thing"; id: string; events: [string, string]; cameras: [string, string];
+  label: string; belief: number };
+export async function apiGetThingQuestions(): Promise<{ questions: ThingQuestion[] }> {
+  const { data } = await api.get("/api/frigate_user/questions/things");
+  return data;
+}
+export async function apiAnswerThingQuestion(pair: string, answer: "yes" | "no" | "skip"): Promise<{ ok: boolean }> {
+  const { data } = await api.post("/api/frigate_user/questions/things/answer", { pair, answer });
+  return data;
+}
+// Run-queue J18: «Hva er her?» — a spot where persons appear/disappear mid-view (admin's house question)
+export type PlaceQuestion = { kind: "place"; id: string; camera: string; camera_name?: string; cell: string;
+  box: [number, number, number, number]; starts: number; ends: number; days: number };
+export async function apiGetPlaceQuestions(): Promise<{ questions: PlaceQuestion[] }> {
+  const { data } = await api.get("/api/frigate_user/questions/places");
+  return data;
+}
+export async function apiAnswerPlaceQuestion(id: string, answer: "named" | "not_a_place" | "skip",
+  name?: string): Promise<{ ok: boolean }> {
+  const { data } = await api.post("/api/frigate_user/questions/places/answer", { id, answer, name: name ?? null });
+  return data;
+}
+// P150 6b: vehicles — the same path as faces: a pseudonymous id (vehicle-<hex>), never a plate text
+export type VehicleRow = {
+  vehicle_id: string; reads: number; days_seen: number; first_seen: number; last_seen: number;
+  newest_event_id: string; class: string; name: string; skipped: boolean;
+};
+export type VehicleList = { vehicles: VehicleRow[]; known: { name: string; reads: number }[]; classes: string[];
+  question_days: number };
+export async function apiGetVehicles(): Promise<VehicleList> {
+  const { data } = await api.get("/api/frigate_user/vehicles");
+  return data;
+}
+export async function apiPutVehicle(vehicle_id: string, cls: string, name: string): Promise<VehicleRow> {
+  const { data } = await api.put(`/api/frigate_user/vehicles/${encodeURIComponent(vehicle_id)}`, { class: cls, name });
+  return data;
+}
+export async function apiGetVehicleQuestions(): Promise<{ questions: VehicleRow[] }> {
+  const { data } = await api.get("/api/frigate_user/questions/vehicles");
+  return data;
+}
+export async function apiSkipVehicleQuestion(vehicle_id: string): Promise<{ ok: boolean }> {
+  const { data } = await api.post("/api/frigate_user/questions/vehicles/skip", { vehicle_id });
+  return data;
+}
+export async function apiPutVehicleSettings(question_days: number): Promise<{ question_days: number }> {
+  const { data } = await api.put("/api/frigate_user/vehicles_settings", { question_days });
+  return data;
+}
+// J18b: read-only history for the three question cards (same access as their question lists)
+export type CameraHistoryItem = { event_id: string; camera: string; ts: number | null; answer: CameraAnswer;
+  answered_ts: number | null };
+export async function apiGetMyCameraHistory(): Promise<{ answered: CameraHistoryItem[] }> {
+  const { data } = await api.get("/api/frigate_user/questions/mine/history");
+  return data;
+}
+export type ThingHistoryItem = { id: string; answer: "yes" | "no" | "skip"; label: string; cameras: [string, string];
+  events: [string | null, string | null]; ts: string | null };
+export async function apiGetThingHistory(): Promise<{ answered: ThingHistoryItem[] }> {
+  const { data } = await api.get("/api/frigate_user/questions/things/answered");
+  return data;
+}
+export type PlaceHistoryItem = { id: string; camera: string; camera_name?: string; cell: string;
+  box: [number, number, number, number]; status: "named" | "not_a_place" | "skip"; name: string | null; ts: number | null };
+export async function apiGetPlaceHistory(): Promise<{ answered: PlaceHistoryItem[] }> {
+  const { data } = await api.get("/api/frigate_user/questions/places/answered");
+  return data;
+}
+// J20: «Hva er dette?» — admin names a still thing, or says Frigate misreads it (narrow confirmed-wrong rule)
+export type WhatQuestion = { kind: "what"; id: string; camera: string; camera_name?: string; label: string;
+  label_name?: string; cell: string; box: [number, number, number, number]; misread: boolean; days: number; seen: number };
+export type WhatAnswer = "named" | "not_label" | "wrong" | "skip";
+export type WhatHistoryItem = { id: string; camera: string; camera_name?: string; label: string; label_name?: string;
+  cell: string; box: [number, number, number, number]; status: WhatAnswer; name: string | null; ts: number | null };
+export async function apiGetWhatQuestions(): Promise<{ questions: WhatQuestion[] }> {
+  const { data } = await api.get("/api/frigate_user/questions/what");
+  return data;
+}
+export async function apiAnswerWhatQuestion(id: string, answer: WhatAnswer, name?: string): Promise<{ ok: boolean }> {
+  const { data } = await api.post("/api/frigate_user/questions/what/answer", { id, answer, name: name ?? null });
+  return data;
+}
+export async function apiGetWhatHistory(): Promise<{ answered: WhatHistoryItem[] }> {
+  const { data } = await api.get("/api/frigate_user/questions/what/answered");
+  return data;
+}
+// P144 6e: «Siste deteksjoner» = the image model's own single-image reads (L3 per event, module 4 per frame)
+export type FrigateModelRead = { kind: "l3" | "frame"; ts: number; camera: string; camera_name?: string; label: string;
+  event_id?: string; episode_id: number | null; frame?: number; index?: number; words: Record<string, unknown>;
+  raw?: string };
+export async function apiGetFrigateModelReads(before?: number): Promise<{ reads: FrigateModelRead[]; has_more: boolean }> {
+  const { data } = await api.get("/api/frigate_user/reads", { params: before != null ? { before } : {} });
+  return data;
+}
+// J21 5e: the module panel «Moduler» (only m1/m2 switch anything today)
+export type FrigateModuleRow = { n: number; setting: "always" | "auto" | "on" | "off"; on: boolean; why: string;
+  needs: string[]; needs_missing: string[]; switchable: boolean; replaced?: boolean };
+export async function apiGetFrigateModules(): Promise<{ modules: FrigateModuleRow[]; warnings: string[] }> {
+  const { data } = await api.get("/api/frigate_user/modules");
+  return data;
+}
+// J22: admin may name any household member with tracking on («det var <member>»)
+export type WhoForOthers = { questions: { event_id: string; camera: string; ts: number }[];
+  members: { username: string; name: string }[] };
+export async function apiGetWhoForOthers(): Promise<WhoForOthers> {
+  const { data } = await api.get("/api/frigate_user/questions/who");
+  return data;
+}
+export async function apiAnswerWhoForOther(event_id: string, member: string): Promise<{ ok: boolean }> {
+  const { data } = await api.post("/api/frigate_user/questions/who/answer", { event_id, member });
+  return data;
+}
+export async function apiGetFaceSensors(): Promise<{ sensors: FaceSensorRow[]; count_days: number; auto_learning?: boolean }> {
+  const { data } = await api.get("/api/frigate_user/face_sensors");
+  return data;
+}
+export type FaceVotesStatus = {
+  enabled: boolean; configured: boolean; provider: string; topic_prefix: string;
+  available: "online" | "offline" | "unknown"; available_ts: number | null;
+  votes_seen: number; last_vote_ts: number | null; buffered_events: number;
+  detectors?: FaceVotesDetector[];  // P144-s29: seen from the provider + configured
+  rest_read?: { ok: boolean | null; error: string; last_ts: number | null };
+};
+
+export async function apiGetFaceVotesStatus(): Promise<FaceVotesStatus> {
+  const { data } = await api.get("/api/frigate_user/face_votes/status");
+  return data;
+}
+
+export async function apiTestFaceVotes(rest_url?: string): Promise<{ ok: boolean; status: number | null; error: string }> {
+  const { data } = await api.post("/api/frigate_user/face_votes/test", { rest_url: rest_url ?? null });
+  return data;
+}
+
+export async function apiGetFrigateUserPipe(): Promise<FrigateUserPipeSettings> {
+  const { data } = await api.get("/api/frigate_user/pipe");
+  return data;
+}
+
+export async function apiPutFrigateUserPipe(
+  changes: Partial<Omit<FrigateUserPipeSettings, "conclude" | "face_votes" | "questions">> & {
+    conclude?: Partial<FrigateUserPipeSettings["conclude"]>; face_votes?: Partial<FaceVotesSettings>;
+    face_sensors?: Partial<FaceSensorsSettings>; questions?: { chat?: boolean; wrong_rules?: boolean };
+    modules?: Partial<Record<"m1" | "m2" | "m3" | "m4" | "m5" | "m6", "auto" | "on" | "off">>;
+  },
+): Promise<FrigateUserPipeSettings> {
+  const { data } = await api.put("/api/frigate_user/pipe", changes);
+  return data;
+}
+
+// ── P144-s11: the Frigate user's episodes (read only) ──
+export type EpisodeClaimStatus = "confirmed" | "unverified" | "rejected" | "none";
+export type EpisodeUnusual = { value: boolean; reason: string; baseline_days?: number };
+export type EpisodeItem = {
+  id: number;
+  status: "open" | "closed";
+  start_ts: number;
+  end_ts: number;
+  date: string;   // household timezone, YYYY-MM-DD
+  start: string;  // HH:MM:SS
+  end: string;
+  duration_s: number;
+  cameras: { camera: string; name: string }[];  // in order of activity
+  labels: string[];
+  event_count: number;
+  persons: { name: string; claim_status: EpisodeClaimStatus; kind: string }[];
+  unnamed_persons: number;
+  conclusion_status: string;  // done | failed | pending | open
+  by: "code" | "model" | null;
+  summary: string;
+  unusual: EpisodeUnusual | null;
+  unusual_suppressed: EpisodeUnusual | null;
+  urgent: boolean;
+  frame_count: number;
+  false_detection?: boolean;  // P144-s14: code concluded «likely false detection» (label gate)
+  // N40: «henger» — only what code knows; null/absent = not stuck
+  stuck?: EpisodeStuck | null;
+};
+export type EpisodeStuck = {
+  kind: "not_closed" | "queued" | "waiting" | "failed" | "running";
+  minutes: number;
+  attempts?: number;
+  next_try_ts?: number | null;
+  started_ts?: number | null;
+};
+// P144-s14: the Frigate store's last write problem (Integrations → Frigate shows a red line while ok is false)
+export type FrigateStoreStatus = {
+  ok: boolean; op?: string | null; cause?: string | null; error?: string | null; since?: number | null; failures?: number;
+};
+export type EpisodeSensors = {
+  provider: string | null; provider_label: string; relation: "agree" | "disagree" | "split" | "double_take_only";
+  frigate: string | null; frigate_kind: string | null; frigate_rejected: boolean;
+  double_take: string | null; double_take_kind: string | null; confidence: number | null;
+  lean: string | null; review: boolean;
+  // P144-s29: one vote per detector (the user's label); name null = none / opted out (kind says which)
+  detectors?: { detector: string; label: string; name: string | null; kind: string | null; split: boolean;
+    discarded: number; weight: number | null }[];
+};
+export type EpisodeCheckLayer = { layer: string; verdict: string; strong: boolean; reason: string };
+// P144-s27: chapters and change positions from code; lines hold the image model's own words
+export type EpisodeChapter = {
+  n: number; kind: "active" | "calm" | "empty"; signal: string; start: string; end: string; cameras: string[];
+  frames: number[]; lines: string[];
+};
+export type EpisodeStory = { chapters: EpisodeChapter[]; lines: string[];
+  changes: { camera: string; where: string; words: string; fact?: string }[];  // J15: «fact» = what stood there (code)
+  after_frames?: { camera: string; n: number }[] };  // J15: the stored after frame per changed camera (GUI only)
+
+export type EpisodeDetail = EpisodeItem & {
+  story?: EpisodeStory;
+  route: string;
+  scene: {
+    status?: string; reason?: string; scene?: string; persons?: number | null; vehicles?: string; at_door?: string;
+    people?: { age: string; gender: string; clothing: string; carried: string }[];
+    animals?: { kind: string; count: number }[];  // P144-s14
+    scene_thin?: boolean;  // P144-s14: the P142 detector frigate_thin_scene fired
+  } | null;
+  conclusion: {
+    status?: string; summary?: string; reason?: string;
+    notify_suggestion?: { who?: string; why?: string } | null;
+    raise_at_dev_meeting?: { topic: string; text: string; count?: number | null; raised?: boolean | null } | null;
+    confidence?: { level: string; reasons?: string[] };
+    false_detection?: { frigate_labels: string[]; seen: string; weather?: Record<string, unknown> | null } | null;
+    images_checked?: boolean;  // P144-s24: false = no model looked at a frame («Ikke sjekket med bilder»)
+    history?: { replaced_ts: number; conclusion: { summary?: string; status?: string; by?: string }; scene: { status?: string } }[];
+  } | null;
+  frames: { index: number; file?: number; camera: string; camera_name: string; ts: number; clock: string; stored: boolean }[];
+  history_count?: number;  // P144-s24: earlier conclusions kept after «Analyser på nytt»
+  events: {
+    event_id: string; ts: number; clock: string; camera: string; camera_name: string; label: string;
+    person: string | null; person_kind: string; claim_status: EpisodeClaimStatus;
+    certainty?: "very_likely" | "likely" | "uncertain" | "unlikely" | null;  // P144-s19
+    check: {
+      decision: string | null; layers: EpisodeCheckLayer[]; doubt: { reason?: string } | null; storage_gate: string | null;
+      sensors?: EpisodeSensors | null;  // P144-s19: both face sensors
+    };
+  }[];
+};
+
+export async function apiGetFrigateEpisodes(before?: number, limit = 50): Promise<{ episodes: EpisodeItem[]; has_more: boolean; enabled: boolean; store?: FrigateStoreStatus }> {
+  const { data } = await api.get("/api/frigate_user/episodes", { params: before == null ? { limit } : { limit, before } });
+  return data;
+}
+
+export async function apiGetFrigateEpisode(id: number): Promise<EpisodeDetail> {
+  const { data } = await api.get(`/api/frigate_user/episodes/${id}`);
+  return data;
+}
+
+// P144-s24: «Analyser» / «Analyser på nytt» — one run at a time (admin); the card polls the job.
+export type EpisodeAnalysisJob = {
+  state: "idle" | "running" | "done" | "failed";
+  episode_id?: number | null; started_ts?: number | null; finished_ts?: number | null;
+  result?: { ok: boolean; reason?: string; status?: string; by?: string; ltm?: string } | null;
+};
+
+export async function apiAnalyseFrigateEpisode(id: number): Promise<EpisodeAnalysisJob> {
+  const { data } = await api.post(`/api/frigate_user/episodes/${id}/analyse`);
+  return data;
+}
+
+export async function apiGetEpisodeAnalysis(): Promise<EpisodeAnalysisJob> {
+  const { data } = await api.get("/api/frigate_user/episode_analysis");
+  return data;
+}
+
+export type EpisodeFramesUsage = { full_mb: number; keep_mb: number; episodes: number; max_mb: number; keep_cap_mb: number;
+  db_mb?: number };  // P150: used part of frigate.db (absent from an API not yet restarted)
+
+export async function apiGetEpisodeFramesUsage(): Promise<EpisodeFramesUsage> {
+  const { data } = await api.get("/api/frigate_user/episode_frames/usage");
+  return data;
+}
+
+/** One episode frame as an object URL (header auth — never a token in the URL). Caller revokes it.
+ *  Rejects with status 404 when Frigate's recordings no longer have it. */
+export async function apiGetFrigateEpisodeAfterFrame(id: number, n: number): Promise<string> {
+  const { data } = await api.get(`/api/frigate_user/episodes/${id}/after/${n}`, { responseType: "blob" });
+  return URL.createObjectURL(data);
+}
+export async function apiGetFrigateEpisodeFrame(id: number, index: number): Promise<string> {
+  const { data } = await api.get(`/api/frigate_user/episodes/${id}/frames/${index}`, { responseType: "blob" });
+  return URL.createObjectURL(data);
 }

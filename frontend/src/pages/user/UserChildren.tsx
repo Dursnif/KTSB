@@ -11,6 +11,7 @@ import {
 } from "../../services/api";
 import { useTheme } from "../../theme";
 import { apiErrorStatus } from "@/lib/apiError";
+import FrigateTrackingCard from "../../components/FrigateTrackingCard";
 
 const AGENT_LABELS: Record<string, string> = {
   "**[Kåre]**":      "KÅRE",
@@ -412,9 +413,13 @@ export default function UserChildren() {
             flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
             color: "#333", fontSize: 13,
           }}>
-            {selectedChild
-              ? t("children_page.select_reflection")
-              : ""}
+            {selectedChild ? (
+              <div style={{ maxWidth: 420, padding: "0 20px" }}>
+                {/* P144-s02: guardians decide «Frigate may track me» for their child/teen */}
+                <FrigateTrackingCard username={selectedChild.username} compact />
+                <div style={{ textAlign: "center" }}>{t("children_page.select_reflection")}</div>
+              </div>
+            ) : ""}
           </div>
         ) : loadingContent ? (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#555", fontSize: 13 }}>

@@ -7,7 +7,6 @@ import { Loader2 } from "lucide-react";
 import { apiGetImageSettings, apiPutImageSettings, apiGetImageStats, type ImageSettings, type ImageUserStats } from "@/services/api";
 import { SaveFeedback, FieldRow, ExpertOnly } from "./shared";
 import { useSaveState } from "./useSaveState";
-import Cameras from "../Cameras";
 
 export default function TabBilder() {
   const { t } = useTranslation();
@@ -121,16 +120,6 @@ export default function TabBilder() {
               })}
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("cameras.title")}</CardTitle>
-          <CardDescription>{t("cameras.description")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Cameras />
         </CardContent>
       </Card>
     </div>

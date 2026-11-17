@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 
 from kaare_core.voice.base import BaseVoiceProvider
-from kaare_core.voice.wyoming_server import speak_to_satellite
+from kaare_core.voice.wyoming_server import is_satellite_connected, speak_to_satellite
 
 log = logging.getLogger(__name__)
 
@@ -18,11 +18,14 @@ class WyomingProvider(BaseVoiceProvider):
     def __init__(self, config: dict):
         self._config = config
 
-    async def speak(self, wav_path: Path, node_config: dict) -> None:
+    async def is_available(self, node_config: dict) -> bool:
+        return is_satellite_connected(node_config.get("host", ""))
+
+    async def speak(self, wav_path: Path, node_config: dict) -> bool:
         host = node_config.get("host", "")
         if not host:
             log.error("Wyoming provider: mangler host i node-config")
-            return
+            return False
 
         sent = await speak_to_satellite(host, wav_path)
         if not sent:
@@ -31,6 +34,7 @@ class WyomingProvider(BaseVoiceProvider):
                 "Satellitten må være tilkoblet Wyoming-serveren.",
                 host,
             )
+        return sent
 
     def supports_mic(self) -> bool:
         return True

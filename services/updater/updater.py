@@ -83,7 +83,10 @@ HEALTH_SETTLE_S = 20  # services must stay up this long after the API answers
 CHECK_CACHE_S = 6 * 3600
 HTTP_TIMEOUT_S = 30
 
-_VERSION_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+# vX.Y.Z or a release candidate vX.Y.Z-rcN / -rc.N (DT04 R0.7). parse_version orders rc1 < rc2 < the final release.
+_VERSION_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)(?:-rc\.?(\d+))?$")
+# Settings → Maintenance «Include test versions» (Expert, off by default): the updater reads it itself from the install.
+SETTINGS_PATH = HOME / "configs" / "settings.yaml"
 _TEMP_NAME_RE = re.compile(r"^[0-9a-f]{12}_")
 # Phases during which a restart of this container means the install may be half-switched.
 _MID_PHASES = {"swap", "pull", "verify_images", "start", "health", "rollback"}
@@ -105,9 +108,40 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def parse_version(tag: str) -> tuple[int, int, int] | None:
+def parse_version(tag: str) -> tuple[int, int, int, int, int] | None:
+    """(major, minor, patch, final, rc): a final release has final=1 and sorts after every rc of the same version."""
     m = _VERSION_RE.match((tag or "").strip())
-    return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
+    if not m:
+        return None
+    rc = m.group(4)
+    return int(m.group(1)), int(m.group(2)), int(m.group(3)), 0 if rc else 1, int(rc or 0)
+
+
+def is_test_version(tag: str) -> bool:
+    v = parse_version(tag)
+    return bool(v) and v[3] == 0
+
+
+_TOP_KEY_RE = re.compile(r"^[A-Za-z_][\w-]*\s*:")
+_INCLUDE_TEST_RE = re.compile(r"^\s+include_test_versions\s*:\s*(true|True|TRUE)\s*(#.*)?$")
+
+
+def include_test_versions() -> bool:
+    """The admin's opt-in to see release candidates: settings.yaml `updates: include_test_versions: true` (written by the
+    GUI). The updater image is stdlib only (no PyYAML), so this reads exactly that one key in the `updates:` block; any
+    other form, or an unreadable file, means off."""
+    try:
+        lines = SETTINGS_PATH.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+    in_block = False
+    for line in lines:
+        if _TOP_KEY_RE.match(line):
+            in_block = line.split(":", 1)[0].strip() == "updates"
+            continue
+        if in_block and _INCLUDE_TEST_RE.match(line):
+            return True
+    return False
 
 
 def audit(event: str, detail: str) -> None:
@@ -271,12 +305,16 @@ def install_problem() -> str:
 
 
 def list_releases() -> list[dict]:
-    """Stable releases that carry a complete install bundle, newest first."""
+    """Releases that carry a complete install bundle, newest first. Final releases only, unless the admin opted in to test
+    versions (then also GitHub prereleases and rc tags — still signed and checked like any release)."""
     data = json.loads(http_get(f"https://api.github.com/repos/{REPO}/releases?per_page=30"))
+    test_ok = include_test_versions()
     out = []
     for rel in data:
         tag = rel.get("tag_name", "")
-        if rel.get("draft") or rel.get("prerelease") or not parse_version(tag):
+        if rel.get("draft") or not parse_version(tag):
+            continue
+        if (rel.get("prerelease") or is_test_version(tag)) and not test_ok:
             continue
         assets = {a.get("name"): a.get("browser_download_url") for a in rel.get("assets") or []}
         names = (f"ktsb-docker-{tag}.tar.gz", f"ktsb-docker-{tag}.tar.gz.sigstore.json", "SHA256SUMS")
@@ -296,7 +334,9 @@ def list_releases() -> list[dict]:
 
 
 def check(force: bool = False) -> dict:
-    if not force and _check_cache["result"] and time.time() - _check_cache["at"] < CHECK_CACHE_S:
+    test_ok = include_test_versions()  # a changed setting must not wait for the 6 h cache
+    if (not force and _check_cache["result"] and time.time() - _check_cache["at"] < CHECK_CACHE_S
+            and _check_cache.get("test") == test_ok):
         return _check_cache["result"]
     cur = current_version()
     try:
@@ -312,7 +352,7 @@ def check(force: bool = False) -> dict:
         "available": available,
         "checked": _now(),
     }
-    _check_cache.update(at=time.time(), result=result)
+    _check_cache.update(at=time.time(), result=result, test=test_ok)
     return result
 
 

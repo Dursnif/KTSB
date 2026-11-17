@@ -101,7 +101,6 @@ MODULES = [
     # Domain
     "kaare_core.domain.decision",
     "kaare_core.domain.policy",
-    "kaare_core.domain.frigate_responder",
     # Routers
     "kaare_core.routers.router_generate",
     "kaare_core.routers.router_intent",

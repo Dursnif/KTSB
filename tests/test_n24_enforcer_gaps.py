@@ -181,8 +181,10 @@ def test_language_tag_and_curly_apostrophe_do_not_hide_a_claim():
 
 
 def test_tool_usage_tags_unchanged():
-    assert tool_usage_tags("note", {"list_name": "agenda"}) == ["note", "note:agenda"]
-    assert tool_usage_tags("timer", {}) == ["timer"]
+    # P142 Phase 4 (A4): «name:write» added on purpose; no action given = counted as a write.
+    assert tool_usage_tags("note", {"list_name": "agenda"}) == ["note", "note:write", "note:agenda"]
+    assert tool_usage_tags("timer", {}) == ["timer", "timer:write"]
+    assert tool_usage_tags("note", {"action": "read", "list_name": "agenda"}) == ["note"]
 
 
 @pytest.mark.parametrize(

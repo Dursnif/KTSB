@@ -8,6 +8,17 @@ from adapters.display.base import BaseDisplayProvider
 
 log = logging.getLogger(__name__)
 
+# TvOverlay (gugutab, Android TV): REST on the TV, default port 5001, `POST /notify` (checked against the app on a
+# real TV and its README, 2026-10-18 — the earlier 7979 + /api/v2/notification was PiPup's port and never matched).
+DEFAULT_PORT = 5001
+# KTSB's position names → TvOverlay's corners (start/end follow the layout direction).
+_CORNERS = {
+    "bottom_right": "bottom_end",
+    "bottom_left": "bottom_start",
+    "top_right": "top_end",
+    "top_left": "top_start",
+}
+
 
 class TvOverlayDisplayProvider(BaseDisplayProvider):
     async def send(
@@ -21,14 +32,14 @@ class TvOverlayDisplayProvider(BaseDisplayProvider):
         position: str = "bottom_right",
     ) -> dict:
         host = node_config.get("host", "")
-        port = node_config.get("tvoverlay_port", 7979)
+        port = int(node_config.get("tvoverlay_port") or DEFAULT_PORT)
         if not host:
             return {"ok": False, "error": "TvOverlay: missing host"}
 
         payload: dict = {
             "title": title,
             "message": text,
-            "position": position,
+            "corner": _CORNERS.get(position, position),
             "duration": duration,
         }
 
@@ -43,13 +54,11 @@ class TvOverlayDisplayProvider(BaseDisplayProvider):
 
         try:
             async with httpx.AsyncClient(timeout=8) as client:
-                resp = await client.post(
-                    f"http://{host}:{port}/api/v2/notification",
-                    json=payload,
-                )
+                resp = await client.post(f"http://{host}:{port}/notify", json=payload)
                 if resp.status_code in (200, 201, 204):
                     return {"ok": True, "method": "tvoverlay"}
                 return {"ok": False, "error": f"TvOverlay HTTP {resp.status_code}"}
         except Exception as e:
-            log.error("TvOverlay error %s: %s", host, e)
-            return {"ok": False, "error": str(e)}
+            reason = str(e) or type(e).__name__  # httpx connect errors often carry no message
+            log.warning("TvOverlay error %s: %s", host, reason)
+            return {"ok": False, "error": reason}

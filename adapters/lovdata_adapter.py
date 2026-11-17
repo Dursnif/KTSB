@@ -19,7 +19,6 @@ import logging
 import math
 import os
 import re
-import sqlite3
 import tarfile
 import time
 from datetime import UTC, datetime
@@ -29,6 +28,7 @@ from lxml import html as lxml_html
 
 from adapters import web_fetch
 from kaare_core.config import get_service
+from kaare_core.storage import sqlite_files
 
 log = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ def build_index(archives: list[bytes], db_path: Path = DB_PATH) -> dict:
     tmp = db_path.with_suffix(".db.tmp")
     if tmp.exists():
         tmp.unlink()
-    con = sqlite3.connect(tmp)
+    con = sqlite_files.connect(tmp)
     n_docs = n_paras = 0
     try:
         for stmt in _SCHEMA:
@@ -201,7 +201,7 @@ def status(db_path: Path = DB_PATH) -> dict:
     if not db_path.exists():
         return {"built_at": None, "documents": 0, "paragraphs": 0}
     try:
-        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        con = sqlite_files.connect(f"file:{db_path}?mode=ro", uri=True)
         meta = dict(con.execute("SELECT key, value FROM meta").fetchall())
         con.close()
         return {
@@ -244,7 +244,7 @@ def search(
     expr = " OR ".join(f'"{w}"*' for w in terms)
     if not expr or not db_path.exists():
         return []
-    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    con = sqlite_files.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
         rows = con.execute(
             "SELECT short_title, para, heading, body, url, bm25(paragraphs, 3.0, 3.0, 1.0, 5.0, 1.0) "

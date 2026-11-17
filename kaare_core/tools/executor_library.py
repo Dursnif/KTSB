@@ -3,6 +3,7 @@ import difflib
 import json
 import re
 import time
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -21,8 +22,11 @@ from qdrant_client.models import (
 
 from adapters import lovdata_adapter, web_fetch
 from adapters.llm_adapter import _current_rid, ask_llm_cloud, call_llm_chat
+from adapters.web_search_adapter import search_sources
 from adapters.web_search_adapter import web_search as _søk_nett
 from kaare_core.background import spawn
+from kaare_core.cards import recipe as recipe_card
+from kaare_core.cards import store as card_store
 from kaare_core.config import get_home_location, is_agent_tool_enabled
 from kaare_core.config import get_llm_config as _llm_cfg
 from kaare_core.config import get_model as _cfg_model
@@ -30,10 +34,11 @@ from kaare_core.config import get_qdrant_api_key as _qdrant_key
 from kaare_core.config import get_service as _svc
 from kaare_core.config import get_settings as _get_settings
 from kaare_core.memory.long_term import get_ltm
-from kaare_core.model_enforcement import STAKES, ModelEnforcer, grounded_detectors, norm_lang
+from kaare_core.model_enforcement import STAKES, ModelEnforcer, norm_lang
 from kaare_core.model_lock import LockTimeout, lock_agent_pool, pool_order, role_url
 from kaare_core.think_strip import strip_think_block
 from kaare_core.tools import source_confidence, wiki_registry, wiki_structured, wikidata, work_round
+from kaare_core.tools.executor_camera import _live_screen_targets
 from kaare_core.tools.executor_personality import PERSONALITY_CORE_TEXT
 from kaare_core.tools.i18n import get_lang, t
 from kaare_core.tools.shared_tools import log_tool_call
@@ -41,6 +46,8 @@ from kaare_core.tools.think_cache import (
     extract_conclusion,
     log_think,
 )
+from kaare_core.voice import cast_client
+from kaare_core.voice import screen as screen_core
 
 # After Miss Library has answered, wait at most this long for a still-running Wikidata subject
 # lookup; past it the answer goes out unmarked (rule 10 — never hold Kåre up for a check).
@@ -71,7 +78,7 @@ _EMBED_MODEL = _cfg_model("embed")
 _qdrant = QdrantClient(url=_QDRANT_URL, api_key=_qdrant_key(write=False))
 
 # ── Miss Library task prompt ──────────────────────────────────────────────────
-# No persona: she is a lookup/filter tool for Kåre (P111 Phase 2, Stian 2026-09-28).
+# No persona: she is a lookup/filter tool for Kåre (P111 Phase 2, 2026-09-28).
 # The old kaare_core/agents/miss_library/personlighet*.md files are no longer loaded.
 
 
@@ -597,7 +604,7 @@ def _render_grounded(
         return t("lib_grounded_not_found", lang) + "\n" + t("lib_retry_hint", lang)
     match = match or {}
     off_subject = [c for c in verified if match.get(c.get("_src")) == "other"]
-    # Translation is for the big model, never the 9B (Stian, 2026-10-03): a quote in another
+    # Translation is for the big model, never the 9B (2026-10-03): a quote in another
     # language than the user's is passed on verbatim, without Miss Library's paraphrase.
     foreign = [c for c in verified if c.get("_quote_only") or _is_foreign(c, lang)]
     lines: list[str] = []
@@ -747,7 +754,7 @@ async def _grounded_answer(
         {"role": "system", "content": system + "\n\n" + t("lib_grounded_contract", lang)},
         {"role": "user", "content": user_msg},
     ]
-    enforcer = ModelEnforcer(lang, rid=_current_rid.get(), detectors=grounded_detectors())
+    enforcer = ModelEnforcer.for_profile("grounded", lang, rid=_current_rid.get())
     parsed = None
     for _round in range(2):
         result = await _library_chat(messages, _GROUNDED_SCHEMA)
@@ -756,7 +763,7 @@ async def _grounded_answer(
         parsed, meta = _check_grounded(
             result, sources_norm, allowed_norm, per_source, focus, quote_only
         )
-        action = enforcer.check(text_out=result.get("text") or "", used_tools=[], meta=meta)
+        action = enforcer.on_answer(result.get("text") or "", meta)
         if not action:
             break
         messages += [
@@ -789,7 +796,7 @@ async def _grounded_answer(
     if parsed is None:
         return t("lib_grounded_failed", lang)
     if quote_only:
-        # The 9B found the sentences; interpreting them is the 27B's job (Stian, 2026-10-04).
+        # The 9B found the sentences; interpreting them is the 27B's job (2026-10-04).
         for c in parsed.get("claims") or []:
             c["_quote_only"] = True
         parsed["answer"] = ""
@@ -1317,21 +1324,101 @@ async def _fetch_table(arguments: dict, lang: str = "nb") -> str:
     return f"{header}\n{body}"
 
 
-async def _fetch_url(url: str, arguments: dict, lang: str = "nb") -> str:
-    """Fetch one page Kåre names. Same safe fetcher and trusted list as web search, in both
-    modes (Miss Library on: she summarises; off: the page text goes back directly)."""
+def _url_gate(url: str, lang: str) -> tuple[Any, str, str]:
+    """(allow, tier, refusal) for one page Kåre names — the trust rules shared by fetch_url and recipe. A non-empty
+    refusal is the reply. P121 D-P12: with open web on, any public page that isn't blocked may be read — labelled by
+    tier. With it off, only whitelisted pages."""
     if not url.strip():
-        return t("lib_empty_url", lang)
+        return None, "", t("lib_empty_url", lang)
     if web_fetch.trust_list_state() == "unreadable":
-        return t("web_trust_list_unreadable", lang)
-    # P121 D-P12: with open web on, any public page that isn't blocked may be read — labelled
-    # by tier. With it off, only whitelisted pages, as before.
+        return None, "", t("web_trust_list_unreadable", lang)
     tier = "trusted" if web_fetch.listed_entry(url) else "open"
     if web_fetch.is_blocked(url) or (
         tier == "open" and not web_fetch.open_web_enabled() and web_fetch.trust_list_state() == "ok"
     ):
-        return f"{t('lib_url_not_trusted', lang, url=url)}\n{t('svc_trusted_hint', lang)}"
-    allow = web_fetch.is_trusted if tier == "trusted" else web_fetch.not_blocked
+        return None, tier, f"{t('lib_url_not_trusted', lang, url=url)}\n{t('svc_trusted_hint', lang)}"
+    return (web_fetch.is_trusted if tier == "trusted" else web_fetch.not_blocked), tier, ""
+
+
+RECIPE_CANDIDATES = 6  # search hits tried in parallel for structured recipe data
+
+
+async def _recipe_from(url: str, allow) -> tuple[str, dict] | bool | None:
+    """(final_url, recipe) — None when the page has no recipe data — False when the page could not be fetched."""
+    try:
+        final_url, body, _ctype = await web_fetch.fetch_raw(url, allow=allow)
+    except web_fetch.FetchError as e:
+        print(f"[library] recipe fetch refused/failed ({url}): {e.reason}")
+        return False
+    found = recipe_card.find_recipe(body.decode("utf-8", errors="replace"))
+    return (final_url, found) if found else None
+
+
+async def _recipe_by_search(query: str) -> tuple[str, dict] | None:
+    """Code does the whole job (owner decision 2026-11-16: let code do the work, not the agent): search,
+    try the first hits in parallel, keep the first in search order that has a schema.org Recipe."""
+    hits = (await search_sources(query))[:RECIPE_CANDIDATES]
+    tries = [_recipe_from(h["url"], web_fetch.is_trusted if h.get("tier") == "trusted" else web_fetch.not_blocked)
+             for h in hits]
+    for got in await asyncio.gather(*tries):
+        if got:
+            return got
+    return None
+
+
+async def _recipe(url: str, arguments: dict, lang: str = "nb") -> str:
+    """P151 phase 5: a recipe — by search words (`query`, code searches itself) or from one page (`url`) — → the exact
+    recipe (from the page's schema.org data, by code) + a card in the chat (`/api/card/<id>`, appended to the reply
+    like a picture) and, with `screen`, the big card on a screen. No LLM in between."""
+    query = str(arguments.get("query") or "").strip()
+    if url.strip():
+        allow, _tier, refusal = _url_gate(url, lang)
+        if refusal:
+            return refusal
+        got = await _recipe_from(url, allow)
+        if got is False:  # not «no recipe data» — the page itself was not there (a guessed address gives 404)
+            return t("svc_url_fetch_failed", lang, url=url) + " " + t("lib_recipe_try_query", lang)
+        if not got:
+            return t("lib_recipe_none", lang, url=url)
+    elif query:
+        got = await _recipe_by_search(query)
+        if not got:
+            return t("lib_recipe_none_search", lang, query=query)
+    else:
+        return t("lib_recipe_need_query", lang)
+    final_url, found = got
+    rec = recipe_card.normalize(found, final_url)
+    cid = await asyncio.to_thread(card_store.save, recipe_card.render(rec, "chat", lang))
+    out = t("lib_recipe_ok", lang, source=recipe_card.source_name(final_url), text=recipe_card.as_text(rec, lang),
+            card=f"/api/card/{cid}")
+    if str(arguments.get("screen") or "").strip():
+        out += "\n" + await _recipe_on_screen(rec, arguments, lang)
+    return out
+
+
+async def _recipe_on_screen(rec: dict, arguments: dict, lang: str) -> str:
+    targets, choices = await _live_screen_targets(arguments)
+    screen = str(arguments.get("screen") or "")
+    if choices or len(targets) != 1:
+        return t("lib_recipe_screen_failed", lang, screen=screen, error="which screen? (screen=node:<id>)")
+    nid = targets[0]
+    res = await cast_client.call("/screen/card", {"node": nid, "html": recipe_card.render(rec, "screen", lang),
+                                                  "title": rec["name"]}, timeout=90)
+    if res.get("off"):
+        return t("cam_live_off", lang)
+    if res.get("error") == "not_paired":
+        return t("cam_live_not_paired", lang, screen=nid, url=res.get("setup_url") or "")
+    if res.get("ok") and res.get("showing"):
+        return t("lib_recipe_on_screen", lang, screen=nid)
+    return t("lib_recipe_screen_failed", lang, screen=nid, error=res.get("error") or "not confirmed")
+
+
+async def _fetch_url(url: str, arguments: dict, lang: str = "nb") -> str:
+    """Fetch one page Kåre names. Same safe fetcher and trusted list as web search, in both
+    modes (Miss Library on: she summarises; off: the page text goes back directly)."""
+    allow, tier, refusal = _url_gate(url, lang)
+    if refusal:
+        return refusal
     source_line = f"{t('lib_fetch_source', lang)}: {web_fetch.normalize_domain(url)} · {t('lib_tier_' + tier, lang)}"
     try:
         _final_url, text = await web_fetch.fetch_page_text(url, allow=allow)
@@ -1561,6 +1648,10 @@ async def _dispatch(name: str, arguments: dict) -> str:
             )
         if action == "fetch_table":
             return await _fetch_table(arguments, lang)
+        if action == "recipe":  # P151 phase 5 — behind the screens switch until P151 ships (D11)
+            if not screen_core.enabled():
+                return t("lib_recipe_off", lang)
+            return await _recipe(arguments.get("url", ""), arguments, lang)
         if action == "fetch_url":
             deadline = float(
                 arguments.get("_deadline") or web_fetch.setting("search_total_timeout_s")

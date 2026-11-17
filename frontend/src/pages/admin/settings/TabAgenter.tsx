@@ -8,6 +8,7 @@ import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { apiGetAgentTools, apiPutAgentTools, apiGetMeetingRoles, apiPutMeetingRoles, type AgentToolsConfig, type MeetingRolesConfig } from "@/services/api";
 import { SaveFeedback, RadioOption } from "./shared";
 import { useSaveState } from "./useSaveState";
+import ModelEnforcerCard from "./ModelEnforcerCard";
 
 const DEFAULT_AGENT_TOOLS: AgentToolsConfig = {
   mechanic: { utforsk: true, inspiser: true, "nettsøk": true, "søk_argus": true, shell: false, hukommelse: true },
@@ -41,7 +42,6 @@ const ToolList = ({ agent, tools, cfg, onToggle }: {
         <Switch
           checked={cfg[agent]?.[tool.key] ?? !tool.defaultOff}
           onCheckedChange={v => onToggle(agent, tool.key, v)}
-          className="data-checked:bg-green-600 data-unchecked:bg-red-600"
         />
       </div>
     ))}
@@ -218,6 +218,9 @@ export default function TabAgenter() {
         </Button>
         <SaveFeedback state={ss.state} />
       </div>
+
+      {/* ── Model guard (P142) — own load/save, independent of the tool switches above ── */}
+      <ModelEnforcerCard />
     </div>
   );
 }

@@ -162,7 +162,7 @@ def _topic(text="Tilhengeren gir bil-deteksjoner på cam_a709d724"):
 def test_background_loop_cannot_resolve(monkeypatch):
     _role(monkeypatch, "admin")
     tid = _topic()
-    res = agenda.resolve(tid, "Tilhengeren er vår", user_id="stian", rid="rid-refl-5", lang="nb")
+    res = agenda.resolve(tid, "Tilhengeren er vår", user_id="userone", rid="rid-refl-5", lang="nb")
     assert "samtale" in res
     assert ls.topic_info([tid])[tid]["label"] == "" and not ls.resolved_topics()
 
@@ -183,7 +183,7 @@ def test_admin_resolves_then_text_echo_does_not_reopen(monkeypatch):
             "list_name": "observations",
             "topic_id": tid,
             "conclusion": "Tilhengeren er vår og står fast — forventet",
-            "_user_id": "stian",
+            "_user_id": "userone",
             "_rid": LIVE_RID,
         }
     )
@@ -201,7 +201,7 @@ def test_admin_resolves_then_text_echo_does_not_reopen(monkeypatch):
 def test_meaning_echo_via_relevance(monkeypatch):
     _role(monkeypatch, "admin")
     tid = _topic()
-    agenda.resolve(tid, "Tilhengeren er vår", user_id="stian", rid=LIVE_RID)
+    agenda.resolve(tid, "Tilhengeren er vår", user_id="userone", rid=LIVE_RID)
     monkeypatch.setattr(relevance, "match_resolved_sync", lambda text, resolved: (tid, 0.7))
     res = agenda.agenda_add("Ansikts-detektoren sa tilhenger 99 % i natt", rid="rid-refl-7")
     assert "allerede løst" in res and ls.list_inbox()[0]["status"] == "echo"
@@ -210,7 +210,7 @@ def test_meaning_echo_via_relevance(monkeypatch):
 def test_reopen_is_a_proposal_a_human_confirms(monkeypatch):
     _role(monkeypatch, "admin")
     tid = _topic()
-    agenda.resolve(tid, "Tilhengeren er vår", user_id="stian", rid=LIVE_RID)
+    agenda.resolve(tid, "Tilhengeren er vår", user_id="userone", rid=LIVE_RID)
     res = _note(
         {
             "action": "reopen",
@@ -221,7 +221,7 @@ def test_reopen_is_a_proposal_a_human_confirms(monkeypatch):
     )
     pid = int(res.split("#")[-1].split(";")[0])
     assert ls.resolved_topics(), "still resolved until a human confirms"
-    ls.decide_proposal(pid, "confirmed", "stian")
+    ls.decide_proposal(pid, "confirmed", "userone")
     assert not ls.resolved_topics()
     assert ls.topic_info([tid])[tid]["last_developed"] is None
 
@@ -273,7 +273,7 @@ def test_reminders_block_has_lessons_and_resolved_as_prose(monkeypatch):
     _role(monkeypatch, "admin")
     lessons.lesson_add("Lov via lovdata.", "Lov")
     tid = _topic()
-    agenda.resolve(tid, "Tilhengeren er vår — forventet", user_id="stian", rid=LIVE_RID)
+    agenda.resolve(tid, "Tilhengeren er vår — forventet", user_id="userone", rid=LIVE_RID)
     block = llm_adapter._load_kare_reminders("nb")
     assert "Lov via lovdata." in block and "Tilhengeren er vår — forventet" in block
 
@@ -338,7 +338,7 @@ def test_last_user_text_handles_multimodal():
 def _resolved_and_new(monkeypatch):
     _role(monkeypatch, "admin")
     old = _topic("Tilhengeren gir bil-deteksjoner på cam_a709d724")
-    agenda.resolve(old, "Tilhengeren er vår — forventet", user_id="stian", rid=LIVE_RID)
+    agenda.resolve(old, "Tilhengeren er vår — forventet", user_id="userone", rid=LIVE_RID)
     new = ls.add_inbox_item("Ansikts-detektor: tilhenger 99 % i natt", source="refl")["topic_id"]
     return old, new
 
@@ -413,7 +413,7 @@ def test_proposal_followup_counts_rows_since_decision():
     tid = ls.add_inbox_item("HA svarer 200 OK for ukjent enhet", source="gui")["topic_id"]
     fid = ls.add_finding("r", "funn", [], True, topic_id=tid)
     pid = ls.add_proposal(fid, "Sjekk at enheten finnes før 200")
-    ls.decide_proposal(pid, "confirmed", "stian")
+    ls.decide_proposal(pid, "confirmed", "userone")
     conn = ls._get_conn()  # timestamps have second resolution: put the decision in the past
     conn.execute(
         "UPDATE proposals SET decided_at = '2026-10-01T00:00:00+00:00' WHERE id = ?", (pid,)
@@ -449,7 +449,8 @@ def test_report_shows_resolved_section():
     assert "Sak #240 er det samme som løst sak #71" in report
     assert "forslag #14 om gjenåpning" in report
     assert "Løst sak #71: 5 ekko" in report
-    assert "Bekreftet forslag #9 (sak #37, 2026-10-09): 0 nye rader" in report
+    # T32b: the line now says built/not built and which topic it counts
+    assert "Bekreftet forslag #9 (sak #37, 2026-10-09): ikke bygget · 0 nye rader på sak #37 siden" in report
 
 
 # ── C6: settings API (GUI → settings.yaml) ──────────────────────────────────
@@ -602,7 +603,7 @@ def test_move_rejects_unknown_target(tmp_lists):
 def test_reopen_works_without_a_list_and_from_resolved(monkeypatch, list_args):
     _role(monkeypatch, "admin")
     tid = _topic()
-    agenda.resolve(tid, "Tilhengeren er vår", user_id="stian", rid=LIVE_RID)
+    agenda.resolve(tid, "Tilhengeren er vår", user_id="userone", rid=LIVE_RID)
     res = _note({"action": "reopen", "topic_id": tid, "text": "Ny bil står der nå", **list_args})
     assert "Ukjent action" not in res
     assert [p["kind"] for p in ls.list_proposals()] == ["reopen"]
@@ -611,14 +612,14 @@ def test_reopen_works_without_a_list_and_from_resolved(monkeypatch, list_args):
 def test_resolve_without_a_list_goes_by_topic_number(monkeypatch):
     _role(monkeypatch, "admin")
     tid = _topic()
-    res = _note({"action": "resolve", "topic_id": tid, "conclusion": "Forventet", "_user_id": "stian", "_rid": LIVE_RID})
+    res = _note({"action": "resolve", "topic_id": tid, "conclusion": "Forventet", "_user_id": "userone", "_rid": LIVE_RID})
     assert f"#{tid}" in res and ls.resolved_topics()[0]["id"] == tid
 
 
 def test_resolve_on_an_explicit_other_list_is_still_refused(monkeypatch):
     _role(monkeypatch, "admin")
     tid = _topic()
-    _note({"action": "resolve", "list_name": "kare", "topic_id": tid, "conclusion": "x", "_user_id": "stian", "_rid": LIVE_RID})
+    _note({"action": "resolve", "list_name": "kare", "topic_id": tid, "conclusion": "x", "_user_id": "userone", "_rid": LIVE_RID})
     assert not ls.resolved_topics(), "a kare-list call never resolves a learning.db topic"
 
 

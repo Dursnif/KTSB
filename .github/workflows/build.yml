@@ -8,7 +8,8 @@ on:
   workflow_dispatch:
 
 # A tag with a suffix (v1.11.0-rc1) is a test run: images get only that tag (never :latest) and the GitHub Release is
-# marked as a pre-release, which the in-app updater never offers.
+# marked as a pre-release, which the in-app updater offers only when the admin turned on Maintenance → «Include test
+# versions» (Expert, off by default; from v1.11.0 — older updaters never offer it).
 
 jobs:
   build:

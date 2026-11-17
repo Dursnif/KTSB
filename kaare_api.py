@@ -3,7 +3,6 @@ import hashlib
 import json
 import logging
 import os
-import shutil
 import sys
 import time
 from collections import defaultdict
@@ -25,14 +24,15 @@ logging.basicConfig(
 import httpx
 import yaml
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 import kaare_core.app_state as app_state
-from adapters.llm_adapter import ask_llm, ask_llm_cloud, ask_vlm
+from adapters.llm_adapter import ask_llm, ask_llm_cloud
+from kaare_core import cors as _cors
 from kaare_core import log_buffer
 from kaare_core.agents.miss_kare.evaluator import evaluate as _miss_kare_evaluate
 from kaare_core.agents.miss_kare.evaluator import extract_and_store_fact as _miss_kare_extract
@@ -46,6 +46,9 @@ from kaare_core.config import (
 )
 from kaare_core.config import get_network_settings as _get_network_settings
 from kaare_core.config import get_settings as _get_settings
+from kaare_core.frigate_user import alerts
+from kaare_core.frigate_user import pipe as frigate_user_pipe
+from kaare_core.frigate_user.conclude import start_conclude_loop
 from kaare_core.llm_model_check import log_missing_models
 from kaare_core.memory.knowledge_import import import_legacy_state
 from kaare_core.memory.learning_store import backfill_themes, import_legacy_kare_list
@@ -53,11 +56,13 @@ from kaare_core.memory.short_term import STMRegistry
 from kaare_core.rate_limiter import check_rate_limit as _rate_check
 from kaare_core.routers.router_argus import router as argus_router
 from kaare_core.routers.router_backup import router as backup_router
+from kaare_core.routers.router_frigate_user import router as frigate_user_router
 from kaare_core.routers.router_generate import handle_generate
 from kaare_core.routers.router_media import router as media_router
 from kaare_core.routers.router_meetings import router as meetings_router
 from kaare_core.routers.router_memory import router as memory_router
 from kaare_core.routers.router_memory_embed import router as memory_embed_router
+from kaare_core.routers.router_rooms import router as rooms_router
 from kaare_core.routers.router_settings import router as settings_router
 from kaare_core.routers.router_stt_models import router as stt_models_router
 from kaare_core.routers.router_system import router as system_router
@@ -88,6 +93,7 @@ from kaare_core.users.auth import (
 )
 from kaare_core.users.caller import identify_caller as _identify_caller
 from kaare_core.users.store import init_db as init_users_db
+from kaare_core.weights import store as _weights_store
 from kaare_fastpath import match_fastpath
 
 _miss_kare_stm = MissKareSTM()
@@ -249,6 +255,8 @@ app.include_router(media_router)
 app.include_router(meetings_router)
 app.include_router(system_router)
 app.include_router(settings_router)
+app.include_router(rooms_router)
+app.include_router(frigate_user_router)  # P144-s05: face classification (Integrations → Frigate)
 app.include_router(memory_router)
 app.include_router(backup_router)
 app.include_router(memory_embed_router)
@@ -271,10 +279,15 @@ class _SuppressPolls(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
+        if "/api/frigate_user/episodes/" in msg and "/frames/" in msg:
+            return False  # the episode GUI fetches every frame of every listed episode (P144)
         return not any(ep in msg for ep in self._QUIET)
 
 
 logging.getLogger("uvicorn.access").addFilter(_SuppressPolls())
+# httpx logs every outgoing request at INFO (Frigate, Ollama, HA …) — callers log their own failures; LLM calls are in
+# logs/llm_calls.log. Same as kaare_argus.py.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 @app.on_event("shutdown")
@@ -285,6 +298,10 @@ async def _shutdown():
         _log.info("STM snapshots saved on shutdown")
     except Exception as _e:
         _log.warning("STM snapshot on shutdown failed: %s", _e)
+    try:
+        _weights_store.get_store().shutdown_flush()  # queued learning rows to disk; atexit is only the backstop
+    except Exception as _e:
+        _log.warning("weights flush on shutdown failed: %s", _e)
     log_buffer.flush()  # buffered logs to disk before exit (P131)
 
 
@@ -320,6 +337,9 @@ async def _startup():
     await start_action_queue_worker()
     _start_job_store()
     _restore_stm()
+    spawn(
+        _heal_stm_actions()
+    )  # N26 — «OK»s HA only pretended (unknown entity, 200 anyway) become not found
     spawn(_start_mqtt())
 
     spawn(start_reflection_loop())
@@ -329,7 +349,12 @@ async def _startup():
 
     spawn(start_ha_context_task())
 
+    spawn(start_ha_registry_sync())  # P137 — HA areas/floors/entities → state/ha_registry.json
+    spawn(start_ha_node_triggers())  # P138 — HA button presses start voice nodes
+
     spawn(start_media_context_task())
+    spawn(start_conclude_loop())  # P144-s06b — 27B concludes per closed Frigate episode (off with frigate_user.enabled)
+    _frigate_adapter.warm_camera_names()  # DT04-S05l — camera names (not raw ids) in chat text right after a restart
     try:
         # PLC0415: optional dependency — local/ is an install's own extension package, not shipped (rule 24)
         from local import register_local_extensions  # noqa: PLC0415
@@ -346,6 +371,40 @@ def _stm_cfg() -> dict:
         return yaml.safe_load(Path("/kaare/configs/settings.yaml").read_text()).get("stm", {})
     except Exception:
         return {}
+
+
+async def _heal_stm_actions() -> None:
+    """N26: HA answers 200 for an entity it does not have, so older memories can hold «OK» actions that never
+    happened — and Kåre reuses that entity id. Ask the gateway once which of them HA has; mark the rest not found.
+    Waits for the gateway (it may start after the API); gives up quietly. Never raises."""
+    logger = logging.getLogger("kaare_api")
+    entities = sorted(app_state.STM_REGISTRY.ok_action_entities())
+    if not entities:
+        return
+    for _attempt in range(20):
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.post(
+                    f"{get_service('internal', 'ha_gateway')}/api/ha_exists",
+                    json={"entity_ids": entities},
+                    headers=_service_headers(),
+                )
+            r.raise_for_status()
+            states = r.json().get("states") or {}
+            missing = {e for e, st in states.items() if st == "not_found"}
+            fixed = app_state.STM_REGISTRY.correct_missing_entities(missing) if missing else 0
+            logger.info(
+                "STM heal: %d action entities checked, %d not in HA %s, %d memories corrected",
+                len(entities),
+                len(missing),
+                sorted(missing),
+                fixed,
+            )
+            return
+        except Exception as exc:
+            logger.debug("STM heal: gateway not ready (%s)", exc)
+            await asyncio.sleep(15)
+    logger.warning("STM heal: HA gateway not reachable — skipped")
 
 
 def _restore_stm() -> None:
@@ -389,7 +448,6 @@ async def _stm_snapshot_loop() -> None:
     snapshot_dir = "/kaare/state/stm_users"
     history_dir = Path(cfg.get("history_dir", "/kaare/state/stm_history"))
     interval = int(cfg.get("snapshot_interval_seconds", 300))
-    history_days = int(cfg.get("history_days", 7))
 
     last_date = datetime.now(UTC).date()
 
@@ -405,23 +463,8 @@ async def _stm_snapshot_loop() -> None:
                 last_date = today
                 logger.info("STM daily snapshot saved: %s", daily_dir)
 
-                # Prune history older than history_days
-                if history_dir.exists():
-                    cutoff = today - timedelta(days=history_days)
-                    # Daily dirs (current format) and single YYYY-MM-DD.json files (the format
-                    # before the per-user dirs) — the old files were never matched (P116 B18).
-                    for f in list(history_dir.glob("????-??-??")) + list(
-                        history_dir.glob("????-??-??.json")
-                    ):
-                        try:
-                            if datetime.strptime(f.name[:10], "%Y-%m-%d").date() < cutoff:
-                                if f.is_dir():
-                                    shutil.rmtree(f)
-                                else:
-                                    f.unlink()
-                                logger.info("STM history pruned: %s", f.name)
-                        except Exception:
-                            pass
+                # P150: pruned by size, oldest summarised day first (Settings → Logs/Storage)
+                await asyncio.to_thread(stm_history.prune, history_dir)
         except Exception as e:
             logger.warning("STM snapshot loop error: %s", e)
 
@@ -429,7 +472,8 @@ async def _stm_snapshot_loop() -> None:
 async def _start_mqtt():
     try:
         load_camera_config()
-        register_end_event_callback(handle_end_event)
+        register_end_event_hook(alerts.on_end_event)  # P144 6c: module 7 starts its own away alert (always on)
+        frigate_user_pipe.start()  # P144-s06a: the Frigate user's shadow pipe (raw-claim hook + visit folding)
         await run_mqtt_listener()
     except Exception as e:
         logging.getLogger("kaare_api").warning("MQTT adapter not started: %s", e)
@@ -453,41 +497,49 @@ def _load_reflection_config() -> tuple[bool, int]:
 
 app_state._REFLECTION_ENABLED, app_state._JANG_INTERVAL_S = _load_reflection_config()
 
-try:
-    import yaml as _cors_yaml
-
-    _cors_cfg = _cors_yaml.safe_load(Path("/kaare/configs/settings.yaml").read_text())
-    _cors_origins: list = _cors_cfg.get("cors_origins", ["*"])
-except Exception:
-    _cors_origins = ["*"]
+# DT04 R0.8: «same-host» is the default and the fallback (was «*» — any website could call the API from a household
+# browser). Origins the user lists, and an explicit «*», work as before (kaare_core/cors.py).
+_cors_origins: list = _cors.read_origins(Path("/kaare/configs/settings.yaml"))
 
 
-class PinChangeGateMiddleware(BaseHTTPMiddleware):
+# kaare_api's own middleware is pure ASGI (P145): it never reads the request body ahead or answers receive() for
+# the app. BaseHTTPMiddleware did, and on starlette >= 1.8 that emptied every FileResponse (camera snapshots,
+# stored images) — FileResponse now listens on receive() for http.disconnect while it streams.
+
+
+class PinChangeGateMiddleware:
     """A token issued while the PIN must be changed reaches only PIN change and logout (DT03 R6 H2).
     Added before CORS so the 403 still carries CORS headers for the GUI."""
 
-    async def dispatch(self, request: Request, call_next):
-        auth = request.headers.get("authorization", "")
-        raw = (
-            auth[7:].strip()
-            if auth[:7].lower() == "bearer "
-            else request.query_params.get("token", "")
-        )
-        if raw:
-            try:
-                payload = _decode_token(raw)
-            except Exception:
-                payload = None
-            if payload and payload.get("pin_change"):
-                blocked = await asyncio.to_thread(
-                    _pin_change_blocks, request.method, request.url.path, payload
-                )
-                if blocked:
-                    return JSONResponse(
-                        status_code=403,
-                        content={"detail": "PIN change required.", "pin_change_required": True},
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            request = Request(scope)
+            auth = request.headers.get("authorization", "")
+            raw = (
+                auth[7:].strip()
+                if auth[:7].lower() == "bearer "
+                else request.query_params.get("token", "")
+            )
+            if raw:
+                try:
+                    payload = _decode_token(raw)
+                except Exception:
+                    payload = None
+                if payload and payload.get("pin_change"):
+                    blocked = await asyncio.to_thread(
+                        _pin_change_blocks, request.method, request.url.path, payload
                     )
-        return await call_next(request)
+                    if blocked:
+                        response = JSONResponse(
+                            status_code=403,
+                            content={"detail": "PIN change required.", "pin_change_required": True},
+                        )
+                        await response(scope, receive, send)
+                        return
+        await self.app(scope, receive, send)
 
 
 app.add_middleware(PinChangeGateMiddleware)
@@ -516,22 +568,35 @@ async def _redoc_docs():
     return get_redoc_html(openapi_url="/openapi.json", title=app.title)
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=False,  # We use JWT in headers, not cookies — credentials=True is unnecessary
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_cors.add_cors(app, _cors_origins)  # JWT in headers, not cookies — credentials stay off
 
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        return response
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+}
+
+
+class SecurityHeadersMiddleware:
+    """Sets the security headers on every HTTP response as its headers are sent."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for name, value in _SECURITY_HEADERS.items():
+                    headers[name] = value
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
 app.add_middleware(SecurityHeadersMiddleware)
@@ -1046,7 +1111,6 @@ async def generate(request: PromptRequest, http: Request):
         api_intent_to_ha=None,  # route removed in P120; the parameter is unused in handle_generate
         api_exec_ha_direct=exec_ha_direct,
         api_ask_llm=ask_llm,
-        api_ask_vlm=ask_vlm,
         api_ask_cloud=ask_llm_cloud,
         block_ha_write=_block_ha_write,
         network_context=_network_ctx,
@@ -1067,7 +1131,10 @@ async def generate(request: PromptRequest, http: Request):
                 if prior:
                     prior_question = prior[-1].miss_kare_comment
 
-            comment = await _miss_kare_evaluate(u_msg, k_reply, uid, addressed_directly=addressed)
+            # Owner decision 2026-11-16 (option A): the turn before, so a short answer is read against Kåre's question
+            last = _miss_kare_stm.get_recent(uid, n=1)
+            previous = (last[-1].user_msg, last[-1].kare_response) if last else None
+            comment = await _miss_kare_evaluate(u_msg, k_reply, uid, addressed_directly=addressed, previous=previous)
             print(f"[MISS KÅRE] evaluator ferdig rid={rid} silent={comment == '[STILLE]'}")
             _miss_kare_stm.add(uid, u_msg, k_reply, comment)
             if comment != "[STILLE]":
@@ -1185,64 +1252,100 @@ METRICS_LOG = "/kaare/logs/metrics_requests.log"
 os.makedirs(os.path.dirname(METRICS_LOG), exist_ok=True)
 
 
-class MetricsMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        start = time.perf_counter()
-        raw = await request.body()
-
-        async def _receive():
-            return {"type": "http.request", "body": raw}
-
-        request._receive = _receive
-
-        resp = await call_next(request)
-        dur_ms = (time.perf_counter() - start) * 1000.0
-
+def _log_request_metrics(path: str, raw: bytes, status: int, start: float) -> None:
+    """One line per request in metrics_requests.log. Never raises (rule 6)."""
+    try:
         prompt = ""
         try:
             data = json.loads(raw or b"{}")
-            prompt = data.get("prompt") or data.get("input") or data.get("intent") or ""
+            if isinstance(data, dict):
+                prompt = data.get("prompt") or data.get("input") or data.get("intent") or ""
         except Exception:
             pass
-
+        if not isinstance(prompt, str):
+            prompt = ""
         rec = {
             "ts": datetime.now(UTC).isoformat(timespec="seconds"),
-            "endpoint": request.url.path,
-            "status": getattr(resp, "status_code", 0),
-            "duration_ms": round(dur_ms, 2),
-            "prompt_preview": (prompt[:120] if prompt else ""),
+            "endpoint": path,
+            "status": status,
+            "duration_ms": round((time.perf_counter() - start) * 1000.0, 2),
+            "prompt_preview": prompt[:120],
             "prompt_hash": (hashlib.sha1(prompt.encode("utf-8")).hexdigest() if prompt else None),
         }
         log_buffer.write(METRICS_LOG, rec)
-        return resp
+    except Exception as e:
+        logging.getLogger("kaare_api").warning("metrics log failed for %s: %s", path, e)
+
+
+class MetricsMiddleware:
+    """Logs endpoint, status, duration and prompt preview per request. Watches the body as the endpoint reads it
+    and the status as it is sent — it never reads ahead and never answers receive() itself. Duration runs until
+    the app has finished sending (BaseHTTPMiddleware stopped at the response headers)."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        start = time.perf_counter()
+        chunks: list[bytes] = []
+        status = 0
+
+        async def receive_watch() -> Message:
+            message = await receive()
+            if message["type"] == "http.request":
+                chunks.append(message.get("body", b""))
+            return message
+
+        async def send_watch(message: Message) -> None:
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = message["status"]
+            await send(message)
+
+        try:
+            await self.app(scope, receive_watch, send_watch)
+        except Exception:
+            status = status or 500
+            raise
+        finally:
+            _log_request_metrics(scope.get("path", ""), b"".join(chunks), status, start)
 
 
 app.add_middleware(MetricsMiddleware)
 import logging as _l
 import logging as _ll
-from datetime import timedelta
 from pathlib import Path
 
 import httpx as _hx
 import psutil
 
+from adapters import frigate_adapter as _frigate_adapter
 from adapters import llm_adapter
 from adapters import web_search_adapter as _wsa
 from adapters.mqtt_adapter import publish_mqtt as _publish_mqtt
-from adapters.mqtt_adapter import register_end_event_callback, run_mqtt_listener
+from adapters.mqtt_adapter import (
+    register_end_event_hook,
+    run_mqtt_listener,
+)
 from kaare_core import config as _core_cfg
 from kaare_core.agents.mechanic.job_store import start_background_tasks as _start_job_store
 from kaare_core.background import spawn
 from kaare_core.config import get_local_tz as _get_local_tz
 from kaare_core.config import validate_tool_permissions_consistency, verify_always_included_survives
 from kaare_core.crypto import ensure_system_master_key
-from kaare_core.domain.frigate_responder import handle_end_event, load_camera_config
+from kaare_core.domain.frigate_store import load_camera_config
 from kaare_core.ha_context_task import start_ha_context_task
+from kaare_core.ha_node_triggers import start_ha_node_triggers
+from kaare_core.ha_registry_sync import start_ha_registry_sync
 from kaare_core.media_context_task import start_media_context_task
 from kaare_core.memory.long_term import get_ltm, load_latest_daily_summary
 from kaare_core.presence_monitor import start_presence_monitor
 from kaare_core.reflection_loop import start_reflection_loop
 from kaare_core.session_keys import get_session_key_sync
+from kaare_core.storage import stm_history
 from kaare_core.tools.think_cache import read_think_history
 from kaare_core.tools.timer_service import ack_notification as _ack
 from kaare_core.tools.timer_service import (

@@ -90,7 +90,7 @@ KTSB runs via **Docker**, which means it works on Linux, Windows, and macOS with
 Be honest with yourself about this one — it decides what the main agent can do:
 
 - **27B on a 24 GB+ GPU — KTSB as intended.** The main agent picks the right tool, controls the house, remembers, searches, and tells you when it doesn't know.
-- **9B or smaller (the default on a fresh install) — basic mode.** Conversation works. Tool use is unreliable: it may skip a search, pick the wrong tool, or claim to know things it has no source for. On CPU only, the first answer after start can take several minutes; later answers about a minute.
+- **9B or smaller (the default on a fresh install) — basic mode.** Conversation works. Tool use is unreliable: it may skip a search, pick the wrong tool, or claim to know things it has no source for. Speed on CPU only, measured on two machines: on our development machine (12–18 threads in use) the first answer after start takes several minutes, later answers about a minute; on an 8-core laptop (Ryzen 7 8745H, no GPU) it took about 6 minutes to read one search result and about 13 minutes for one question with web search (our Windows test, November 2026). Speed depends heavily on the CPU; without a GPU the 9B is a way to try KTSB, not KTSB.
 - **Cloud** — only for explicit «ask online» questions today; it does not run the main agent's tools.
 
 A smaller model is a way to try KTSB, not the finished experience. A tuned KTSB-sized small model is on the roadmap.
@@ -139,10 +139,11 @@ did not start in Windows PowerShell 5.1, the version Windows ships with (also in
 
 **Known issues in this release:**
 
-- On CPU only, the 9B backup model can time out (120 s) when it starts cold, so the fallback fails.
+- On CPU only, the 9B backup model can time out (120 s) when it starts cold, so the fallback fails. Without a GPU, answers that use web search can take over ten minutes on a laptop.
 - Right after you switch language, the main agent may keep answering in the old one for a while.
 - A 27B model can say it did something without doing it, or write a tool call as plain text instead of running
-  it; the answer check catches the common phrasings, not all.
+  it. The answer check now asks the model to retry when it sees a tool call written as text (and shows an honest
+  «not done» if the retry fails too); it catches the common phrasings, not all.
 - In onboarding, «External LLM server» sets every role to the Ollama API. For vLLM, LM Studio or another
   OpenAI-compatible server, change the provider afterwards under **Settings → LLM / Models**.
 - A per-user reply language is not active yet: everyone gets the household language unless they ask otherwise.
@@ -170,29 +171,33 @@ After restarting, **open the Docker Desktop application itself** (find it in you
 
 Verify Docker is working by opening a terminal and running:
 ```
-docker --version
+docker info
 ```
-You should see a version number. If you get an error, make sure Docker Desktop (Windows/macOS) is open and shows as running — not just installed.
+You should see a long list that includes a **Server** section. If it ends with an error instead (for example «cannot connect» or «error during connect»), Docker is installed but not running — open Docker Desktop (Windows/macOS) and wait until it shows as running, then try again. (`docker --version` is not enough for this check: it answers even when Docker is not running.)
 
 ---
 
 ### Step 2 — Download KTSB
 
-Open a terminal — **PowerShell** on Windows, **Terminal** on Mac or Linux — and run:
+There are two ways; both give the same install.
+
+**The release file (no extra tools needed — the simplest way on Windows, which has no git built in):** download `ktsb-docker-<version>.tar.gz` from the [latest release](https://github.com/Dursnif/KTSB/releases/latest), unpack it, and open a terminal inside the folder — **PowerShell** on Windows, **Terminal** on Mac or Linux. Use the release file, not GitHub's «Download ZIP» — the ZIP carries no version, so the update button stays off.
+
+**With git** (if you have it — on Windows it can be installed with `winget install Git.Git`):
 
 ```bash
 git clone https://github.com/Dursnif/KTSB.git
 cd KTSB
 ```
 
-> **No git?** Download `ktsb-docker-<version>.tar.gz` from the [latest release](https://github.com/Dursnif/KTSB/releases/latest), unpack it, and open a terminal inside the folder. (Use the release file, not GitHub's «Download ZIP» — the ZIP carries no version, so the update button stays off.)
-
 ---
 
 ### Step 3 — Run setup, then start KTSB
 
-The setup script checks your hardware (GPU or CPU), asks whether to include the built-in Ollama, writes `.env`,
-and makes the folder updatable from the GUI later. Answer **yes** when it offers to convert the folder.
+The setup script checks your hardware (GPU or CPU), asks one or two questions and writes `.env`.
+
+- **«Include built-in Ollama? [Y/n]»** — Ollama is the program that runs the AI model. Answer **Y** (the default, just press Enter) unless you already have Ollama or another LLM server running somewhere; without one, KTSB has no model to answer with. It adds a large download (see below).
+- **«Convert now? [Y/n]»** — only asked if you downloaded with git. Answer **Y**: it lets KTSB update itself from the Maintenance page later (your files stay where they are; `git pull` is then no longer used). Setup then writes down the most recent release tag your download is based on as the installed version, and KTSB runs that release's images. With the release file this question does not appear — that folder is updatable as it is.
 
 **Linux / macOS:**
 ```bash
@@ -210,7 +215,13 @@ on Windows 11 with scripts blocked, in Windows PowerShell 5.1.)
 
 Docker Compose 2.20 or newer is needed — Docker Desktop and current Docker Engine already have it.
 
-The first start downloads the Docker images (about 5 GB). This takes a few minutes depending on your internet speed. You only need to do this once — future starts are instant.
+**Your own compose changes** go in `docker-compose.override.yml` (Docker Compose reads it on its own; updates never
+replace it). With a GPU, setup writes that file to give Ollama the GPU. It is setup's file as long as its first line
+starts with `# Auto-generated by setup`. Setup only rewrites or removes it then. If you edited it, setup first copies
+it to `docker-compose.override.yml.bak-<date+time>` and tells you. To make the file yours, remove that first line.
+After that, setup never touches it again. If it needs GPU lines, it prints them so you can add them yourself.
+
+The first start downloads the Docker images. Measured on the v1.11.0 test images (as `docker images` shows them, unpacked): about **6 GB** without the built-in Ollama, about **15 GB** with it. The download itself is compressed and much smaller — roughly **1.5 GB** without Ollama and **5 GB** with it (our estimate from the test images; the release page shows the exact sizes). The AI model itself comes on top, when you pick one in the onboarding wizard (the 9B model is about 6.6 GB). On a slow line this takes a while. You only need to do this once — future starts are quick.
 
 Watch the progress:
 ```bash
@@ -245,7 +256,7 @@ The onboarding wizard walks you through the rest — no config files to edit man
 
 ## Connecting Home Assistant
 
-In the KTSB admin panel, go to **Settings → Home Assistant**.
+In the KTSB admin panel, go to **Integrations → Home Assistant**.
 
 You need two things from your Home Assistant install:
 
@@ -255,7 +266,7 @@ You need two things from your Home Assistant install:
 
 To create one: in Home Assistant, click your profile picture in the bottom-left corner → **Security** → scroll down to **Long-lived access tokens** → **Create token** → give it a name like *KTSB* → copy it and save it somewhere safe.
 
-Paste the URL and token into **Settings → Home Assistant** in KTSB and save. That is it.
+Paste the URL and token into **Integrations → Home Assistant** in KTSB and save. That is it.
 
 **Setting up device names** — the main agent understands room names and device nicknames you define yourself. Open the **Aliases** page to map your own names (like *"the bedroom lamp"*) to Home Assistant entity IDs. The alias editor has a search function to help you find the right entity.
 
@@ -263,14 +274,22 @@ Paste the URL and token into **Settings → Home Assistant** in KTSB and save. T
 
 ## Connecting Frigate
 
-In KTSB admin, go to **Settings → Integrations → Frigate**.
+In KTSB admin, go to **Integrations → Frigate**.
 
 You need:
 - **Frigate URL** — the address of your Frigate instance (e.g. `http://192.168.1.x:5000`)
 
-For real-time motion event detection, also connect **MQTT** under **Settings → MQTT/VPN** with your broker address and credentials. This lets the main agent react to Frigate events as they happen.
+For real-time motion event detection, also connect **MQTT** under **Integrations → MQTT** with your broker address and credentials. This lets the main agent react to Frigate events as they happen.
 
-Go to **Settings → Images/Camera** to configure which cameras the main agent should monitor, what objects to watch for (people, cars, animals), confidence thresholds, and whether to announce detections over your speakers.
+On the same **Integrations → Frigate** tab, below the connection, configure which cameras the main agent should monitor, what objects to watch for (people, cars, animals), confidence thresholds, and whether to announce detections over your speakers.
+
+### What KTSB remembers from your cameras
+
+Once Frigate is connected, KTSB keeps its own memory of what the cameras saw (the **Frigate user**, on by default; it does nothing until Frigate is connected): each detection, situations grouped across cameras, and a few pictures per situation. A name from Frigate's face recognition is kept only after KTSB has checked it against the picture, and a person who turned off «Frigate may track me» (on the Users page) is never stored by name.
+
+- **Encrypted on disk.** Names, descriptions and pictures are stored encrypted with a key that never leaves the machine. A copy of the files — a backup on a NAS, a lost disk — cannot be read without it. The flip side: if you restore a backup on a *different* machine, KTSB cannot read the old camera memory there.
+- **Light by default.** The steps that ask the main model to describe a whole situation frame by frame and write a conclusion are **off** (Integrations → Frigate → **Modules**). On a small machine that model is the one KTSB answers you with, so turning them on can make answers slower while the cameras are busy.
+- **Size limits** for the camera memory are set on the same tab (**Storage limits**, in Expert mode).
 
 ---
 
@@ -329,9 +348,11 @@ Set `COMPOSE_PROFILES` in your `.env` file to control which optional services st
 | *(empty)* | Core: API, GUI, HA gateway, semantic memory service, Qdrant, SearXNG, Caddy, night runner, updater | You run your own LLM server elsewhere |
 | `ollama` | + Built-in Ollama LLM server | The default; leave it out when you use your own server |
 | `medium` | + BGE-M3 embedding service | Local wiki search, Argus search, better «Relevant now» |
-| `full` | + Voice bridge (speech-to-text, text-to-speech) and BGE-M3 | When you want voice input and output |
+| `full` | + BGE-M3, and speech: the speech-to-text model and a Piper voice are downloaded and loaded at start | When you want voice input and output |
 | `vpn` | + WireGuard (wg-easy) | Remote access, see below |
 | `inner_voices` | + Jing and Jang | Optional background inner voices |
+
+The voice bridge (port 8011) runs in every profile: it is how KTSB sends speech, pictures, NRK, YouTube, Plex and web pages to speakers and TVs (Cast, DLNA) and steers TVs with their own remote protocol (Android TV, Samsung). Without `full` it downloads no speech models at start — only if someone actually uses speech.
 
 ```
 # .env — what setup writes (ollama,full when it finds a GPU)
@@ -422,6 +443,7 @@ Your settings are kept. The GUI keeps your configuration in `configs/` and the s
 stay exactly as you left them (a copy of the folder is saved to `configs/.history/_snapshots/` first).
 Setup keeps your git history as `.git-before-ktsb-updater` — after that, updates come from the GUI, not `git pull`.
 If you edited `docker-compose.yml`, move your changes to `docker-compose.override.yml` first; setup warns you.
+Setup keeps that file as described under *Your own compose changes* in Step 3.
 
 If you use speakers on your network (ESP32, Chromecast, Home Assistant media players), set
 *Settings → LLM / Models → Piper → LAN address for speakers* once after the upgrade — Docker cannot detect it.

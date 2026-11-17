@@ -132,7 +132,7 @@ def test_world_delete_and_edit_affect_all_matches():
 
 def test_selfimage_update_requires_allowed_user():
     """configs/settings.yaml ships with contributors: selected, allowed_users:
-    [stian] in this live install — a non-listed real user is silently no-oped
+    [userone] in this live install — a non-listed real user is silently no-oped
     (matches pre-P105 behavior, not a regression)."""
     _run(
         executor_personality.dispatch(

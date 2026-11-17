@@ -34,6 +34,7 @@ from kaare_core.config import (
     get_memory_prompt_config,
 )
 from kaare_core.config import get_service as _svc
+from kaare_core.storage import sqlite_files
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ def embed_sync(texts: list[str], prov: dict, timeout: float = _QUERY_TIMEOUT_S):
 
 def _conn() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    conn = sqlite_files.connect(str(DB_PATH), check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(
         "CREATE TABLE IF NOT EXISTS vectors (key TEXT PRIMARY KEY, hash TEXT NOT NULL, "

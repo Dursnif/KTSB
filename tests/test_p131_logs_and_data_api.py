@@ -36,20 +36,19 @@ def test_defaults_and_existing_values(settings_file):
     assert got["retention"] == {
         "interactions_retention_days": 0,
         "episodes_retention_days": 90,
-        "think_cache_retention_days": 30,
-    }
+    }  # P150: think_cache_retention_days is gone — the think cache is kept by size (Logs/Storage)
     assert got["recommended"]["flush_min"] == 2 and got["recommended"]["flush_max"] == 10
 
 
 def test_put_saves_and_flush_interval_is_picked_up_without_restart(settings_file):
-    got = _put({"flush_interval_seconds": 5, "retention": {"think_cache_retention_days": 14}})
+    got = _put({"flush_interval_seconds": 5, "retention": {"interactions_retention_days": 14}})
     assert got["flush_interval_seconds"] == 5.0
     assert config.get_log_flush_seconds() == 5.0  # the accessor log_buffer uses, read live
     data = yaml.safe_load(settings_file.read_text(encoding="utf-8"))
     assert data["logging"]["flush_interval_seconds"] == 5.0
     assert data["data_retention"] == {
         "episodes_retention_days": 90,
-        "think_cache_retention_days": 14,
+        "interactions_retention_days": 14,
     }
     assert data["kare_language"] == "nb"  # other settings untouched
 
@@ -63,6 +62,7 @@ def test_put_saves_and_flush_interval_is_picked_up_without_restart(settings_file
         {"retention": {"episodes_retention_days": -3}},
         {"retention": {"episodes_retention_days": "a week"}},
         {"retention": {"passwords_retention_days": 3}},
+        {"retention": {"think_cache_retention_days": 14}},  # P150: kept by size now — the old day key is refused
     ],
 )
 def test_invalid_values_are_refused_and_nothing_is_written(settings_file, payload):

@@ -198,6 +198,21 @@ def get_settings() -> dict:
     return _SETTINGS
 
 
+# services.yaml / settings.yaml written in this process (GUI save) → the cache follows at once, same as /api/reload does
+# for that file (DT04-S05d, rule 25). Other processes keep their own copy (gateway: /api/reload; night jobs start fresh).
+_LIVE_RELOAD = {"services.yaml": _set_services, "settings.yaml": _set_settings}
+
+
+def _on_config_written(path: Path) -> None:
+    setter = _LIVE_RELOAD.get(Path(path).name)
+    if setter is None or Path(path).resolve().parent != Path(CONFIG_DIR).resolve():
+        return
+    setter(config_store.read_yaml(path))
+
+
+config_store.add_write_listener(_on_config_written)
+
+
 def get_model(role: str) -> str:
     """Return the Ollama model name for a logical role (kare, miss_kare, library, embed, cloud)."""
     return MODELS[role]
@@ -276,7 +291,7 @@ _log_flush_cache: dict = {"mtime": None, "seconds": LOG_FLUSH_DEFAULT_SECONDS}
 
 def get_log_flush_seconds() -> float:
     """How often buffered logs are written to disk (settings.yaml logging.flush_interval_seconds,
-    set in the GUI under Settings → General → Logs and data; P131). 0 = write every line at once.
+    set in the GUI under Settings → Logs/Storage → Logs and data; P131). 0 = write every line at once.
     Clamped to 0–30 s. Follows a GUI change at once in every process — same mtime check as
     get_local_tz()."""
     path = CONFIG_DIR / "settings.yaml"
@@ -292,6 +307,57 @@ def get_log_flush_seconds() -> float:
     except Exception:
         pass
     return _log_flush_cache["seconds"]
+
+
+THINK_RESPONSE_DEFAULT_CHARS = 4000
+THINK_RESPONSE_MIN_CHARS = 500
+THINK_RESPONSE_MAX_CHARS = 20000
+_think_resp_cache: dict = {"mtime": None, "chars": THINK_RESPONSE_DEFAULT_CHARS}
+
+
+def get_think_response_max_chars() -> int:
+    """How much of each reply the think log keeps next to the thinking (settings.yaml
+    think_cache.response_max_chars, set in the GUI under Settings → Logs/Storage → Logs and data; P142).
+    Clamped to 500–20000. The thinking itself is always kept whole. Same mtime check as
+    get_local_tz(), so a GUI change applies at once."""
+    path = CONFIG_DIR / "settings.yaml"
+    try:
+        mtime = path.stat().st_mtime
+        if mtime != _think_resp_cache["mtime"]:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            raw = (data.get("think_cache") or {}).get(
+                "response_max_chars", THINK_RESPONSE_DEFAULT_CHARS
+            )
+            _think_resp_cache["chars"] = min(
+                max(int(raw), THINK_RESPONSE_MIN_CHARS), THINK_RESPONSE_MAX_CHARS
+            )
+            _think_resp_cache["mtime"] = mtime
+    except Exception:
+        pass
+    return _think_resp_cache["chars"]
+
+
+_enforcer_modes_cache: dict = {"mtime": None, "modes": {}}
+
+
+def get_enforcer_modes() -> dict[str, str]:
+    """Per-detector mode overrides for the model enforcer (settings.yaml model_enforcer.modes:
+    {"profile:detector": off | shadow | on}, set in the GUI under Settings → Agent settings → Model
+    guard; P142). Only overrides are stored — a detector not listed runs in its own default mode.
+    Same mtime check as get_local_tz(), so a GUI change applies at once."""
+    path = CONFIG_DIR / "settings.yaml"
+    try:
+        mtime = path.stat().st_mtime
+        if mtime != _enforcer_modes_cache["mtime"]:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            raw = (data.get("model_enforcer") or {}).get("modes") or {}
+            if not isinstance(raw, dict):
+                raw = {}
+            _enforcer_modes_cache["modes"] = {str(k): str(v) for k, v in raw.items()}
+            _enforcer_modes_cache["mtime"] = mtime
+    except Exception:
+        pass
+    return dict(_enforcer_modes_cache["modes"])
 
 
 def now_local() -> datetime:
@@ -626,6 +692,63 @@ ADMIN_ONLY_TOOLS: frozenset[str] = frozenset(
 )
 
 
+def _role_always_and_list(role: str) -> tuple[set[str], list[str]]:
+    """(always-included names, the role's list) — unknown roles get the most restricted list (fail closed, P120)."""
+    always_names: set[str] = set(_TOOL_PERMISSIONS.get("always_included", []))
+    roles_cfg: dict = _TOOL_PERMISSIONS.get("roles", {})
+    if (
+        role in set(_TOOL_PERMISSIONS.get("no_always_included", ["household", "stranger"]))
+        or role not in roles_cfg
+    ):
+        always_names = set()  # knowledge boundary for the system identities and unknown roles (P120)
+    return always_names, roles_cfg.get(role, roles_cfg.get("stranger", []))
+
+
+def _role_candidates(role_list: list[str], always_names: set[str], all_tools: list, lib_no_online: dict) -> list:
+    """The tools a role's list allows (before capability guards — those are not about the role)."""
+    if "all" in role_list:
+        return list(all_tools)
+    allowed: set[str] = set(role_list)
+    has_library_online = "library_online" in allowed
+    candidate = []
+    for tool in all_tools:
+        name: str = tool["function"]["name"]
+        if name in always_names:
+            candidate.append(tool)
+        elif name == "library":
+            if "library" in allowed:
+                candidate.append(tool if has_library_online else lib_no_online)
+        elif name in allowed:
+            candidate.append(tool)
+    return candidate
+
+
+def role_may_analyse_camera(role: str) -> bool:
+    """N41: may this role start a NEW camera analysis (image model / GPU)? The `camera_analyse` flag in the role's list
+    (Users page → tool matrix), or «all». Seeing what is stored is the `camera` tool alone. Unknown role → no."""
+    _always, role_list = _role_always_and_list(role)
+    return "all" in role_list or "camera_analyse" in role_list
+
+
+def get_tools_withheld_for_role(role: str, user_id: str = "") -> list[str]:
+    """Names of the tools this role does not get *because of the role* (DT04-S05b: Kåre must say the honest reason
+    instead of guessing one). Capability guards (cloud, agents, model size) are other reasons and are not counted."""
+    # PLC0415: circular: config is imported by tools.definitions
+    from kaare_core.tools.definitions import get_library_no_online, get_tools  # noqa: PLC0415
+
+    lang = get_lang(user_id) if user_id else "nb"
+    all_tools = get_tools(lang)
+    always_names, role_list = _role_always_and_list(role)
+    allowed = {tl["function"]["name"] for tl in
+               _role_candidates(role_list, always_names, all_tools, get_library_no_online(lang))}
+    if role != "admin":
+        allowed -= ADMIN_ONLY_TOOLS
+    withheld = {tl["function"]["name"] for tl in all_tools} - allowed
+    if "camera" in allowed and not role_may_analyse_camera(role):
+        withheld.add("camera_analyse")  # N41: sees what is stored, may not start a new analysis
+    return sorted(withheld)
+
+
 def get_tools_for_role(role: str, user_id: str = "") -> list:
     """
     Return the filtered tool list for the given user role and language.
@@ -643,33 +766,9 @@ def get_tools_for_role(role: str, user_id: str = "") -> list:
     all_tools = get_tools(lang)
     lib_no_online = get_library_no_online(lang)
 
-    always_names: set[str] = set(_TOOL_PERMISSIONS.get("always_included", []))
-    roles_cfg: dict = _TOOL_PERMISSIONS.get("roles", {})
-    if (
-        role in set(_TOOL_PERMISSIONS.get("no_always_included", ["household", "stranger"]))
-        or role not in roles_cfg
-    ):
-        always_names = (
-            set()
-        )  # knowledge boundary for the system identities and unknown roles (P120)
-    # Unknown role → the most restricted list, never a broader one (fail closed, P120).
-    role_list: list[str] = roles_cfg.get(role, roles_cfg.get("stranger", []))
-
-    if "all" in role_list:
-        candidate = list(all_tools)
-    else:
-        allowed: set[str] = set(role_list)
-        has_library_online = "library_online" in allowed
-        candidate = []
-        for tool in all_tools:
-            name: str = tool["function"]["name"]
-            if name in always_names:
-                candidate.append(tool)
-            elif name == "library":
-                if "library" in allowed:
-                    candidate.append(tool if has_library_online else lib_no_online)
-            elif name in allowed:
-                candidate.append(tool)
+    # Knowledge boundary for the system identities and unknown roles; unknown role → most restricted list (P120)
+    always_names, role_list = _role_always_and_list(role)
+    candidate = _role_candidates(role_list, always_names, all_tools, lib_no_online)
 
     # Capability guards — applied regardless of role
     cloud_enabled = _LLM_CFG.get("cloud", {}).get("enabled", True)
@@ -764,7 +863,7 @@ def validate_tool_permissions_consistency() -> list[str]:
     for role_list in roles_cfg.values():
         for name in role_list:
             # "all" = admin bypass keyword, "library_online" = upgrade flag, not a tool
-            if name not in ("all", "library_online"):
+            if name not in ("all", "library_online", "camera_analyse"):  # N41: camera_analyse = flag
                 referenced_names.add(name)
 
     orphaned_config = sorted(referenced_names - defined_names)

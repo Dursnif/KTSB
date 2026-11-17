@@ -19,6 +19,9 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
+from kaare_core import receipts
+from kaare_core.storage import sqlite_files
+
 logger = logging.getLogger(__name__)
 
 DB_PATH = Path("/kaare/state/memory/knowledge.db")
@@ -54,7 +57,7 @@ def _utc_ts() -> str:
 def _get_conn() -> sqlite3.Connection:
     """Opens a connection in WAL mode — same pattern as long_term.py."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    conn = sqlite_files.connect(str(DB_PATH), check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
@@ -113,6 +116,7 @@ def add_fact(
             (domain, section or "", content, source or "kare", importance, valid_from or now, now),
         )
         conn.commit()
+        receipts.log_saved("knowledge_add", where=f"knowledge.db/{domain}", refs=[cur.lastrowid])
         return cur.lastrowid
     except Exception as e:
         logger.warning("knowledge_store: add_fact failed: %s", e)
@@ -149,6 +153,8 @@ def update_fact(
         params.append(fact_id)
         cur = conn.execute(f"UPDATE state_facts SET {', '.join(sets)} WHERE id=?", params)
         conn.commit()
+        if cur.rowcount > 0:
+            receipts.log_saved("knowledge_update", where="knowledge.db", refs=[fact_id])
         return cur.rowcount > 0
     except Exception as e:
         logger.warning("knowledge_store: update_fact failed: %s", e)
@@ -171,6 +177,8 @@ def retire_fact(fact_id: int) -> bool:
             (_utc_ts(), fact_id),
         )
         conn.commit()
+        if cur.rowcount > 0:
+            receipts.log_saved("knowledge_retire", where="knowledge.db", refs=[fact_id])
         return cur.rowcount > 0
     except Exception as e:
         logger.warning("knowledge_store: retire_fact failed: %s", e)

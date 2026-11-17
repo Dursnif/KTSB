@@ -57,10 +57,20 @@ def ensure_system_master_key() -> bytes:
         return _system_master_key_cache
     if not _SYSTEM_MASTER_KEY_PATH.exists():
         _SYSTEM_MASTER_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = _SYSTEM_MASTER_KEY_PATH.with_suffix(".tmp")
+        # Own tmp name per process, then link (fails if the key appeared meanwhile) — two processes starting together
+        # on a fresh install must end with ONE key; a replaced key leaves data sealed with a key that is gone (R0.6a).
+        tmp_path = _SYSTEM_MASTER_KEY_PATH.with_name(f".{_SYSTEM_MASTER_KEY_PATH.name}.{os.getpid()}.tmp")
         tmp_path.write_bytes(os.urandom(32))
         tmp_path.chmod(0o600)
-        os.replace(tmp_path, _SYSTEM_MASTER_KEY_PATH)
+        try:
+            os.link(tmp_path, _SYSTEM_MASTER_KEY_PATH)
+        except FileExistsError:
+            pass  # another process won — use its key
+        except OSError:  # no hard links on this filesystem (e.g. some Docker Desktop shares): the old way
+            if not _SYSTEM_MASTER_KEY_PATH.exists():
+                os.replace(tmp_path, _SYSTEM_MASTER_KEY_PATH)
+        finally:
+            tmp_path.unlink(missing_ok=True)
     _system_master_key_cache = _SYSTEM_MASTER_KEY_PATH.read_bytes()
     return _system_master_key_cache
 

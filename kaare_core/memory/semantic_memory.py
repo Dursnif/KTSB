@@ -21,6 +21,7 @@ from qdrant_client.models import (
     Distance,
     FieldCondition,
     Filter,
+    MatchAny,
     MatchValue,
     PointStruct,
     VectorParams,
@@ -31,6 +32,7 @@ from kaare_core.config import get_memory_embed_config
 from kaare_core.config import get_qdrant_api_key as _qdrant_key
 from kaare_core.config import get_service as _svc
 from kaare_core.crypto import seal, unseal
+from kaare_core.memory.long_term import EPISODE_MIXED, EPISODE_OK, EPISODE_SUPERSEDED
 from kaare_core.memory.memory_embed_models import active_model
 from kaare_core.session_keys import resolve_key_sync
 from kaare_core.tools.i18n import t as _t_i18n
@@ -154,8 +156,10 @@ def episode_point(
     to_id: int,
     interaction_count: int,
     user_id: str,
+    status: str = EPISODE_OK,
 ) -> PointStruct:
-    """One episode as a Qdrant point. Personal episodes are stored encrypted with the user's key."""
+    """One episode as a Qdrant point. Personal episodes are stored encrypted with the user's key.
+    status mirrors episodes.status (P146) — search never returns a point marked mixed/superseded."""
     stored_narrative = narrative if user_id == "global" else _enc_narrative(narrative, user_id)
     stored_topics = topics if user_id == "global" else _enc_narrative(topics, user_id)
     return PointStruct(
@@ -169,6 +173,7 @@ def episode_point(
             "to_id": to_id,
             "interaction_count": interaction_count,
             "user_id": user_id,
+            "status": status,
         },
     )
 
@@ -233,12 +238,18 @@ async def search_memory(query: str, limit: int = 3, user_id: str = "global") -> 
         return _smf.search_fallback(query, user_id, limit)
 
     # A user sees only their own episodes + global ones; user_id='global' (unknown/TTS) sees
-    # only global episodes.
+    # only global episodes. Episodes marked mixed/superseded (P146) are never returned; points
+    # from before P146 carry no status and count as ok.
     query_filter = Filter(
         should=[
             FieldCondition(key="user_id", match=MatchValue(value=user_id)),
             FieldCondition(key="user_id", match=MatchValue(value="global")),
-        ]
+        ],
+        must_not=[
+            FieldCondition(
+                key="status", match=MatchAny(any=[EPISODE_MIXED, EPISODE_SUPERSEDED])
+            ),
+        ],
     )
 
     try:

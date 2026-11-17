@@ -19,6 +19,7 @@ import Tools from "./pages/admin/Tools";
 import Settings from "./pages/admin/Settings";
 import Aliases from "./pages/admin/Aliases";
 import Nodes from "./pages/admin/Nodes";
+import Integrations from "./pages/admin/Integrations";
 import Security from "./pages/admin/Security";
 import Onboarding from "./pages/Onboarding";
 import Home from "./pages/user/Home";
@@ -68,6 +69,7 @@ function AppRoutes() {
         <Route path="tools" element={<Tools />} />
         <Route path="aliases" element={<Aliases />} />
         <Route path="nodes" element={<Nodes />} />
+        <Route path="integrations" element={<Integrations />} />
         <Route path="security" element={<Security />} />
         <Route path="settings" element={<Settings />} />
       </Route>

@@ -3,7 +3,7 @@ import { usePupilAnimation } from "../hooks/usePupilAnimation";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Server, Bot, BookOpen,
-  Wrench, Settings, Home, ChevronLeft, ChevronRight, LogOut, Map, Speaker, ShieldAlert,
+  Wrench, Settings, Home, ChevronLeft, ChevronRight, LogOut, Map, Speaker, ShieldAlert, Plug,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTranslation } from "react-i18next";
@@ -37,6 +37,7 @@ export default function AdminLayout() {
     { to: "/admin/tools",          labelKey: "nav.tools",        icon: Wrench },
     { to: "/admin/aliases",        labelKey: "nav.aliases",      icon: Map },
     { to: "/admin/nodes",          labelKey: "nav.nodes",        icon: Speaker },
+    { to: "/admin/integrations",   labelKey: "nav.integrations", icon: Plug },
     { to: "/admin/settings",       labelKey: "nav.settings",     icon: Settings },
     { to: "/", labelKey: "nav.back_to", label: t("nav.back_to", { name: assistantName }), icon: Home, separator: true },
   ];

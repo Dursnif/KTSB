@@ -202,23 +202,23 @@ def test_dev_proposals_tool(monkeypatch, env, lang, word):
     fid = ls.add_finding("r", "Finding text", ["tool:x#1"], True, topic_id=t1["topic_id"])
     pid = ls.add_proposal(fid, "Do the thing")
     listed = asyncio.run(
-        executor.execute_tool("dev_proposals", {"action": "list", "_user_id": "stian"})
+        executor.execute_tool("dev_proposals", {"action": "list", "_user_id": "userone"})
     )
     assert f"#{pid}" in listed and "Do the thing" in listed and "Finding text" in listed
     ok = asyncio.run(
         executor.execute_tool(
-            "dev_proposals", {"action": "confirm", "proposal_id": pid, "_user_id": "stian"}
+            "dev_proposals", {"action": "confirm", "proposal_id": pid, "_user_id": "userone"}
         )
     )
-    assert word in ok and "stian" in ok
+    assert word in ok and "userone" in ok
     again = asyncio.run(
         executor.execute_tool(
-            "dev_proposals", {"action": "reject", "proposal_id": pid, "_user_id": "stian"}
+            "dev_proposals", {"action": "reject", "proposal_id": pid, "_user_id": "userone"}
         )
     )
-    assert f"#{pid}" in again and ls.list_proposals("confirmed")[0]["decided_by"] == "stian"
+    assert f"#{pid}" in again and ls.list_proposals("confirmed")[0]["decided_by"] == "userone"
     assert "proposal_id" in asyncio.run(
-        executor.execute_tool("dev_proposals", {"action": "confirm", "_user_id": "stian"})
+        executor.execute_tool("dev_proposals", {"action": "confirm", "_user_id": "userone"})
     )
 
 

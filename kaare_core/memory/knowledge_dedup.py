@@ -32,6 +32,7 @@ import math
 import httpx
 
 from kaare_core.config import get_service as _svc
+from kaare_core.config import is_embedding_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,9 @@ async def _embed_batch(texts: list[str]) -> list[list[float]] | None:
     already relies on, not one call per text."""
     if not texts:
         return []
+    if not is_embedding_enabled():
+        logger.info("[knowledge_dedup] embedding off → skipped (one cluster per fact)")
+        return None
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             r = await client.post(EMBED_URL, json={"model": "bge-m3", "input": texts})

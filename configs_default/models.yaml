@@ -5,3 +5,5 @@ image_edit_gen: black-forest-labs/FLUX.1-schnell
 kare: huihui_ai/qwen3.5-abliterated:9b
 library: huihui_ai/qwen3.5-abliterated:9b
 miss_kare: huihui_ai/qwen3.5-abliterated:9b
+jang: jang
+jing: jing

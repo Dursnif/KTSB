@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from kaare_core import log_buffer
+from kaare_core.storage import rotation
 
 _TR: dict[str, dict[str, str]] = {
     "empty_trace": {"nb": "Tom trace.", "en": "Empty trace.", "de": "Leere Trace."},
@@ -30,6 +31,7 @@ _TR: dict[str, dict[str, str]] = {
     "llm_label": {"nb": "LLM:", "en": "LLM:", "de": "LLM:"},
     "tools_label": {"nb": "Tools:", "en": "Tools:", "de": "Tools:"},
     "think_label": {"nb": "Think:", "en": "Think:", "de": "Think:"},
+    "guard_label": {"nb": "Modell-vakt:", "en": "Model guard:", "de": "Modell-Wächter:"},
     "vision": {"nb": "vision", "en": "vision", "de": "Vision"},
     "think_key": {"nb": "think", "en": "think", "de": "think"},
     "pattern_header": {
@@ -82,9 +84,13 @@ def infer_source(rid: str) -> str:
         return "meet"
     if rid.startswith("rid-timer-"):
         return "timer"
+    if rid.startswith(("rid-jing-", "rid-jang-")):  # J27: the inner voices, one rid per thought
+        return "inner"
+    if rid.startswith("rid-night-"):  # J23: the night sequence's own steps (nightjob, portrait, knowledge review …)
+        return "night"
     if rid.startswith("rid-stt-"):
         return "stt"
-    if rid.startswith("rid-frigate-"):
+    if rid.startswith(("rid-frig-", "rid-frigate-", "frigate-")):  # J7: the camera pipe's own rids (frigate-scene-<ep>, …)
         return "frigate"
     return "user"
 
@@ -97,9 +103,14 @@ def _read_jsonl(path: Path, max_lines: int = _MAX_SCAN_LINES) -> list[dict]:
     if not path.exists():
         return []
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        # P150: read the last max_lines from the end — the logs/think cache may be large now (size limits, not days)
+        tail: list[str] = []
+        for line in rotation.iter_lines_reverse(path):
+            tail.append(line)
+            if len(tail) >= max_lines:
+                break
         result = []
-        for line in lines[-max_lines:]:
+        for line in reversed(tail):
             line = line.strip()
             if not line:
                 continue
@@ -194,8 +205,12 @@ def _add_llm(parts: dict, entry: dict) -> None:
             "recovered": entry.get("recovered", False),
             "status": entry.get("status", ""),
             "prompt_meta": entry.get("prompt_meta"),
+            "role": entry.get("role", ""),
+            "endpoint": entry.get("endpoint", ""),
         }
     )
+    if not parts["prompt_preview"] and entry.get("prompt_preview"):
+        parts["prompt_preview"] = entry["prompt_preview"]  # J7: a role call has no generate_in stage
 
 
 def _add_tool(parts: dict, entry: dict) -> None:
@@ -227,6 +242,9 @@ def _add_enforce(parts: dict, entry: dict) -> None:
             "ts": entry.get("ts", ""),
             "detector": entry.get("detector", ""),
             "event": entry.get("event", ""),
+            # What the box matched and how a correction ended (P142 Phase 4).
+            "phrase": entry.get("phrase", ""),
+            "outcome": entry.get("outcome", ""),
         }
     )
 
@@ -255,6 +273,8 @@ def _assemble(rid: str, parts: dict) -> dict:
     total_latency_ms = 0
     if ts_start and ts_end and ts_start != ts_end:
         total_latency_ms = _ts_to_ms(ts_end) - _ts_to_ms(ts_start)
+    # J7: one logged call has one timestamp (written at its end) — its own latency is the trace's duration
+    total_latency_ms = max(total_latency_ms, max((c.get("latency_ms") or 0 for c in llm_calls), default=0))
 
     tool_names = list(dict.fromkeys(x["tool"] for x in tool_calls if x["tool"]))
 
@@ -280,6 +300,12 @@ def _assemble(rid: str, parts: dict) -> dict:
     }
 
 
+def trace_key(rid: str) -> str:
+    """The trace a rid belongs to: a camera episode's steps (`rid-frig-ep<n>:<step>…`, J23b) are one trace
+    `rid-frig-ep<n>`; every other rid is its own trace."""
+    return rid.split(":", 1)[0] if rid.startswith("rid-frig-") else rid
+
+
 def get_trace(rid: str) -> dict:
     """
     Assemble one structured trace for the given rid from all log sources.
@@ -291,7 +317,8 @@ def get_trace(rid: str) -> dict:
     module = globals()
     for path_name, add in _SOURCES:
         for entry in _read_jsonl(module[path_name]):
-            if entry.get("rid") == rid:
+            erid = entry.get("rid") or ""
+            if erid == rid or (erid and trace_key(erid) == rid):
                 add(parts, entry)
     return _assemble(rid, parts)
 
@@ -323,7 +350,7 @@ def collect_traces(since_iso: str, source: str = "user", limit: int | None = Non
             rid = entry.get("rid", "")
             if not rid or (source != "all" and _infer_source(rid) != source):
                 continue
-            add(buckets.setdefault(rid, _empty_parts()), entry)
+            add(buckets.setdefault(trace_key(rid), _empty_parts()), entry)
     traces = [_assemble(rid, parts) for rid, parts in buckets.items()]
     traces.sort(key=lambda tr: tr["ts_end"] or tr["ts_start"], reverse=True)
     return traces[:limit] if limit else traces
@@ -340,13 +367,13 @@ def get_recent_traces(n: int = 50, source: str = "all") -> list[dict]:
     seen: dict[str, str] = {}  # rid → ts
 
     for entry in _read_jsonl(_ROUTE_LOG):
-        rid = entry.get("rid", "")
+        rid = trace_key(entry.get("rid", ""))
         ts = entry.get("ts", "")
         if rid and (rid not in seen or ts > seen[rid]):
             seen[rid] = ts
 
     for entry in _read_jsonl(_LLM_LOG):
-        rid = entry.get("rid", "")
+        rid = trace_key(entry.get("rid", ""))
         ts = entry.get("ts", "")
         if rid and (rid not in seen or ts > seen[rid]):
             seen[rid] = ts
@@ -423,6 +450,15 @@ def format_trace_for_kare(trace: dict, lang: str = "nb") -> str:
         summary = entry.get("think_summary", "")[:120]
         if summary:
             lines.append(f'  {_tr("think_label", lang)} "{summary}"')
+
+    # The model guard's corrections and shadow hits for this request (P142 Phase 4) — so Kåre
+    # can see when his own reply was corrected, and why.
+    for hit in trace.get("enforcer_hits", []):
+        detail = f' «{hit["phrase"]}»' if hit.get("phrase") else ""
+        ended = f' → {hit["outcome"]}' if hit.get("outcome") else ""
+        lines.append(
+            f"  {_tr('guard_label', lang)} {hit.get('detector', '?')} {hit.get('event', '')}{detail}{ended}"
+        )
 
     return "\n".join(lines)
 

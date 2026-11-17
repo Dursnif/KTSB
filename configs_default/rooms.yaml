@@ -1,0 +1,26 @@
+# KTSB – places, floors and the things KTSB knows (P137)
+# Edit through the admin GUI (Rom og aliaser → Rom). Read by kaare_core/rooms.py.
+#
+# With Home Assistant connected, HA's areas and floors are the places — KTSB keeps HA's names and only adds
+# synonyms, «hidden» and a location note here. Without HA (or for things outside HA) places are made by hand.
+#
+# settings.import_mode — which HA entities KTSB knows without picking them one by one:
+#   rooms_only  only the places; you add devices/entities yourself (default)
+#   pick        same, picked from the HA tree in the GUI
+#   assist      the entities you exposed to HA's own voice assistant
+#   label       entities (or whole areas) with the HA label in import_label
+#   all         every user-facing entity in a placed area (import_domains limits the types; empty = all)
+#
+# places: id → {name, floor, synonyms, hidden}            (an HA area id adds to that HA place)
+# floors: id → {name, level, synonyms}                    (an HA floor id adds to that HA floor)
+# things: reference → {place, note}                       (light.x = HA entity; mqtt:topic, node:id, manual:name)
+# -------------------------------------------------------
+
+settings:
+  import_mode: rooms_only
+  import_label: ''
+  import_domains: []
+
+places: {}
+floors: {}
+things: {}

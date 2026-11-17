@@ -15,6 +15,7 @@ import {
   type WarmupStatus, type ContainerInfo, type GpuInfo, type LlmModelCheck } from "@/services/api";
 import { PROVIDER_OPTIONS, LLM_ROLE_LABELS, modelSizeB, FULL_MAIN_AGENT_MIN_B, endpointLabel } from "./llm-constants";
 import { FieldRow, SaveFeedback, TestButton, MaskedInput, ExpertOnly } from "../shared";
+import { useSettingsLevel } from "@/hooks/useSettingsLevel";
 import { useSaveState } from "../useSaveState";
 
 const THINK_OPTIONS = [
@@ -24,6 +25,20 @@ const THINK_OPTIONS = [
 ];
 
 const AGENT_TOGGLEABLE = ["miss_kare", "mechanic", "library", "fallback", "cloud", "image_edit"];
+// Roles that can follow another role's model instead of their own (llm.yaml share_with).
+const SHARE_TARGET: Record<string, string> = { mechanic: "miss_kare", frigate: "default", frigate_conclude: "default" };
+// Roles with a «Borrow the model from» choice instead of the switch (P144-s10): main agent or sub-agents in Basic,
+// plus «Own model» in Expert. Must match _SHARE_TARGETS in router_settings.py.
+const BORROW_FROM: Record<string, { target: string; labelKey: string }[]> = Object.fromEntries(
+  ["frigate", "frigate_conclude"].map(r => [r, [
+    { target: "default", labelKey: "settings.llm.frigate_borrow_main" },
+    { target: "miss_kare", labelKey: "settings.llm.frigate_borrow_sub" },
+  ]]),
+);
+// Roles that only call a model on someone else's instance — no container/Docker/GPU settings of their own.
+const INSTANCE_LESS = ["frigate", "frigate_conclude"];
+// Roles shown outside Settings → LLM with their own title/hint/share texts (i18n prefix).
+const ROLE_TEXT: Record<string, string> = { frigate: "settings.llm.frigate", frigate_conclude: "settings.llm.frigate_conclude" };
 
 export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerControl, modelCheck }: {
   role: string;
@@ -59,7 +74,8 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
     }
   };
   const info = LLM_ROLE_LABELS[role] ?? {};
-  const roleLabel = t(`settings.llm.role_labels.${role}`, role);
+  const roleText = ROLE_TEXT[role];
+  const roleLabel = roleText ? t(`${roleText}_title`) : t(`settings.llm.role_labels.${role}`, role);
   const isToggleable = AGENT_TOGGLEABLE.includes(role);
 
   const isOllama = local.provider === "ollama" || local.provider === "openvino";
@@ -76,9 +92,13 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
   const [gpuSaving, setGpuSaving]                 = useState(false);
   const pollingRef                                 = useRef<ReturnType<typeof setInterval> | null>(null);
   const [keepWarm, setKeepWarm]                    = useState<boolean>(config.keep_warm ?? false);
-  const isMechanic = role === "mechanic";
   const [shareWith, setShareWith]                  = useState<string | null>(config.share_with ?? null);
-  const isShared = isMechanic && !!shareWith;
+  const shareTarget = SHARE_TARGET[role];
+  const isShared = !!shareTarget && !!shareWith;
+  const borrowFrom = BORROW_FROM[role];
+  const { level } = useSettingsLevel();
+  const borrowSave = useSaveState();
+  const ownsInstance = !INSTANCE_LESS.includes(role);
   const [warmup, setWarmup]                        = useState<WarmupStatus>({ status: "idle" });
   const warmupPollRef                              = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -277,9 +297,29 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
     }
   };
 
+  // Borrowing sends only share_with: the lender keeps its own URL/model/num_ctx, so nothing reloads.
+  const chooseBorrow = async (target: string | null) => {
+    setShareWith(target);
+    if (!target) { setCollapsed(false); return; }  // «Own model»: the fields below appear, saved with Save
+    borrowSave.saving();
+    try {
+      await apiPutLlmRole(role, { share_with: target } as Parameters<typeof apiPutLlmRole>[1]);
+      borrowSave.saved();
+      onSaved();
+    } catch { borrowSave.error(); }
+  };
+
   const save = async () => {
     ss.saving();
     try {
+      if (shareWith) {
+        const shared: Record<string, unknown> = { share_with: shareWith };
+        if (isToggleable) shared.enabled = agentEnabled;
+        await apiPutLlmRole(role, shared as Parameters<typeof apiPutLlmRole>[1]);
+        ss.saved();
+        onSaved();
+        return;
+      }
       const payload: Record<string, unknown> = {
         provider: local.provider,
         base_url: local.base_url,
@@ -297,7 +337,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
         if (numCtxLocked) delete (opts as Record<string, number>).num_ctx;
         payload.options = opts;
         payload.keep_warm = keepWarm;
-        payload.container = containerName || null;
+        if (ownsInstance) payload.container = containerName || null;
       } else if (isVllm) {
         const thinkRaw = (local as unknown as Record<string, unknown>)["_thinkStr"] as string | undefined;
         if (thinkRaw && thinkRaw !== "__unset__") {
@@ -306,7 +346,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
           payload.think = null;
         }
         payload.options = { ...(local.options ?? {}) };
-        payload.vllm_docker = { ...(local.vllm_docker ?? {}) };
+        if (ownsInstance) payload.vllm_docker = { ...(local.vllm_docker ?? {}) };
       } else {
         payload.temperature = local.temperature;
         payload.top_p = local.top_p;
@@ -314,7 +354,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
         if (apiKey) payload.api_key = apiKey;
       }
       if (isToggleable) payload.enabled = agentEnabled;
-      if (isMechanic) payload.share_with = shareWith ?? null;
+      if (shareTarget) payload.share_with = shareWith ?? null;
       await apiPutLlmRole(role, payload as Parameters<typeof apiPutLlmRole>[1]);
       setApiKey("");
       ss.saved();
@@ -382,6 +422,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
                 : info.port ? <CardDescription className="text-xs">Port {info.port}</CardDescription> : null;
             })()}
             {role === "fallback" && <p className="text-xs text-muted-foreground mt-0.5 italic">{t("settings.llm.role_fallback_desc")}</p>}
+            {roleText && <p className="text-xs text-muted-foreground mt-0.5">{t(`${roleText}_image_hint`)}</p>}
             {role === "default" && (() => {
               const size = modelSizeB(modelName);
               return size !== null && size < FULL_MAIN_AGENT_MIN_B
@@ -399,13 +440,13 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
             {isToggleable && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">{agentEnabled ? t("common.enabled") : t("common.disabled")}</span>
-                <Switch checked={agentEnabled} onCheckedChange={toggleEnabled} className="data-checked:bg-green-600 data-unchecked:bg-red-600" />
+                <Switch checked={agentEnabled} onCheckedChange={toggleEnabled} />
               </div>
             )}
-            {isMechanic && (
+            {shareTarget && !borrowFrom && (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">{t("settings.llm.share_with_label")}</span>
-                <Switch checked={!!shareWith} onCheckedChange={v => setShareWith(v ? "miss_kare" : null)} />
+                <span className="text-xs text-muted-foreground">{t(roleText ? `${roleText}_share_label` : "settings.llm.share_with_label")}</span>
+                <Switch checked={!!shareWith} onCheckedChange={v => setShareWith(v ? shareTarget : null)} />
               </div>
             )}
             <Badge variant="outline" className="font-mono text-xs">{role}</Badge>
@@ -413,22 +454,67 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
         </div>
         <div className="flex items-center justify-between pt-1">
           <span className="text-xs text-muted-foreground font-mono truncate max-w-[60%]">
-            {modelName ? modelName : <span className="italic opacity-50">{t("common.no_model_set")}</span>}
+            {(() => {
+              const shown = shareWith ? (allConfigs[shareWith]?.model ?? modelName) : modelName;
+              return shown ? shown : <span className="italic opacity-50">{t("common.no_model_set")}</span>;
+            })()}
           </span>
-          <Button
+          {/* Borrowing cards have nothing to unfold — the button only shows for «Own model» in Expert. */}
+          {(!borrowFrom || (!shareWith && level === "expert")) && <Button
             variant="ghost"
             size="sm"
+            data-collapse-toggle
             className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
             onClick={() => setCollapsed(c => !c)}
           >
             {collapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
             <span className="ml-1">{collapsed ? t("common.show") : t("common.hide")}</span>
-          </Button>
+          </Button>}
         </div>
+        {borrowFrom && (() => {
+          const own = !shareWith;
+          const choices = [
+            ...borrowFrom,
+            // «Own model» is an Expert choice; in Basic it is only shown when it is already the setting.
+            ...(level === "expert" || own ? [{ target: "", labelKey: "settings.llm.frigate_borrow_own" }] : []),
+          ];
+          return (
+            <div className="pt-2 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted-foreground">{t("settings.llm.frigate_borrow_label")}</span>
+                <div role="radiogroup" aria-label={t("settings.llm.frigate_borrow_label")} className="flex flex-wrap gap-1">
+                  {choices.map(c => {
+                    const checked = (shareWith ?? "") === c.target;
+                    return (
+                      <Button
+                        key={c.target || "own"}
+                        type="button"
+                        role="radio"
+                        aria-checked={checked}
+                        data-borrow={c.target || "own"}
+                        size="sm"
+                        variant={checked ? "default" : "outline"}
+                        className="h-7 px-3 text-xs"
+                        disabled={borrowSave.state === "saving" || (!c.target && level !== "expert")}
+                        onClick={() => { if (!checked) chooseBorrow(c.target || null); }}
+                      >
+                        {t(c.labelKey)}
+                      </Button>
+                    );
+                  })}
+                </div>
+                <SaveFeedback state={borrowSave.state} />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {own && level !== "expert" ? t("settings.llm.frigate_borrow_own_basic") : t("settings.llm.frigate_borrow_hint")}
+              </p>
+            </div>
+          );
+        })()}
       </CardHeader>
-      {!collapsed && isShared && (
+      {!collapsed && isShared && !borrowFrom && (
         <CardContent>
-          <p className="text-sm text-muted-foreground italic py-2">{t("settings.llm.share_with_active_note")}</p>
+          <p className="text-sm text-muted-foreground italic py-2">{t(roleText ? `${roleText}_share_note` : "settings.llm.share_with_active_note")}</p>
           <Button onClick={save} disabled={ss.state === "saving"} size="sm" className="mt-2">
             {ss.state === "saving" ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
             {t("common.save")}
@@ -436,7 +522,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
           <SaveFeedback state={ss.state} />
         </CardContent>
       )}
-      {!collapsed && !isShared && <CardContent>
+      {!collapsed && !isShared && (!borrowFrom || level === "expert") && <CardContent>
         <div className="divide-y divide-border">
           <FieldRow label={t("settings.llm.model_label")} hint={t("settings.llm.model_hint")}>
             <input
@@ -544,7 +630,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
 
           {isOllama && (
             <FieldRow label={t("settings.llm.keep_warm_label")} hint={t("settings.llm.keep_warm_hint")}>
-              <Switch checked={keepWarm} onCheckedChange={setKeepWarm} className="data-checked:bg-green-500" />
+              <Switch checked={keepWarm} onCheckedChange={setKeepWarm} />
             </FieldRow>
           )}
 
@@ -558,7 +644,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
             />
           </FieldRow>
 
-          {isOllama && (
+          {isOllama && ownsInstance && (
             <FieldRow label={t("settings.llm.container_name")} hint={t("settings.llm.container_name_hint")}>
               <div className="flex gap-2">
                 <input
@@ -657,6 +743,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
                 );
               })}
 
+              {ownsInstance && <>
               <Separator className="my-1" />
               <p className="text-xs text-muted-foreground py-2">{t("settings.llm.vllm_docker_params")}</p>
               <FieldRow label={t("settings.llm.docker_fields.max_model_len.label")} hint={t("settings.llm.docker_fields.max_model_len.hint")}>
@@ -704,6 +791,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
                   min="1"
                 />
               </FieldRow>
+              </>}
             </>
           )}
 
@@ -728,7 +816,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
         </div>
 
         {/* ── Administrer modell ─────────────────────────────────────────── */}
-        {isLocal && (
+        {isLocal && ownsInstance && (
           <ExpertOnly><>
             <Separator className="my-3" />
             <div className="flex items-center justify-between py-1">
@@ -938,7 +1026,7 @@ export function LlmRoleCard({ role, config, onSaved, allConfigs, allowDockerCont
               {t("common.save")}
             </Button>
             <SaveFeedback state={ss.state} />
-            {isVllm && (
+            {isVllm && ownsInstance && (
               <ExpertOnly><>
                 <Button
                   variant="outline"

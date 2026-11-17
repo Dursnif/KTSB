@@ -30,7 +30,13 @@ AUTH_DEPENDENCIES = {
     "_require_service",
     "_require_user",
 }
-BODY_GATES = {"identify_caller", "_identify_caller", "_node_or_service", "_pin_gate"}
+BODY_GATES = {
+    "identify_caller",
+    "_identify_caller",
+    "_node_or_service",
+    "_node_token_or_service",
+    "_pin_gate",
+}
 
 # (file, METHOD, path): why it may stay open
 OPEN = {
@@ -58,7 +64,22 @@ OPEN = {
         "GET",
         "/audio/{filename}",
     ): "ESP32/Chromecast fetch TTS files; names are random uuid4 and the files are temporary",
+    (
+        "services/voice/voice_bridge.py",
+        "GET",
+        "/media/{filename}",
+    ): "Cast/DLNA screens fetch pictures (P139 phase 3); names are random uuid4, only the last 30 are kept",
     ("services/voice/voice_bridge.py", "GET", "/health"): "health check",
+    # P151: a TV cannot log in. The page is an empty shell; everything it shows is gated by a one-time session key
+    # (Cast) or a paired device key (D9), and all of it answers «off» when the GUI switch is off (D11).
+    ("services/voice/voice_bridge.py", "GET", "/screen/{node}"): "P151 screen page shell — no data in it",
+    ("services/voice/voice_bridge.py", "GET", "/screen/{node}/state"): "P151 page poll — content only for a valid "
+    "session/paired key, else nothing or a pairing code",
+    ("services/voice/voice_bridge.py", "POST", "/screen/{node}/report"): "P151 page health report — ignored unless "
+    "the token is a live session of that node",
+    ("services/voice/voice_bridge.py", "WEBSOCKET", "/screen/ws/{token}"): "P151 live stream — token = live session",
+    ("services/voice/voice_bridge.py", "GET", "/screen/mp4/{token}"): "P151 re-encoded stream — token = live session",
+    ("services/voice/voice_bridge.py", "GET", "/screen/card/{token}"): "P151 card page — token = live card session",
     (
         "kaare_core/routers/router_settings.py",
         "GET",
@@ -74,6 +95,11 @@ OPEN = {
         "POST",
         "/api/inner-voices/push",
     ): "Jing/Jang push — checks its own shared token (hmac) in the body/header",
+    (
+        "kaare_core/routers/router_settings.py",
+        "GET",
+        "/api/inner-voices/context",
+    ): "Jing/Jang camera context (J21b) — checks the same shared token (hmac) in the header, fails closed",
     ("kaare_core/routers/router_users.py", "POST", "/auth/login"): "login itself (rate-limited)",
     (
         "kaare_core/routers/router_users.py",
@@ -92,14 +118,21 @@ def _routes():
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             for dec in node.decorator_list:
-                if (
+                if not (
                     isinstance(dec, ast.Call)
                     and isinstance(dec.func, ast.Attribute)
-                    and dec.func.attr in HTTP_METHODS
                     and dec.args
                     and isinstance(dec.args[0], ast.Constant)
                 ):
+                    continue
+                if dec.func.attr in HTTP_METHODS:
                     yield rel, dec.func.attr.upper(), dec.args[0].value, node
+                elif dec.func.attr == "api_route":  # @app.api_route(path, methods=[...]) — one entry per method
+                    methods = next((k.value for k in dec.keywords if k.arg == "methods"), None)
+                    names = [e.value for e in getattr(methods, "elts", []) if isinstance(e, ast.Constant)]
+                    for m in names or ["GET"]:
+                        if m.upper() != "HEAD":  # HEAD rides on its GET entry
+                            yield rel, m.upper(), dec.args[0].value, node
 
 
 def _is_locked(fn) -> bool:

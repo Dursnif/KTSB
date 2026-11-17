@@ -9,6 +9,7 @@ System roles (P120): household (user global_user) | stranger (user unknown_user)
 """
 
 import base64
+import json
 import logging
 import secrets
 import sqlite3
@@ -19,6 +20,7 @@ import bcrypt
 
 from kaare_core.config import get_settings as _get_settings
 from kaare_core.crypto import derive_key_from_pin, encrypt_private_key, generate_salt
+from kaare_core.storage import sqlite_files
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,10 @@ SYSTEM_IDENTITIES: dict[str, dict] = {
     "unknown_user": {"role": "stranger", "display_name": "Unknown person", "avatar": "❔"},
 }
 SYSTEM_ROLES = {v["role"] for v in SYSTEM_IDENTITIES.values()}
+# Service accounts (P144): Kåre's own processes and the Frigate system user. Unlike the system
+# identities they have no row here at all — no PIN, JWT or keypair, never listed as a person —
+# but their names are reserved so no person can be created with them.
+SERVICE_ACCOUNTS = {"kare", "frigate"}
 VALID_ROLES = PERSON_ROLES | SYSTEM_ROLES
 
 
@@ -92,7 +98,7 @@ VALID_VPN_ACCESS = {"local_only", "ai_only", "full_access"}
 
 def _get_conn() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    conn = sqlite_files.connect(str(DB_PATH), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
@@ -172,6 +178,18 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE users ADD COLUMN pin_required INTEGER NOT NULL DEFAULT 0")
     if "managed_children" not in existing:
         conn.execute("ALTER TABLE users ADD COLUMN managed_children TEXT DEFAULT NULL")
+    # P140: the Plex account this person watches on (server account id; NULL = not linked)
+    if "plex_account_id" not in existing:
+        conn.execute("ALTER TABLE users ADD COLUMN plex_account_id INTEGER DEFAULT NULL")
+    # P144-s02: «Frigate may track me» (1 = yes, the default for everyone) + the Frigate face
+    # names that are this person (JSON list; NULL = not linked)
+    if "frigate_tracking" not in existing:
+        conn.execute("ALTER TABLE users ADD COLUMN frigate_tracking INTEGER NOT NULL DEFAULT 1")
+    if "frigate_faces" not in existing:
+        conn.execute("ALTER TABLE users ADD COLUMN frigate_faces TEXT DEFAULT NULL")
+    # P144-s27b: «Uttrykk og gester» — on by default (2026-11-06), same who-decides rule as frigate_tracking
+    if "frigate_expressions" not in existing:
+        conn.execute("ALTER TABLE users ADD COLUMN frigate_expressions INTEGER NOT NULL DEFAULT 1")
 
 
 def _ensure_admin(conn: sqlite3.Connection) -> None:
@@ -189,7 +207,7 @@ def _ensure_admin(conn: sqlite3.Connection) -> None:
         )
 
         logging.getLogger(__name__).warning(
-            "Opprettet standard admin-bruker (PIN: 1234). Bytt PIN umiddelbart!"
+            "Created default admin user (PIN: 1234). Change the PIN immediately!"
         )
 
 
@@ -233,7 +251,18 @@ def _row_to_dict(row) -> dict:
     d["is_parent"] = bool(d.get("is_parent", 0))
     d["pin_required"] = bool(d.get("pin_required", 0))
     d.setdefault("managed_children", None)
+    d["frigate_tracking"] = bool(d.get("frigate_tracking", 1))
+    d["frigate_expressions"] = bool(d.get("frigate_expressions", 1))
+    d["frigate_faces"] = _parse_faces(d.get("frigate_faces"))
     return d
+
+
+def _parse_faces(raw) -> list[str]:
+    try:
+        faces = json.loads(raw) if raw else []
+    except (TypeError, ValueError):
+        return []
+    return [str(f) for f in faces if isinstance(f, str) and f.strip()] if isinstance(faces, list) else []
 
 
 def validate_pin_strength(pin: str) -> tuple[bool, str]:
@@ -265,7 +294,7 @@ def _create_user_conn(
 ) -> dict:
     if role not in PERSON_ROLES:
         raise ValueError(f"Ugyldig rolle: {role}")
-    if is_system_identity(username):
+    if is_system_identity(username) or username.casefold() in SERVICE_ACCOUNTS:
         raise ValueError(f"{username} is a reserved system identity.")
     if len(pin) < 4:
         raise ValueError("PIN must be at least 4 digits.")
@@ -323,6 +352,86 @@ def get_user(username: str) -> dict | None:
         conn.close()
 
 
+def get_username_for_plex_account(account_id: int) -> str:
+    """P140: the KTSB user linked to a Plex server account, "" if none."""
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT username FROM users WHERE plex_account_id=? LIMIT 1", (int(account_id),)
+        ).fetchone()
+        return row["username"] if row else ""
+    finally:
+        conn.close()
+
+
+def get_username_for_frigate_face(face: str) -> str:
+    """P144-s02: the KTSB user a Frigate face name is linked to (case-insensitive), "" if none."""
+    wanted = face.strip().casefold()
+    for user in list_users():
+        if wanted in {f.casefold() for f in user["frigate_faces"]}:
+            return user["username"]
+    return ""
+
+
+def list_untracked_frigate_faces() -> set[str]:
+    """P144-s02: casefolded Frigate face names of every person who said «Frigate may not track me»."""
+    conn = _get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT frigate_faces FROM users WHERE frigate_tracking=0 AND frigate_faces IS NOT NULL"
+        ).fetchall()
+    finally:
+        conn.close()
+    return {f.casefold() for r in rows for f in _parse_faces(r["frigate_faces"])}
+
+
+def any_frigate_tracking_off() -> bool:
+    """DT04 R0.6d: has at least one person «Frigate may track me» off? A yes/no only — never who or how many."""
+    conn = _get_conn()
+    try:
+        return conn.execute("SELECT 1 FROM users WHERE frigate_tracking=0 LIMIT 1").fetchone() is not None
+    finally:
+        conn.close()
+
+
+def set_frigate_tracking(username: str, allowed: bool) -> dict | None:
+    """P144-s02: store «Frigate may track me». Who may call this is decided by the router."""
+    if is_system_identity(username):
+        raise ValueError(f"{username} is a system identity — it has no Frigate setting.")
+    conn = _get_conn()
+    try:
+        conn.execute(
+            "UPDATE users SET frigate_tracking=? WHERE username=?", (1 if allowed else 0, username)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return get_user(username)
+
+
+def set_frigate_expressions(username: str, allowed: bool) -> dict | None:
+    """P144-s27b: store «Uttrykk og gester». Who may call this is decided by the router (the s02 rule)."""
+    if is_system_identity(username):
+        raise ValueError(f"{username} is a system identity — it has no Frigate setting.")
+    conn = _get_conn()
+    try:
+        conn.execute("UPDATE users SET frigate_expressions=? WHERE username=?", (1 if allowed else 0, username))
+        conn.commit()
+    finally:
+        conn.close()
+    return get_user(username)
+
+
+def list_expressions_off() -> set[str]:
+    """Usernames who said no to «Uttrykk og gester» (P144-s27b)."""
+    conn = _get_conn()
+    try:
+        rows = conn.execute("SELECT username FROM users WHERE frigate_expressions=0").fetchall()
+    finally:
+        conn.close()
+    return {r["username"] for r in rows}
+
+
 def get_user_with_hash(username: str) -> dict | None:
     """Kun for intern auth-bruk — inkluderer pin_hash."""
     conn = _get_conn()
@@ -360,6 +469,8 @@ def update_user(
     is_parent: bool | None = None,
     pin_required: bool | None = None,
     managed_children: str | None = None,
+    plex_account_id: int | None = None,
+    frigate_faces: list[str] | None = None,
 ) -> dict | None:
     if is_system_identity(username):
         # Only the avatar may change; role, name, PIN, activity and access are fixed.
@@ -373,6 +484,8 @@ def update_user(
                 is_parent,
                 pin_required,
                 managed_children,
+                plex_account_id,
+                frigate_faces,
             )
         ) or (role is not None and role != SYSTEM_IDENTITIES[username]["role"]):
             raise ValueError(
@@ -410,6 +523,23 @@ def update_user(
     if managed_children is not None:
         fields.append("managed_children=?")
         params.append(managed_children)
+    if plex_account_id is not None:
+        # P140: one Plex account belongs to at most one person; < 0 = unlink
+        if plex_account_id >= 0:
+            other = get_username_for_plex_account(plex_account_id)
+            if other and other != username:
+                raise ValueError(f"Plex account {plex_account_id} is already linked to {other}")
+        fields.append("plex_account_id=?")
+        params.append(plex_account_id if plex_account_id >= 0 else None)
+    if frigate_faces is not None:
+        # P144-s02: one Frigate face name belongs to at most one person; [] = unlink
+        faces = list(dict.fromkeys(f.strip() for f in frigate_faces if f and f.strip()))
+        for face in faces:
+            other = get_username_for_frigate_face(face)
+            if other and other != username:
+                raise ValueError(f"Frigate face {face!r} is already linked to {other}")
+        fields.append("frigate_faces=?")
+        params.append(json.dumps(faces, ensure_ascii=False) if faces else None)
     if not fields:
         return get_user(username)
     params.append(username)

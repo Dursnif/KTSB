@@ -8,9 +8,11 @@ All action enum values and parameter names are in English.
 Descriptions are i18n'd via get_tools(lang).
 """
 
+from kaare_core.ha import action_truth as truth
 from kaare_core.memory.agenda_themes import THEMES
 from kaare_core.model_lock import restartable_containers
 from kaare_core.tools.i18n import t as _t
+from kaare_core.voice import screen as screen_core
 
 
 def _library_wiki_suffix(lang: str) -> str:
@@ -27,7 +29,27 @@ def _library_wiki_suffix(lang: str) -> str:
         return ""
 
 
+def _with_recipe(tool: dict, lang: str) -> dict:
+    """P151 phase 5: `recipe` + `screen` on the library tool — only while screens are on (D11 covers the whole
+    feature until it ships; switched off, Kåre does not see them)."""
+    if screen_core.enabled():
+        fn = tool["function"]
+        fn["description"] += _t("tool_library_recipe_desc", lang)
+        props = fn["parameters"]["properties"]
+        props["action"]["enum"] = [*props["action"]["enum"], "recipe"]
+        props["screen"] = {"type": "string", "description": _t("tool_library_screen_desc", lang)}
+    return tool
+
+
 def _library_tool(lang: str) -> dict:
+    return _with_recipe(_library_tool_base(lang), lang)
+
+
+def _library_no_online_tool(lang: str) -> dict:
+    return _with_recipe(_library_no_online_tool_base(lang), lang)
+
+
+def _library_tool_base(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
@@ -101,7 +123,7 @@ def _library_tool(lang: str) -> dict:
     }
 
 
-def _library_no_online_tool(lang: str) -> dict:
+def _library_no_online_tool_base(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
@@ -186,6 +208,10 @@ def _les_ha_tool(lang: str) -> dict:
                         "type": "string",
                         "description": _t("tool_les_ha_room_desc", lang),
                     },
+                    "floor": {
+                        "type": "string",
+                        "description": _t("tool_ha_floor_desc", lang),
+                    },
                     "entity_id": {
                         "type": "string",
                         "description": _t("tool_les_ha_entity_id_desc", lang),
@@ -210,6 +236,18 @@ def _styr_enhet_tool(lang: str) -> dict:
                         "type": "string",
                         "description": _t("tool_styr_enhet_entity_id_desc", lang),
                     },
+                    "room": {
+                        "type": "string",
+                        "description": _t("tool_ha_control_room_desc", lang),
+                    },
+                    "floor": {
+                        "type": "string",
+                        "description": _t("tool_ha_floor_desc", lang),
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": _t("tool_ha_domain_desc", lang),
+                    },
                     "action": {
                         "type": "string",
                         "enum": [
@@ -219,9 +257,18 @@ def _styr_enhet_tool(lang: str) -> dict:
                             "set_level",
                             "set_color_temp",
                             "set_color",
+                            *truth.MEDIA_ACTIONS,
                             "ha_history",
                         ],
                         "description": _t("tool_styr_enhet_action_desc", lang),
+                    },
+                    "volume_pct": {
+                        "type": "integer",
+                        "description": _t("tool_ha_volume_pct_desc", lang),
+                    },
+                    "source": {
+                        "type": "string",
+                        "description": _t("tool_ha_source_desc", lang),
                     },
                     "brightness_pct": {
                         "type": "integer",
@@ -246,7 +293,7 @@ def _styr_enhet_tool(lang: str) -> dict:
                         "description": _t("tool_styr_enhet_history_period_desc", lang),
                     },
                 },
-                "required": ["entity_id", "action"],
+                "required": ["action"],
             },
         },
     }
@@ -937,7 +984,7 @@ def _self_trace_tool(lang: str) -> dict:
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["fetch_trace", "trace_patterns"],
+                        "enum": ["fetch_trace", "trace_patterns", "recent"],
                         "description": _t("tool_self_trace_action_desc", lang),
                     },
                     "rid": {
@@ -961,17 +1008,31 @@ def _self_trace_tool(lang: str) -> dict:
 
 
 def _kamera_tool(lang: str) -> dict:
+    """The camera tool. P151: `live` / `live_stop` and `minutes` exist only while screens are switched on in the GUI
+    (D11) — switched off, Kåre does not see them at all."""
+    tool = _kamera_tool_base(lang)
+    if screen_core.enabled():
+        fn = tool["function"]
+        fn["description"] += " " + _t("tool_kamera_live_desc", lang)
+        props = fn["parameters"]["properties"]
+        props["action"]["enum"] = [*props["action"]["enum"], "live", "live_stop"]
+        props["minutes"] = {"type": "number", "description": _t("tool_kamera_minutes_desc", lang)}
+    return tool
+
+
+def _kamera_tool_base(lang: str) -> dict:
     return {
         "type": "function",
         "function": {
             "name": "camera",
-            "description": _t("tool_kamera_desc", lang),
+            "description": _t("tool_kamera_desc", lang) + " " + _t("tool_kamera_look_now", lang),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["snapshot", "events", "frigate", "list", "analyze", "show_event"],
+                        "enum": ["snapshot", "events", "frigate", "list", "analyze", "show_event", "last_seen", "episodes",
+                                 "episode", "verify", "stationary", "ask", "answer_question", "correct"],
                         "description": _t("tool_kamera_action_desc", lang),
                     },
                     "scope": {
@@ -983,13 +1044,29 @@ def _kamera_tool(lang: str) -> dict:
                         "type": "string",
                         "description": _t("tool_kamera_camera_desc", lang),
                     },
+                    "screen": {
+                        "type": "string",
+                        "description": _t("tool_kamera_screen_desc", lang),
+                    },
+                    "duration": {
+                        "type": "integer",
+                        "description": _t("tool_kamera_duration_desc", lang),
+                    },
                     "query": {
                         "type": "string",
                         "description": _t("tool_kamera_query_desc", lang),
                     },
+                    "analyse": {
+                        "type": "boolean",
+                        "description": _t("tool_kamera_analyse_desc", lang),
+                    },
                     "name": {
                         "type": "string",
                         "description": _t("tool_kamera_name_desc", lang),
+                    },
+                    "about": {
+                        "type": "string",
+                        "description": _t("tool_kamera_about_desc", lang),
                     },
                     "hours_back": {
                         "type": "integer",
@@ -1010,6 +1087,32 @@ def _kamera_tool(lang: str) -> dict:
                     "event_id": {
                         "type": "string",
                         "description": _t("tool_kamera_event_id_desc", lang),
+                    },
+                    "from": {
+                        "type": "string",
+                        "description": _t("tool_kamera_from_desc", lang),
+                    },
+                    "to": {
+                        "type": "string",
+                        "description": _t("tool_kamera_to_desc", lang),
+                    },
+                    "episode_id": {
+                        "type": "integer",
+                        "description": _t("tool_kamera_episode_id_desc", lang),
+                    },
+                    "answer": {
+                        "type": "string",
+                        "enum": ["yes", "no", "private", "unsure", "skip"],
+                        "description": _t("tool_kamera_answer_desc", lang),
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": ["camera", "theme"],
+                        "description": _t("tool_kamera_kind_desc", lang),
+                    },
+                    "question_id": {  # N39: answer_question binds by the card, never by an event_id
+                        "type": "string",
+                        "description": _t("tool_kamera_question_id_desc", lang),
                     },
                 },
                 "required": ["action"],
@@ -1059,11 +1162,7 @@ def _se_bilder_tool(lang: str) -> dict:
             "description": _t("tool_se_bilder_desc", lang),
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "user_id": {
-                        "type": "string",
-                        "description": _t("tool_se_bilder_user_id_desc", lang),
-                    },
+                "properties": {  # security 2026-11-16: no user_id — always the logged-in user's own pictures
                     "folder": {
                         "type": "string",
                         "enum": ["input", "output", "all"],
@@ -1083,7 +1182,6 @@ def _se_bilder_tool(lang: str) -> dict:
                         "description": _t("tool_se_bilder_mode_desc", lang),
                     },
                 },
-                "required": ["user_id"],
             },
         },
     }
@@ -1108,12 +1206,50 @@ def _media_tool(lang: str) -> dict:
                             "plex_episodes",
                             "plex_clients",
                             "plex_play",
+                            "plex_continue",
+                            "plex_skipped",
+                            "plex_mark",
                             "radio_status",
                             "radio_play",
                             "radio_stop",
                             "radio_volume",
+                            "nrk_play",
+                            "youtube_play",
+                            "cast_stop",
+                            "cast_pause",
+                            "cast_play",
+                            "tv_power",
+                            "tv_volume",
+                            "tv_mute",
+                            "tv_key",
+                            "tv_app",
                         ],
                         "description": _t("tool_media_action_desc", lang),
+                    },
+                    "season": {
+                        "type": "integer",
+                        "description": _t("tool_media_season_desc", lang),
+                    },
+                    "episode": {
+                        "type": "integer",
+                        "description": _t("tool_media_episode_desc", lang),
+                    },
+                    "tv_value": {
+                        "type": "string",
+                        "description": _t("tool_media_tv_value_desc", lang),
+                    },
+                    "youtube_id": {
+                        "type": "string",
+                        "description": _t("tool_media_youtube_id_desc", lang),
+                    },
+                    "nrk_kind": {
+                        "type": "string",
+                        "enum": ["tv", "radio"],
+                        "description": _t("tool_media_nrk_kind_desc", lang),
+                    },
+                    "nrk_id": {
+                        "type": "string",
+                        "description": _t("tool_media_nrk_id_desc", lang),
                     },
                     "query": {
                         "type": "string",
@@ -1147,6 +1283,11 @@ def _media_tool(lang: str) -> dict:
                         "type": "integer",
                         "description": _t("tool_media_volume_desc", lang),
                     },
+                    "status": {
+                        "type": "string",
+                        "enum": ["skipped", "watched", "resume", "clear"],
+                        "description": _t("tool_media_status_desc", lang),
+                    },
                 },
                 "required": ["action"],
             },
@@ -1165,12 +1306,20 @@ def _announce_tool(lang: str) -> dict:
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["say", "display", "list_display"],
+                        "enum": ["say", "display", "list_display", "show_url"],
                         "description": _t("tool_announce_action_desc", lang),
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": _t("tool_announce_url_desc", lang),
                     },
                     "text": {
                         "type": "string",
                         "description": _t("tool_announce_text_desc", lang),
+                    },
+                    "source": {  # owner decision 2026-11-16: a reference for the STM receipt, never stored as content
+                        "type": "string",
+                        "description": _t("tool_announce_source_desc", lang),
                     },
                     "target": {
                         "type": "string",

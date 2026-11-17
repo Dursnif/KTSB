@@ -11,11 +11,13 @@ import {
   apiVerifyPin,
   apiExportBackup, apiRestoreBackup,
   apiSaveBackupPoint, apiListBackupPoints, apiRestoreBackupPoint, apiDeleteBackupPoint, apiDownloadBackupPoint,
-  apiUpdateStatus, apiUpdateCheck, apiUpdateStart, apiUpdateRollback,
+  apiUpdateStatus, apiUpdateCheck, apiUpdateStart, apiUpdateRollback, apiGetUpdateSettings, apiPutUpdateSettings,
   type ServiceKey, type AdminServiceStatus, type BackupPoint, type RestoreResult,
   type UpdateStatus, type UpdateCheck,
 } from "@/services/api";
 import { toggled } from "@/lib/collections";
+import { SettingsLevelProvider } from "@/contexts/SettingsLevelContext";
+import { ExpertOnly } from "./settings/shared";
 
 const token = () => sessionStorage.getItem("kaare_token");
 
@@ -46,7 +48,7 @@ function formatTs(iso: string | null, neverLabel: string) {
 
 const SERVICE_KEYS = new Set([
   "kaare", "gateway", "semantic_embed", "agents", "embedding",
-  "argus", "voice", "ha-log-bridge", "frontend",
+  "argus", "voice", "ha-log-bridge", "frontend", "jing", "jang",
 ]);
 
 
@@ -503,6 +505,36 @@ const KNOWN_UPDATE_ERRORS = new Set(["night_sequence_running", "busy", "no_home"
 // 404 means this API simply has no updater endpoints, which is not "restarting".
 const apiIsDown = (e: unknown) => !axios.isAxiosError(e) || !e.response || e.response.status >= 502;
 const UPDATER_UNREACHABLE: UpdateStatus = { docker: true, running_version: "", reachable: false };
+
+// ── TestVersionsToggle (DT04 R0.7) ───────────────────────────────────────────
+// «Include test versions»: the updater also offers release candidates (signed pre-releases). Off by default; the
+// updater container reads the same settings.yaml key itself.
+function TestVersionsToggle() {
+  const { t } = useTranslation();
+  const [on, setOn] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    apiGetUpdateSettings().then(r => setOn(!!r.include_test_versions)).catch(() => setFailed(true));
+  }, []);
+  const toggle = async () => {
+    if (on === null) return;
+    setSaving(true);
+    setFailed(false);
+    try { setOn((await apiPutUpdateSettings(!on)).include_test_versions); } catch { setFailed(true); }
+    setSaving(false);
+  };
+  return (
+    <div style={{ background: "#111", border: "1px solid #1e1e1e", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
+      <label style={{ display: "flex", alignItems: "center", gap: 10, color: "#ccc", fontSize: 13, cursor: "pointer" }}>
+        <input type="checkbox" checked={!!on} disabled={on === null || saving} onChange={toggle} />
+        {t("system.update.test_versions")}
+      </label>
+      <p style={{ color: "#777", fontSize: 12, lineHeight: 1.5, marginTop: 6 }}>{t("system.update.test_versions_hint")}</p>
+      {failed && <p style={{ color: "#f87171", fontSize: 12 }}>{t("system.update.err_generic")}</p>}
+    </div>
+  );
+}
 
 function UpdateCard() {
   const { t } = useTranslation();
@@ -1324,6 +1356,8 @@ export default function System() {
 
         {/* In-app update (P57) — next to backup/restore: an update takes a save point first */}
         <UpdateCard />
+        {/* DT04 R0.7: release candidates in the updater — Expert only (the level chosen on the Settings page) */}
+        <SettingsLevelProvider><ExpertOnly><TestVersionsToggle /></ExpertOnly></SettingsLevelProvider>
 
         {/* Backup & restore */}
         <BackupRestoreCard />

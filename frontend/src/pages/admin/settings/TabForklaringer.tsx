@@ -15,6 +15,8 @@ const TAB_COLORS = {
   distribusjon:  "#fdcb6e",
   agenter:       "#74b9ff",
   varsler:       "#e84393",
+  skjermer:      "#55efc4",
+  diskbruk:      "#81ecec",
 };
 
 const GROUP_COLORS = {
@@ -23,6 +25,7 @@ const GROUP_COLORS = {
   internal: TAB_COLORS.refleksjon,
   settings: TAB_COLORS.generelt,
   user:     TAB_COLORS.integrasjoner,
+  integrations: TAB_COLORS.integrasjoner,
 };
 
 function Dot({ color }: { color: string }) {
@@ -285,6 +288,13 @@ export default function TabForklaringer() {
             <p style={{ fontSize: 13, color: "#bbb", lineHeight: 1.6 }}>{t("forklaringer.users.pin")}</p>
             <p style={{ fontSize: 13, color: "#bbb", lineHeight: 1.6 }}>{t("forklaringer.users.voice_reg")}</p>
             <p style={{ fontSize: 13, color: "#bbb", lineHeight: 1.6 }}>{t("forklaringer.users.vpn_qr")}</p>
+            <p style={{ fontSize: 13, color: "#bbb", lineHeight: 1.6 }}>{t("forklaringer.users.frigate_tracking")}</p>
+            <p style={{ fontSize: 13, color: "#bbb", lineHeight: 1.6 }}>{t("forklaringer.users.camera_questions")}</p>
+            <p style={{ fontSize: 13, color: "#bbb", lineHeight: 1.6 }}>{t("forklaringer.users.thing_questions")}</p>
+            <p style={{ fontSize: 13, color: "#bbb", lineHeight: 1.6 }}>{t("forklaringer.users.place_questions")}</p>
+            <p style={{ fontSize: 13, color: "#bbb", lineHeight: 1.6 }}>{t("forklaringer.users.questions_card")}</p>
+            <p style={{ fontSize: 13, color: "#bbb", lineHeight: 1.6 }}>{t("forklaringer.users.frigate_stills_view")}</p>
+            <p style={{ fontSize: 13, color: "#bbb", lineHeight: 1.6 }}>{t("forklaringer.users.frigate_modules")}</p>
             <p style={{ fontSize: 13, color: "#ff9f43", lineHeight: 1.6 }}>{t("forklaringer.users.warning_delete")}</p>
             <p style={{ fontSize: 13, color: "#ff9f43", lineHeight: 1.6 }}>{t("forklaringer.users.warning_vpn")}</p>
           </div>
@@ -297,7 +307,7 @@ export default function TabForklaringer() {
 
         {sec("vedlikehold", GROUP_COLORS.admin, <>
           <Body text={t("forklaringer.vedlikehold.body")} />
-          <Items items={items("vedlikehold", 6)} />
+          <Items items={items("vedlikehold", 8)} />
         </>)}
 
         {sec("verktoy", GROUP_COLORS.admin, <>
@@ -325,15 +335,22 @@ export default function TabForklaringer() {
 
         {sec("aliaser", GROUP_COLORS.admin, <>
           <Body text={t("forklaringer.aliaser.body")} />
-          <Items items={items("aliaser", 4)} />
+          <Items items={items("aliaser", 6)} />
         </>)}
 
         {sec("noder", GROUP_COLORS.admin, <>
           <Body text={t("forklaringer.noder.body")} />
           <Body text={t("forklaringer.noder.trust")} />
+          <Body text={t("forklaringer.noder.place")} />
+          <Body text={t("forklaringer.noder.lead_in")} />
+          <Body text={t("forklaringer.noder.channels")} />
 
           {sub("noder_kategorier", TAB_COLORS.kare, <>
             <Items items={items("noder_kategorier", 3)} />
+          </>)}
+
+          {sub("noder_svar", TAB_COLORS.nettsok, <>
+            <Items items={items("noder_svar", 8)} />
           </>)}
 
           {sub("noder_lyd_typer", TAB_COLORS.mqtt, <>
@@ -361,12 +378,30 @@ export default function TabForklaringer() {
           </>)}
         </>)}
 
-        {sec("kameraer", GROUP_COLORS.admin, <>
-          <Items items={items("kameraer", 5)} />
-        </>)}
-
         {sec("sikkerhet", GROUP_COLORS.admin, <>
           <Items items={items("sikkerhet", 5)} />
+        </>)}
+      </div>
+
+      {/* ── Group: Integrasjoner (own admin page since P144-s01) ──── */}
+      <div style={{ marginBottom: 28 }}>
+        <GroupHeader label={t("forklaringer.group_integrations")} color={GROUP_COLORS.integrations} />
+
+        {sec("innst_ha", TAB_COLORS.ha, <>
+          <Body text={t("forklaringer.innst_ha.body")} />
+          <Items items={items("innst_ha", 6)} />
+        </>)}
+
+        {sec("innst_mqtt", TAB_COLORS.mqtt, <>
+          <Items items={items("innst_mqtt", 2)} />
+        </>)}
+
+        {sec("innst_integrasjoner", TAB_COLORS.integrasjoner, <>
+          <Items items={items("innst_integrasjoner", 13)} />
+        </>)}
+
+        {sec("kameraer", TAB_COLORS.integrasjoner, <>
+          <Items items={items("kameraer", 9)} />
         </>)}
       </div>
 
@@ -401,16 +436,11 @@ export default function TabForklaringer() {
         </>)}
 
         {sec("innst_generelt", TAB_COLORS.generelt, <>
-          <Items items={items("innst_generelt", 6)} />
+          <Items items={items("innst_generelt", 7)} />
         </>)}
 
-        {sec("innst_ha", TAB_COLORS.ha, <>
-          <Body text={t("forklaringer.innst_ha.body")} />
-          <Items items={items("innst_ha", 5)} />
-        </>)}
-
-        {sec("innst_mqtt", TAB_COLORS.mqtt, <>
-          <Items items={items("innst_mqtt", 4)} />
+        {sec("innst_diskbruk", TAB_COLORS.diskbruk, <>
+          <Items items={items("innst_diskbruk", 4)} />
         </>)}
 
         {sec("innst_llm", TAB_COLORS.llm, <>
@@ -421,11 +451,13 @@ export default function TabForklaringer() {
             { label: "Miss Kåre",   desc: t("forklaringer.innst_llm.role_miss_kare"), color: TAB_COLORS.refleksjon },
             { label: "Miss Library",desc: t("forklaringer.innst_llm.role_library"),   color: TAB_COLORS.nettsok },
             { label: "Mechanic",    desc: t("forklaringer.innst_llm.role_mechanic"),  color: TAB_COLORS.agenter },
+            { label: "Frigate",     desc: t("forklaringer.innst_llm.role_frigate"),   color: TAB_COLORS.llm },
+            { label: t("settings.llm.frigate_conclude_title"), desc: t("forklaringer.innst_llm.role_frigate_conclude"), color: TAB_COLORS.llm },
             { label: "Fallback",    desc: t("forklaringer.innst_llm.role_fallback"),  color: TAB_COLORS.mqtt },
             { label: "Sky",         desc: t("forklaringer.innst_llm.role_sky"),       color: TAB_COLORS.kare },
           ]} />
           <SubHeading text="Andre begreper:" />
-          <Items items={items("innst_llm", 12)} />
+          <Items items={items("innst_llm", 14)} />
         </>)}
 
         {sec("innst_refleksjon", TAB_COLORS.refleksjon, <>
@@ -444,21 +476,22 @@ export default function TabForklaringer() {
           <Items items={items("innst_kare", 11)} />
         </>)}
 
-        {sec("innst_integrasjoner", TAB_COLORS.integrasjoner, <>
-          <Items items={items("innst_integrasjoner", 3)} />
-        </>)}
-
         {sec("innst_distribusjon", TAB_COLORS.distribusjon, <>
           <Items items={items("innst_distribusjon", 4)} />
         </>)}
 
         {sec("innst_agenter", TAB_COLORS.agenter, <>
-          <Items items={items("innst_agenter", 3)} />
+          <Items items={items("innst_agenter", 4)} />
         </>)}
 
         {sec("innst_varsler", TAB_COLORS.varsler, <>
           <Body text={t("forklaringer.innst_varsler.body")} />
           <Items items={items("innst_varsler", 4)} />
+        </>)}
+
+        {sec("innst_skjermer", TAB_COLORS.skjermer, <>
+          <Body text={t("forklaringer.innst_skjermer.body")} />
+          <Items items={items("innst_skjermer", 5)} />
         </>)}
       </div>
 

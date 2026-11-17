@@ -110,7 +110,7 @@ export default function TabDistribusjon() {
                   <p className="text-sm font-medium capitalize">{key.replace(/_/g, " ")}</p>
                   {domain.notes && <p className="text-xs text-muted-foreground">{domain.notes}</p>}
                 </div>
-                <Switch checked={domain.enabled} onCheckedChange={v => toggleDomain(key, v)} className="data-checked:bg-green-600 data-unchecked:bg-red-600" />
+                <Switch checked={domain.enabled} onCheckedChange={v => toggleDomain(key, v)} />
               </div>
             ))}
           </div>
@@ -146,7 +146,6 @@ export default function TabDistribusjon() {
                           checked={svc.enabled}
                           onCheckedChange={v => toggleService(key, v)}
                           disabled={unavailable}
-                          className="data-checked:bg-green-600 data-unchecked:bg-red-600"
                         />
                       </div>
                     );

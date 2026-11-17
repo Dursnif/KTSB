@@ -27,9 +27,15 @@ import yaml
 from kaare_core import session_keys
 from kaare_core.config import now_local
 from kaare_core.crypto import decrypt_dict, decrypt_text, encrypt_dict, encrypt_text, seal, unseal
+from kaare_core.storage import limits, rotation
 from kaare_core.tools.household_state import read_household_state
 from kaare_core.tools.i18n import get_lang, t
-from kaare_core.users.store import SYSTEM_IDENTITIES, get_public_key_b64, list_users
+from kaare_core.users.store import (
+    SERVICE_ACCOUNTS,
+    SYSTEM_IDENTITIES,
+    get_public_key_b64,
+    list_users,
+)
 
 # Keys kept in plaintext after migration (needed for household context without a session).
 # "unlock" must be plaintext so detection works before the user is authenticated.
@@ -40,11 +46,10 @@ _PLAINTEXT_KEYS = frozenset(
 logger = logging.getLogger(__name__)
 
 USERS_DIR = Path("/kaare/state/users")
-OBS_MAX_DAYS = 90
 
 # Accounts that are system-only — never appear in household block
-SYSTEM_ACCOUNTS: set[str] = {"admin", "kare"} | set(
-    SYSTEM_IDENTITIES
+SYSTEM_ACCOUNTS: set[str] = (
+    {"admin"} | SERVICE_ACCOUNTS | set(SYSTEM_IDENTITIES)
 )  # no keypair → profiles stay plain
 
 # Hardcoded schema for what is globally visible about each household member.
@@ -381,7 +386,7 @@ def update_nested_profile_field(user_id: str, section: str, field: str, value: s
     return "OK"
 
 
-def vault_or_update_nested_field(user_id: str, section: str, field: str, value: str) -> str:
+def vault_or_update_nested_field(user_id: str, section: str, field: str, value: str, source: str = "user") -> str:
     """
     Write a nested profile field (see update_nested_profile_field), but vault it
     (SealedBox-encrypted with the user's public key, no session needed) instead of
@@ -395,7 +400,7 @@ def vault_or_update_nested_field(user_id: str, section: str, field: str, value: 
     """
     if _get_session_key(user_id) is not None:
         return update_nested_profile_field(user_id, section, field, value)
-    payload = {"type": "profile_field_nested", "section": section, "field": field, "value": value}
+    payload = {"type": "profile_field_nested", "section": section, "field": field, "value": value, "source": source}
     if write_vault_entry(user_id, payload):
         return "Vaulted (encrypted, applied on next login)"
     # No public key yet (user never migrated to encryption) — same fallback
@@ -437,8 +442,13 @@ def get_recent_observations(user_id: str, days: int = 14, allow_system_key: bool
     return "\n".join(result).strip() if result else t("prof_no_observations", get_lang(user_id))
 
 
+def _obs_limit_bytes() -> int:
+    return limits.get_bytes("observations_mb")
+
+
 def _trim_observations(user_id: str, allow_system_key: bool = False) -> None:
-    """Fjern observasjoner eldre enn OBS_MAX_DAYS.
+    """Over the size limit the oldest dated sections go first (P150: size, not 90 days; 0 = off). The preamble above the
+    first «## YYYY-MM-DD» (the always-in-prompt top part) stays. Settings → Logs/Storage (storage_limits.observations_mb).
 
     allow_system_key must match whatever add_observation() was just called with —
     otherwise this would read back "" (no key to decrypt the .enc file it just wrote)
@@ -447,15 +457,9 @@ def _trim_observations(user_id: str, allow_system_key: bool = False) -> None:
     content = _read_obs_text(user_id, allow_system_key=allow_system_key)
     if not content:
         return
-    cutoff = (now_local() - timedelta(days=OBS_MAX_DAYS)).strftime("%Y-%m-%d")
-    lines = content.splitlines()
-    result, include = [], False
-    for line in lines:
-        if line.startswith("## "):
-            include = line[3:].strip()[:10] >= cutoff
-        if include:
-            result.append(line)
-    _write_obs_text(user_id, "\n".join(result) + "\n", allow_system_key=allow_system_key)
+    trimmed = rotation.trim_dated_sections(content, _obs_limit_bytes())
+    if trimmed != content:
+        _write_obs_text(user_id, trimmed, allow_system_key=allow_system_key)
 
 
 def delete_observation_fragment(user_id: str, fragment: str) -> tuple[bool, int]:
@@ -656,13 +660,24 @@ def _apply_vault_payload(user_id: str, payload: dict) -> None:
             payload["value"],
             payload.get("reason", "Fra vault"),
         )
-    elif ptype == "profile_field_nested":
+    elif ptype == "profile_field_nested" and payload.get("source") == "user":
         update_nested_profile_field(
             user_id,
             payload["section"],
             payload["field"],
             payload["value"],
         )
+    elif ptype in ("profile_field_nested", "ktsb_guess"):
+        # J26: the profile holds only what the person said; anything else (the night meeting, and old entries that carry
+        # no source) becomes a labelled guess in KTSB's own file — nothing lost, nothing written into the profile.
+        # PLC0415: ktsb_file imports this module (vault + profile) — a real import cycle
+        from kaare_core.users import ktsb_file  # noqa: PLC0415
+
+        entry = payload.get("entry") or ktsb_file._entry(payload["section"], payload["field"], payload["value"],
+                                                        payload.get("source") or "unknown_vault", "", None,
+                                                        "vault entry without a source (J26)")
+        if not ktsb_file.store_entry(user_id, entry):
+            raise RuntimeError("KTSB file not writable now")  # the vault file stays for the next login
     else:
         logger.warning(f"[VAULT] unknown payload type '{ptype}' for {user_id}")
 

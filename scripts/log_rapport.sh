@@ -62,18 +62,6 @@ else
     echo "  gpu.lock finnes ikke — kare_is_busy() returnerer alltid True!"
 fi
 
-echo ""
-echo "--- OLLAMA-STATUS (port 11441) ---"
-curl -s --max-time 3 http://127.0.0.1:11441/api/tags 2>/dev/null \
-    | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    models = [m['name'] for m in d.get('models', [])]
-    print('  Tilgjengelige modeller:', ', '.join(models) if models else 'ingen')
-except:
-    print('  Ikke svar fra port 11441')
-"
 
 echo ""
 echo "======================================================"

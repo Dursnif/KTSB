@@ -82,12 +82,12 @@ def test_mechanic_still_delivers_pending_and_chat(monkeypatch):
     )
 
     async def scenario():
-        job_id = await js.start_job("check disk", user_id="stian", rid="r")
+        job_id = await js.start_job("check disk", user_id="userone", rid="r")
         await js._jobs[job_id]["task"]
 
     asyncio.run(scenario())
     assert (
-        calls["pending"] == ("stian", "mechanic answer") and "mechanic answer" in calls["chat"][1]
+        calls["pending"] == ("userone", "mechanic answer") and "mechanic answer" in calls["chat"][1]
     )
 
 
@@ -165,7 +165,7 @@ def test_result_goes_to_kare_and_his_answer_to_chat(monkeypatch, lang):
     async def scenario():
         out = wr.start(
             "web_search",
-            {"query": "Göta kanal", "background": True, "_user_id": "stian", "_rid": "r"},
+            {"query": "Göta kanal", "background": True, "_user_id": "userone", "_rid": "r"},
             fake_run,
         )
         job = next(
@@ -177,12 +177,12 @@ def test_result_goes_to_kare_and_his_answer_to_chat(monkeypatch, lang):
     out = asyncio.run(scenario())
     assert out.startswith(t("work_round_started", lang, job="")[:20])
     assert posted["url"] == "http://api.test/api/generate"
-    assert posted["json"]["source"] == "work_round" and posted["json"]["user_id"] == "stian"
+    assert posted["json"]["source"] == "work_round" and posted["json"]["user_id"] == "userone"
     assert posted["json"]["prompt"].startswith(
         t("work_round_prompt_head", lang, question="Göta kanal")
     )
     assert "«raw quote»" in posted["json"]["prompt"]
-    assert chat == {"user": "stian", "msg": "Kåre's interpreted answer"}  # never the raw result
+    assert chat == {"user": "userone", "msg": "Kåre's interpreted answer"}  # never the raw result
 
 
 def test_executor_dispatch_starts_work_round(monkeypatch):

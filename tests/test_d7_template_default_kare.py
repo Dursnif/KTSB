@@ -58,7 +58,6 @@ def test_template_ollama_roles_use_the_built_in_instance():
         "library",
         "mechanic",
         "reason_freely",
-        "vision",
     ):
         cfg = _resolved(llm, role)
         assert cfg["provider"] == "ollama", role

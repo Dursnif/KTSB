@@ -31,15 +31,17 @@ import yaml
 from kaare_core import (
     app_state,  # app_state.STM_REGISTRY is set by kaare_api at startup — read it per call
     log_buffer,
+    rooms,
 )
 from kaare_core.config import now_local
+from kaare_core.frigate_user import recent as frigate_recent
+from kaare_core.storage import rawlog
 from kaare_core.tools.household_state import is_away
 
 logger = logging.getLogger("context_builder")
 
 _NODES_PATH = Path("/kaare/configs/nodes.yaml")
 _SERVICES_PATH = Path("/kaare/configs/services.yaml")
-_FRIGATE_LOG_PATH = Path("/kaare/logs/frigate_mqtt.log")
 _HA_CONTEXT_PATH = Path("/kaare/state/ha_context.json")
 _ZIGBEE_CONTEXT_PATH = Path("/kaare/state/zigbee_context.json")
 _PLEX_CACHE_PATH = Path("/kaare/state/plex_cache.json")
@@ -57,9 +59,18 @@ def set_request_context(node_name: str, network_context: str) -> None:
 
 
 def _node_room(node_id: str) -> str:
-    """Return human-readable room for a node ID, or node_id if not found."""
+    """Human-readable place of a node: the register's place name (+ location note, P137), else the node's own
+    free-text room, else node_id."""
     if not node_id:
         return ""
+    try:
+        reg = rooms.get_register()
+        place, note = rooms.node_place(node_id, reg=reg)
+        if place:
+            name = reg.label_of_place(place)
+            return f"{name} ({note})" if note else name
+    except Exception:
+        pass
     try:
         data = yaml.safe_load(_NODES_PATH.read_text(encoding="utf-8")) or {}
         node = data.get("nodes", {}).get(node_id, {})
@@ -199,6 +210,11 @@ _LABELS: dict[str, dict[str, str]] = {
         "en": "{label} at {cam} ({pct}%), {ago}",
         "de": "{label} bei {cam} ({pct}%), {ago}",
     },
+    "frigate_seen": {
+        "nb": "{label} ved {cam}, {ago}",
+        "en": "{label} at {cam}, {ago}",
+        "de": "{label} bei {cam}, {ago}",
+    },
     "frigate_named": {
         "nb": "{name} ({label}) ved {cam}, {ago}",
         "en": "{name} ({label}) at {cam}, {ago}",
@@ -264,6 +280,21 @@ def _time_label(minutes_ago: int, lang: str) -> str:
 # ── Frigate recent activity ───────────────────────────────────────────────────
 
 
+def _frigate_seen_block(user_id: str, lang: str) -> str:
+    """J21b reader 6: the last 30 minutes from frigate.db (module 0) — names only for a caller who may get them, never a
+    still thing the stationary gate held back; "" when module 0 is off."""
+    lines = []
+    for r in frigate_recent.recent(user_id):
+        lbl = _l(_frigate_label_key(r["label"]), lang)
+        ago = _time_label(r["minutes_ago"], lang)
+        if r["name"]:
+            line = _l("frigate_named", lang, name=r["name"], label=lbl, cam=r["camera"], ago=ago)
+        else:
+            line = _l("frigate_seen", lang, label=lbl, cam=r["camera"], ago=ago)
+        lines.append(f"• {line}")
+    return "\n".join(lines)
+
+
 def _load_camera_names() -> dict[str, str]:
     """Load camera_names from configs/services.yaml (frigate.camera_names)."""
     try:
@@ -290,18 +321,12 @@ def _frigate_recent_block(lang: str, limit_minutes: int = 30, max_lines: int = 3
     Reads frigate_mqtt.log directly — no network call, no embedding.
     Returns empty string if Frigate not configured, log missing, or no recent events.
     """
-    log_buffer.flush(
-        _FRIGATE_LOG_PATH
-    )  # include lines still buffered in RAM in this process (P131)
-    if not _FRIGATE_LOG_PATH.exists():
+    log_buffer.flush(rawlog.current_segment("frigate_mqtt"))  # lines still buffered in RAM in this process (P131)
+    if not rawlog.segments("frigate_mqtt"):
         return ""
     try:
-        # Tail last _FRIGATE_TAIL_BYTES to avoid reading a large log file
-        with _FRIGATE_LOG_PATH.open("rb") as fh:
-            fh.seek(0, 2)
-            size = fh.tell()
-            fh.seek(max(0, size - _FRIGATE_TAIL_BYTES))
-            raw = fh.read().decode("utf-8", errors="replace")
+        # Tail last _FRIGATE_TAIL_BYTES across the raw segments (P150) to avoid reading a large log
+        raw = rawlog.tail_text("frigate_mqtt", _FRIGATE_TAIL_BYTES)
 
         camera_names = _load_camera_names()
         cutoff = datetime.now(UTC).timestamp() - limit_minutes * 60
@@ -535,9 +560,9 @@ def build_situational_context(user_id: str, lang: str = "nb") -> str:
         except Exception:
             pass
 
-        # Frigate recent detections (Phase 2)
+        # Frigate recent detections — J21b reader 6: from frigate.db, names only for who may get them
         try:
-            frigate_block = _frigate_recent_block(lang)
+            frigate_block = _frigate_seen_block(user_id, lang)
             if frigate_block:
                 lines.extend(frigate_block.split("\n"))
         except Exception:

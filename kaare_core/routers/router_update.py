@@ -42,6 +42,39 @@ class CheckRequest(BaseModel):
     force: bool = False
 
 
+class UpdateSettings(BaseModel):
+    include_test_versions: bool
+
+
+# DT04 R0.7: Maintenance → «Include test versions» (Expert). The updater reads the same key from its own view of
+# configs/settings.yaml (it trusts no flag from this side).
+_SETTINGS_PATH = Path("/kaare/configs/settings.yaml")
+
+
+@router.get("/api/update/settings")
+async def api_update_settings(_u=Depends(_require_admin)):
+    try:
+        data = await asyncio.to_thread(config_store.read_yaml, _SETTINGS_PATH, {})
+    except Exception:
+        data = {}
+    return {"include_test_versions": ((data or {}).get("updates") or {}).get("include_test_versions") is True}
+
+
+@router.put("/api/update/settings")
+async def api_put_update_settings(body: UpdateSettings, request: Request, user: dict = Depends(_require_admin)):
+    def _write() -> None:
+        data = config_store.load_for_update(_SETTINGS_PATH)
+        section = data.get("updates") if isinstance(data.get("updates"), dict) else {}
+        data["updates"] = {**section, "include_test_versions": body.include_test_versions}
+        config_store.write_yaml(_SETTINGS_PATH, data, "gui:put_update_settings")
+
+    await asyncio.to_thread(_write)
+    audit_log("update_settings", user.get("sub") or user.get("username", ""),
+              f"include_test_versions={body.include_test_versions}",
+              request.client.host if request.client else "")  # fmt: skip
+    return {"include_test_versions": body.include_test_versions}
+
+
 async def _ask_updater(cmd: str, **fields) -> dict:
     """One JSON line out, one back. Raises HTTPException(503) when the updater is not there."""
     if not _IN_DOCKER:

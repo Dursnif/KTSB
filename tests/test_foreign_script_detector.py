@@ -58,10 +58,14 @@ def test_correction_message_names_chars_in_all_languages():
     assert _t("gen_correction_foreign_script", "nb") != _t("gen_correction_foreign_script", "en")
 
 
-def test_resolve_prefers_rewrite_but_falls_back_to_original():
+def test_resolve_prefers_rewrite_but_falls_back_to_original(monkeypatch):
+    # The fallback to the original is the detector's on_empty policy, applied by the enforcer (P142).
+    monkeypatch.setattr(model_enforcement, "_log_enforcement", lambda *a, **k: None)
     det = ForeignScriptDetector()
     assert det.resolve(original_text="a周", new_text="a", call_results=None, lang="nb") == "a"
-    assert det.resolve(original_text="a周", new_text="", call_results=None, lang="nb") == "a周"
+    enf = ModelEnforcer("nb", rid="r", detectors=[ForeignScriptDetector()], modes={})
+    assert enf.check(text_out="a周", used_tools=[], meta={})
+    assert enf.resolve("", None) == "a周"
 
 
 def test_registered_last_in_default_detectors():

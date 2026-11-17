@@ -14,14 +14,32 @@ class HaProvider(BaseVoiceProvider):
         self._ha_token = ha_token
         self._media_base_url = media_base_url
 
-    async def speak(self, wav_path: Path, node_config: dict) -> None:
+    async def is_available(self, node_config: dict) -> bool:
+        """The media player exists in HA and is not `unavailable` (a powered-off Nest Hub is)."""
+        entity_id = node_config.get("entity_id", "")
+        if not entity_id or not self._ha_url or not self._ha_token:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(
+                    f"{self._ha_url}/api/states/{entity_id}",
+                    headers={"Authorization": f"Bearer {self._ha_token}"},
+                )
+            if resp.status_code != 200:
+                return False
+            return resp.json().get("state") not in ("unavailable", None)
+        except Exception as exc:
+            log.warning("HA provider: availability check failed for '%s': %s", entity_id, exc)
+            return False
+
+    async def speak(self, wav_path: Path, node_config: dict) -> bool:
         entity_id = node_config.get("entity_id", "")
         if not entity_id:
             log.error("HA provider: mangler entity_id i node-config")
-            return
+            return False
         if not self._ha_url or not self._ha_token:
             log.error("HA provider: HA-credentials ikke konfigurert")
-            return
+            return False
 
         media_url = f"{self._media_base_url}/{wav_path.name}"
         payload = {
@@ -39,8 +57,10 @@ class HaProvider(BaseVoiceProvider):
                     json=payload,
                 )
                 resp.raise_for_status()
+            return True
         except Exception as exc:
             log.error("HA provider feil på '%s': %s", entity_id, exc)
+            return False
 
     async def set_volume(self, volume: float, node_config: dict) -> None:
         entity_id = node_config.get("entity_id", "")

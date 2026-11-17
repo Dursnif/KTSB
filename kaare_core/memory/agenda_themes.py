@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 
-# Fixed list (Stian 2026-10-09). Order = round-robin order in the dev slot; `other` last.
+# Fixed list (2026-10-09). Order = round-robin order in the dev slot; `other` last.
 THEMES = ("answers", "tools", "memory", "agents", "house", "system", "other")
 FALLBACK_THEME = "other"
 

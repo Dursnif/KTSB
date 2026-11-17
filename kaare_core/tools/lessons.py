@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 
+from kaare_core import receipts
 from kaare_core.config import get_memory_prompt_config
 from kaare_core.memory import knowledge_store as ks
 from kaare_core.tools.i18n import t
@@ -47,8 +48,12 @@ def lesson_store(text: str, title: str = "", lang: str = "nb") -> tuple[int | No
     return fid, t("lesson_added", lang, id=fid, text=text)
 
 
-def lesson_add(text: str, title: str = "", lang: str = "nb") -> str:
-    return lesson_store(text, title, lang)[1]
+def lesson_add(text: str, title: str = "", lang: str = "nb", receipt_who: str | None = None) -> str:
+    fid, reply = lesson_store(text, title, lang)
+    if fid is None:
+        return reply
+    return reply + receipts.suffix("lesson", ref=f"lesson:{fid}", what=(text or "").strip(), where=t("rcpt_list_lessons", lang),
+                                   who=receipt_who, lang=lang)
 
 
 def lesson_read(lang: str = "nb") -> str:
@@ -84,7 +89,7 @@ def lesson_edit(lesson_id, text: str, title: str = "", lang: str = "nb") -> str:
     if len(text) > limit:
         return t("lesson_too_long", lang, max=limit, n=len(text))
     ks.update_fact(fid, content=text, section=(title.strip()[:_TITLE_CHARS] or None))
-    return t("lesson_edited", lang, id=fid, text=text)
+    return t("lesson_edited", lang, id=fid, text=text) + receipts.change("lesson_change", ref=f"lesson:{fid}", action="edited", where=t("rcpt_list_lessons", lang), lang=lang)
 
 
 def lesson_delete(lesson_id, lang: str = "nb") -> str:
@@ -93,7 +98,7 @@ def lesson_delete(lesson_id, lang: str = "nb") -> str:
     if not _owned(fid):
         return t("list_item_not_found", lang, id=lesson_id)
     ks.retire_fact(fid)
-    return t("lesson_retired", lang, id=fid)
+    return t("lesson_retired", lang, id=fid) + receipts.change("lesson_removed", ref=f"lesson:{fid}", action="retired", where=t("rcpt_list_lessons", lang), lang=lang)
 
 
 def lessons_for_prompt(max_chars: int, lang: str = "nb") -> str:

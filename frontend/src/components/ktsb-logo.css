@@ -4,8 +4,8 @@
  *   import './ktsb-logo.css';            (Vite / webpack)
  *   <link rel="stylesheet" href="./ktsb-logo.css">  (plain HTML)
  *
- * Optional: load Google Fonts for the wordmark + tagline:
- *   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+ * Fonts for the wordmark + tagline (Cinzel, JetBrains Mono): local files, declared in src/fonts.css (DT04 R0.8 —
+ * nothing is loaded from Google Fonts).
  *
  * Theme & control via CSS variables on :root or any wrapper.
  * ─────────────────────────────────────────────────────────── */

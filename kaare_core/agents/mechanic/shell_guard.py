@@ -1,7 +1,7 @@
 """
 Read-only guard for Mechanic's shell tool (P116 B33).
 
-Stian, 2026-10-01: Mechanic may only READ — never edit, write, delete or change anything,
+Decided 2026-10-01: Mechanic may only READ — never edit, write, delete or change anything,
 locally or on a node. The old check only looked at how a command started plus a deny-list,
 under shell=True, so chaining (`ls; unlink x`), substitution (`$(...)`), deleting flags of
 allowed programs (`find -delete`, `journalctl --vacuum-size`) and state-changing
@@ -14,7 +14,7 @@ Rules here:
   - per program: forbidden flags, allowed subcommands, or "no arguments at all"
   - `sudo` is accepted only in front of a command that itself passes these rules — except a
     sudo command the user added for that node on the Tools page (a deliberate opt-in, future
-    nerd mode; Stian 2026-10-01: «pr default så får ktsb kun lese»), checked by the caller
+    nerd mode; 2026-10-01: «pr default så får ktsb kun lese»), checked by the caller
   - follow modes (journalctl -f, tail -f, docker logs -f) would never end — they are turned
     into a bounded "last 100 lines" read instead of failing on the timeout
 """
@@ -244,12 +244,38 @@ def _flag_name(arg: str) -> str:
     return arg.split("=", 1)[0]
 
 
+def _pipe_segments(command: str) -> list[str]:
+    """Split on pipes outside quotes, so «grep -E 'a|b' f» is one segment (T32b). A quoted '|' is an argument,
+    never a pipe; every real pipe still splits and every segment is still checked."""
+    segs, cur, quote, i = [], [], "", 0
+    while i < len(command):
+        ch = command[i]
+        if ch == "\\" and quote != "'" and i + 1 < len(command):
+            cur.append(command[i : i + 2])
+            i += 2
+            continue
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch == "|":
+            segs.append("".join(cur))
+            cur = []
+            i += 1
+            continue
+        cur.append(ch)
+        i += 1
+    segs.append("".join(cur))
+    return segs
+
+
 def bound_follow(command: str) -> tuple[str, bool]:
     """Turn follow-mode reads into a bounded read. Returns (command, changed)."""
     if _META.search(command):
         return command, False
     out, changed = [], False
-    for seg in command.split("|"):
+    for seg in _pipe_segments(command):
         try:
             argv = shlex.split(seg)
         except ValueError:
@@ -285,7 +311,7 @@ def readonly_violation(command: str) -> str | None:
         return "chaining, substitution or redirection (; & ` $( ${ > < newline) is not allowed"
     if "||" in command:
         return "'||' chaining is not allowed"
-    for seg in command.split("|"):
+    for seg in _pipe_segments(command):
         try:
             argv = shlex.split(seg)
         except ValueError:

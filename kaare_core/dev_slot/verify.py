@@ -13,7 +13,7 @@ Evidence ref forms:
                      checked is the full result from `tool_texts` (what Kåre saw) when given
   trace:<rid>        any logged activity for <rid> (a user trace the claim is about)
   inbox:<id>         an agenda inbox row in learning.db
-  frigate:<event_id> a Frigate event analysis in logs/frigate_analysis.log
+  frigate:<event_id> a stored camera event in frigate.db (J21b); events from before it: logs/frigate_analysis.log
 """
 
 from __future__ import annotations
@@ -22,6 +22,9 @@ import json
 import re
 from pathlib import Path
 
+from adapters import frigate_adapter
+from kaare_core.domain import frigate_store as camera_cards
+from kaare_core.frigate_user import store as frigate_db
 from kaare_core.memory import learning_store
 from kaare_core.tools import trace_reader
 
@@ -55,6 +58,33 @@ def quote_in(quote: str, evidence: str) -> bool:
         if not pieces:
             return False
     return all(_norm(p) in ev for p in pieces)
+
+
+def frigate_event_text(event_id: str) -> str:
+    """J21b reader 4: one stored camera event from frigate.db as evidence text — camera (display name), label, times,
+    episode, the image model's words (an old event's module-1 still text where stored, else L3's description + analysis —
+    P144 phase 6), and the person only where the storage gate named them and they have not opted
+    out since. "" when frigate.db does not hold it (then the old analysis log is asked). Read only; never raises."""
+    try:
+        ev = frigate_db.event_by_id(event_id)
+    except Exception:
+        return ""
+    if ev is None:
+        return ""
+    try:
+        cards = camera_cards.camera_config().get("cameras") or {}
+    except Exception:
+        cards = {}
+    person = ev.person_ref if ev.person_ref and ev.person_kind != "untracked" else None
+    if person and person.casefold() in {n.casefold() for n in frigate_db.hidden_names({person})}:
+        person = None
+    still = (ev.check or {}).get("still") if isinstance(ev.check, dict) else None
+    words = (still.get("text") if isinstance(still, dict) else None) or (
+        " ".join(w for w in (ev.description, ev.analysis) if w) or None)
+    out = {"event_id": ev.event_id, "camera": frigate_adapter.camera_display_name(ev.camera, cards, fetch=False),
+           "label": ev.label, "start_ts": ev.start_ts, "end_ts": ev.end_ts, "episode_id": ev.episode_id,
+           "person": person, "analysis": words}
+    return json.dumps({k: v for k, v in out.items() if v is not None}, ensure_ascii=False)
 
 
 class _Evidence:
@@ -143,8 +173,8 @@ def _resolve(ref: str, ev: _Evidence) -> dict:
             "text": f"{row.get('text', '')} {row.get('context', '')}",
         }
 
-    # frigate
-    text = ev.frigate().get(value, "")
+    # frigate — J21b reader 4: frigate.db first, the old analysis log for events from before it
+    text = frigate_event_text(value) or ev.frigate().get(value, "")
     if not text:
         return {"ref": ref, "ok": False, "why": "no_such_event", "text": ""}
     return {"ref": ref, "ok": True, "why": "", "text": text}

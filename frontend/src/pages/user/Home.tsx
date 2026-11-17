@@ -10,7 +10,38 @@ import { useUserPrefs } from "../../hooks/useUserPrefs";
 
 type Message = { role: "user" | "kare"; text: string; trace?: TraceStep[]; images?: string[] };
 
-const IMAGE_URL_RE = /\/api\/image\/([a-zA-Z0-9_-]+)/g;
+const IMAGE_URL_RE = /\/api\/(image|card)\/([a-zA-Z0-9_-]+)/g;
+
+// P151: a card KTSB rendered by code (a recipe). Fetched with the login, shown in a sandboxed frame — no script in
+// the card can run; the frame grows to the card's height once it has loaded.
+function CardFrame({ path }: { path: string }) {
+  const [html, setHtml] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [height, setHeight] = useState(420);
+  useEffect(() => {
+    const token = sessionStorage.getItem("kaare_token") ?? "";
+    let alive = true;
+    fetch(`${API_BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(r => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+      .then(t => { if (alive) setHtml(t); })
+      .catch(() => { if (alive) setFailed(true); });
+    return () => { alive = false; };
+  }, [path]);
+  if (failed) return null;
+  if (html === null) return <div style={{ height: 40 }} />;
+  return (
+    <iframe
+      title="card"
+      sandbox="allow-same-origin"
+      srcDoc={html}
+      onLoad={e => {
+        const doc = (e.target as HTMLIFrameElement).contentDocument;
+        if (doc) setHeight(Math.min(Math.max(doc.documentElement.scrollHeight + 4, 120), 1600));
+      }}
+      style={{ display: "block", width: "100%", height, border: 0, borderRadius: 10, marginTop: 8, marginBottom: 4 }}
+    />
+  );
+}
 
 function setMood(mood: string) {
   document.documentElement.dataset.mood = mood;
@@ -28,6 +59,11 @@ function renderKareText(text: string, onImageClick: (src: string) => void) {
   const token = sessionStorage.getItem("kaare_token") ?? "";
   while ((match = IMAGE_URL_RE.exec(text)) !== null) {
     if (match.index > last) parts.push(text.slice(last, match.index));
+    if (match[1] === "card") {
+      parts.push(<CardFrame key={match.index} path={match[0]} />);
+      last = match.index + match[0].length;
+      continue;
+    }
     const fullSrc = `${API_BASE}${match[0]}${token ? `?token=${encodeURIComponent(token)}` : ""}`;
     parts.push(
       <img
@@ -319,7 +355,7 @@ function getUserId(): string {
 export default function Home() {
   const { t } = useTranslation();
   const { logout, user } = useAuth();
-  // Speaker names on every message, so a copied dialogue says who said what (Stian 2026-10-04:
+  // Speaker names on every message, so a copied dialogue says who said what (2026-10-04:
   // no screenshot transcripts needed). Assistant name from the GUI setting, user from the profile.
   const assistantName = useAssistantName();
   const userName = user?.display_name || user?.username || "";

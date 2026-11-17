@@ -253,6 +253,7 @@ def test_status_probe_does_not_block_a_starting_run(tmp_path):
 
 def test_night_sequence_entry_takes_the_lock(monkeypatch):
     monkeypatch.setattr(ns, "acquire_run_lock", lambda: None)
+    monkeypatch.setattr(ns, "attach_file_log", lambda *a, **k: None)  # never the live log (P144-s14 guard)
     monkeypatch.setattr(sys, "argv", ["kaare_night_sequence.py"])
     called = []
     monkeypatch.setattr(ns, "run_sequence", lambda: called.append(1))

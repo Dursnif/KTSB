@@ -19,8 +19,9 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
+from adapters.frigate_adapter import fetch_face_library
 from adapters.llm_adapter import list_personalities
 from kaare_core import session_keys as _session_keys
 from kaare_core.audit import audit_log as _audit
@@ -34,7 +35,7 @@ from kaare_core.crypto import (
     seed_phrase_to_private_key,
 )
 from kaare_core.service_auth import service_headers
-from kaare_core.users import store
+from kaare_core.users import frigate_consent, store
 from kaare_core.users.auth import (
     create_token,
     end_session,
@@ -134,6 +135,19 @@ class UpdateUserRequest(BaseModel):
     is_parent: bool | None = None
     pin_required: bool | None = None
     managed_children: str | None = None
+    plex_account_id: int | None = None  # P140: Plex server account id; -1 = unlink
+    frigate_faces: list[str] | None = None  # P144-s02: Frigate face names; [] = unlink
+
+
+class FrigateTrackingRequest(BaseModel):
+    tracking: bool | None = None
+    expressions: bool | None = None  # P144-s27b: «Uttrykk og gester», same who-decides rule
+
+    @model_validator(mode="after")
+    def _one_switch(self):
+        if self.tracking is None and self.expressions is None:
+            raise ValueError("tracking or expressions is required")
+        return self
 
 
 class UpdatePinRequest(BaseModel):
@@ -150,7 +164,7 @@ class RecoverRequest(BaseModel):
 
 
 @router.get("/personalities")
-def api_list_personalities(_u: dict = Depends(require_auth)):
+def api_list_personalities(_u: dict = Depends(require_admin)):
     """Returnerer tilgjengelige personlighetsvarianter."""
     return list_personalities()
 
@@ -268,6 +282,8 @@ def api_update_user(username: str, req: UpdateUserRequest, payload: dict = Depen
             is_parent=req.is_parent,
             pin_required=req.pin_required,
             managed_children=req.managed_children,
+            plex_account_id=req.plex_account_id,
+            frigate_faces=req.frigate_faces,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -278,6 +294,13 @@ def api_update_user(username: str, req: UpdateUserRequest, payload: dict = Depen
     user["can_manage_child_timers"] = get_profile_flag(username, "can_manage_child_timers")
     if req.notify_channel is not None:
         update_household_visible(username, "notify_channel", req.notify_channel)
+    if req.frigate_faces is not None:
+        frigate_consent.invalidate()
+        _audit(
+            "admin_user_action",
+            payload["sub"],
+            f"frigate_faces target={username!r} faces={user['frigate_faces']!r}",
+        )
     return user
 
 
@@ -423,6 +446,73 @@ def api_put_user_flags(username: str, body: dict, payload: dict = Depends(requir
             raise HTTPException(status_code=400, detail=f"Unknown flag: {key}")
         set_profile_flag(username, key, bool(val))
     return {flag: get_profile_flag(username, flag) for flag in _USER_SETTABLE_FLAGS}
+
+
+# ── «Frigate may track me» (P144-s02) ─────────────────────────────────────────
+
+
+@router.get("/frigate/faces")
+async def api_frigate_faces(_u: dict = Depends(require_admin)):
+    """Names in Frigate's face library, for linking a user to their face (Users page).
+    error: "" | "not_configured" | "unreachable" — the GUI then offers free text instead."""
+    if not get_service("frigate", "url"):
+        return {"faces": [], "error": "not_configured"}
+    try:
+        return {"faces": await fetch_face_library(), "error": ""}
+    except Exception as e:
+        return {"faces": [], "error": "unreachable", "detail": type(e).__name__}
+
+
+def _frigate_view(caller: str, target: dict) -> dict:
+    return {
+        "username": target["username"],
+        "tracking": target["frigate_tracking"],
+        "expressions": target.get("frigate_expressions", True),
+        "faces": target["frigate_faces"],
+        "decided_by": frigate_consent.decided_by(target),
+        "can_edit": frigate_consent.can_set_tracking(caller, target["username"]),
+    }
+
+
+@router.get("/users/{username}/frigate")
+def api_get_frigate_tracking(username: str, payload: dict = Depends(require_auth)):
+    """Read the setting: self, admin, or a guardian of this person."""
+    caller = payload["sub"]
+    caller_user = store.get_user(caller)
+    allowed = caller == username or (caller_user or {}).get("role") == "admin"
+    if not allowed and username not in frigate_consent.children_of(caller):
+        raise HTTPException(status_code=403, detail="Access denied.")
+    target = store.get_user(username)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return _frigate_view(caller, target)
+
+
+@router.put("/users/{username}/frigate")
+def api_put_frigate_tracking(
+    username: str, req: FrigateTrackingRequest, payload: dict = Depends(require_auth)
+):
+    """Set «Frigate may track me». Only the person who decides (frigate_consent.can_set_tracking)."""
+    caller = payload["sub"]
+    if not frigate_consent.can_set_tracking(caller, username):
+        raise HTTPException(status_code=403, detail="Not allowed to change this setting.")
+    try:
+        target = store.get_user(username)
+        if req.tracking is not None:
+            target = store.set_frigate_tracking(username, req.tracking)
+        if req.expressions is not None:
+            target = store.set_frigate_expressions(username, req.expressions)
+    except ValueError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    frigate_consent.invalidate()
+    _audit(
+        "admin_user_action",
+        caller,
+        f"frigate_tracking target={username!r} tracking={req.tracking} expressions={req.expressions}",
+    )
+    return _frigate_view(caller, target)
 
 
 # ── Parent child-summary access ───────────────────────────────────────────────

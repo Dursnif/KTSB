@@ -118,7 +118,7 @@ export function WhisperCard({ data, kareLanguage, onSaved }: { data: VoiceServic
     try {
       // The model itself is chosen with «Use this» below — never sent from here, so «Save»
       // cannot undo a switch made since the page loaded.
-      await apiPutVoiceBackend({
+      const saveRes = await apiPutVoiceBackend({
         stt_backend:  backend,
         compute_type: computeType,
         cpu_threads:  cpuThreads,
@@ -126,7 +126,7 @@ export function WhisperCard({ data, kareLanguage, onSaved }: { data: VoiceServic
         ...(modelDirEdited ? { model_dir: modelDir } : {}),
       });
       setModelDirEdited(false);
-      ss.saved();
+      ss.saved(saveRes?.applies);
       onSaved();
       refresh();
     } catch { ss.error(); }
@@ -208,7 +208,6 @@ export function WhisperCard({ data, kareLanguage, onSaved }: { data: VoiceServic
           <Switch
             checked={sttEnabled}
             onCheckedChange={v => setSttEnabled(v)}
-            className="data-checked:bg-green-600 data-unchecked:bg-red-600"
             onClick={e => e.stopPropagation()}
           />
           {collapsed
@@ -308,7 +307,7 @@ export function WhisperCard({ data, kareLanguage, onSaved }: { data: VoiceServic
               {ss.state === "saving" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {t("common.save")}
             </Button>
-            <SaveFeedback state={ss.state} />
+            <SaveFeedback state={ss.state} applies={ss.applies} />
             <ExpertOnly><>
               <Button onClick={restart} disabled={restarting} size="sm" variant="outline">
                 {restarting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}

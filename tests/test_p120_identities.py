@@ -47,7 +47,7 @@ def test_people_list_excludes_system_identities(users_db):
         ("global_user", "global_user"),
         ("unknown_user", "unknown_user"),
         ("testbruker_ny2", "unknown_user"),
-        ("stian ", "unknown_user"),
+        ("userone ", "unknown_user"),
     ],
 )
 def test_resolve_request_user(users_db, raw, expected):

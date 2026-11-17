@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 
+from kaare_core import receipts
 from kaare_core.config import get_memory_prompt_config
 from kaare_core.memory import learning_store, relevance
 from kaare_core.tools.i18n import t
@@ -106,6 +107,7 @@ def agenda_add(
     lang: str = "nb",
     theme: str = "",
     title: str = "",
+    receipt_who: str | None = None,
 ) -> str:
     """Any path can write here (chat, voice, reflection, timers, meetings, later vision/Argus).
     `source` is the caller's own label when it has one; otherwise it is read from the rid with
@@ -142,7 +144,8 @@ def agenda_add(
         lang,
         topic=res["topic_id"],
         theme=_theme_name(res.get("theme"), lang),
-    )
+    ) + receipts.suffix("agenda", ref=f"topic:{res['topic_id']}", what=text.strip(), where=t("rcpt_list_agenda", lang),
+                        who=receipt_who, lang=lang)
 
 
 def observation_add(
@@ -156,6 +159,7 @@ def observation_add(
     lang: str = "nb",
     theme: str = "",
     title: str = "",
+    receipt_who: str | None = None,
 ) -> str:
     """«I saw X at T» — kept, grouped, counted into patterns by the night consolidation, never
     developed by the dev slot and never injected into the prompt (P133 D9)."""
@@ -181,7 +185,8 @@ def observation_add(
         topic=res["topic_id"],
         count=res["count"],
         theme=_theme_name(res.get("theme"), lang),
-    )
+    ) + receipts.suffix("observation", ref=f"topic:{res['topic_id']}", what=text.strip(),
+                        where=t("rcpt_list_observations", lang), who=receipt_who, lang=lang)
 
 
 def _read(kind: str, title_key: str, empty_key: str, lang: str) -> str:
@@ -259,7 +264,7 @@ def resolve(topic_id, conclusion: str, *, user_id: str, rid: str, lang: str = "n
     info = learning_store.resolve_topic(tid, conclusion, rid=rid, user_id=user_id)
     if not info:
         return t("resolve_not_found", lang, topic=tid)
-    return t("resolve_done", lang, topic=info["topic_id"], conclusion=info["conclusion"])
+    return t("resolve_done", lang, topic=info["topic_id"], conclusion=info["conclusion"]) + receipts.change("topic_change", ref=f"topic:{info['topic_id']}", action="resolved", where=t("rcpt_list_observations", lang), lang=lang)
 
 
 def reopen(topic_id, reason: str, *, lang: str = "nb") -> str:
@@ -271,7 +276,7 @@ def reopen(topic_id, reason: str, *, lang: str = "nb") -> str:
     pid = learning_store.add_reopen_proposal(tid, reason or "")
     if pid is None:
         return t("reopen_not_resolved", lang, topic=tid)
-    return t("reopen_proposed", lang, topic=tid, id=pid)
+    return t("reopen_proposed", lang, topic=tid, id=pid) + receipts.change("topic_change", ref=f"topic:{tid}", action="reopen_proposed", where=t("rcpt_list_observations", lang), lang=lang)
 
 
 def agenda_prompt_line(lang: str = "nb") -> str:

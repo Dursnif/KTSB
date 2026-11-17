@@ -1,7 +1,6 @@
 enabled: false
 storage:
   snapshots_max_mb: 500
-  log_max_mb: 50
 cameras: {}
 roles:
   front_door:

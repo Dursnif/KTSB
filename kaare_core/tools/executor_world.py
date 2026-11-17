@@ -1,5 +1,6 @@
 import json as _json
 
+from kaare_core import receipts
 from kaare_core.memory import knowledge_store as ks
 from kaare_core.tools.i18n import get_lang, t
 
@@ -51,7 +52,7 @@ def _world_get_var(key: str, lang: str = "nb") -> str:
     return _format_var_row(k, row, lang)
 
 
-def _world_set_var(key: str, value: str, description: str = "", lang: str = "nb") -> str:
+def _world_set_var(key: str, value: str, description: str = "", lang: str = "nb", receipt_who: str | None = None) -> str:
     if not key.strip() or not value.strip():
         return t("world_key_value_required", lang)
     k = key.strip()
@@ -60,9 +61,12 @@ def _world_set_var(key: str, value: str, description: str = "", lang: str = "nb"
     existing = ks.get_fact_by_section(_DOMAIN, section)
     if existing:
         ks.update_fact(existing["id"], content=content)
+        fid = existing["id"]
     else:
-        ks.add_fact(domain=_DOMAIN, section=section, content=content, source="kare")
-    return t("world_var_set", lang, key=k, value=value.strip())
+        fid = ks.add_fact(domain=_DOMAIN, section=section, content=content, source="kare")
+    return t("world_var_set", lang, key=k, value=value.strip()) + receipts.suffix(
+        "world", ref=f"world:{fid}", what=f"{k} = {value.strip()}", where=t("rcpt_world_where", lang), who=receipt_who,
+        lang=lang)
 
 
 def _world_delete_var(key: str, lang: str = "nb") -> str:
@@ -73,7 +77,7 @@ def _world_delete_var(key: str, lang: str = "nb") -> str:
     if not row:
         return t("world_var_key_not_found", lang, key=key)
     ks.retire_fact(row["id"])
-    return t("world_var_deleted", lang, key=key)
+    return t("world_var_deleted", lang, key=key) + receipts.change("world_removed", ref=f"world_var:{key.strip()}", action="deleted", where=t("rcpt_world_where", lang), lang=lang)
 
 
 def _world_list_vars(lang: str = "nb") -> str:
@@ -117,24 +121,30 @@ def _read_world(lang: str = "nb") -> str:
     return "\n".join(lines).strip()
 
 
-def _update_world_field(category: str, field: str, value: str, lang: str = "nb") -> str:
+def _update_world_field(category: str, field: str, value: str, lang: str = "nb", receipt_who: str | None = None) -> str:
     if not category.strip() or not field.strip():
         return t("world_cat_field_required", lang)
     section = _field_section(category, field)
     existing = ks.get_fact_by_section(_DOMAIN, section)
     if existing:
         ks.update_fact(existing["id"], content=value.strip())
-        return t("world_field_updated", lang, field=field, value=value)
-    ks.add_fact(domain=_DOMAIN, section=section, content=value.strip(), source="kare")
-    return t("world_field_updated", lang, field=field, value=value)
+        fid = existing["id"]
+    else:
+        fid = ks.add_fact(domain=_DOMAIN, section=section, content=value.strip(), source="kare")
+    return t("world_field_updated", lang, field=field, value=value) + receipts.suffix(
+        "world", ref=f"world:{fid}", what=f"{category.strip()}.{field.strip()} = {value.strip()}",
+        where=t("rcpt_world_where", lang), who=receipt_who, lang=lang)
 
 
-def _add_to_world(category: str, text: str, lang: str = "nb") -> str:
+def _add_to_world(category: str, text: str, lang: str = "nb", receipt_who: str | None = None) -> str:
     if not text.strip():
         return t("world_empty_text", lang)
     cat = category.strip() or "Notes"
-    ks.add_fact(domain=_DOMAIN, section=cat, content=text.strip(), source="kare")
-    return t("world_added", lang)
+    fid = ks.add_fact(domain=_DOMAIN, section=cat, content=text.strip(), source="kare")
+    if fid is None:
+        return t("world_added", lang)
+    return t("world_added", lang) + receipts.suffix("world", ref=f"world:{fid}", what=f"{cat}: {text.strip()}",
+                                                     where=t("rcpt_world_where", lang), who=receipt_who, lang=lang)
 
 
 def _delete_from_world(fragment: str, lang: str = "nb") -> str:
@@ -147,7 +157,7 @@ def _delete_from_world(fragment: str, lang: str = "nb") -> str:
         return t("world_fragment_not_found", lang, fragment=fragment)
     for row in matches:
         ks.retire_fact(row["id"])
-    return t("world_lines_deleted", lang, count=len(matches))
+    return t("world_lines_deleted", lang, count=len(matches)) + receipts.change("world_removed", ref=receipts.fragment_ref("world", fragment, len(matches)), action="deleted", where=t("rcpt_world_where", lang), lang=lang)
 
 
 def _edit_world(fragment: str, new_text: str, lang: str = "nb") -> str:
@@ -160,7 +170,7 @@ def _edit_world(fragment: str, new_text: str, lang: str = "nb") -> str:
         return t("world_fragment_not_found", lang, fragment=fragment)
     for row in matches:
         ks.update_fact(row["id"], content=new_text.strip())
-    return t("world_lines_updated", lang, count=len(matches))
+    return t("world_lines_updated", lang, count=len(matches)) + receipts.change("world_change", ref=receipts.fragment_ref("world", fragment, len(matches)), action="edited", where=t("rcpt_world_where", lang), lang=lang)
 
 
 async def dispatch(name: str, arguments: dict) -> str:
@@ -176,12 +186,14 @@ async def dispatch(name: str, arguments: dict) -> str:
                 field=(arguments.get("field") or arguments.get("felt") or ""),
                 value=(arguments.get("value") or arguments.get("verdi") or ""),
                 lang=lang,
+                receipt_who=arguments.get("_user_id") or "global",
             )
         if action == "add":
             return _add_to_world(
                 category=(arguments.get("category") or arguments.get("kategori") or ""),
                 text=(arguments.get("text") or arguments.get("tekst") or ""),
                 lang=lang,
+                receipt_who=arguments.get("_user_id") or "global",
             )
         if action == "delete":
             return _delete_from_world((arguments.get("fragment") or ""), lang)
@@ -199,6 +211,7 @@ async def dispatch(name: str, arguments: dict) -> str:
                 value=(arguments.get("value") or arguments.get("verdi") or ""),
                 description=(arguments.get("description") or arguments.get("beskrivelse") or ""),
                 lang=lang,
+                receipt_who=arguments.get("_user_id") or "global",
             )
         if action == "delete_var":
             return _world_delete_var((arguments.get("key") or arguments.get("nokkel") or ""), lang)

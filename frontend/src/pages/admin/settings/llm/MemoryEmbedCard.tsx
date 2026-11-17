@@ -187,7 +187,6 @@ export function MemoryEmbedCard({ data, onSaved }: { data: MemoryEmbedData; onSa
           <Switch
             checked={enabled}
             onCheckedChange={v => setEnabled(v)}
-            className="data-checked:bg-green-600 data-unchecked:bg-red-600"
             onClick={e => e.stopPropagation()}
           />
           {collapsed

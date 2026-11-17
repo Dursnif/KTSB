@@ -2,7 +2,7 @@
 Tests for P105 Phase 6 — replayed STM turns carry their time, and a long gap since the
 user's previous message is stated explicitly.
 
-Real bug (BUG-log 2026-09-28): Stian's first message of the day got "the weather is still
+Real bug (BUG-log 2026-09-28): the user's first message of the day got "the weather is still
 overcast, nothing new since earlier today" with no tool call. The replayed turns were from
 5 days earlier, but get_dialog_pairs() handed the model bare text with no date, so they
 read as the ongoing conversation.

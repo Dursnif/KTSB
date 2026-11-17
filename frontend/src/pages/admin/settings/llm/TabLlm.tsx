@@ -30,7 +30,7 @@ export function TabLlm() {
   const [memEmbData, setMemEmbData] = useState<MemoryEmbedData>({ enabled: false, model_dir: "" });
   const [innerVoicesData, setInnerVoicesData] = useState<InnerVoicesData>({
     jing: { provider: "openvino", model_path: "", interval_seconds: 180, max_tokens: 300 },
-    jang: { provider: "openvino", model_path: "", interval_seconds: 600, max_tokens: 400, turns_back: 3, inner_thoughts_retention_hours: 24 },
+    jang: { provider: "openvino", model_path: "", interval_seconds: 600, max_tokens: 400, turns_back: 3 },
     node_label: "Local",
     push_token: "",
   });
@@ -81,7 +81,7 @@ export function TabLlm() {
 
   if (loading) return <div className="text-muted-foreground text-sm">{t("common.loading")}</div>;
 
-  const roleOrder = ["default", "miss_kare", "mechanic", "library", "fallback", "cloud", "image_edit"];
+  const roleOrder = ["default", "miss_kare", "mechanic", "library", "fallback", "cloud", "image_edit", "jing", "jang"];
   const REASON_FREELY_FIELDS = ["max_tokens", "temperature", "top_p", "presence_penalty"] as const;
 
   return (

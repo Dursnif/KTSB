@@ -114,7 +114,7 @@ CURRENT.md
 PENDING_SYNC.md
 
 # Personal deploy scripts (contain local hostnames and user paths)
-scripts/deploy_inner_voices_ainuc.sh
+scripts/deploy_inner_voices_*.sh
 
 # NAS backup scripts — personal infra, not a KTSB product feature
 scripts/backup_to_nas.sh

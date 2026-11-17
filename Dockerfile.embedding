@@ -5,7 +5,9 @@ WORKDIR /kaare/services/embedding
 COPY services/embedding/requirements.txt services/embedding/constraints.txt ./
 
 # torch CPU-only (~200 MB vs ~2 GB for the default CUDA build)
-RUN pip install --no-cache-dir torch -c constraints.txt --index-url https://download.pytorch.org/whl/cpu
+# torch itself from the CPU index (pinned "+cpu" in constraints.txt, so the CUDA build can never win); its
+# dependencies from PyPI — the CPU index only mirrors some of them, in old versions (P145).
+RUN pip install --no-cache-dir torch -c constraints.txt --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
 
 # Separate layer on purpose: the large torch layer above stays cached when requirements change.
 # hadolint ignore=DL3059

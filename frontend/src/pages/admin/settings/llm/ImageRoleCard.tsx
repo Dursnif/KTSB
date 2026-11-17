@@ -70,7 +70,7 @@ export function ImageRoleCard({ role, config, onSaved }: { role: string; config:
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">{agentEnabled ? t("common.enabled") : t("common.disabled")}</span>
-              <Switch checked={agentEnabled} onCheckedChange={toggleEnabled} className="data-checked:bg-green-600 data-unchecked:bg-red-600" />
+              <Switch checked={agentEnabled} onCheckedChange={toggleEnabled} />
             </div>
             <Badge variant="outline" className="font-mono text-xs">{role}</Badge>
           </div>

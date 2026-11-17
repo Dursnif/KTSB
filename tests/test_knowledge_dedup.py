@@ -1,7 +1,7 @@
 """
 Tests for P105 Phase 3 Step 6 enhancement — kaare_core/memory/knowledge_dedup.py.
 
-Near-duplicate clustering, built after Stian diagnosed the root cause of the
+Near-duplicate clustering, built after Userone diagnosed the root cause of the
 2026-09-07 reflection-job collapse: a batch of many structurally-similar
 facts makes the LLM pattern-match the whole batch as "one case." These tests
 mock the BGE-M3 embed call (fixed, hand-crafted vectors) rather than hitting
@@ -96,3 +96,23 @@ def test_cluster_facts_falls_back_to_singletons_on_embed_failure(monkeypatch):
 
 def test_cluster_facts_empty_input():
     assert asyncio.run(dedup.cluster_facts([])) == []
+
+
+def test_embedding_off_skips_quietly_without_warning(monkeypatch, caplog):
+    """DT04-S05c: with embedding off (template default) the dedup step must not call the service or log a WARNING
+    every night — it says «embedding off → skipped» at INFO and falls back to one cluster per fact."""
+    calls = []
+
+    class _NoClient:
+        def __init__(self, *a, **k):
+            calls.append("client")
+
+    monkeypatch.setattr(dedup, "is_embedding_enabled", lambda: False)
+    monkeypatch.setattr(dedup.httpx, "AsyncClient", _NoClient)
+    facts = [{"content": "a"}, {"content": "b"}]
+    with caplog.at_level("INFO", logger=dedup.logger.name):
+        out = asyncio.run(dedup.cluster_facts(facts))
+    assert out == [[facts[0]], [facts[1]]]
+    assert calls == []
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]
+    assert any("embedding off" in r.getMessage() for r in caplog.records)

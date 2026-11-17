@@ -1,7 +1,7 @@
 """
 Cross-process fallback state for Kåre's 9B backup model.
 
-When the main 27B model (port 11440 via proxy 11441) is unreachable,
+When the main 27B model (port 11440) is unreachable,
 Kåre switches to the shared 9B model (port 11445). This module owns
 the state flag that kaare.service reads and writes.
 

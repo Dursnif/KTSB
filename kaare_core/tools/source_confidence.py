@@ -1,6 +1,6 @@
 """
 How likely a claim is, from where it comes from (P121 Phase 4) — arithmetic in code, never the
-model's guess. Stian's model (P121 D4–D10): knowing is binary; everything else is «don't know»
+model's guess. The project's model (P121 D4–D10): knowing is binary; everything else is «don't know»
 with a probability, said in words.
 
   1. Each supporting source has a value by kind (D7/D9.2, «Balanced» defaults):

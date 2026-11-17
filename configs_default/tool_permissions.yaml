@@ -8,8 +8,11 @@ always_included:
 - user_profile
 - inner_thoughts
 - thought_history
+# N41: `camera` = see what the cameras stored (pictures, conclusions, who/what/where); `camera_analyse` = may start a
+# NEW analysis on the image model (GPU) — a flag like library_online, not a tool. Child/teen see, never analyse.
 roles:
   child:
+  - camera
   - ha_control
   - ha_read
   - timer
@@ -22,6 +25,7 @@ roles:
   - announce
   - reason_freely
   teen:
+  - camera
   - ha_control
   - ha_read
   - timer
@@ -36,6 +40,8 @@ roles:
   - announce
   - reason_freely
   young_adult:
+  - camera
+  - camera_analyse
   - ha_control
   - ha_read
   - timer
@@ -51,6 +57,7 @@ roles:
   - reason_freely
   - memory
   adult:
+  - camera_analyse
   - ha_control
   - ha_read
   - timer

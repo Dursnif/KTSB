@@ -30,11 +30,12 @@ import logging
 import os
 import re
 import socket
-import sqlite3
 import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+
+from kaare_core.storage import sqlite_files
 
 
 def _bootstrap_env(path: str) -> None:
@@ -74,12 +75,15 @@ from kaare_core.config import get_service as _svc
 from kaare_core.config import now_local
 from kaare_core.config import pool_call_options as _pool_opts
 from kaare_core.crypto import read_user_text_file
+from kaare_core.memory import repeat_stop
 from kaare_core.memory.long_term import _dec, load_recent_daily_summaries
 from kaare_core.model_lock import lock_agent
 from kaare_core.think_strip import strip_think_block
+from kaare_core.tools import query_scrub
 from kaare_core.tools.household_state import read_household_state
 from kaare_core.tools.i18n import get_lang, t
 from kaare_core.tools.think_cache import log_think
+from kaare_core.users import frigate_consent, ktsb_file, user_knowledge
 from kaare_core.users import store as _store
 from kaare_core.users.profile_manager import (
     add_observation,
@@ -169,11 +173,12 @@ def _load_miss_kare_portrait(user_id: str) -> str:
 
 
 def _load_user_knowledge(user_id: str) -> str:
-    """Load concluded/settled knowledge about the user from user_knowledge.md."""
-    path = Path(f"/kaare/state/users/{user_id}/user_knowledge.md")
-    if not path.exists():
-        return ""
-    return path.read_text(encoding="utf-8").strip()
+    """KTSB's own interpretations from earlier meetings (J26: encrypted, read with the system key) plus the guesses in
+    KTSB's file about the person — both labelled as guesses by the caller, never «står i profilen»."""
+    text = user_knowledge.read(user_id, allow_system_key=True)
+    guesses = [f"- [{g.get('ts', '')[:10]}] {g['section']}.{g['field']}: {g['value']} ({g.get('source') or '?'})"
+               for g in ktsb_file.shown_guesses(user_id)[-20:]]
+    return "\n".join(x for x in (text, "\n".join(guesses)) if x).strip()
 
 
 def _get_admin_comment_r() -> str:
@@ -259,15 +264,17 @@ def _get_recent_interactions(
     """
     lang = lang or _get_kare_language_r()
     try:
-        conn = sqlite3.connect("/kaare/state/memory/interactions.db")
+        conn = sqlite_files.connect("/kaare/state/memory/interactions.db")
         if user_id:
             cur = conn.execute(
-                "SELECT narrative, topics FROM episodes WHERE user_id=? ORDER BY id DESC LIMIT ?",
+                "SELECT narrative, topics FROM episodes WHERE user_id=? AND status = 'ok' "
+                "ORDER BY id DESC LIMIT ?",
                 (user_id, n),
             )
         else:
             cur = conn.execute(
-                "SELECT narrative, topics FROM episodes ORDER BY id DESC LIMIT ?", (n,)
+                "SELECT narrative, topics FROM episodes WHERE status = 'ok' ORDER BY id DESC LIMIT ?",
+                (n,),
             )
         rows = cur.fetchall()
         conn.close()
@@ -452,6 +459,8 @@ async def _execute_leder_tool(name: str, arguments: dict) -> str:
 
         elif name == "nettsøk":
             query = arguments.get("query", "").strip()
+            # T32b: a night job never sends household names to the web; nothing left → not sent
+            query = query_scrub.outgoing_query(query, rid=_rid_ctx_refl.get()) if query else None
             if not query:
                 return t("meet_empty_search", get_lang("global"))
             return await web_search(query)
@@ -597,6 +606,16 @@ def _load_leder_reflection_preset(lang: str = "nb") -> str:
         return (_LEDER_PRESET_DIR_R / "reflection_standard.md").read_text(encoding="utf-8").strip()
 
 
+def _camera_opt_out_block(lang: str) -> str:
+    """DT04 R0.6d (P144 R05): one line for the meeting when someone in the household opted out of camera recognition —
+    the meetings of 01.–03.11 built theories on «the unknown woman». No person, time, camera or count. '' when nobody
+    opted out (or the lookup fails)."""
+    try:
+        return t("fq_opt_out_notice", lang) if frigate_consent.someone_opted_out() else ""
+    except Exception:
+        return ""
+
+
 def _build_leder_system(
     prev_block: str = "",
     admin_topic: str = "",
@@ -656,6 +675,10 @@ def _build_leder_system(
             blocks.append(away_note)
     except Exception:
         pass
+
+    opt_out = _camera_opt_out_block(lang)
+    if opt_out:
+        blocks.append(opt_out)
 
     # Time goes last to preserve KV-cache on the static blocks above
     blocks.append(t("meet_leder_sys_time", lang, time=now))
@@ -977,7 +1000,11 @@ async def _save_meeting_insights(user_id: str, kare_closing: str) -> None:
         )
         _vault_or_write_observation(user_id, observation_text)
 
-        await extract_facts_from_meeting(user_id, kare_closing)
+        try:
+            _rid = _rid_ctx_refl.get()
+        except LookupError:
+            _rid = ""
+        await extract_facts_from_meeting(user_id, kare_closing, rid=_rid)  # J26: a guess in KTSB's file
         log.info("Meeting insights saved to profile for %s", user_id)
 
     except Exception as e:
@@ -1004,12 +1031,10 @@ async def _update_user_knowledge(
     try:
         result = await _ask_kare(messages)
         if result and result.strip() and result.strip() != "[No response]":
-            path = Path(f"/kaare/state/users/{user_id}/user_knowledge.md")
-            path.parent.mkdir(parents=True, exist_ok=True)
             date_str = now_local().strftime("%Y-%m-%d")
             content = t("refl_knowledge_file_header", lang, date=date_str) + f"{result.strip()}\n"
-            path.write_text(content, encoding="utf-8")
-            log.info("user_knowledge.md updated for %s", user_id)
+            if user_knowledge.write(user_id, content, allow_system_key=True):  # J26: encrypted, never plaintext
+                log.info("user_knowledge updated for %s", user_id)
     except Exception as e:
         log.error("Failed to update user_knowledge for %s: %s", user_id, e)
 
@@ -1105,6 +1130,10 @@ async def main(user_id: str | None = None) -> None:
     )
     log.info("[Møteleder system] %d chars", len(leder_system))
 
+    try:  # J26: an approved move list (meeting-written profile fields → KTSB's file) runs once, before the meeting
+        ktsb_file.run_pending_moves(user_id)
+    except Exception as e:
+        log.warning("KTSB file pending move failed for %s: %s", user_id, type(e).__name__)
     profile_text, observations_text, interactions_text, stm_text = _get_user_context(user_id)
     portrait = _load_miss_kare_portrait(user_id)
     user_knowledge = _load_user_knowledge(user_id)
@@ -1142,6 +1171,9 @@ async def main(user_id: str | None = None) -> None:
         f"{t('refl_kare_system_body', _lang_r)}\n\n"
         f"{user_context_summary}"
     )
+    _opt_out_line = _camera_opt_out_block(_lang_r)  # DT04 R0.6d: the same line to all three meeting voices
+    if _opt_out_line:
+        kare_system += f"\n\n{_opt_out_line}"
 
     _miss_kare_pers = _load_miss_kare_personality(_lang_r)
     miss_kare_system = (
@@ -1154,6 +1186,7 @@ async def main(user_id: str | None = None) -> None:
         + t("refl_recent_observations_header_short", _lang_r, obs=observations_text)
         + (t("refl_stm_section", _lang_r, stm=stm_text) if stm_text else "")
         + (t("refl_own_observations_header", _lang_r, portrait=portrait) if portrait else "")
+        + (f"\n\n{_opt_out_line}" if _opt_out_line else "")
     )
 
     kare_messages = [{"role": "system", "content": kare_system}]
@@ -1169,6 +1202,13 @@ async def main(user_id: str | None = None) -> None:
     miss_kare_tema = await _miss_kare_temaforslag(miss_kare_messages, kare_tema)
     exchanges.append(("Miss Kåre", miss_kare_tema))
     log.info("[Miss Kåre topic] %s", miss_kare_tema[:120])
+
+    # J4 / P149 D6 (shadow): count each proposal's chain of nights; never changes the meeting while
+    # repeat_stop.REFUSAL_ALLOWED is False.
+    for _who, _tema in (("Kåre", kare_tema), ("Miss Kåre", miss_kare_tema)):
+        _rs = await repeat_stop.shadow_check(user_id, _tema, _who, _lang_r, rid=_refl_rid)
+        log.info("[repeat_stop] %s nights=%s would_refuse=%s saved=%s", _who, _rs.get("nights"),
+                 _rs.get("would_refuse"), _rs.get("saved"))  # N39: an unsaved count is said, not hidden
 
     agenda = await _leder_sett_agenda(
         kare_tema, miss_kare_tema, user_context_summary, leder_system=leder_system

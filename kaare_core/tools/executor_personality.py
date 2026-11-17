@@ -2,6 +2,7 @@ import asyncio
 from pathlib import Path
 
 from adapters.llm_adapter import reload_config
+from kaare_core import receipts
 from kaare_core.config import today_local
 from kaare_core.memory import knowledge_store as ks
 from kaare_core.memory.long_term import USER_GLOBAL, get_ltm
@@ -72,7 +73,7 @@ def _update_self_image(observation: str, lang: str = "nb") -> str:
     fact_id = ks.add_fact(domain=_PERSONALITY_DOMAIN, content=content, source="kare")
     if fact_id is None:
         return t("pers_self_write_error", lang, error="knowledge_store write failed")
-    return t("pers_noted", lang)
+    return t("pers_noted", lang) + receipts.change("self_image", ref=f"self:{fact_id}", action="added", where=t("rcpt_self_image_where", lang), lang=lang)
 
 
 def _delete_from_self_image(fragment: str, lang: str = "nb") -> str:
@@ -83,7 +84,8 @@ def _delete_from_self_image(fragment: str, lang: str = "nb") -> str:
         return t("pers_fragment_not_found", lang, fragment=fragment)
     for row in matches:
         ks.retire_fact(row["id"])
-    return t("pers_lines_deleted", lang, count=len(matches))
+    return t("pers_lines_deleted", lang, count=len(matches)) + receipts.change(
+        "self_image_removed", ref="self:" + ",".join(str(r["id"]) for r in matches), action="retired", where=t("rcpt_self_image_where", lang), lang=lang)
 
 
 def _edit_self_image(fragment: str, new_text: str, lang: str = "nb") -> str:
@@ -95,7 +97,8 @@ def _edit_self_image(fragment: str, new_text: str, lang: str = "nb") -> str:
     date = today_local()
     for row in matches:
         ks.update_fact(row["id"], content=f"[{date}] {new_text.strip()}")
-    return t("pers_lines_updated", lang, count=len(matches))
+    return t("pers_lines_updated", lang, count=len(matches)) + receipts.change(
+        "self_image", ref="self:" + ",".join(str(r["id"]) for r in matches), action="edited", where=t("rcpt_self_image_where", lang), lang=lang)
 
 
 def _read_self_image(lang: str) -> str:
@@ -112,32 +115,42 @@ def _update_curiosity(curiosity: str, user_id: str, lang: str = "nb") -> str:
         return t("pers_empty_curiosity", lang)
     try:
         update_nested_profile_field(user_id, "prompt_top", "curiosity", curiosity.strip())
-        return t("pers_curiosity_updated", lang)
+        return t("pers_curiosity_updated", lang) + receipts.change(
+            "profile_field", ref=f"profile:{user_id}:prompt_top.curiosity", action="updated",
+            where=t("rcpt_profile_where", lang, user=user_id), lang=lang)
     except Exception as e:
         return t("pers_curiosity_error", lang, error=e)
 
 
-def _update_user_profile(observation: str, user_id: str, lang: str = "nb") -> str:
+def _update_user_profile(observation: str, user_id: str, lang: str = "nb", receipt_who: str | None = None) -> str:
     if not observation.strip():
         return t("pers_empty_observation", lang)
     if not user_id or user_id == "global":
         return t("pers_no_user_observation", lang)
     try:
         add_observation(user_id, observation.strip())
-        return t("pers_noted", lang)
+        return t("pers_noted", lang) + receipts.suffix(
+            "observation", ref=f"profile_obs:{user_id}:{today_local()}", what=observation.strip(),
+            where=t("rcpt_profile_obs_where", lang, user=user_id), who=receipt_who, lang=lang)
     except Exception as e:
         return t("pers_profile_write_error", lang, error=e)
 
 
-def _set_profile_field(section: str, field: str, value: str, user_id: str, lang: str = "nb") -> str:
+def _set_profile_field(section: str, field: str, value: str, user_id: str, lang: str = "nb",
+                       receipt_who: str | None = None) -> str:
     if not user_id or user_id == "global":
         return t("pers_no_user_profile", lang)
     if not section.strip() or not field.strip():
         return t("pers_section_field_required", lang)
     try:
-        return update_nested_profile_field(user_id, section.strip(), field.strip(), value)
+        res = update_nested_profile_field(user_id, section.strip(), field.strip(), value)
     except Exception as e:
         return t("pers_profile_field_error", lang, error=e)
+    if res != "OK":
+        return res
+    return res + receipts.suffix("profile_field", ref=f"profile:{user_id}:{section.strip()}.{field.strip()}",
+                                 what=f"{section.strip()}.{field.strip()} = {str(value).strip() or '—'}",
+                                 where=t("rcpt_profile_where", lang, user=user_id), who=receipt_who, lang=lang)
 
 
 def _read_user_profile(user_id: str, lang: str = "nb") -> str:
@@ -171,7 +184,9 @@ def _delete_from_user_profile(fragment: str, user_id: str, lang: str = "nb") -> 
         found, count = delete_observation_fragment(user_id, fragment)
         if not found:
             return t("pers_fragment_not_found", lang, fragment=fragment)
-        return t("pers_lines_deleted", lang, count=count)
+        return t("pers_lines_deleted", lang, count=count) + receipts.change(
+            "observation_removed", ref=receipts.fragment_ref(f"profile_obs:{user_id}", fragment, count), action="deleted",
+            where=t("rcpt_profile_obs_where", lang, user=user_id), lang=lang)
     except Exception as e:
         return t("pers_profile_delete_error", lang, error=e)
 
@@ -185,7 +200,9 @@ def _edit_user_profile(fragment: str, new_text: str, user_id: str, lang: str = "
         found, count = edit_observation_fragment(user_id, fragment, new_text)
         if not found:
             return t("pers_fragment_not_found", lang, fragment=fragment)
-        return t("pers_lines_updated", lang, count=count)
+        return t("pers_lines_updated", lang, count=count) + receipts.change(
+            "observation", ref=receipts.fragment_ref(f"profile_obs:{user_id}", fragment, count), action="edited",
+            where=t("rcpt_profile_obs_where", lang, user=user_id), lang=lang)
     except Exception as e:
         return t("pers_profile_edit_error", lang, error=e)
 
@@ -227,6 +244,7 @@ async def dispatch(name: str, arguments: dict) -> str:
                 observation=(arguments.get("observation") or arguments.get("observasjon") or ""),
                 user_id=user_id,
                 lang=lang,
+                receipt_who=user_id,
             )
         if action == "set_field":
             return _set_profile_field(
@@ -235,6 +253,7 @@ async def dispatch(name: str, arguments: dict) -> str:
                 value=(arguments.get("value") or arguments.get("verdi") or ""),
                 user_id=user_id,
                 lang=lang,
+                receipt_who=user_id,
             )
         if action == "edit":
             return _edit_user_profile(
@@ -262,6 +281,9 @@ async def dispatch(name: str, arguments: dict) -> str:
                 return t("pers_house_update_required", lang)
             try:
                 result = update_household_visible(user_id=user_id, field=field, value=value)
+                if not str(result).startswith("Unknown field"):
+                    result += receipts.change("profile_field", ref=f"household_visible:{user_id}:{field}", action="updated",
+                                              where=t("rcpt_profile_where", lang, user=user_id), lang=lang)
                 try:
                     reload_config()
                 except Exception:

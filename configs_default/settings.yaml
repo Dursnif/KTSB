@@ -5,7 +5,7 @@ automation_reflex:
   contributors: admin_only
 language: nb
 hotword: "Kåre"
-personality_mode: minimal
+personality_mode: komplett
 location:
   city: ""
   postal_code: ""
@@ -30,7 +30,6 @@ stm:
   context_last_state_keys: 24
   snapshot_path: "/kaare/state/stm_snapshot.json"
   history_dir: "/kaare/state/stm_history"
-  history_days: 7
   snapshot_interval_seconds: 300
   # P105 Phase 6: tell the model the replayed turns are old when the previous message is at least
   # this many hours back
@@ -41,8 +40,7 @@ semantic_memory:
   trim_margin: 50
 think_cache:
   path: "/kaare/state/think_cache.jsonl"
-  max_entries: 150
-  trim_margin: 30
+  response_max_chars: 4000  # how much of each reply is kept next to the thinking (GUI: Logs and data)
 
 kare_reminders:
   injection_max_chars: 2000
@@ -65,11 +63,6 @@ memory_prompt:
 
 jang:
   reflection_interval_seconds: 600
-  inner_thoughts_retention_hours: 48
-
-face_events:
-  session_timeout_seconds: 60
-  retention_hours: 48
 
 # Not read any more — kept so older configs stay valid. Mechanic's shell (read-only, off by
 # default) is switched in the admin GUI under Settings → Agent Settings → Mechanic → shell.
@@ -84,11 +77,12 @@ git_repo_path: /kaare
 # JWT token expiry in hours. Default 4 hours.
 token_expiry_hours: 4
 
-# Allowed CORS origins. Default ["*"] works for most home installs.
-# Restrict to specific origins for stricter setups, e.g.:
-# cors_origins: ["http://192.168.0.x:5173", "https://yourdomain.com"]
+# Which web pages may call the API from a browser (CORS). "same-host" = a page served from the same machine name or
+# address the browser used for the API — KTSB's own GUI. Add exact origins for your own pages, e.g.:
+# cors_origins: ["same-host", "https://dashboard.example.com"]
+# ["*"] lets every website call the API from a browser in your home — not recommended. Restart the API after a change.
 cors_origins:
-  - "*"
+  - "same-host"
 
 network:
   # Clients on these subnets count as «local» (home). The setup wizard suggests your own /24;
@@ -140,9 +134,18 @@ min_pin_length: 6
 data_retention:
   interactions_retention_days: 0
   episodes_retention_days: 0
-  think_cache_retention_days: 30
+# Size limits per data class in MB, oldest first when full — nothing is deleted for being old (P150).
+# 0 = off (no limit). GUI: Settings → Logs/Storage.
+storage_limits:
+  argus_events_mb: 2048   # Argus' indexed log events (Qdrant argus_events); rollup kept before a day is deleted
+  think_cache_mb: 20       # think log (state/think_cache.jsonl)
+  inner_thoughts_mb: 10    # Jang's inner thoughts (state/inner_thoughts.txt)
+  stm_history_mb: 50       # daily STM copies (state/stm_history/); a day goes only after its daily summary exists
+  observations_mb: 5       # per user: observations.md (the prompt still reads only the last 14 days)
+  raw_ha_events_mb: 700    # raw HA events, one file per day in logs/raw/ha_events/; oldest whole days go first
+  raw_frigate_mqtt_mb: 300  # raw Frigate events, logs/raw/frigate_mqtt/; at least 28 days kept (normalcy baseline)
 # How often buffered logs are written to disk, in seconds (0 = every line at once, max 30).
-# GUI: Settings → General → Logs and data (Expert). P131.
+# GUI: Settings → Logs/Storage → Logs and data (Expert). P131.
 logging:
   flush_interval_seconds: 2
 
@@ -227,9 +230,24 @@ context_budget:  # P105 Phase 7 — keeps Kåre's request under the model's cont
   image_tokens_estimate: 1200    # per image in the loop, when no real usage is reported (9B fallback)
   system_prompt_tokens_estimate: 6000  # used only when no real usage is reported (9B fallback)
 
+# Model guard (P142): mode overrides per caller and rule ("profile:detector"), set in the GUI
+# (Settings → Agent settings → Model guard). off | shadow (log only) | on.
+# Empty = every rule in its own default mode.
+model_enforcer:
+  modes: {}
+
 dev_slot:
   time_budget_minutes: 25
   topics_per_meeting: 3
   max_user_traces: 20
   round_cap_per_topic: 4
 models_dir: /kaare/models
+# Maintenance → «Include test versions» (Expert): also offer release candidates (rc) in the in-app updater. Off = only
+# final releases (DT04 R0.7). Read by the updater container itself.
+updates:
+  include_test_versions: false
+# KTSB's screen page (live camera and cards on TVs, Nest Hubs and browsers). One switch turns it all on/off
+# (Settings → Screens). On by default: it costs nothing while idle; off = every /screen route answers «off».
+screens:
+  enabled: true
+  live_minutes: 2   # a live camera stops by itself after this many minutes (Kåre may set a different time per request)

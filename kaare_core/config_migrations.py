@@ -42,6 +42,7 @@ from typing import Any
 import yaml
 
 from kaare_core import config_store as cs
+from kaare_core.voice import channels
 
 _log = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ def _s1_memory_embed(data: dict, defaults: dict) -> list[str]:
     """services.yaml (P126): pre-P126 installs with model files ran MiniLM fp32 → record `minilm` (else the fill
     would switch them to `minilm_int8` and an empty collection); the old `large-v3` Whisper default → '' (lightest
     preset) — Docker only: there it was the old template value and never worked, on bare metal it can be a real
-    choice (Stian, 2026-10-09); the non-existent `kaare-memory-embed` URL → `kaare-semantic-embed`."""
+    choice (2026-10-09); the non-existent `kaare-memory-embed` URL → `kaare-semantic-embed`."""
     notes = []
     me = data.get("memory_embed")
     if isinstance(me, dict) and not me.get("model") and me.get("model_dir"):
@@ -186,12 +187,182 @@ def _s6_old_defaults_settings(data: dict, defaults: dict) -> list[str]:
     return _replace_old_defaults(data, defaults, _S6_OLD_DEFAULTS)
 
 
+# The old aliases.yaml template's example rooms (shipped until P137). Kept here so step 7 can recognise copies of
+# them in a household's file — the template itself no longer has them.
+_OLD_TEMPLATE_ROOMS: dict[str, tuple[list[str], set[str]]] = {
+    "living_room": (["living room", "stue", "stua"], {"light.living_room_ceiling", "light.living_room_lamp"}),
+    "kitchen": (["kitchen", "kjøkken", "kjøkkenet"], {"light.kitchen_ceiling"}),
+    "bedroom": (["bedroom", "soverom"], {"light.bedroom_ceiling"}),
+    "bathroom": (["bathroom", "bad", "badet"], {"light.bathroom_ceiling", "climate.bathroom_floor_heat"}),
+    "hallway": (["hallway", "gang", "gangen"], {"light.hallway_ceiling"}),
+    "garage": (["garage", "garasje", "garasjen"], {"light.garage_ceiling", "switch.garage_door"}),
+    "office": (["office", "kontor", "kontoret"], {"light.office_ceiling"}),
+    "basement": (["basement", "kjeller", "kjelleren"], {"light.basement_ceiling"}),
+}
+
+# Set by run() for the steps that need a sibling file (step 7 reads aliases.yaml while migrating rooms.yaml).
+_RUN_CONFIG_DIR: Path = cs.CONFIG_DIR
+
+
+def _s7_rooms_from_aliases(data: dict, defaults: dict) -> list[str]:
+    """rooms.yaml (P137): copy the old aliases.yaml `rooms` (→ places + synonyms) and `room_entities` (→ things with
+    a place) once, when rooms.yaml has no places and no things yet. aliases.yaml is left as it is. A room that is an
+    unchanged copy of the old template examples comes over hidden and marked `template_example` — so «stua» stops
+    resolving to `living_room` — and the GUI offers to delete it; nothing is deleted here."""
+    if data.get("places") or data.get("things"):
+        return []
+    try:
+        old = cs.read_yaml(_RUN_CONFIG_DIR / "aliases.yaml") or {}
+    except Exception:
+        return []
+    rooms = old.get("rooms") if isinstance(old.get("rooms"), dict) else {}
+    room_entities = old.get("room_entities") if isinstance(old.get("room_entities"), dict) else {}
+    if not rooms and not room_entities:
+        return []
+    places: dict = {}
+    things: dict = {}
+    examples = []
+    for room in [*rooms, *(r for r in room_entities if r not in rooms)]:
+        key = str(room)
+        synonyms = [str(s) for s in (rooms.get(room) or []) if str(s).strip()]
+        entities = [str(e) for e in (room_entities.get(room) or []) if str(e).strip()]
+        entry: dict = {"name": key.replace("_", " ").capitalize(), "synonyms": synonyms}
+        tpl = _OLD_TEMPLATE_ROOMS.get(key)
+        if tpl and synonyms == tpl[0] and set(entities) <= tpl[1]:
+            entry.update(hidden=True, template_example=True)
+            examples.append(key)
+        places[key] = entry
+        for eid in entities:
+            things.setdefault(eid, {"place": key})
+    data["places"] = places
+    data["things"] = things
+    notes = [f"{len(places)} places and {len(things)} things copied from aliases.yaml"]
+    if examples:
+        notes.append(f"old template example rooms hidden (offered for deletion in the GUI): {', '.join(examples)}")
+    return notes
+
+
+def _s8_nodes_channels(data: dict, defaults: dict) -> list[str]:
+    """nodes.yaml (P139 phase 2): a screen node without `channels` gets the channels its type used before — the
+    display registry's old «primary → fallback» per type, plus `ha` when it has an entity_id. Not probed here (no
+    I/O in a migration): the node dialog's «Søk etter kanaler» or the next save finds the rest."""
+    nodes = data.get("nodes")
+    if not isinstance(nodes, dict):
+        return []
+    done = []
+    for nid, cfg in nodes.items():
+        if not isinstance(cfg, dict) or "channels" in cfg or not channels.wants_channels(cfg):
+            continue
+        cfg["channels"] = channels.legacy_channels(cfg)
+        done.append(f"{nid} ({', '.join(cfg['channels']) or 'none'})")
+    return [f"channels from node type: {', '.join(done)}"] if done else []
+
+
+# Roles whose cameras had episodes off by default before P144-s14 (the old `episode_ignore_roles` default).
+_S9_OLD_IGNORE_DEFAULT = ["road_facing"]
+
+
+def _s9_camera_episode_switch(data: dict, defaults: dict) -> list[str]:
+    """frigate_cameras.yaml (P144-s14): each camera card gets «Kan lage episoder» (`episodes`) from the old hidden
+    Expert list `episode_ignore_roles` in frigate_user.yaml (its default when the key is absent), so nothing changes
+    on day one. A card that already has the key is the user's own choice — never touched."""
+    cameras = data.get("cameras")
+    if not isinstance(cameras, dict) or not cameras:
+        return []
+    try:
+        fu = cs.read_yaml(_RUN_CONFIG_DIR / "frigate_user.yaml") or {}
+    except Exception:
+        fu = {}
+    old = fu.get("episode_ignore_roles") if isinstance(fu, dict) else None
+    ignore = [r for r in old if isinstance(r, str)] if isinstance(old, list) else list(_S9_OLD_IGNORE_DEFAULT)
+    done = []
+    for cam, card in cameras.items():
+        if not isinstance(card, dict) or isinstance(card.get("episodes"), bool):
+            continue
+        card["episodes"] = card.get("role") not in ignore
+        done.append(f"{cam}={'on' if card['episodes'] else 'off'}")
+    return [f"camera episode switch from episode_ignore_roles {ignore}: {', '.join(done)}"] if done else []
+
+
+def _s10_frigate_topic_prefix(data: dict, defaults: dict) -> list[str]:
+    """services.yaml (P144-s19): Frigate's MQTT topic prefix moved from the broker card (`mqtt.topic_prefix`) to the
+    Frigate settings (`frigate.mqtt_topic_prefix`). The old value is copied so nothing changes; the old key stays."""
+    mqtt = data.get("mqtt") if isinstance(data.get("mqtt"), dict) else {}
+    old = mqtt.get("topic_prefix")
+    frigate = data.get("frigate")
+    if not isinstance(old, str) or not old.strip() or (isinstance(frigate, dict) and frigate.get("mqtt_topic_prefix")):
+        return []
+    if not isinstance(frigate, dict):
+        frigate = data["frigate"] = {}
+    frigate["mqtt_topic_prefix"] = old.strip()
+    return [f"frigate.mqtt_topic_prefix = {old.strip()!r} (from mqtt.topic_prefix)"]
+
+
+def _s11_face_sensor_words(data: dict, defaults: dict) -> list[str]:
+    """frigate_user.yaml (P144-s29b): s29's 0–1 detector weights (`face_votes.detectors.<name>.weight`) become the sensor
+    words admin set (`face_sensors.detectors.<name>` = {mode: admin, trust: nearest word, label}). Only a weight that is
+    there is moved; a word already set is never overwritten; the old keys stay (unread)."""
+    fv = data.get("face_votes") if isinstance(data.get("face_votes"), dict) else {}
+    old = fv.get("detectors") if isinstance(fv.get("detectors"), dict) else {}
+    words = (("off", 0.0), ("unlikely", 0.2), ("uncertain", 0.5), ("likely", 0.75), ("very_likely", 1.0))
+    done = []
+    for name, d in old.items():
+        w = d.get("weight") if isinstance(d, dict) else None
+        if not isinstance(name, str) or isinstance(w, bool) or not isinstance(w, (int, float)):
+            continue
+        fs = data.setdefault("face_sensors", {})
+        dets = fs.setdefault("detectors", {}) if isinstance(fs, dict) else {}
+        if not isinstance(dets, dict) or (isinstance(dets.get(name), dict) and dets[name].get("mode") == "admin"):
+            continue
+        word = min(words, key=lambda wv: abs(wv[1] - float(w)))[0]
+        label = d.get("label") if isinstance(d.get("label"), str) else ""
+        dets[name] = {"mode": "admin", "trust": word, "label": label}
+        done.append(f"{name}={word}")
+    return [f"face_sensors from s29 weights: {', '.join(done)}"] if done else []
+
+
 @dataclass(frozen=True)
 class Step:
     number: int
     name: str
     filename: str
     fn: Callable[[dict, dict], list[str]]
+
+
+def cors_same_host(data: dict, defaults: dict) -> list[str]:
+    """settings.yaml (DT04 R0.8): `cors_origins: ["*"]` was the shipped default until v1.10.x and no GUI ever set it,
+    so exactly that value is the old default, not a choice → «same-host» (KTSB's own frontend keeps working; other
+    websites can no longer call the API from a household browser). A list the user wrote — also one containing «*»
+    next to other origins — is left alone. To allow everyone again, set `cors_origins: ["*"]` after this step ran."""
+    if data.get("cors_origins") == ["*"]:
+        data["cors_origins"] = ["same-host"]
+        return ["cors_origins: old shipped default «*» → «same-host»"]
+    return []
+
+
+def camera_see_and_analyse(data: dict, defaults: dict) -> list[str]:
+    """tool_permissions.yaml (N41): the camera is split into SEE (`camera`) and a NEW analysis (`camera_analyse` flag).
+    A role that already had `camera` keeps analysing (nothing is taken away by the upgrade); child and teen get `camera`
+    (see only), young_adult gets both — owner decision 2026-11-16 (N41). Runs once: a role list that already names camera_analyse, or a
+    role that is absent, is left alone."""
+    roles = data.get("roles")
+    if not isinstance(roles, dict):
+        return []
+    if any(isinstance(v, list) and "camera_analyse" in v for v in roles.values()):
+        return []  # already split
+    out = []
+    for role, lst in roles.items():
+        if isinstance(lst, list) and "camera" in lst and "all" not in lst:
+            lst.append("camera_analyse")
+            out.append(f"roles.{role}: had camera → + camera_analyse (keeps analysing)")
+    for role, add in (("child", ["camera"]), ("teen", ["camera"]), ("young_adult", ["camera", "camera_analyse"])):
+        lst = roles.get(role)
+        if isinstance(lst, list):
+            for name in add:
+                if name not in lst:
+                    lst.append(name)
+                    out.append(f"roles.{role}: + {name}")
+    return out
 
 
 STEPS: list[Step] = [
@@ -201,6 +372,13 @@ STEPS: list[Step] = [
     Step(4, "llm_system_i18n", "llm.yaml", _s4_llm_system_i18n),
     Step(5, "trusted_category_names", "trusted_sources.yaml", _s5_trusted_category_names),
     Step(6, "old_defaults", "settings.yaml", _s6_old_defaults_settings),
+    Step(7, "rooms_from_aliases", "rooms.yaml", _s7_rooms_from_aliases),
+    Step(8, "nodes_channels", "nodes.yaml", _s8_nodes_channels),
+    Step(9, "camera_episode_switch", "frigate_cameras.yaml", _s9_camera_episode_switch),
+    Step(10, "frigate_topic_prefix", "services.yaml", _s10_frigate_topic_prefix),
+    Step(11, "face_sensor_words", "frigate_user.yaml", _s11_face_sensor_words),
+    Step(12, "cors_same_host", "settings.yaml", cors_same_host),
+    Step(13, "camera_see_and_analyse", "tool_permissions.yaml", camera_see_and_analyse),
 ]
 LATEST = STEPS[-1].number
 
@@ -214,7 +392,9 @@ USER_COLLECTIONS: dict[str, set[str]] = {
     "nodes.yaml": {"nodes"},
     "ssh_nodes.yaml": {"nodes"},
     "aliases.yaml": {"rooms", "room_entities", "aliases"},
+    "rooms.yaml": {"places", "floors", "things"},
     "frigate_cameras.yaml": {"cameras"},
+    "frigate_faces.yaml": {"faces"},
 }
 
 
@@ -417,6 +597,8 @@ def run(
     """Bring configs/ up to the shipped templates and steps. Safe to call from every container at once."""
     config_dir, defaults_dir = Path(config_dir), Path(defaults_dir)
     config_dir.mkdir(parents=True, exist_ok=True)
+    global _RUN_CONFIG_DIR
+    _RUN_CONFIG_DIR = config_dir
     rep = Report(dry_run=dry_run)
     version_path = config_dir / VERSION_FILE
     with cs.lock(version_path, timeout=wait_timeout):

@@ -12,6 +12,7 @@ unparseable
 responde
 
 # --- 1: nb/de words ---
+modul
 absolut
 administrer
 adresse
@@ -77,6 +78,8 @@ negativ
 noe
 noen
 normale
+normales
+szene
 objekt
 oder
 offen
@@ -138,3 +141,6 @@ vor
 worte
 samles
 signatur
+paret
+lief
+appen

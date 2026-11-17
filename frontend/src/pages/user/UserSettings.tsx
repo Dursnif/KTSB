@@ -5,6 +5,8 @@ import { useUserPrefs } from "../../hooks/useUserPrefs";
 import { useTheme } from "../../theme";
 import { useAuth } from "@/hooks/useAuth";
 import { apiGetUnlockConfig, apiPutUnlockConfig, apiGetUserFlags, apiPutUserFlags, apiReissueSeedPhrase } from "../../services/api";
+import FrigateTrackingCard from "../../components/FrigateTrackingCard";
+import QuestionsCard from "../../components/QuestionsCard";
 import { SeedModal } from "../admin/Users";
 
 const ACCENT_PRESETS = [
@@ -63,7 +65,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       onClick={() => onChange(!checked)}
       style={{
         width: 44, height: 24, borderRadius: 12, border: "none",
-        background: checked ? "#646cff" : "#333",
+        background: checked ? "#16a34a" : "#333",
         cursor: "pointer", position: "relative", transition: "background 0.2s",
         flexShrink: 0,
       }}
@@ -509,7 +511,7 @@ export default function UserSettings() {
               onClick={() => !pinResetSaving && togglePinReset(!allowPinReset)}
               style={{
                 display: "inline-block", width: 44, height: 24,
-                background: allowPinReset ? "#4caf50" : "#333",
+                background: allowPinReset ? "#16a34a" : "#333",
                 borderRadius: 12, cursor: pinResetSaving ? "wait" : "pointer",
                 position: "relative", transition: "background 0.2s", flexShrink: 0,
               }}
@@ -554,6 +556,10 @@ export default function UserSettings() {
               <div style={{ color: "#e57373", fontSize: 12, marginTop: 8 }}>{reissueError}</div>
             )}
           </div>
+          {/* P144-s02: shown only when this user decides it themselves (adult/admin) or sees who does */}
+          {user?.username && <div style={{ marginTop: 12 }}><FrigateTrackingCard username={user.username} /></div>}
+          {/* P144 #9 / P149 (G17): the person's own «Var det deg?» checklist — hidden when there is nothing to ask */}
+          {user?.username && <div style={{ marginTop: 12 }}><QuestionsCard admin={false} /></div>}
         </div>
 
         {reissuedSeed && (

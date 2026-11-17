@@ -1,0 +1,6 @@
+# Vehicle classification for the Frigate user (P150 6b) — set in Integrations → Frigate → «Hvem / Hva / Hvor».
+# Personal: which pseudonymous vehicle ids (vehicle-<hex>, never a plate) are household / safe guest / not welcome,
+# and the household name someone gave them. Ships empty. An unknown vehicle seen on question_days household days is
+# asked about.
+question_days: 3
+vehicles: {}

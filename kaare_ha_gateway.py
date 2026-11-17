@@ -15,7 +15,9 @@ from pydantic import BaseModel
 sys.path.insert(0, "/kaare")
 import re
 
+from kaare_core import rooms
 from kaare_core.config import get_service as _svc
+from kaare_core.ha import action_truth as truth
 from kaare_core.service_auth import is_service_request, service_headers
 
 # ---------------- Config ----------------
@@ -59,51 +61,12 @@ def load_aliases(path: str) -> dict[str, str]:
     return aliases
 
 
-def load_rooms(path: str) -> dict[str, str]:
-    """
-    Leser rooms-seksjonen og returnerer en flat dict:
-    romord → kanonisk romnavn
-    f.eks. {"stua": "stue", "dagligstue": "stue", "verkstedet": "verksted", ...}
-    """
-    if not os.path.exists(path):
-        return {}
-    with open(path, encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    raw = data.get("rooms") or {}
-    result: dict[str, str] = {}
-    if isinstance(raw, dict):
-        for canonical, synonyms in raw.items():
-            # Legg til kanonisk navn selv
-            result[str(canonical).strip().lower()] = str(canonical).strip().lower()
-            if isinstance(synonyms, list):
-                for s in synonyms:
-                    result[str(s).strip().lower()] = str(canonical).strip().lower()
-    return result
-
-
-def load_room_entities(path: str) -> dict[str, list[str]]:
-    """
-    Leser room_entities-seksjonen og returnerer:
-    romnavn → liste av entity_id-er
-    f.eks. {"stue": ["light.stue", "light.taklys_stue", ...], ...}
-    """
-    if not os.path.exists(path):
-        return {}
-    with open(path, encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    raw = data.get("room_entities") or {}
-    result: dict[str, list[str]] = {}
-    if isinstance(raw, dict):
-        for room, entities in raw.items():
-            if isinstance(entities, list):
-                result[str(room).strip().lower()] = [str(e).strip() for e in entities]
-    return result
-
-
 E = load_env(ENV_PATH)
 KARE_LOG_URL = E.get("KARE_LOG_URL", "").rstrip("/") or "http://kaare-api:8000"
 KARE_HA_TIMEOUT = float(E.get("KARE_HA_TIMEOUT", "5"))
 ALLOWED_ACTIONS = {a.strip() for a in (E.get("KARE_ALLOWED_ACTIONS", "").split(",")) if a.strip()}
+# The actions the GUI showed when the list above was saved (P139); empty = a list saved before the GUI recorded it.
+OFFERED_ACTIONS = {a.strip() for a in (E.get("KARE_OFFERED_ACTIONS", "").split(",")) if a.strip()}
 
 
 # HA REST API — for direkte tilstandslesing
@@ -122,16 +85,46 @@ def _load_ha_api_config():
 
 HA_API_URL, HA_TOKEN = _load_ha_api_config()
 
+
+def _load_verify_seconds() -> float:
+    """How long to wait for HA to report an action's new state (N26; GUI: Integrations → Home Assistant). Tuya and
+    Zigbee lights may report a moment after the action happened; 0 = only what HA's reply itself shows."""
+    try:
+        raw = _svc("home_assistant", "verify_seconds")
+        return max(0.0, min(10.0, float(2.0 if raw is None else raw)))
+    except Exception:
+        return 2.0
+
+
+VERIFY_SECONDS = _load_verify_seconds()
+_VERIFY_POLL_S = 0.25
+# HA keeps running a service after our request times out (a Cast «turn on» starts an app — ~14 s on a Google TV,
+# P139 phase 5 live test). Then we keep reading the state this long instead of failing with a 500.
+SLOW_SERVICE_WAIT_S = 20.0
+
 ALIASES = load_aliases(ALIASES_PATH)
-ROOMS = load_rooms(ALIASES_PATH)
-ROOM_ENTITIES = load_room_entities(ALIASES_PATH)
 
 # --------------- Logging ----------------
 LOG_DIR = "/kaare/logs"
 os.makedirs(LOG_DIR, exist_ok=True)
-logging.basicConfig(
-    filename=os.path.join(LOG_DIR, "kaare_ha_gateway.log"), level=logging.INFO, format="%(message)s"
-)
+
+
+class _GatewayLogFormatter(logging.Formatter):
+    """Text lines get a timestamp and level; JSON lines (read by Argus with json.loads) stay exactly as written."""
+
+    def __init__(self):
+        super().__init__("%(asctime)s %(levelname)s %(message)s")
+
+    def format(self, record: logging.LogRecord) -> str:
+        msg = record.getMessage()
+        if msg.startswith("{") and not record.exc_info:
+            return msg
+        return super().format(record)
+
+
+_log_handler = logging.FileHandler(os.path.join(LOG_DIR, "kaare_ha_gateway.log"))
+_log_handler.setFormatter(_GatewayLogFormatter())
+logging.basicConfig(level=logging.INFO, handlers=[_log_handler])
 
 
 # One pooled HTTP client for HA and Kåre calls (thread-safe; endpoints run in FastAPI's threadpool).
@@ -182,6 +175,20 @@ def ha_get(path: str, timeout: float | None = None):
     return r.json()
 
 
+def ha_state(entity_id: str) -> tuple[int, dict | None]:
+    """(HTTP status, state) without raising on 404: HA has no such entity (the only documented existence check)."""
+    r = _http.get(
+        f"{HA_API_URL}/api/states/{entity_id}",
+        headers={"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"},
+        timeout=KARE_HA_TIMEOUT,
+    )
+    if r.status_code == 404:
+        return 404, None
+    if r.status_code >= 400:
+        raise HTTPException(status_code=502, detail={"ha_status": r.status_code, "ha_body": r.text})
+    return r.status_code, r.json()
+
+
 def call_ha_service(domain: str, service: str, data: dict[str, Any], timeout: float | None = None):
     r = _http.post(
         f"{HA_API_URL}/api/services/{domain}/{service}",
@@ -194,14 +201,24 @@ def call_ha_service(domain: str, service: str, data: dict[str, Any], timeout: fl
     return r.json()
 
 
+def call_ha_service_slow_ok(domain: str, service: str, data: dict[str, Any]) -> tuple[Any, bool]:
+    """(HA's reply, slow): a timeout is not an error — HA is still doing it, the caller verifies by reading state."""
+    try:
+        return call_ha_service(domain, service, data), False
+    except httpx.TimeoutException:
+        logging.info("HA %s.%s on %s did not answer within %ss — verifying by state", domain, service,
+                 data.get("entity_id"), KARE_HA_TIMEOUT)
+        return [], True
+
+
 def map_action_to_service(entity_id: str, action: str, params: dict[str, Any]):
     if "." not in entity_id:
         raise HTTPException(status_code=400, detail="invalid entity_id")
     domain = entity_id.split(".", 1)[0]
     payload = {"entity_id": entity_id}
 
-    if action in ("turn_on", "turn_off"):
-        if params:
+    if action in ("turn_on", "turn_off", "toggle"):
+        if params and action == "turn_on":
             payload.update(params)
         final_domain = domain if domain in ("light", "switch", "input_boolean") else "homeassistant"
         return final_domain, action, payload
@@ -238,6 +255,83 @@ def map_action_to_service(entity_id: str, action: str, params: dict[str, Any]):
     raise HTTPException(status_code=400, detail=f"unsupported action '{action}'")
 
 
+_MEDIA_ATTRS = (
+    "volume_level",
+    "is_volume_muted",
+    "source",
+    "source_list",
+    "supported_features",
+    "app_name",
+    "media_title",
+)
+
+
+def _media_view(row: dict | None) -> dict[str, Any]:
+    """The part of a media player's state the caller reports: state + volume/mute/source (source list capped)."""
+    attrs = (row or {}).get("attributes") or {}
+    out: dict[str, Any] = {k: attrs[k] for k in _MEDIA_ATTRS if k in attrs}
+    if isinstance(out.get("source_list"), list):
+        out["source_list"] = out["source_list"][:30]
+    return out
+
+
+def execute_media_command(entity_id: str, action: str, params: dict[str, Any], rid: str) -> dict[str, Any]:
+    """A media_player action (P139 phase 1): checked against the player's feature flags and source list before the
+    call, and against its attributes after (N26 — volume/mute/source are attributes, not the state)."""
+    code, pre = ha_state(entity_id)
+    pre_state = (pre or {}).get("state")
+
+    def reply(outcome: str, row: dict | None, details: Any = None) -> dict[str, Any]:
+        return {
+            "status": "ok" if outcome in truth.DONE else outcome,
+            "outcome": outcome,
+            "rid": rid,
+            "state": (row or {}).get("state", pre_state),
+            "media": _media_view(row),
+            "details": details,
+        }
+
+    stop = truth.pre_check(code, pre_state)
+    if stop:
+        return reply(stop, pre)
+    attrs = (pre or {}).get("attributes") or {}
+    if truth.media_unsupported(action, entity_id, attrs):
+        return reply(truth.UNSUPPORTED, pre)
+    service, _flags = truth.MEDIA_SERVICES[action]
+    data: dict[str, Any] = {"entity_id": entity_id}
+    if action == "set_volume":
+        data["volume_level"] = round(max(0, min(100, int(params.get("volume_pct", 0)))) / 100, 2)
+    elif action in ("mute", "unmute"):
+        data["is_volume_muted"] = action == "mute"
+    elif action == "select_source":
+        source = truth.match_source(str(params.get("source") or ""), attrs)
+        if source is None:
+            return reply(truth.SOURCE_UNKNOWN, pre)
+        data["source"] = source
+    check = {k: v for k, v in data.items() if k != "entity_id"}
+    already = truth.media_judge(action, check, pre, None)
+    if already == truth.ALREADY:
+        return reply(truth.ALREADY, pre)
+    try:
+        ha_resp, slow = call_ha_service_slow_ok("media_player", service, data)
+    except HTTPException as e:
+        return reply(truth.ERROR, pre, e.detail)
+    seen = next(
+        (r for r in (ha_resp if isinstance(ha_resp, list) else []) if r.get("entity_id") == entity_id),
+        None,
+    )
+    outcome = truth.media_judge(action, check, pre, seen) if seen else None
+    deadline = time.monotonic() + (SLOW_SERVICE_WAIT_S if slow else VERIFY_SECONDS)
+    while outcome is None and time.monotonic() < deadline:
+        time.sleep(_VERIFY_POLL_S)
+        try:
+            _c, seen = ha_state(entity_id)
+        except Exception:
+            continue
+        outcome = truth.media_judge(action, check, pre, seen)
+    return reply(outcome or truth.NOT_CONFIRMED, seen or pre, ha_resp)
+
+
 def execute_ha_command(payload: dict[str, Any]) -> dict[str, Any]:
     entity_id = payload.get("entity_id")
     action = payload.get("action")
@@ -248,37 +342,72 @@ def execute_ha_command(payload: dict[str, Any]) -> dict[str, Any]:
         entity_id = entity_id[0] if entity_id else None
     entity_id = ALIASES.get(entity_id, entity_id)
 
+    if action in truth.MEDIA_SERVICES:
+        if not entity_id or "." not in entity_id:
+            raise HTTPException(status_code=400, detail="invalid entity_id")
+        return execute_media_command(entity_id, action, params, rid)
+
     domain, service, result = map_action_to_service(entity_id, action, params)
 
     if domain is None:
         return {"status": "ok", "rid": rid, "details": result}
 
-    ha_resp = call_ha_service(domain, service, result)
-    return {"status": "ok", "rid": rid, "details": ha_resp}
+    # N26: HA answers 200 also for an unknown entity and before slow devices report — check before and after.
+    code, pre = ha_state(entity_id)
+    pre_state = (pre or {}).get("state")
+    stop = truth.pre_check(code, pre_state)
+    if stop:
+        return {"status": stop, "outcome": stop, "rid": rid, "state": pre_state, "details": None}
+
+    ha_resp, slow = call_ha_service_slow_ok(domain, service, result)
+    expected = truth.expected_states(action, entity_id, pre_state)
+    seen = truth.changed_state_of(entity_id, ha_resp)
+    outcome = truth.judge(action, expected, pre_state, seen)
+    deadline = time.monotonic() + (SLOW_SERVICE_WAIT_S if slow else VERIFY_SECONDS)
+    while outcome is None and time.monotonic() < deadline:
+        time.sleep(_VERIFY_POLL_S)
+        try:
+            _c, now = ha_state(entity_id)
+            seen = (now or {}).get("state")
+        except Exception:
+            continue
+        outcome = truth.judge(action, expected, None, seen)
+    if outcome is None:
+        outcome = truth.NOT_CONFIRMED
+    out = {
+        "status": "ok" if outcome in truth.DONE else outcome,
+        "outcome": outcome,
+        "rid": rid,
+        "state": seen or pre_state,
+        "details": ha_resp,
+    }
+    if truth.domain_of(entity_id) == "media_player":
+        # What is on screen now (app, title) — without it «paused» reads as «the film is paused» (P139).
+        try:
+            _c, row = ha_state(entity_id)
+            out["media"] = _media_view(row)
+        except Exception:
+            out["media"] = _media_view(pre)
+    return out
 
 
 # --------------- Hjelpefunksjoner ----------------
 
 
 def resolve_room(room_hint: str) -> str | None:
-    """
-    Normaliserer et romord til kanonisk romnavn.
-    f.eks. "stua" → "stue", "verkstedet" → "verksted"
-    Returnerer None hvis ukjent.
-    """
+    """A spoken room/place word → place id from the place register (P137: rooms.yaml + HA areas). A word that
+    names two places resolves to None — never «last one wins» (BUG-log 2026-10-17)."""
     if not room_hint:
         return None
-    return ROOMS.get(room_hint.strip().lower())
+    return rooms.get_register().resolve_place(room_hint)
 
 
-def find_entity_in_room(canonical_room: str, action: str) -> str | None:
-    """
-    Finn beste entity i et rom basert på action-type.
-    turn_on/turn_off/set_level → foretrekk light.*, deretter switch.*
-    set_temperature             → foretrekk climate.*
-    get_temperature             → foretrekk sensor.*temperatur*
-    """
-    entities = ROOM_ENTITIES.get(canonical_room, [])
+def find_entity_in_room(place_id: str, action: str) -> str | None:
+    """Best registered HA entity at a place for an action-type.
+    turn_on/turn_off/set_level → prefer light.*, then switch.*
+    set_temperature             → prefer climate.*
+    get_temperature             → prefer sensor.*"""
+    entities = [t.ref for t in rooms.get_register().things_at(place=place_id) if t.source == "ha"]
     if not entities:
         return None
 
@@ -295,7 +424,7 @@ def find_entity_in_room(canonical_room: str, action: str) -> str | None:
             if e.startswith(pref):
                 return e
 
-    # Ingen preferanse matchet – returner første
+    # No preference matched – return the first
     return entities[0]
 
 
@@ -325,19 +454,28 @@ def root():
 @app.post("/api/reload")
 def gateway_reload(_s: None = Depends(_require_service)):
     """Hot-reload all file-based config caches without restarting the gateway."""
-    global ALIASES, ROOMS, ROOM_ENTITIES, HA_API_URL, HA_TOKEN
+    global ALIASES, HA_API_URL, HA_TOKEN, VERIFY_SECONDS
+    global KARE_LOG_URL, KARE_HA_TIMEOUT, ALLOWED_ACTIONS, OFFERED_ACTIONS
     reloaded = []
     errors = []
     try:
+        env = load_env(ENV_PATH)
+        KARE_LOG_URL = env.get("KARE_LOG_URL", "").rstrip("/") or "http://kaare-api:8000"
+        KARE_HA_TIMEOUT = float(env.get("KARE_HA_TIMEOUT", "5"))
+        ALLOWED_ACTIONS = {a.strip() for a in env.get("KARE_ALLOWED_ACTIONS", "").split(",") if a.strip()}
+        OFFERED_ACTIONS = {a.strip() for a in env.get("KARE_OFFERED_ACTIONS", "").split(",") if a.strip()}
+        reloaded.append(f"kare_ha.env ({len(ALLOWED_ACTIONS) or 'all'} actions allowed)")
+    except Exception as e:
+        errors.append(f"kare_ha.env: {e}")
+    try:
         ALIASES = load_aliases(ALIASES_PATH)
-        ROOMS = load_rooms(ALIASES_PATH)
-        ROOM_ENTITIES = load_room_entities(ALIASES_PATH)
         reloaded.append(f"aliases.yaml ({len(ALIASES)} aliaser)")
     except Exception as e:
         errors.append(f"aliases.yaml: {e}")
     try:
         HA_API_URL, HA_TOKEN = _load_ha_api_config()
-        reloaded.append("ha_api_config")
+        VERIFY_SECONDS = _load_verify_seconds()
+        reloaded.append(f"ha_api_config (verify {VERIFY_SECONDS:g}s)")
     except Exception as e:
         errors.append(f"ha_api_config: {e}")
     return {"reloaded": reloaded, "errors": errors}
@@ -385,11 +523,35 @@ def ha_status(entity_id: str, _s: None = Depends(_require_service)):
         raise HTTPException(status_code=502, detail=str(e)) from e
 
 
+class ExistsBody(BaseModel):
+    entity_ids: list[str]
+
+
+@app.post("/api/ha_exists")
+def ha_exists(b: ExistsBody, _s: None = Depends(_require_service)):
+    """Which of these entities HA has now (N26): {id: "ok" | "unavailable" | "not_found"} from one `GET /api/states`.
+    Used to correct memories of actions HA only pretended to do."""
+    ids = [e for e in b.entity_ids[:500] if isinstance(e, str) and e]
+    states = {row.get("entity_id"): row.get("state") for row in ha_get("/api/states") or []}
+    return {
+        "states": {
+            e: (
+                "not_found"
+                if e not in states
+                else "unavailable"
+                if states[e] == "unavailable"
+                else "ok"
+            )
+            for e in ids
+        }
+    }
+
+
 @app.post("/api/ha_apply")
 def ha_apply(b: ApplyBody, _s: None = Depends(_require_service)):
     rid = b.request_id or f"rid-{int(time.time() * 1000)}"
     action = b.action.strip()
-    if ALLOWED_ACTIONS and action not in ALLOWED_ACTIONS:
+    if not truth.allowed(action, ALLOWED_ACTIONS, OFFERED_ACTIONS):
         post_ha_log(
             {"event": "reject_action", "rid": rid, "action": action, "entity_id": b.entity_id}
         )
@@ -411,17 +573,25 @@ def ha_apply(b: ApplyBody, _s: None = Depends(_require_service)):
         }
     )
     resp = execute_ha_command(payload)
-    out = {"status": resp.get("status", "ok"), "request_id": rid, "details": resp}
+    out = {
+        "status": resp.get("status", "ok"),
+        "outcome": resp.get("outcome", ""),
+        "state": resp.get("state"),
+        "media": resp.get("media"),
+        "request_id": rid,
+        "details": resp,
+    }
     post_ha_log(
         {
             "event": "apply_resp",
             "rid": rid,
             "result": out["status"],
+            "outcome": out["outcome"],
             "entity_id": b.entity_id,
             "action": action,
         }
     )
-    log_json(event="forward_done", rid=rid, result=out["status"])
+    log_json(event="forward_done", rid=rid, result=out["status"], outcome=out["outcome"])
     return out
 
 

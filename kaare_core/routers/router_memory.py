@@ -1,7 +1,6 @@
 import asyncio
 import os
 import re
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -11,6 +10,7 @@ import kaare_core.app_state as app_state
 from kaare_core.background import spawn
 from kaare_core.config import now_local
 from kaare_core.memory.long_term import get_ltm
+from kaare_core.storage import sqlite_files
 from kaare_core.users.auth import require_admin as _require_admin
 
 router = APIRouter()
@@ -31,7 +31,7 @@ def _load_env_file(path: str, env: dict) -> None:
 
 def _last_episode_ts() -> str | None:
     try:
-        conn = sqlite3.connect("/kaare/state/memory/interactions.db")
+        conn = sqlite_files.connect("/kaare/state/memory/interactions.db")
         row = conn.execute("SELECT MAX(ts_created) FROM episodes").fetchone()
         conn.close()
         return row[0] if row else None

@@ -316,6 +316,36 @@ class ShortTermMemory:
                 if old in self._state:
                     del self._state[old]
 
+    def correct_actions(self, entity_id: str, result: str, user_id: str | None = None) -> int:
+        """N26: earlier «OK» actions on an entity HA turned out not to have (it answered 200 anyway) become failed with
+        `result`, and the state it was believed to be in is dropped. `user_id` None = every user here. → count."""
+        ent = (entity_id or "").strip()
+        if not ent:
+            return 0
+        fixed = 0
+        with self._lock:
+            for ev in self._actions:
+                if ev.entity_id == ent and ev.ok and (user_id is None or ev.user_id == user_id):
+                    ev.ok = False
+                    ev.result = result
+                    fixed += 1
+            for key in (ent, f"entity:{ent}"):
+                if key in self._state:
+                    del self._state[key]
+                    try:
+                        self._state_order.remove(key)
+                    except ValueError:
+                        pass
+                    fixed += 1
+        if fixed:
+            self._trigger_autosave()
+        return fixed
+
+    def ok_action_entities(self) -> set[str]:
+        """Entities this memory holds a successful HA action for (N26 start-up check)."""
+        with self._lock:
+            return {ev.entity_id for ev in self._actions if ev.ok and "." in ev.entity_id}
+
     def set_entity_state(
         self,
         entity_id: str,
@@ -477,13 +507,18 @@ class ShortTermMemory:
             if user_actions:
                 parts.append(_t_i18n("stm_last_actions", lang))
                 for ev in user_actions[-self.context_last_actions :]:
-                    status = (
-                        _t_i18n("stm_action_ok", lang)
-                        if ev.ok
-                        else _t_i18n("stm_action_failed", lang)
-                    )
+                    if ev.ok:
+                        status = _t_i18n("stm_action_ok", lang)
+                    elif (
+                        ev.result == "unconfirmed"
+                    ):  # N26: sent, HA took it, new state not reported yet
+                        status = _t_i18n("stm_action_unconfirmed", lang)
+                    else:
+                        status = _t_i18n("stm_action_failed", lang)
                     line = f"- [{ev.ts}] {status}: {ev.action} {ev.entity_id}"
-                    if ev.result:
+                    if ev.result == "not_found":
+                        line += f" ({_t_i18n('stm_result_not_found', lang)})"
+                    elif ev.result and ev.result != "unconfirmed":
                         line += f" ({ev.result})"
                     parts.append(_clip(line, 500))
 
@@ -829,6 +864,20 @@ class STMRegistry:
             )
         op.rename(str(op) + ".migrated")
         return True
+
+    def correct_missing_entities(self, missing: set[str]) -> int:
+        """N26: in every user's memory, mark «OK» actions on entities HA does not have as not found. → count."""
+        with self._lock:
+            users = list(self._users.values())
+        return sum(stm.correct_actions(e, "not_found") for stm in users for e in missing)
+
+    def ok_action_entities(self) -> set[str]:
+        with self._lock:
+            users = list(self._users.values())
+        out: set[str] = set()
+        for stm in users:
+            out |= stm.ok_action_entities()
+        return out
 
     def all_user_ids(self) -> list[str]:
         with self._lock:

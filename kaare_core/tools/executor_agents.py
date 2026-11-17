@@ -38,6 +38,7 @@ from kaare_core.config import get_qdrant_api_key as _qdrant_key
 from kaare_core.config import get_service as _svc
 from kaare_core.config import pool_call_options as _pool_opts
 from kaare_core.memory.long_term import get_ltm
+from kaare_core.model_enforcement import ModelEnforcer
 from kaare_core.model_lock import (
     LockTimeout,
     lock_agent_pool,
@@ -453,6 +454,11 @@ async def _mechanic_search(arguments: dict, lang: str) -> str:
         system = f"{system}\n\n## Your memory\n{memory}"
 
     user_msg = f"Content:\n{content}\n\nTask: {question}"
+    # The enforcer box (P142, profile «mechanic_summary», shadow by default): the fetched content
+    # and the task are what the summary may stand on (P117 C19 — invented files).
+    enforcer = ModelEnforcer.for_profile("mechanic_summary", lang, rid=arguments.get("_rid", ""))
+    enforcer.add_grounding(system)
+    enforcer.add_grounding(user_msg)
     payload = {
         "model": MECHANIC_MODEL,
         "stream": False,
@@ -478,6 +484,24 @@ async def _mechanic_search(arguments: dict, lang: str) -> str:
             r.raise_for_status()
             content_out = r.json().get("message", {}).get("content", "").strip()
             answer, _think_content, _think_closed = strip_think_block(content_out)
+            action = enforcer.on_answer(answer)
+            if action:  # one correction round, same instance (only when the profile is «on»)
+                retry = {
+                    **payload,
+                    "messages": [
+                        *payload["messages"],
+                        {"role": "assistant", "content": answer},
+                        {"role": "user", "content": action.correction_message},
+                    ],
+                }
+                r2 = await client.post(
+                    inst_url + "/api/chat",
+                    json=retry,
+                    headers={"x-kaare-source": "mechanic_search"},
+                )
+                r2.raise_for_status()
+                again = r2.json().get("message", {}).get("content", "").strip()
+                answer = strip_think_block(again)[0]
             if _think_content:
                 try:
                     log_think(
@@ -490,7 +514,7 @@ async def _mechanic_search(arguments: dict, lang: str) -> str:
                     )
                 except Exception:
                     pass
-            answer = answer or t("agent_mechanic_no_response", lang)
+            answer = enforcer.finish(answer, "agent_mechanic_no_response")
             try:
                 spawn(
                     get_ltm().log_agent_message(
@@ -569,7 +593,15 @@ async def dispatch(name: str, arguments: dict) -> str:
 
     # ── mechanic (unified action-based tool) ──────────────────────────────────
     if name == "mechanic":
-        action = arguments.get("action", "")
+        action = (arguments.get("action") or "").strip()
+
+        if not action:
+            return t(
+                "agent_action_required",
+                lang,
+                tool="mechanic",
+                valid="search, delegate, result, cancel, comment",
+            )
 
         if action == "search":
             return await _mechanic_search(arguments, lang)

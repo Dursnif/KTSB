@@ -3,6 +3,8 @@ import logging
 import httpx
 
 from adapters.display.base import BaseDisplayProvider
+from kaare_core.ha import action_truth as truth
+from kaare_core.ha.entity_check import entity_status
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +43,10 @@ class HaDisplayProvider(BaseDisplayProvider):
         }
         try:
             async with httpx.AsyncClient(timeout=10) as client:
+                # N26: HA answers 200 for a player it does not have — look it up first.
+                status = await entity_status(client, self._ha_url, headers, entity_id)
+                if status in (truth.NOT_FOUND, truth.UNAVAILABLE):
+                    return {"ok": False, "error": f"HA media_player {entity_id}: {status}"}
                 resp = await client.post(
                     f"{self._ha_url}/api/services/media_player/play_media",
                     headers=headers,

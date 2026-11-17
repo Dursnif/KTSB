@@ -98,6 +98,12 @@ time period, from Home Assistant's long-term statistics (over its WebSocket API)
 other devices without statistics get their actual on/off times instead. Useful for questions
 like *"was the heating on all week?"*
 
+**Honest results:** Home Assistant answers «OK» even for a device it does not have. KTSB does not repeat that as done:
+an unknown or unavailable device gives an honest answer, and a command counts as «sent, not confirmed» until Home
+Assistant shows the new state (the wait is set under Integrations → Home Assistant, Expert). Asking what is in a room
+also lists the household's own KTSB nodes there (for example a TV known only to KTSB), and a screen's or speaker's own
+Home Assistant player when it is set on the node.
+
 **Fastpath:**
 Simple, high-confidence commands bypass the LLM entirely and go directly to the HA-gateway.
 Rules are YAML-based and admin-verified, making responses near-instant for common patterns.
@@ -109,7 +115,7 @@ Rules are YAML-based and admin-verified, making responses near-instant for commo
 
 ## 3. Camera Intelligence
 
-**Where:** Any user message; camera configuration in Settings → Images/Camera
+**Where:** Any user message; camera configuration in Integrations → Frigate
 
 The main agent integrates with Frigate NVR for camera access and computer vision.
 
@@ -128,7 +134,25 @@ fires a matching MQTT event, the main agent analyses the snapshot and speaks the
 Frigate 0.17+ supports face recognition. The main agent surfaces face matches in event queries and
 can filter by known face label.
 
-**Admin controls (Settings → Images/Camera):**
+**Seeing and analysing are separate permissions.** The camera permission lets a role see what is stored — pictures,
+earlier conclusions, who/what/where. Starting a new analysis on the image model (GPU work) is a second permission in
+the Users page's role table. Children and teens can see, but not start an analysis; they get an honest answer and the
+stored picture instead. This is checked in code at every analysis entry.
+
+**A camera picture on a screen:** «show the doorbell on the TV» sends the picture at once without an image-model call;
+with a question the picture is shown first and the analysis follows.
+
+**Camera questions («Was it you?»):** when the system wants to know who or what a camera saw, it asks in chat or by
+voice with a question card. Each card has its own id and survives a restart. The answer is bound in code to that card's
+event, and an episode with several open events gets one card per event. Voice reads a card as camera and time, without
+pictures or raw ids. «Don't know» is an answer of its own: it closes the question and teaches nothing. A person can
+correct their own earlier answer from chat; the old answer stays stored but no longer counts, and the receipt says
+what it was and what it is now. When an answer cannot be saved, the receipt says so and why, never «saved».
+
+**Stuck episodes:** an episode still open or without a conclusion longer than a limit (default 30 min, set in the GUI)
+is marked «stuck» with what the code knows (queued, waiting for the image model, failed) and offers «Analyse again».
+
+**Admin controls (Integrations → Frigate):**
 - Global enable/disable for all camera analysis
 - Per-camera object configuration with confidence sliders and duration thresholds
 - Storage limits for snapshots and analysis logs
@@ -172,8 +196,10 @@ always-available awareness without needing to call a tool:
 - Who is speaking, from which node, and over which network (local / VPN / external)
 - Current household mode (home/away)
 - Recent activity from other users or nodes (drawn from STM)
-- Frigate recent detections — tailed directly from the MQTT event log, deduplicated by
-  camera and label
+- What the cameras saw in the last 30 minutes — from KTSB's own camera store, one line per camera and label, for
+  everyone in the household (not only roles with the camera tool); a person's name only when that person has not
+  switched off «Frigate may track me» (Settings), never for guests or unknown voices. The camera tool itself (stored
+  pictures, episodes, search) and a new image-model analysis are separate role permissions
 - Home Assistant entity states and recently-triggered automations
 - Zigbee2MQTT sensor states, read directly over MQTT — bypasses Home Assistant entirely
 - Current media activity (MPD via subprocess, Plex via a background poller)
@@ -212,10 +238,11 @@ other sources) with four urgency tiers:
 | Critical | Spoken announcement immediately, plus a push notification once a push channel is configured |
 
 In-memory deduplication per user and event type prevents repeated alerts for the same
-ongoing situation; critical alerts are never deduplicated. Quiet hours, the push
+ongoing situation; critical alerts are never deduplicated. A notification sent to the chat also enters the user's
+short-term memory, so the main agent knows what it told them. Quiet hours, the push
 notification target, per-user notification channel, and anomaly-alert thresholds are
 configured in Settings → Notifications; per-camera away-mode timing lives in
-Settings → Images/Camera (see section 3).
+Integrations → Frigate (see section 3).
 
 **Key files:** `kaare_core/tools/household_state.py`, `kaare_core/presence_monitor.py`,
 `kaare_core/context_builder.py`, `kaare_core/normalcy.py`, `kaare_core/notify.py`,
@@ -349,7 +376,7 @@ and Jang are optional).
 | Agent | Role |
 |-------|------|
 | **Main agent** (named Kåre by default) | Primary assistant. Handles all user interaction, orchestrates tools, forms responses. |
-| **Miss Kåre** | Evaluator. Reads the main agent's responses and adds a short human comment when something touches her — warmth, worry, a quiet observation. Never technical. Also synthesises the nightly user portrait. |
+| **Miss Kåre** | Evaluator. Reads the main agent's responses and adds a short human comment when something touches her — warmth, worry, a quiet observation. Never technical. She sees the turn before (the user's message and the main agent's reply), so a short answer to the main agent's question is read against that question. Also synthesises the nightly user portrait. |
 | **Mechanic** | Technical generalist. Code, logs, hardware, system inspection — read-only. Called by the main agent via the `mechanic` tool; runs as a background job and the main agent is notified in chat when it finishes. |
 | **Miss Library** | Knowledge lookup for the main agent — no persona. Searches the local wiki (if installed), the web and optionally Norwegian law, and answers as claims with verbatim quotes and their source. Code checks that each quote really appears in the source text; unsupported material is not shown as evidence. |
 | **Jing** | Fast inner voice. Runs continuously, digesting Home Assistant events and system events into short thought fragments. |
@@ -563,7 +590,8 @@ Set one-shot or recurring timers by voice or text:
 
 Repeat patterns: `hourly`, `daily`, `weekdays`, `weekend`, `weekly`.
 Timers persist across restarts (`state/timers.json`). All active timers are visible in
-Settings → Tools.
+Settings → Tools. A timer is never silent: if its speaker is unknown it tries this machine's speaker, and if nothing can
+play (for example Docker without a sound device) it comes to the chat with a line saying why.
 
 The `ack` action lets the main agent acknowledge pending chat notifications after they are delivered,
 keeping the notification queue clean.
@@ -573,14 +601,56 @@ keeping the notification queue clean.
 ### Media
 
 **Plex:** Search library, browse episodes, check what is currently playing, check playback
-history, cast to any Plex client by name. The main agent uses Home Assistant as the casting bridge.
+history, and play on a TV in one step: the code finds the show/episode or film and the screen, starts Plex over KTSB's
+own Cast (which also wakes a TV from standby) and confirms with the Plex server that it really plays; Home Assistant's
+Plex→Cast path is the fallback.
+
+**YouTube:** «play AC/DC Thunderstruck on the TV» — the code searches YouTube (no API key), plays the top hit on a
+screen (Nest Hub, Chromecast, Google TV; an Android TV's own remote as the second way) and names the other hits so a
+different version can be picked. Speakers without a screen do not run YouTube.
+
+**NRK:** NRK TV and NRK Radio on any Cast screen or speaker — a live channel, or a programme by name: a news
+programme gives its newest available episode, a series takes season + episode (NRK's open programme API, no key).
+
+**Live camera on a screen:** «show the doorbell live on the TV» (without «live» or another word for moving
+pictures, Kåre sends a still picture) — KTSB opens its own screen page on the screen and plays
+the camera with no visible delay (tested 2026-11-16 on a Google TV, a Google TV Streamer, two Chromecasts and a Nest
+Hub; a car passing was seen in the window and on the TV at the same time). The stream comes straight from Frigate's
+go2rtc when the camera has a stream that fits the screen, otherwise KTSB re-encodes it (HEVC or too large; about a
+third to one CPU core per viewer). Kåre only says it is showing when the page itself reports a moving picture. It
+stops by itself after 2 minutes (Settings → Screens; Kåre can set another time) or on «stop», and the screen goes
+back to standby, the app that was on, or the photo frame. The main agent is told what the screen showed before, and
+that only the app comes back, not what it was playing. A screen without Cast (e.g. a Samsung) shows
+the page in its own browser after a one-time setup with a code shown on the TV — built and tested with a test page,
+the KTSB version not yet on a real Samsung. No sound in this round. Screens are on by default; one switch turns it all
+off (Settings → Screens).
+
+**Pause and resume** on Cast screens without Home Assistant (confirmed by the device; Home Assistant as fallback).
+
+**Never over another app:** speech or a picture never replaces an app that is playing on a Cast screen — KTSB gives up
+at once and the main agent is told «X is playing there — not sent»; an overlay may still show a picture where the screen
+has one.
+
+**Recipe cards:** «find a pancake recipe and show it on the TV» — code searches the web, reads the recipe exactly from
+the page's structured data (schema.org) and shows it as a card in the chat and, if asked, big on a screen (tested
+2026-11-16 on a Google TV). Kåre does not rewrite the amounts. Sites without structured recipe data are not used.
+
+**TV remote:** Android/Google TV (Android TV Remote v2) and Samsung (Tizen): power on/off with the TV's real state
+(never the long-press full shutdown), volume, mute, keys and apps — paired once from the node dialog, and used only
+when someone asks. Every action reads the TV's state before and after and is logged with who asked.
+
+**Which screen:** room, TV name, the HA player's name or a near spelling; when a room has two screens Kåre asks which
+one, and a stop goes to the one that is playing. Pictures on a TV close by themselves after their time.
 
 **Radio / MPD:** Play internet radio stations by name or URL, check status (including
 current volume), stop, adjust volume. Station presets configured in
 `configs/radio_stations.yaml`.
 
 **Announce:** Speak any text over any speaker on the network — or display a message on any
-screen node. Used automatically by camera alerts and timers.
+screen node. Used automatically by camera alerts and timers. A speaker can be named by its display name or with a
+hyphen or space; an unknown or switched-off target is said back with the known ones instead of silently playing on this
+machine, and the main agent only says it is playing once playback really started. What was read aloud enters the
+user's short-term memory as one receipt line (first words, where, when, outcome), never the text itself.
 
 **Key files:** `adapters/plex_adapter.py`, `kaare_core/tools/executor_media.py`
 
@@ -698,8 +768,9 @@ agent's `kare_image` tool currently offers generation only.
 Uploaded input images land in `state/images/{user_id}/input/`. Storage is automatically
 rotated when a user exceeds 500 files or 200 MB — oldest files are deleted first.
 
-**Viewing and analysis:** The `view_images` tool lets the main agent browse its own generated images
-and re-analyse them with the vision model on demand.
+**Viewing and analysis:** The `view_images` tool lets the main agent browse the logged-in user's own uploaded and
+generated images and re-analyse them with the vision model on demand. It never lists another user's pictures, and
+camera pictures shown in chat are kept in their own `frigate/` folder, apart from uploads and generated images.
 
 **Key files:** `adapters/image_generation_adapter.py`, `kaare_core/image_store.py`
 
@@ -732,7 +803,12 @@ Caddy), so microphone and playback also work over HTTPS. Speakers on the network
 from the LAN address set in the Piper card.
 A pronunciation-correction lexicon (`configs/tts_lexicon*.yaml`, one file per language) is
 applied before synthesis to fix loanword/brand-name mispronunciations without touching
-code. TTS-ducking pauses MPD playback automatically during spoken responses.
+code. TTS-ducking quietens MPD during spoken responses: a local file is paused, a radio stream is stopped and comes
+back live.
+
+**Replies on network speakers** (Nest, Cast, Home Assistant players) get a short silence before the reply so the first
+word is not lost — longer when the speaker was already playing, set per node (0–3000 ms). Whether something was playing
+is asked of the speaker itself over Cast, Home Assistant as fallback. Tuned on one Nest.
 
 ### Output Targets
 
@@ -741,7 +817,7 @@ Seven output node types are supported:
 | Type | How it works |
 |------|-------------|
 | Wyoming | TCP satellite — mic in, WAV out |
-| Chromecast / Nest Hub | Cast via Home Assistant |
+| Chromecast / Nest Hub | KTSB's own Cast sender in the voice bridge (direct, by IP); Home Assistant as the fallback |
 | AirPlay | Direct AirPlay stream |
 | Snapcast | Multi-room synchronised audio |
 | ESP32 | Direct HTTP API to custom hardware |
@@ -753,10 +829,29 @@ Chromecast, Apple TV, Samsung TV, Android TV, Google TV, Amazon Fire TV, LG TV �
 both audio and display capability. A projector type (display-only) rounds out the total
 to 14 node types across three sections (audio-only, multi, display-only).
 
+**Channels per node.** One node is one physical device; it can be reached several ways at once — TvOverlay (corner
+notice), Cast or DLNA (full-screen picture), Home Assistant (fallback), and the TV's own remote control (Android TV,
+Samsung — paired with «Pair with TV» in the channel list). KTSB finds them by trying the ports when a screen node is saved or on «Search for channels» in the
+node dialog; each can be switched off. A notice tries TvOverlay first, a picture Cast/DLNA first, HA last, and the
+reply says which channel was used. Over its own Cast KTSB can also show a web page full-screen (DashCast) and play
+NRK TV / NRK Radio (live channel or programme). Tested on this project's own devices: a Thomson Google TV, a Nest Hub
+and a Samsung AU9075 (DLNA).
+
 Nodes are configured in Settings → Nodes. Each node has a type, room, and optional
 default user (for voice-triggered identity). Each microphone node is also marked as
 **indoor** or **outdoor**: an unrecognised voice at an indoor node is treated as the
 Household identity, at an outdoor or door node as an Unknown person (see section 12).
+
+**Voice routing per node:** each node has «Audio out» and «Image out» (default Auto = the node itself), so a reply
+can go to other speakers or displays; if the chosen output cannot be reached, the main agent says so on the node's own
+speaker. While a node listens, the speakers its reply will use are quietened (paused or turned down, default 20 %,
+Settings → Nodes → Voice) and restored afterwards — built and tested with simulated speakers. A node can be started by
+a Home Assistant event or entity change (a plain Zigbee button), learned from the node dialog; no node has a trigger by
+default. The server decides when you have stopped talking (adaptive, per microphone), which helps quiet microphones;
+tuned on one local microphone and one ESP32 button.
+
+**KTSB Direct:** a built-in node for this machine's own microphone and speakers — always present, cannot be deleted,
+can be disabled. Without a sound device (e.g. Docker without a sound card) the page says «no microphone found».
 
 Voice enrollment is per-user: record a short sample in Settings → Users, and the main agent will
 identify you by voice on supported hardware.
@@ -783,10 +878,10 @@ Five roles for people, plus two built-in system identities:
 
 | Role | Additional tools vs. previous role |
 |------|-------------------------------------|
-| Child | Device control, timers, weather, local library, image generation, media, notes, announce, free reasoning |
+| Child | Device control, timers, weather, local library, image generation, media, notes, announce, free reasoning, camera (see what is stored) |
 | Teen | + web search, library with online access |
-| Young Adult | + long-term memory access |
-| Adult | + camera access (Frigate snapshots and events), household home/away mode |
+| Young Adult | + long-term memory access, new camera analysis on the image model |
+| Adult | + household home/away mode |
 | Admin | All tools, all settings |
 
 People's roles always also include the main agent's introspective tools: self-image, world
@@ -801,7 +896,8 @@ roles, but they cannot log in or be deleted:
 | **Unknown person** | A stranger — an outdoor/door node, or anything that cannot be identified | Knows nothing about the house and cannot control Home Assistant; weather, library, announce |
 
 The role lists are **enforced**, not just shown to the model: the main agent can only run
-the tools and actions the caller's role has. An unknown or unrecognised caller gets the
+the tools and actions the caller's role has. When a role lacks a tool, the main agent is told so (tool names only)
+and gives that as the reason instead of inventing another. An unknown or unrecognised caller gets the
 least access, never adult or admin. The built-in admin account can only get a new PIN — it
 cannot be edited, given VPN or a voice profile, or deleted.
 
@@ -903,24 +999,37 @@ are still written at once.
 
 ### Settings areas
 
+Settings saved in the GUI are used at once — Home Assistant, Frigate, Plex, notifications and other services need no
+restart or Hot reload, and MQTT reconnects by itself when its address, login, TLS or topic changes. After saving, a page
+says «Saved and in use» or names the service that must be restarted, with a link to Maintenance → Service restart.
+
 A global Basic/Expert switch in the page header (persisted in the browser, not synced to
 server config) hides advanced fields — vLLM Docker parameters, role sharing, normalcy
 thresholds, per-camera filters, and the entire Agents tab (hidden outright in Basic mode,
-not just its contents) — across all 13 areas at once. It only changes what's displayed;
+not just its contents) — across all areas at once (Settings and Integrations). It only changes what's displayed;
 the underlying config values are unaffected either way.
+
+### Integrations page
+
+Home Assistant, MQTT, Frigate and Plex have their own admin page (**Integrations**), one tab each.
+The same Basic/Expert switch sits in its header.
+
+| Tab | What you configure |
+|-----|-------------------|
+| Home Assistant | On/off; HA gateway URL and timeout; long-lived access token; allowed actions as a checkbox list (11 actions: turn on/off, set level, color, temperature, etc.) instead of free text; advanced log bridge settings (log URL, timeout, allowed action filter) |
+| MQTT | MQTT broker: host, port, credentials, TLS, topic prefix, client ID, reconnect interval |
+| Frigate | Frigate URL, timeout, enable/disable; snapshot and analysis log retention; per-camera analysis config (object types, confidence thresholds, announce on detection), detection log with thumbnails; away-mode escalation (nighttime window, minimum confidence, unknown-object-at-night toggle) |
+| Plex | Plex URL, timeout and token; connection status |
 
 | Area | What you configure |
 |------|-------------------|
-| General | Location, timezone (one local time for clocks, reminders, quiet hours and dates everywhere, takes effect at once), GUI language, assistant language; **Logs and data** (Expert): how often buffered logs are written to disk (0–30 s, default 2) and how many days conversations, episodes and thought history are kept, with warnings for both directions; **Network and access** (Expert): local and VPN subnets (decide whether a user counts as at home), trusted reverse proxies (the only ones allowed to state the client's address), API documentation on/off (off by default) |
-| Home Assistant | HA gateway URL and timeout; long-lived access token; allowed actions as a checkbox list (11 actions: turn on/off, set level, color, temperature, etc.) instead of free text; advanced log bridge settings (log URL, timeout, allowed action filter) |
-| MQTT / VPN | MQTT broker: host, port, credentials, TLS, topic prefix, client ID, reconnect interval; WireGuard VPN: DuckDNS hostname, WireGuard port |
+| General | Location, timezone (one local time for clocks, reminders, quiet hours and dates everywhere, takes effect at once), GUI language, assistant language; **Logs and data** (Expert): how often buffered logs are written to disk (0–30 s, default 2) and how many days conversations, episodes and thought history are kept, with warnings for both directions; **Network and access** (Expert): local and VPN subnets (decide whether a user counts as at home), trusted reverse proxies (the only ones allowed to state the client's address), API documentation on/off (off by default); **VPN**: DuckDNS hostname, WireGuard port |
 | LLM / Models | **Infrastructure:** Docker socket control, running container table. **Per agent role** (main agent, Miss Kåre, Mechanic, Miss Library, fallback, cloud, image, reason_freely): provider (Ollama / vLLM / OpenVINO / cloud), base URL, model selection with installed-model dropdown (pull / delete), thinking mode, keep-warm toggle, model sharing (share_with), GPU assignment, vLLM Docker parameters (gpu_memory_utilization, kv_cache_dtype, max_model_len), Docker restart (keeps the container's entrypoint and port binding, shows «loading model…» until the model answers, and rolls back to the previous container if the new one fails). A yellow mark on a role whose model is not downloaded in Ollama; an amber note on the main agent's card when its model is below the 27B class (basic mode). The pool roles (fallback, Miss Kåre, Miss Library, Mechanic) share one options block — saving any of their cards writes it. **Whisper (speech-to-text):** enable/disable, small / medium / large per household language with «Download» and «Use this», a custom model field, CPU threads (Auto). **Piper (text-to-speech):** one voice model per language, download and activate presets per language; LAN address for speakers. **BGE-M3 embedding:** device (NPU/CPU), model selection, model path. **Semantic memory:** enable/disable, small / medium / large with «Download» and «Use this». **Model storage** (Expert): where downloaded models live |
 | Reflection | **Night sequence** start time; reflection meeting on/off and interval of the background reflection loop; Meeting Leader preset; token limits per participant (no fixed upper limit — a hint shows the recommended range); maximum rounds. **Dev slot:** on/off, topics per meeting; time budget, maximum traces, tool rounds per topic (Expert) |
 | Web & Weather | Weather provider + feature toggles (feels-like, UV, sun times, alerts, air quality, tides, camera weather); 9 HA sensor entity fields; web search provider + fallback (SearXNG / Brave), Brave API key and locale; trusted sources (categories, domains with type and trust level), open web on/off, blocklist; caution level for probability words; work-round deadline; Norwegian law (Lovdata) on/off with «Update now» |
-| Images/Camera | Frigate URL, snapshot and analysis log retention; per-camera analysis config (object types, confidence thresholds, announce on detection), detection log with thumbnails; away-mode escalation (nighttime window, minimum confidence, unknown-object-at-night toggle) |
+| Images | Image generation: per-user limits (number of images, total MB) and per-user usage |
 | Notifications | Master enable toggle; push notification target (Home Assistant `notify` entity); anomaly-alert thresholds (minimum deviation score, minimum baseline confidence); per-camera filter; link to the Security event feed |
-| Assistant Settings | Personality mode (6 levels: minimal / lightweight / standard / full / complete / custom with editable text); assistant name; hotword; self-image contributor control (all users / selected users / admin only); self-learned automation approval control — who can confirm or reject automation suggestions the main agent proposes from observed household habits; **Kåre's memory**: who may mark topics settled (admin by default), «Relevant now» on/off and its status, number of notes and thresholds, length limits for lessons (Expert) |
-| Integrations | Frigate URL, timeout, enable/disable; Plex URL and token |
+| Assistant Settings | Personality mode (6 levels: minimal / lightweight / standard / full / complete / custom with editable text; new installs start at «Complete», existing installs keep theirs); assistant name; hotword; self-image contributor control (all users / selected users / admin only); self-learned automation approval control — who can confirm or reject automation suggestions the main agent proposes from observed household habits; **Kåre's memory**: who may mark topics settled (admin by default), «Relevant now» on/off and its status, number of notes and thresholds, length limits for lessons (Expert) |
 | Distribution | Three preset profiles (full / medium / lightweight) with one-click apply; per-domain enable/disable toggles (Home Assistant, Frigate, weather, time etc.); per-service enable/disable toggles (embedding, agents, voice, Jing, Jang) with availability badges |
 | Agent Settings | Per-agent tool toggles (Mechanic: code exploration, system inspection, web search, Argus search, shell — off by default and read-only, memory; Miss Kåre: consult Miss Library; Miss Library: wiki); Mechanic personality preset (investigator / critic / analyst / custom). Miss Kåre has one fixed personality |
 | Explanations | Plain-language guide to every setting (read-only) |
@@ -1091,6 +1200,14 @@ case the model gets a round without tools in which it may say plainly what was a
 done, and its new answer replaces the claim. Rejected, stopped and failed tool calls do not
 count as done; questions and offers («shall I …») do not trigger the check. The check also
 runs after the last tool round. `logs/enforcement.log` records every hit with the matched phrase.
+
+A tool call the model writes out as text instead of making it — as `<tool_call>` markup, as a bracketed line
+(«[Note tool call: action=read …]»), or as bare JSON when the whole reply is that JSON and every «action» belongs to an
+offered tool — is corrected by default: the model gets one retry, and if it writes the call out again the user sees an
+honest «no answer» instead of the code. JSON the user asked for and JSON in prose are left alone. A further rule,
+`ungrounded_object` (shadow mode by default — logged, not acted on), checks before a write that Home Assistant entity ids,
+nodes and file paths exist in the house's own registers or were shown in the request. Each rule's mode is set under
+Settings → Agents → Model guard.
 Miss Library
 has the same checks plus invented quotes and claims without support. When a Qwen3.5 model in
 Ollama writes a broken tool call, the round is rebuilt from the raw output instead of failing
@@ -1124,7 +1241,7 @@ Set `COMPOSE_PROFILES` in your `.env` to control which services start. Profiles 
 | *(none)* | Core: API, GUI, agents, HA-gateway, Argus, semantic-embed, Qdrant, SearXNG, Caddy, the night runner (`kaare-reflection`) and the updater (`kaare-updater`) | Needs an LLM server elsewhere — your own Ollama or vLLM in the network (a cloud model alone cannot run tools) |
 | `ollama` | Built-in Ollama LLM server | The default; leave it out when you use your own LLM server |
 | `medium` | BGE-M3 embedding service (internal only) | Argus semantic search, local wiki search and «Relevant now»; switch it on in Settings → LLM / Models → BGE-M3 (off in the template) |
-| `full` | Voice bridge — Whisper STT + Piper TTS (port 8011) | Enables voice input/output |
+| `full` | Speech models loaded at start — Whisper STT + Piper TTS (the voice bridge on port 8011 runs in every profile) | Enables voice input/output |
 | `vpn` | WireGuard via wg-easy | Enables remote access |
 | `inner_voices` | Jing and Jang (own image, `kaare-inner-voices`) | Optional background inner voices |
 
@@ -1169,10 +1286,11 @@ _The default 9B model needs about 6.6 GB on its own. With a GPU, the LLM stays i
 - **Trusted proxies**: `X-Forwarded-For` is only believed from proxies listed in Settings → General → Network and access (default: the bundled Caddy and the same host), so a client cannot fake its address to get past the login limit
 - Network context (local / VPN / external) fails closed: when in doubt, a client is not treated as local
 - API documentation (`/docs`, `/redoc`, `/openapi.json`) is off by default; switch in the same card
-- CORS: `cors_origins` in `settings.yaml`, default `*`. Sessions are Bearer tokens in the browser's session storage, not cookies, and credentials are not allowed across origins, so a foreign site cannot use a session by itself. Restrict the list for stricter setups
-- In Docker, only the GUI (5173), API (8000), Caddy (80/443) and — with the profiles — voice (8011) and VPN are published; Ollama, HA gateway, embedding, semantic-embed and SearXNG stay inside Docker, and Qdrant is published on the host's loopback only. The "Restart vLLM" button keeps the port's IP binding
+- Settings, model configuration, service addresses, token stubs, hardware and service states are readable by admins only, and only admins can run the connection test (so nobody else can make the server fetch an address of their choice); a test fails on any new settings read open to non-admins
+- CORS on the API: `cors_origins` in `settings.yaml`, default `same-host` (only pages served from the machine name or address the browser used for the API — KTSB's own GUI); add exact origins for your own pages and restart the API. The voice bridge (8011) still allows any origin. Sessions are Bearer tokens in the browser's session storage, not cookies, and credentials are not allowed across origins
+- In Docker, only the GUI (5173), API (8000), Caddy (80/443), voice (8011, every profile — TVs and Cast fetch media from it) and, with its profile, VPN are published; Ollama, HA gateway, embedding, semantic-embed and SearXNG stay inside Docker, and Qdrant is published on the host's loopback only. The "Restart vLLM" button keeps the port's IP binding
 - Qdrant is reachable only from the Docker network and the host's loopback; an API key can be set in `configs/qdrant.env` (a fresh install has none)
-- Image and camera snapshot endpoints accept the JWT either as a bearer header or a `?token=` query parameter (browser `<img>` tags cannot send headers)
+- Image and camera snapshot endpoints accept the JWT either as a bearer header or a `?token=` query parameter (browser `<img>` tags cannot send headers); `/api/image/<id>` serves a picture only to its owner or an admin
 - **Docker socket**: `kaare-api` mounts `/var/run/docker.sock` so the GUI's restart buttons work. Anyone who could run code inside the API container could control Docker on the host — leave the mount out if you don't need the buttons
 
 ### Encryption infrastructure (Phase 1)
@@ -1222,7 +1340,7 @@ you enter yourself; they are not listed.)
 | Your location (latitude and longitude); a place name you ask about | The weather service (met.no by default); OpenStreetMap's place search for named places | **Default on**, when someone asks about the weather | Remove `get_weather` from roles on the Users page |
 | Your IP address and browser details (a font request) | Google Fonts | **Default on**, whenever someone opens the web interface | — not switchable yet; the next release ships the fonts with KTSB |
 | A request for the list of releases | GitHub | **Default on**, when an admin opens the Maintenance page on an updatable Docker install (at most every 6 hours) | — (the request carries no user data) |
-| Downloads of the speech-to-text model and a Piper voice | Hugging Face | **Default on** with the `full` profile, on the first start of the voice service | Leave `full` out of `COMPOSE_PROFILES` |
+| Downloads of the speech-to-text model and a Piper voice | Hugging Face | **Default on** with the `full` profile, on the first start of the voice service; without `full` only when speech is first used | Leave `full` out of `COMPOSE_PROFILES` and do not use speech |
 | Your location | Kartverket or Stormglass (tides) | Only when tides are switched on | Settings → Web Search & Weather |
 | The image description | The image provider (Hugging Face by default) | Only when an API key is set | Remove the key, or switch image generation off in Settings → LLM / Models |
 | The question you asked (and the cloud role's own system text — no memory or history) | The cloud provider you configured | Only when you explicitly ask it to «ask online» | Leave the cloud role without a key |
@@ -1250,6 +1368,10 @@ Configurable in Settings → General → Logs and data (Expert). The nightly Ste
 | Voice output (TTS) | ✅ | full | `services/voice/` |
 | Image input (analysis) | ✅ | Core | `adapters/llm_adapter.py` |
 | Image generation | ✅ | Core | `adapters/image_generation_adapter.py` |
+| Pictures / text cards on TVs without HA (Cast, DLNA) | ✅ | Core | `adapters/display/`, `kaare_core/voice/cast_sender.py` |
+| Web page full-screen on a Cast TV (DashCast) | ✅ | Core | `kaare_core/voice/cast_sender.py` |
+| NRK TV / NRK Radio on Cast devices | ✅ | Core | `kaare_core/tools/executor_media.py` |
+| TV remote control: Android TV (Remote v2) + Samsung — power with true state, volume, mute, keys, apps | ✅ | Core | `kaare_core/voice/tv_control.py` |
 | Image editing (inpainting) | 📋 adapter only, not offered to the main agent | Core | `adapters/image_generation_adapter.py` |
 | HA device control | ✅ | Core | `kaare_ha_gateway.py` |
 | HA state reading | ✅ | Core | `kaare_core/ha/` |

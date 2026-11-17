@@ -5,35 +5,27 @@ Outputs 3 categorized sections: MENNESKER, ANDRE, ARGUS.
 Only data from the last INTERVAL+10 seconds is included (time filter).
 """
 
+import json
 import re
 import sys
 import time
+import urllib.parse
+import urllib.request
 
 from common import (
     DIGEST,
-    FACE_EVENTS,
     JING_THOUGHTS,
     get_pipe_lang,
     load_behavior_config,
     load_service_config,
+    push_token,
     strip_think,
     t,
 )
 from provider import load_provider
 from push_client import push_thought
 
-_FACE_TS_RE = re.compile(r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]")
 _DIGEST_TS_RE = re.compile(r"^(\d{2}-\d{2} \d{2}:\d{2})")
-
-
-def _parse_face_ts(line: str) -> float | None:
-    m = _FACE_TS_RE.match(line)
-    if not m:
-        return None
-    try:
-        return time.mktime(time.strptime(m.group(1), "%Y-%m-%d %H:%M"))
-    except ValueError:
-        return None
 
 
 def _parse_digest_ts(line: str) -> float | None:
@@ -51,18 +43,34 @@ def _parse_digest_ts(line: str) -> float | None:
         return None
 
 
-def _read_face_events_recent(cutoff: float, lang: str) -> str:
-    if not FACE_EVENTS.exists():
-        return t("inner_none", lang)
-    lines = []
-    for line in FACE_EVENTS.read_text(errors="replace").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        ts = _parse_face_ts(line)
-        if ts is not None and ts >= cutoff:
-            lines.append(line)
-    return "\n".join(lines) if lines else t("inner_none", lang)
+def _context_url(service_cfg: dict) -> str:
+    """GET /api/inner-voices/context next to the push endpoint (or `context_url` when set)."""
+    url = (service_cfg.get("context_url") or "").strip()
+    if url:
+        return url
+    push = (service_cfg.get("push_url") or "").strip()
+    return push[: -len("/push")] + "/context" if push.endswith("/push") else ""
+
+
+def _people_from_api(cutoff: float, lang: str, service_cfg: dict) -> str | None:
+    """People from KTSB's camera memory: pseudonym ids, kind, camera and place — never names. None when the API cannot
+    be asked or has no camera memory (then the nameless file fallback is used)."""
+    url = _context_url(service_cfg)
+    token = push_token(service_cfg)
+    if not url or not token:
+        return None
+    query = urllib.parse.urlencode({"source": "jing", "since": f"{cutoff:.0f}", "lang": lang})
+    req = urllib.request.Request(f"{url}?{query}", headers={"Authorization": f"Bearer {token}"}, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        print(f"[Jing] camera context unavailable: {type(e).__name__}", file=sys.stderr, flush=True)
+        return None
+    if not isinstance(data, dict) or not data.get("available"):
+        return None
+    people = [str(x) for x in data.get("people") or [] if str(x).strip()]
+    return "\n".join(people) if people else t("inner_none", lang)
 
 
 def _read_digest_category(cutoff: float, category: str, lang: str) -> str:
@@ -96,9 +104,11 @@ def _read_digest_category(cutoff: float, category: str, lang: str) -> str:
     return "\n".join(lines) if lines else t("inner_none", lang)
 
 
-def build_context(interval: int, lang: str) -> str:
+def build_context(interval: int, lang: str, service_cfg: dict | None = None) -> str:
     cutoff = time.time() - interval - 10
-    mennesker = _read_face_events_recent(cutoff, lang)
+    mennesker = _people_from_api(cutoff, lang, service_cfg or {})
+    if mennesker is None:  # P144 phase 6: no file fallback any more (Argus' face_events.txt is gone)
+        mennesker = t("inner_none", lang)
     andre = _read_digest_category(cutoff, "andre", lang)
     argus = _read_digest_category(cutoff, "argus", lang)
     return (
@@ -113,7 +123,7 @@ def run_once(provider, behavior_cfg: dict, service_cfg: dict) -> None:
     max_tokens = int(behavior_cfg.get("max_tokens", 300))
     lang = get_pipe_lang()
 
-    context = build_context(interval, lang)
+    context = build_context(interval, lang, service_cfg)
     prompt = (
         f"<|im_start|>system\n{t('jing_system', lang)}<|im_end|>\n"
         f"<|im_start|>user\n{context}<|im_end|>\n"
@@ -126,10 +136,10 @@ def run_once(provider, behavior_cfg: dict, service_cfg: dict) -> None:
         return
 
     push_url = (service_cfg.get("push_url") or "").strip()
-    push_token = (service_cfg.get("push_token") or "").strip()
+    token = push_token(service_cfg)
 
     if push_url:
-        push_thought(push_url, push_token, "jing", thoughts)
+        push_thought(push_url, token, "jing", thoughts)
     else:
         JING_THOUGHTS.parent.mkdir(parents=True, exist_ok=True)
         timestamp = time.strftime("%H:%M")

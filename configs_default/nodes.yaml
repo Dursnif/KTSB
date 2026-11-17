@@ -7,13 +7,39 @@
 #   ha_media_player  — any media player entity in Home Assistant
 #   chromecast       — Chromecast device (direct connection)
 #   snapcast         — Snapcast client
+#   direct           — KTSB Direct: the machine KTSB runs on (its mic + speakers). Exactly one, id `direct`; it is
+#                      added automatically when missing and cannot be deleted (turn it off with enabled: false).
+#                      The mic is chosen in the GUI (stored in voice_settings.yaml audio.mic_device).
 #
 # trust (nodes with a microphone): who an unidentified speaker is at this node —
 #   indoor  → global_user  (most likely a household member; default)
 #   outdoor → unknown_user (untrusted stranger, e.g. a doorbell or outdoor satellite)
+#
+# Where a node's answers go (optional; leave out = auto, the behaviour before these settings existed):
+#   audio_out: [node ids] — speak the reply there instead ("local" = this machine's speakers); auto = the node
+#              itself if it has a speaker, else the best speaker in the same place
+#   image_out: [node ids] — screens tools use when Kåre names no target; auto = displays in the same place
+# Silence before a spoken reply (optional, N30; ha_media_player and chromecast only, milliseconds 0–3000):
+#   lead_in_ms: 400           — network speakers like Nest cut the first part of a reply; 0 turns it off
+#   lead_in_playing_ms: 1200  — used when the speaker was already playing (the reply replaces that stream)
+# Starting a node from Home Assistant (optional, set in the GUI with «Learn»; none by default):
+#   trigger: {kind: ha_event, event_type: zha_event, match: {device_ieee: "...", command: toggle}}
+#   trigger: {kind: entity, entity_id: event.hall_button, to: single}
+#   webhook_token: made by the GUI (Nodes → node → Webhook) for POST /trigger/<node> from an HA automation
 # -------------------------------------------------------
 
 nodes:
+  direct:
+    description: ""
+    type: direct
+    room: ""
+    enabled: true
+    mic_enabled: true
+    has_audio: true
+    has_display: false
+    default_user: ""
+    trust: indoor
+
   living_room_speaker:
     description: Speaker in the living room
     type: ha_media_player

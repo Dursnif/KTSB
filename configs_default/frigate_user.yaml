@@ -1,0 +1,61 @@
+# The Frigate user (P144) — KTSB's eyes. Set in Integrations → Frigate → «Frigate user (shadow mode)».
+# Shadow mode: checks Frigate's face claims against the image and stores what it sees in state/frigate/frigate.db
+# (encrypted at rest). Sends no alerts and changes nothing Kåre says. On by default; it does nothing until Frigate is
+# connected. The heavy modules (m4–m6 below) ship off — they use the chat model and can slow answers on a small machine.
+enabled: true
+episode_gap_s: 120          # an event within this many seconds of the situation's last activity belongs to it
+episode_min_movement: 0.08  # a vehicle/still object keeps a situation open only if it moves this share of the frame
+visit_gap_s: 1800           # the same person's events closer than this are one visit
+visit_fold_interval_s: 300  # how often events are folded into visits
+l0_min_face_px: 10000       # faces smaller than this (px) are «unverified» without asking a model
+l0_min_claim_score: 0.0     # Frigate's face score below this is «unverified» (0 = Frigate's own threshold)
+episode_frames_max_mb: 500   # frames the image model saw, per episode (MB); over it old episodes keep 1 frame; 0 = none
+episode_frames_keep_mb: 500  # that 1 kept frame per episode (MB); over it the oldest go
+conclude:                   # the episode conclusion (KTSB's main model once per situation)
+  idle_gate_s: 30           # wait until nobody has talked to Kåre for this long
+  urgent_classes: [not_welcome]
+  urgent_when_away_person: true
+  urgent_labels: [fire, smoke]
+  max_attempts: 3
+  poll_s: 30
+  analyse_per_10min: 2      # «Analyser» button in the episode view: starts per 10 minutes for the whole install
+  stuck_after_min: 30       # an episode still open / without a conclusion this long after its last activity «henger»
+# Size limit of frigate.db in MB (P150): nothing is deleted for being old. Over the limit the oldest detail goes
+# first (slimmed in an episode, deleted outside one), then the oldest hourly counts; daily counts, episodes and
+# visits are kept.
+# 0 = off. GUI: Integrations → Frigate → Storage limits (Expert).
+frigate_db_max_mb: 500
+retention_dry_run: true     # night job writes rollups, deletes nothing, logs what it would (until P144 is done)
+keep_unknown_plates: 7_days  # 7_days | always — a stranger's plate camera may face the road
+episode_weather: true        # weather at the episode as code context (source: Settings → Weather)
+expressions: true            # the image model also says expression and gesture per person; each person can turn it off
+# Extra face recognition (P144-s19): a second, independent face sensor — its vote joins the claim check, never a fact.
+# Integrations → Frigate → «Extra face recognition». Off by default; needs the Frigate user on.
+face_votes:
+  enabled: false
+  provider: double_take        # Double Take over the household's MQTT broker (KTSB only subscribes)
+  topic_prefix: double-take    # Double Take's mqtt.topics prefix
+  rest_url: ''                 # optional: status/test button + per-detector votes (GET only, e.g. http://<host>:3000)
+  min_confidence: 0            # 0 = Double Take's own match flag; else the lowest confidence (%) that counts
+# How much each face sensor counts (P144-s29b) — Integrations → Frigate → «Ansiktssensorer». mode: auto (KTSB learns)
+# or admin, with trust: very_likely / likely / uncertain / unlikely / off. Detectors by the provider's own name.
+face_sensors:
+  auto_learning: true          # Auto uses what «Var det deg?» answers taught (~5); false = Auto stays «usikkert»
+  frigate: {mode: auto, trust: uncertain, label: '', auto_learning: true}
+  detectors: {}                # {<detector name>: {mode, trust, label, auto_learning}}
+# One question from the user's own list now and then in chat, never voice (J11) — «Spør i chatten»
+questions:
+  chat: true
+  # J20 «Hold tilbake bekreftet feil»: false = confirmed-wrong rules (#28) only in shadow (written on the event)
+  wrong_rules: false
+# Phase 5 modules (J21 5b): auto = follows what is set up here (m1 the old still-image path, m2 Double Take, m3–m6 the
+# Frigate user above); on / off overrides. Modules 0 (base) and 7 (alerts) are always on. GUI: the «Moduler» panel (5e).
+# DT04 R0.6b (lightest tier, rule 24): m4 frame by frame, m5 conclusion, m6 27B on doubt ship «off» — switch them on
+# in the GUI when the camera model has room (a separate model, or a machine with a GPU).
+modules:
+  m1: auto
+  m2: auto
+  m3: auto
+  m4: "off"
+  m5: "off"
+  m6: "off"

@@ -73,22 +73,22 @@ export default function AgentMessages() {
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
         <div>
-          <div style={{ color: "#fff", fontSize: 22, fontWeight: 700 }}>{t("agentMessages.title")}</div>
-          <div style={{ color: "#555", fontSize: 13, marginTop: 4 }}>{t("agentMessages.subtitle")}</div>
+          <div style={{ color: "#fff", fontSize: 22, fontWeight: 700 }}>{t("settings.agentMessages.title")}</div>
+          <div style={{ color: "#555", fontSize: 13, marginTop: 4 }}>{t("settings.agentMessages.subtitle")}</div>
         </div>
         <button onClick={load} style={{
           padding: "8px 16px", borderRadius: 8, border: "1px solid #333",
           background: "transparent", color: "#888", fontSize: 13, cursor: "pointer",
         }}>
-          {t("agentMessages.refresh")}
+          {t("settings.agentMessages.refresh")}
         </button>
       </div>
 
-      {loading && <div style={{ color: "#555" }}>{t("agentMessages.loading")}</div>}
+      {loading && <div style={{ color: "#555" }}>{t("settings.agentMessages.loading")}</div>}
 
       {!loading && messages.length === 0 && (
         <div style={{ color: "#555", fontSize: 14 }}>
-          {t("agentMessages.empty")}
+          {t("settings.agentMessages.empty")}
         </div>
       )}
 

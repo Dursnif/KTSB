@@ -5,7 +5,7 @@ Installs upgrading from v1.9.0 still have world.md / world_vars.json / personali
 notater.json, but since P105 Phase 3 Kåre only reads knowledge.db. Without this import an
 upgraded install looks like Kåre forgot his world model, self-image and notes.
 
-Mechanical, no LLM (Stian 2026-10-01): a domain is imported only when it has no rows at all
+Mechanical, no LLM (2026-10-01): a domain is imported only when it has no rows at all
 (active or retired), the legacy files are never modified, and a marker file stops it from
 running twice. Duplicates in world.md are left for the weekly knowledge_reflection job, which
 already re-validates and retires rows.

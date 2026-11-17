@@ -16,6 +16,8 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from kaare_core.storage import sqlite_files
+
 sys.path.insert(0, "/kaare")
 
 from adapters.llm_adapter import call_llm_chat
@@ -35,7 +37,6 @@ _PORTRAIT_CAP = 3000  # chars — same tail-truncation approach llm_adapter.py's
 # moved that block to a ranked knowledge_store query;
 # this per-user encrypted portrait file is out of P105's
 # migration scope, unchanged
-_OBS_MAX_DAYS = 90  # same as OBS_MAX_DAYS in profile_manager.py
 
 log = logging.getLogger("miss_kare_nightjob")
 
@@ -51,7 +52,7 @@ def _portrait_path(user_id: str) -> Path:
 
 
 def _get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(_DB_PATH))
+    conn = sqlite_files.connect(str(_DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -144,25 +145,6 @@ def _append_observations(user_id: str, text: str, allow_system_key: bool = False
     write_user_text_file(path, combined, user_id, allow_system_key=allow_system_key)
 
 
-def _trim_portrait(user_id: str, allow_system_key: bool = False) -> None:
-    """Remove entries older than _OBS_MAX_DAYS. Identical logic to _trim_observations()."""
-    path = _portrait_path(user_id)
-    content = read_user_text_file(path, user_id, allow_system_key=allow_system_key)
-    if not content:
-        return
-    cutoff = (now_local() - timedelta(days=_OBS_MAX_DAYS)).strftime("%Y-%m-%d")
-    lines = content.splitlines()
-    kept = []
-    for line in lines:
-        m = re.match(r"^- \[(\d{4}-\d{2}-\d{2})\]", line)
-        if m:
-            if m.group(1) >= cutoff:
-                kept.append(line)
-        elif line.strip():
-            kept.append(line)
-    write_user_text_file(path, "\n".join(kept) + "\n", user_id, allow_system_key=allow_system_key)
-
-
 def _cap_portrait(user_id: str, allow_system_key: bool = False) -> None:
     """Keep only the most recent entries (tail-truncate at _PORTRAIT_CAP chars)."""
     path = _portrait_path(user_id)
@@ -224,7 +206,6 @@ async def _process_user(user_id: str) -> None:
         return
 
     _append_observations(user_id, observations, allow_system_key=True)
-    _trim_portrait(user_id, allow_system_key=True)
     _cap_portrait(user_id, allow_system_key=True)
     log.info("Portrait updated for %s.", user_id)
 

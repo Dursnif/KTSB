@@ -29,6 +29,7 @@ from kaare_core import config_migrations, config_store
 from kaare_core.config import get_qdrant_api_key, get_service
 from kaare_core.memory.memory_embed_models import MODELS as MEMORY_MODELS
 from kaare_core.memory.memory_embed_models import active_model
+from kaare_core.storage import sqlite_files
 from kaare_core.users.auth import require_admin as _require_admin
 from kaare_core.users.store import get_user_with_hash, verify_pin
 from kaare_core.version import get_version
@@ -90,15 +91,34 @@ _STATE_PATHS: dict[str, list[str]] = {
         "lister/",
         "meeting_comments/",
     ],
-    "images": ["generated_images/", "images/"],
+    # Kept Frigate episode frames are memory (P144-s11); the rest of frigate_snapshots/ is cache.
+    "images": ["generated_images/", "images/", "frigate_snapshots/episodes/"],
     "kaare_memory": ["semantic_memory_fallback.jsonl"],  # file backend when Qdrant is absent
     "secrets": ["vpn_clients/"],  # WireGuard client keys
 }
+# SQLite memory DBs in "ltm_database": state/ path -> archive name. Saved and restored through the SQLite
+# backup API only — never a raw copy of a live WAL DB. The first three keep their old flat archive names so
+# older save points still restore.
+_MEMORY_DBS: dict[str, str] = {
+    "memory/interactions.db": "data/interactions.db",
+    "memory/digests.db": "data/digests.db",
+    "memory/knowledge.db": "data/knowledge.db",
+    "memory/learning.db": "data/learning.db",  # Kåre's drawers + dev-slot verdicts (P118/P133)
+    "frigate/frigate.db": "data/frigate/frigate.db",  # the Frigate user's memory (P144)
+    "media/watch.db": "data/media/watch.db",  # what was watched, overrides, per-screen position (P140)
+}
 # users.db travels in "user_keys"; system_master.key never leaves the machine (P87 Decision 1).
-# Deliberately not backed up: hardware.json (machine-specific), frigate_snapshots/ (cache,
-# re-fetchable from Frigate), argus/ (rolling digest), pending_*/ and the Jing/Jang buffer
-# files (transient), metrics/, models/ (downloadable), qdrant/ (covered by snapshots),
-# backups/ (save points themselves).
+# Deliberately not backed up (audit P144-s13):
+# - regenerable: memory/relevance.db (P133 vectors, rebuilt from the memory DBs),
+#   memory/knowledge_import_done.json (the import only fills empty domains), ha_registry.json (fetched from HA),
+#   plex_cache.json, law/ (lovdata dataset, downloaded again), models/ (downloadable), qdrant/ (the
+#   collections that matter travel as snapshots in kaare_memory/argus_events);
+# - cache: frigate_snapshots/ except episodes/ (detection snapshots, re-fetchable from Frigate);
+# - machine-specific: hardware.json, system_master.key, tv_pairing/ (pairing keys per TV — pair again from
+#   the GUI);
+# - transient: argus/ + vaktmester/ (rolling digest, old name), pending_*/, jing_*/jang_* buffer files,
+#   night_sequence_*.json/.lock, stm_snapshot.json.migrated, metrics/, *-wal/*-shm (inside the DB copies);
+# - backups/ (the save points themselves).
 _STATE_EXCLUDE = {"users/users.db", "system_master.key"}
 
 
@@ -132,13 +152,41 @@ def _qdrant_headers() -> dict:
 def _sqlite_backup_bytes(source_path: Path) -> bytes | None:
     if not source_path.exists():
         return None
-    src = sqlite3.connect(str(source_path))
+    src = sqlite_files.connect(str(source_path))
     mem = sqlite3.connect(":memory:")
     src.backup(mem)
     data = mem.serialize()
     src.close()
     mem.close()
     return bytes(data)
+
+
+def _as_rollback_image(data: bytes) -> bytes:
+    """A WAL DB's header says WAL (bytes 18/19 = 2), which an in-memory DB cannot open; 1 = rollback journal.
+    Only the reading side changes — the destination keeps its own journal mode."""
+    img = bytearray(data)
+    if len(img) >= 20 and img[18] == 2 and img[19] == 2:
+        img[18] = img[19] = 1
+    return bytes(img)
+
+
+def _sqlite_restore_bytes(data: bytes, dest: Path) -> None:
+    """Write a saved DB into dest through the SQLite backup API. A plain file replace left the running
+    service's -wal beside the new file, and SQLite read those old frames over the restored data. Going through
+    SQLite keeps dest's owner, mode and journal mode, and open connections see the restored content."""
+    mem = sqlite3.connect(":memory:")
+    try:
+        mem.deserialize(_as_rollback_image(data))
+        if mem.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+            raise ValueError("saved database failed quick_check")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dst = sqlite_files.connect(str(dest), timeout=30)
+        try:
+            mem.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        mem.close()
 
 
 def _add_dir_to_zip(zf: zipfile.ZipFile, src_dir: Path, arc_prefix: str) -> None:
@@ -317,14 +365,10 @@ async def _build_backup_zip(cats: set) -> bytes:
 
         if "ltm_database" in cats:
             mem_dir = _STATE_DIR / "memory"
-            # knowledge.db (P105 Fase 3) added here rather than a new category —
-            # same state/memory/ directory, same WAL+sqlite pattern as
-            # interactions.db/digests.db, and avoids a frontend/i18n-only diff
-            # for a fourth near-identical db file.
-            for db_name in ("interactions.db", "digests.db", "knowledge.db"):
-                data = await asyncio.to_thread(_sqlite_backup_bytes, mem_dir / db_name)
+            for rel, arc in _MEMORY_DBS.items():
+                data = await asyncio.to_thread(_sqlite_backup_bytes, _STATE_DIR / rel)
                 if data:
-                    zf.writestr(f"data/{db_name}", data)
+                    zf.writestr(arc, data)
             _add_dir_to_zip(zf, mem_dir / "dev_meetings", "data/memory/dev_meetings")
             _add_dir_to_zip(zf, mem_dir / "reflections", "data/memory/reflections")
             for fname in ("dev_meeting_latest.md", "reflection_latest.md"):
@@ -431,15 +475,14 @@ async def _restore_from_zip(content: bytes, cats: set, username: str) -> dict:
             mem_dir = _STATE_DIR / "memory"
             mem_dir.mkdir(parents=True, exist_ok=True)
             db_ok = 0
-            for db_name in ("interactions.db", "digests.db", "knowledge.db"):
-                arc = f"data/{db_name}"
+            for rel, arc in _MEMORY_DBS.items():
                 if arc in names:
                     try:
-                        _write_atomic(zf.read(arc), mem_dir / db_name)
+                        await asyncio.to_thread(_sqlite_restore_bytes, zf.read(arc), _STATE_DIR / rel)
                         db_ok += 1
                         restart_needed = True
                     except Exception as e:
-                        errors.append(f"{db_name}: {e}")
+                        errors.append(f"{rel}: {e}")
             for n in names:
                 if n.startswith("data/memory/"):
                     rel = n[len("data/memory/") :]

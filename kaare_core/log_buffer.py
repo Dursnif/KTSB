@@ -3,7 +3,7 @@ RAM-buffered append-only log writer (P131 — CLAUDE.md rule 10, no unnecessary 
 
 write()/write_line() put a line in memory and return at once — no disk access, no await, safe from
 sync and async code and from any thread. A background thread writes everything pending with one
-write() per file every get_log_flush_seconds() (GUI: Settings → General → Logs and data, default
+write() per file every get_log_flush_seconds() (GUI: Settings → Logs/Storage → Logs and data, default
 2 s), earlier when a file's buffer passes _MAX_PENDING_LINES, and at process exit. Interval 0 writes
 every line at once (the old behaviour, for live debugging).
 

@@ -11,7 +11,7 @@ import { apiGetLanguage, apiPutLanguage, apiGetNetwork, apiPutNetwork } from "@/
 import { BASE, token } from "./constants";
 import { FieldRow, SaveFeedback, ExpertOnly } from "./shared";
 import { useSaveState } from "./useSaveState";
-import LogsAndDataCard from "./LogsAndDataCard";
+import VpnCard from "./VpnCard";
 
 type Location = { city: string; postal_code: string; country: string; lat: number; lon: number; timezone: string };
 
@@ -228,9 +228,7 @@ export default function TabGenerelt() {
         </Card>
       </ExpertOnly>
 
-      <ExpertOnly>
-        <LogsAndDataCard />
-      </ExpertOnly>
+      <VpnCard />
     </div>
   );
 }

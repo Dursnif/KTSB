@@ -2,7 +2,7 @@
 Jang – filter and curator (4B, think mode).
 Runs every N minutes (from settings.yaml). Reads last N Jing blocks.
 Distills each category to 1-2 lines. Writes categorized output to inner_thoughts.txt.
-24-hour rolling retention. Keeps last turns_back blocks in jing_thoughts.txt as context.
+Size-limited, oldest first (P150, storage_limits.inner_thoughts_mb). Keeps last turns_back blocks in jing_thoughts.txt as context.
 """
 
 import re
@@ -14,8 +14,10 @@ from common import (
     JING_THOUGHTS,
     PERSONALITY,
     get_pipe_lang,
+    inner_thoughts_max_bytes,
     load_behavior_config,
     load_service_config,
+    push_token,
     strip_think,
     t,
 )
@@ -58,46 +60,45 @@ def _trim_jing_buffer(keep: int) -> None:
     JING_THOUGHTS.write_text("\n\n".join(to_keep) + "\n")
 
 
-def _roll_inner(new_thought: str, retention_hours: int) -> None:
-    """Append new_thought with timestamp; drop entries older than retention_hours."""
+def _roll_inner(new_thought: str, max_bytes: int) -> None:
+    """Append new_thought with timestamp; over the size limit the oldest entries go first (P150; 0 = off)."""
     # Last-resort guard for think content that survived upstream filtering
     if "<think>" in new_thought:
         new_thought = new_thought[: new_thought.index("<think>")].strip()
     if not new_thought:
         return
     INNER_THOUGHTS.parent.mkdir(parents=True, exist_ok=True)
-    cutoff = time.time() - retention_hours * 3600
-    existing_text = INNER_THOUGHTS.read_text(errors="replace") if INNER_THOUGHTS.exists() else ""
-
-    kept: list[str] = []
-    current_lines: list[str] = []
-    current_ts: float | None = None
-
-    for line in existing_text.splitlines():
-        m = _JANG_ENTRY_RE.match(line)
-        if m:
-            if current_lines and current_ts is not None and current_ts > cutoff:
-                kept.append("\n".join(current_lines))
-            try:
-                current_ts = time.mktime(time.strptime(m.group(1), "%Y-%m-%d %H:%M"))
-            except ValueError:
-                current_ts = None
-            current_lines = [line]
-        elif current_lines:
-            current_lines.append(line)
-
-    if current_lines and current_ts is not None and current_ts > cutoff:
-        kept.append("\n".join(current_lines))
-
-    timestamp = f"[Jang {time.strftime('%Y-%m-%d %H:%M')}]"
-    kept.append(f"{timestamp}\n{new_thought}")
-    INNER_THOUGHTS.write_text("\n\n".join(kept) + "\n")
+    entry = f"[Jang {time.strftime('%Y-%m-%d %H:%M')}]\n{new_thought}"
+    size = INNER_THOUGHTS.stat().st_size if INNER_THOUGHTS.exists() else 0
+    if max_bytes <= 0 or size + len(entry.encode("utf-8")) + 2 <= max_bytes:
+        with INNER_THOUGHTS.open("a", encoding="utf-8") as f:  # under the limit: append only
+            f.write(("\n" if size else "") + entry + "\n")
+        return
+    blocks: list[str] = []
+    current: list[str] = []
+    for line in INNER_THOUGHTS.read_text(errors="replace").splitlines():
+        if _JANG_ENTRY_RE.match(line):
+            if current:
+                blocks.append("\n".join(current).strip())
+            current = [line]
+        elif current:
+            current.append(line)
+    if current:
+        blocks.append("\n".join(current).strip())
+    blocks.append(entry)
+    budget, kept, total = int(max_bytes * 0.9), [], 0
+    for b in reversed([b for b in blocks if b]):
+        size_b = len(b.encode("utf-8")) + 2
+        if kept and total + size_b > budget:
+            break
+        kept.append(b)
+        total += size_b
+    INNER_THOUGHTS.write_text("\n\n".join(reversed(kept)) + "\n")
 
 
 def run_once(provider, behavior_cfg: dict, service_cfg: dict) -> None:
     max_tokens = int(behavior_cfg.get("max_tokens", 1000))
     turns_back = int(behavior_cfg.get("turns_back", 3))
-    retention_hours = int(behavior_cfg.get("inner_thoughts_retention_hours", 24))
 
     if not JING_THOUGHTS.exists() or not JING_THOUGHTS.stat().st_size:
         print("[Jang] No Jing thoughts yet, skipping.", flush=True)
@@ -131,11 +132,11 @@ def run_once(provider, behavior_cfg: dict, service_cfg: dict) -> None:
 
     if distilled:
         push_url = (service_cfg.get("push_url") or "").strip()
-        push_token = (service_cfg.get("push_token") or "").strip()
+        token = push_token(service_cfg)
         if push_url:
-            push_thought(push_url, push_token, "jang", distilled)
+            push_thought(push_url, token, "jang", distilled)
         else:
-            _roll_inner(distilled, retention_hours)
+            _roll_inner(distilled, inner_thoughts_max_bytes())
         print(f"[Jang] Distilled: {distilled[:80]}...", flush=True)
 
     # Always trim, even when distilled is empty — otherwise jing_thoughts.txt

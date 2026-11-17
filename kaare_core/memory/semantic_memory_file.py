@@ -15,6 +15,8 @@ from pathlib import Path
 
 import yaml as _yaml
 
+from kaare_core.memory.long_term import hidden_episode_ids
+
 logger = logging.getLogger(__name__)
 
 
@@ -74,6 +76,7 @@ def search_fallback(query: str, user_id: str = "global", limit: int = 3) -> list
         return []
     try:
         query_words = set(query.lower().split())
+        hidden = hidden_episode_ids()  # P146: mixed/superseded episodes are never returned
         candidates: list[tuple[float, dict]] = []
         lines = _FALLBACK_PATH.read_text(encoding="utf-8").splitlines()
         for line in reversed(lines):
@@ -86,6 +89,8 @@ def search_fallback(query: str, user_id: str = "global", limit: int = 3) -> list
                 continue
             uid = entry.get("user_id", "global")
             if uid != user_id and uid != "global":
+                continue
+            if entry.get("episode_id") in hidden:
                 continue
             haystack = (entry.get("text", "") + " " + entry.get("narrative", "")).lower()
             score = sum(1 for w in query_words if w in haystack) / max(len(query_words), 1)

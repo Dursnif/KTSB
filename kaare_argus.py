@@ -23,7 +23,7 @@ import logging
 import sys
 import uuid
 from collections import deque
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -34,9 +34,12 @@ from qdrant_client.models import Distance, PayloadSchemaType, PointStruct, Vecto
 sys.path.insert(0, "/kaare")
 import yaml
 
+from kaare_core import receipts
 from kaare_core.config import get_local_tz
 from kaare_core.config import get_qdrant_api_key as _qdrant_key
 from kaare_core.config import get_service as _svc
+from kaare_core.frigate_user.digest_gate import DigestHold
+from kaare_core.storage import rawlog
 from kaare_core.tools.i18n import get_lang, t
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -47,16 +50,6 @@ from kaare_core.tools.i18n import get_lang, t
 def _load_local_tz() -> ZoneInfo:
     # Cached config, no disk read; legacy lokasjon.tidssone fallback; UTC when unset (P116 B19)
     return get_local_tz()
-
-
-def _load_face_events_cfg() -> tuple[int, int]:
-    """Returns (session_timeout_seconds, retention_hours)."""
-    try:
-        cfg = yaml.safe_load(Path("/kaare/configs/settings.yaml").read_text())
-        fe = cfg.get("face_events", {})
-        return int(fe.get("session_timeout_seconds", 60)), int(fe.get("retention_hours", 48))
-    except Exception:
-        return 60, 48
 
 
 def _load_camera_names() -> dict[str, str]:
@@ -82,7 +75,6 @@ EMBED_URL = _svc("ollama", "embed") + "/api/embed"
 ARGUS_COLLECTION = "argus_events"
 VECTOR_DIM = 1024
 
-FACE_SESSION_TIMEOUT_S, FACE_EVENTS_RETENTION_H = _load_face_events_cfg()
 _CAMERA_NAMES: dict[str, str] = _load_camera_names()
 EMBEDDING_ENABLED: bool = _load_embedding_enabled()
 POLL_INTERVAL = 5.0  # sekunder mellom fil-sjekk
@@ -95,7 +87,10 @@ RAW_MAX_LEN = 2000  # tegn – avkorter store JSON-linjer i 'raw'-feltet
 STATE_PATH = Path("/kaare/state/argus/state.json")
 REPORT_PATH = Path("/kaare/state/argus/report.json")
 DIGEST_PATH = Path("/kaare/state/argus/digest.txt")
-FACE_EVENTS_PATH = Path("/kaare/state/argus/face_events.txt")
+# Dev proposal #78 (confirmed 2026-10-22, built T32b 2026-11-12): HA service calls a house runs on a fixed timer
+# to read data (template sensors polling the forecast) are not events — they made Jang/Kåre note «kilde ukjent».
+_ROUTINE_SERVICE_CALLS = {("weather", "get_forecasts")}
+DIGEST_DEDUP_WINDOW = 50  # #78: an identical digest line (same minute, same text) is written once
 IDS_DIR = Path("/kaare/state/argus/ids")  # én .txt per måned med doc_ids
 DIGEST_MAX = 200  # events kept in rolling digest for Jing
 
@@ -114,13 +109,20 @@ LOG_SOURCES = [
         "source": "kaare-metrics",
         "subsystem": "metrics",
     },
+    # P150: the two raw event streams are day segments in logs/raw/<stream>/ (kaare_core.storage.rawlog) — Argus keeps its
+    # own {segment, offset} under the old file's key; retention of the raw archive never touches Argus' position.
     {
         "path": Path("/kaare/logs/frigate_mqtt.log"),
         "source": "frigate-mqtt",
         "subsystem": "frigate",
+        "stream": "frigate_mqtt",
     },
-    {"path": Path("/kaare/logs/ha_events.log"), "source": "ha-events", "subsystem": "home"},
+    {"path": Path("/kaare/logs/ha_events.log"), "source": "ha-events", "subsystem": "home", "stream": "ha_events"},
+    # P140: Plex listener — one line per started/paused/resumed/stopped/finished, never progress ticks
+    {"path": Path("/kaare/logs/plex_events.log"), "source": "plex-events", "subsystem": "media"},
 ]
+
+_PLEX_STAGES = {"started", "paused", "resumed", "stopped", "finished"}
 
 # Stages som betyr at HA-pipelinen faktisk er i gang (brukes til stall-deteksjon)
 PROGRESS_STAGES = {
@@ -213,6 +215,23 @@ def inc(d: dict, key: str, n: int = 1):
     d[key] = d.get(key, 0) + n
 
 
+def digest_add(hold: DigestHold, buffer, source: str, ev: dict, line: str, now: float | None = None) -> None:
+    """One line for Jang's digest. Frigate lines go through the stationary hold (J3b); the Qdrant store is not touched
+    here — every line is indexed as before."""
+    new = hold.add(ev, line, now=now) if source == "frigate-mqtt" else [line]
+    for ln in new:
+        recent = list(buffer)[-DIGEST_DEDUP_WINDOW:]
+        if ln not in recent:  # #78: identical line (same minute + text) only once
+            buffer.append(ln)
+
+
+def digest_flush(hold: DigestHold, buffer, now: float | None = None) -> None:
+    try:
+        buffer.extend(hold.release(now=now))
+    except Exception as e:  # the digest never stops Argus
+        log.warning("digest hold release failed: %s", type(e).__name__)
+
+
 def write_digest(path: Path, lines: list[str]) -> None:
     """Write rolling event digest to file for Jing to read."""
     try:
@@ -231,7 +250,7 @@ def record_doc_ids(doc_ids: list[str], period: str) -> None:
         with (IDS_DIR / f"{period}.txt").open("a", encoding="utf-8") as f:
             f.write("\n".join(doc_ids) + "\n")
     except Exception as exc:
-        log.warning("record_doc_ids feil: %s", exc)
+        log.warning("record_doc_ids failed: %s", exc)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -278,6 +297,8 @@ def is_noise(ev: dict, source: str) -> bool:
             # Drop attribute-only updates where state value did not change
             if ev.get("from") == ev.get("to"):
                 return True
+        elif stage == "call_service" and (ev.get("domain"), ev.get("service")) in _ROUTINE_SERVICE_CALLS:
+            return True
 
     return False
 
@@ -349,6 +370,20 @@ def make_message(ev: dict, source: str) -> str:
             return f"HA service: {domain}.{service}"
         return f"HA: {stage}"
 
+    if source == "plex-events":
+        what = ev.get("title", "?")
+        if ev.get("type") == "episode":
+            se = f"S{ev.get('season') or 0:02d}E{ev.get('episode') or 0:02d}"
+            what = f"{ev.get('show', '')} {se} «{what}»"
+        return t(
+            f"argus_plex_{stage}" if stage in _PLEX_STAGES else "argus_plex_other",
+            get_lang("global"),
+            who=ev.get("ktsb_user") or ev.get("plex_user") or "?",
+            what=what,
+            player=ev.get("player", "?"),
+            stage=stage,
+        )
+
     if source == "kaare-tts":
         if stage == "infer_done":
             return f"STT: ferdig {ev.get('latency_ms', '?')}ms ({ev.get('language', '?')})"
@@ -418,159 +453,6 @@ def get_level(ev: dict) -> str:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Face-event aggregering
-# Frigate kan sende mange deteksjoner per sekund av samme person.
-# Vi aggregerer: hendelser innenfor FACE_SESSION_TIMEOUT_S sekunder = én sesjon.
-# Én sesjon = én linje i face_events.txt.
-# ──────────────────────────────────────────────────────────────────────────────
-
-# {name: {name, label, first_ts, last_ts, cameras, count, max_score}}
-_face_sessions: dict[str, dict] = {}
-
-
-def _friendly_cam(api_name: str) -> str:
-    return _CAMERA_NAMES.get(api_name, api_name)
-
-
-def _flush_face_session(name: str, session: dict) -> None:
-    """Write a completed face session as one line to face_events.txt."""
-    first_dt = parse_iso(session["first_ts"]) or datetime.now(UTC)
-    last_dt = parse_iso(session["last_ts"]) or first_dt
-
-    first_local = first_dt.astimezone(LOCAL_TZ)
-    last_local = last_dt.astimezone(LOCAL_TZ)
-
-    first_str = first_local.strftime("%Y-%m-%d %H:%M")
-    gap_s = (last_dt - first_dt).total_seconds()
-    if first_local.date() == last_local.date() and gap_s >= 30:
-        time_str = f"{first_str}→{last_local.strftime('%H:%M')}"
-    else:
-        time_str = first_str
-
-    cameras = session["cameras"]
-    cam_strs = ", ".join(_friendly_cam(c) for c in cameras)
-    n_cams = len(cameras)
-    pct = int(session["max_score"] * 100)
-
-    lang = get_lang("global")
-    label_type = t(
-        "argus_label_person" if session["label"] == "person" else "argus_label_vehicle", lang
-    )
-    cam_word = t("argus_cam_word_s" if n_cams == 1 else "argus_cam_word_p", lang, n=n_cams)
-    line = t(
-        "argus_face_session",
-        lang,
-        time=time_str,
-        label=label_type,
-        name=name,
-        cam_word=cam_word,
-        cams=cam_strs,
-        pct=pct,
-    )
-    best_event_id = session.get("best_event_id", "")
-    if best_event_id:
-        line += f" [event_id: {best_event_id}]"
-    line += "\n"
-
-    try:
-        FACE_EVENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with FACE_EVENTS_PATH.open("a", encoding="utf-8") as fh:
-            fh.write(line)
-        log.debug("face_events flush: %s", line.strip())
-    except Exception as exc:
-        log.warning("face_events write error: %s", exc)
-
-    _face_sessions.pop(name, None)
-
-
-def process_face_event(ev: dict) -> None:
-    """Update in-memory face sessions from a Frigate event with sub_label set."""
-    raw_sub_label = ev.get("sub_label")
-    sub_label_score = ev.get("sub_label_score")
-    if isinstance(raw_sub_label, (list, tuple)):
-        # Frigate sometimes sends sub_label as [name, score] instead of a plain string.
-        name = raw_sub_label[0] if raw_sub_label else None
-        if sub_label_score is None and len(raw_sub_label) > 1:
-            sub_label_score = raw_sub_label[1]
-    else:
-        name = raw_sub_label
-    if not name:
-        return
-
-    camera = ev.get("camera", "?")
-    score = float(sub_label_score or ev.get("score") or 0)
-    label = ev.get("label", "person")
-    ts_raw = ev.get("ts", "")
-    event_id = ev.get("event_id", "")
-    dt = parse_iso(str(ts_raw)) if ts_raw else datetime.now(UTC)
-
-    session = _face_sessions.get(name)
-    if session is not None:
-        last_dt = parse_iso(session["last_ts"]) or dt
-        gap = (dt - last_dt).total_seconds()
-        if gap <= FACE_SESSION_TIMEOUT_S:
-            session["last_ts"] = dt.isoformat()
-            if camera not in session["cameras"]:
-                session["cameras"].append(camera)
-            session["count"] += 1
-            if score >= session["max_score"]:
-                session["max_score"] = score
-                session["best_event_id"] = event_id
-            return
-        # Gap exceeded — flush old, fall through to start new
-        _flush_face_session(name, session)
-
-    _face_sessions[name] = {
-        "name": name,
-        "label": label,
-        "first_ts": dt.isoformat(),
-        "last_ts": dt.isoformat(),
-        "cameras": [camera],
-        "count": 1,
-        "max_score": score,
-        "best_event_id": event_id,
-    }
-
-
-def flush_stale_face_sessions() -> None:
-    """Flush sessions not updated in more than FACE_SESSION_TIMEOUT_S seconds."""
-    now = datetime.now(UTC)
-    for name in list(_face_sessions):
-        session = _face_sessions.get(name)
-        if session is None:
-            continue
-        last_dt = parse_iso(session["last_ts"]) or now
-        if (now - last_dt).total_seconds() > FACE_SESSION_TIMEOUT_S:
-            _flush_face_session(name, session)
-
-
-def trim_face_events_file() -> None:
-    """Remove entries older than FACE_EVENTS_RETENTION_H hours."""
-    if not FACE_EVENTS_PATH.exists():
-        return
-    try:
-        cutoff = datetime.now(LOCAL_TZ) - timedelta(hours=FACE_EVENTS_RETENTION_H)
-        lines = FACE_EVENTS_PATH.read_text(encoding="utf-8").splitlines()
-        kept = []
-        for line in lines:
-            if not line.strip():
-                continue
-            try:
-                # Parse "[2026-05-07 14:28→14:29] ..." or "[2026-05-07 14:28] ..."
-                inner = line[1 : line.index("]")]
-                ts_part = inner.split("→")[0].strip()
-                dt = datetime.strptime(ts_part, "%Y-%m-%d %H:%M").replace(tzinfo=LOCAL_TZ)
-                if dt >= cutoff:
-                    kept.append(line)
-            except Exception:
-                kept.append(line)  # keep lines we can't parse
-        content = "\n".join(kept) + ("\n" if kept else "")
-        FACE_EVENTS_PATH.write_text(content, encoding="utf-8")
-    except Exception as exc:
-        log.warning("face_events trim error: %s", exc)
-
-
-# ──────────────────────────────────────────────────────────────────────────────
 # Qdrant-klient og collection-init
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -593,12 +475,12 @@ def ensure_argus_collection() -> None:
                 collection_name=ARGUS_COLLECTION,
                 vectors_config=VectorParams(size=VECTOR_DIM, distance=Distance.COSINE),
             )
-            log.info("Qdrant-kolleksjon '%s' opprettet.", ARGUS_COLLECTION)
+            log.info("Qdrant collection '%s' created.", ARGUS_COLLECTION)
         else:
-            log.info("Qdrant-kolleksjon '%s' klar.", ARGUS_COLLECTION)
+            log.info("Qdrant collection '%s' ready.", ARGUS_COLLECTION)
         _ensure_argus_payload_indexes(client)
     except Exception as exc:
-        log.error("Feil ved init av Qdrant-kolleksjon: %s", exc)
+        log.error("Qdrant collection init failed: %s", exc)
 
 
 def _ensure_argus_payload_indexes(client: QdrantClient) -> None:
@@ -639,7 +521,7 @@ async def qdrant_upsert_batch(http: httpx.AsyncClient, docs: list[dict]) -> int:
         emb_r.raise_for_status()
         dense_vecs = emb_r.json()["embeddings"]  # list[list[float]], 1024-dim each
     except Exception as exc:
-        log.warning("Embed-kall feil: %s", exc)
+        log.warning("Embed call failed: %s", exc)
         return 0
     try:
         points = [
@@ -651,9 +533,10 @@ async def qdrant_upsert_batch(http: httpx.AsyncClient, docs: list[dict]) -> int:
             for doc, vec in zip(docs, dense_vecs, strict=False)
         ]
         _qdrant_client().upsert(collection_name=ARGUS_COLLECTION, points=points)
+        receipts.log_saved("argus_index", where=f"qdrant/{ARGUS_COLLECTION}", n=len(points), rid="argus")
         return len(points)
     except Exception as exc:
-        log.warning("Qdrant upsert feil: %s", exc)
+        log.warning("Qdrant upsert failed: %s", exc)
         return 0
 
 
@@ -837,10 +720,11 @@ async def daemon():
     active_rids = state["active_rids"]
 
     digest_buffer: deque = deque(maxlen=DIGEST_MAX)
+    digest_hold = DigestHold()  # J3b: Frigate lines for unchanged stationary objects stay out of Jang's digest
     last_report = 0.0
 
     async with httpx.AsyncClient() as client:
-        log.info("Argus v3.0 startet — overvåker %d logfiler", len(LOG_SOURCES))
+        log.info("Argus v3.0 started — watching %d log files", len(LOG_SOURCES))
         if not EMBEDDING_ENABLED:
             log.info("Embedding disabled — Qdrant indexing skipped.")
 
@@ -855,7 +739,12 @@ async def daemon():
                 subsystem = src["subsystem"]
                 key = str(path)
 
-                lines, new_fstate = read_new_lines(path, state["files"][key])
+                if src.get("stream"):
+                    lines, new_fstate, gaps = rawlog.read_new(src["stream"], state["files"][key])
+                    if gaps:
+                        inc(counters, "rawlog.gaps", len(gaps))
+                else:
+                    lines, new_fstate = read_new_lines(path, state["files"][key])
                 state["files"][key] = new_fstate
 
                 for raw_line in lines:
@@ -868,10 +757,6 @@ async def daemon():
                     if is_noise(ev, source):
                         inc(counters, "qdrant.dropped_noise")
                         continue
-
-                    # Face aggregation — runs before Qdrant indexing
-                    if source == "frigate-mqtt" and ev.get("sub_label"):
-                        process_face_event(ev)
 
                     # Stall-tracking (kun route_decisions.log)
                     if source == "kaare":
@@ -900,8 +785,9 @@ async def daemon():
                     }
                     batch.append(doc)
                     local_ts = (dt or datetime.now(UTC)).astimezone(LOCAL_TZ)
-                    digest_buffer.append(
-                        f"{local_ts.strftime('%m-%d %H:%M')} | {doc['fields']['source']} | {doc['fields']['message']}"
+                    digest_add(
+                        digest_hold, digest_buffer, source, ev,
+                        f"{local_ts.strftime('%m-%d %H:%M')} | {doc['fields']['source']} | {doc['fields']['message']}",
                     )
                     period_ids.setdefault(period, []).append(did)
 
@@ -922,11 +808,11 @@ async def daemon():
                     for p, ids in period_ids.items():
                         record_doc_ids(ids, p)
 
+            # J3b: release held Frigate digest lines whose gate verdict is known (or whose hold ran out)
+            digest_flush(digest_hold, digest_buffer)
+
             # Rydd stalled RIDs
             expire_stalled_rids(active_rids, counters)
-
-            # Flush face sessions that have been silent for > timeout
-            flush_stale_face_sessions()
 
             # Lagre fil-offset/tilstand hver runde (ikke bare ved rapport-intervallet) —
             # slik at en restart midt i en stor innhentingsjobb ikke mister fremgangen og
@@ -942,10 +828,9 @@ async def daemon():
                 safe_write_json(REPORT_PATH, report)
                 if digest_buffer:
                     write_digest(DIGEST_PATH, list(digest_buffer))
-                trim_face_events_file()
                 last_report = now
                 log.info(
-                    "Rapport: %d indeksert / %d droppet / %d aktive RIDs",
+                    "Report: %d indexed / %d dropped / %d active RIDs",
                     int(counters.get("qdrant.indexed", 0)),
                     int(counters.get("qdrant.dropped_noise", 0)),
                     len(active_rids),

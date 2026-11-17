@@ -1,14 +1,14 @@
 [Unit]
-Description=Kåre Inner Voice – Jing (0.6B event scanner)
+Description=KTSB inner voice – Jing (fast inner voice): the model role «jing» (Settings → LLM/Models), or the model in-process
 After=network.target kaare.service
 
 [Service]
 UMask=0002
 User=kaare
-WorkingDirectory=/kaare/services/inner_voices
-Environment=PATH=/kaare/services/inner_voices/venv/bin:/usr/local/bin:/usr/bin:/bin
-Environment=PYTHONPATH=/kaare/services/inner_voices
-ExecStart=/kaare/services/inner_voices/venv/bin/python3 jing_runner.py
+WorkingDirectory=/kaare
+Environment=PYTHONPATH=/kaare
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/kaare/venv/bin/python3 /kaare/kaare_inner_voices.py --voice jing
 Restart=always
 RestartSec=10
 StandardOutput=journal

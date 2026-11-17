@@ -85,11 +85,16 @@ export function InnerVoicesCard({ data, onSaved }: { data: InnerVoicesData; onSa
   const [jangModelPath,  setJangModelPath]  = useState(data.jang.model_path);
   const [nodeLabel,      setNodeLabel]      = useState(data.node_label);
   const [pushToken,      setPushToken]      = useState(data.push_token);
+  const [jingPushUrl,    setJingPushUrl]    = useState(data.jing.push_url ?? "");
+  const [jangPushUrl,    setJangPushUrl]    = useState(data.jang.push_url ?? "");
   const [copied,         setCopied]         = useState(false);
 
   const ss = useSaveState();
 
-  const hasRemote = jingProvider === "remote" || jangProvider === "remote";
+  // J25: the token matters as soon as a voice pushes over the network — also with openvino on another machine
+  const hasRemote = jingProvider === "remote" || jangProvider === "remote" || !!jingPushUrl.trim() || !!jangPushUrl.trim();
+  const badUrl = (u: string) => !!u.trim() && !/^https?:\/\/[^\s/]+/i.test(u.trim());
+  const urlError = badUrl(jingPushUrl) || badUrl(jangPushUrl);
 
   const save = async () => {
     ss.saving();
@@ -99,6 +104,8 @@ export function InnerVoicesCard({ data, onSaved }: { data: InnerVoicesData; onSa
         jing_model_path: jingModelPath,
         jang_provider:   jangProvider,
         jang_model_path: jangModelPath,
+        jing_push_url:   jingPushUrl.trim(),
+        jang_push_url:   jangPushUrl.trim(),
         node_label:      nodeLabel,
         push_token:      pushToken,
       });
@@ -185,6 +192,24 @@ export function InnerVoicesCard({ data, onSaved }: { data: InnerVoicesData; onSa
             </p>
           </div>
 
+          <ExpertOnly>
+          <div className="space-y-1">
+            {([["Jing", jingPushUrl, setJingPushUrl], ["Jang", jangPushUrl, setJangPushUrl]] as const).map(([name, value, set]) => (
+              <div key={name} className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground w-40 shrink-0">{t("settings.llm.inner_voices.push_url", { name })}</Label>
+                <Input
+                  value={value}
+                  onChange={e => set(e.target.value)}
+                  placeholder="http://192.168.1.10:8000/api/inner-voices/push"
+                  className={`h-8 text-xs font-mono flex-1 ${badUrl(value) ? "border-red-500" : ""}`}
+                />
+              </div>
+            ))}
+            <p className="text-xs text-muted-foreground">{t("settings.llm.inner_voices.push_url_hint")}</p>
+            {urlError && <p className="text-xs text-red-400">{t("settings.llm.inner_voices.push_url_invalid")}</p>}
+          </div>
+          </ExpertOnly>
+
           {hasRemote && (
             <ExpertOnly>
             <div className="space-y-2 rounded-md border border-violet-500/30 bg-violet-500/5 p-3">
@@ -230,7 +255,7 @@ export function InnerVoicesCard({ data, onSaved }: { data: InnerVoicesData; onSa
           )}
 
           <div className="flex items-center gap-3 pt-1">
-            <Button size="sm" onClick={save} disabled={ss.state === "saving"}>
+            <Button size="sm" onClick={save} disabled={ss.state === "saving" || urlError}>
               {t("common.save")}
             </Button>
             <SaveFeedback state={ss.state} />

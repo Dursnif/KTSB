@@ -24,17 +24,33 @@ from adapters.llm_adapter import time_block as _time_block
 from kaare_core import app_state as _app_state
 from kaare_core.agents.mechanic.job_store import ack_mechanic_results, get_pending_mechanic_results
 from kaare_core.background import spawn
-from kaare_core.config import filter_tools_by_model, get_llm_config, get_model, get_settings
+from kaare_core.config import (
+    filter_tools_by_model,
+    get_llm_config,
+    get_model,
+    get_settings,
+    get_tool_permissions,
+    get_tools_withheld_for_role,
+)
 from kaare_core.config import get_local_tz as _get_local_tz
 from kaare_core.config import get_tools_for_role as _get_tools_for_role
 from kaare_core.context_builder import set_request_context as _set_request_context
 from kaare_core.image_store import save_image
+from kaare_core.memory import chat_questions
 from kaare_core.memory.long_term import USER_GLOBAL, get_ltm
 from kaare_core.memory.semantic_memory import format_for_context, search_memory
 from kaare_core.memory.short_term import _SESSION_GAP_MINUTES, ShortTermMemory
-from kaare_core.model_enforcement import ModelEnforcer, strip_language_tag, tool_usage_tags
+from kaare_core.model_enforcement import (
+    CALL_CORRECTED,
+    CALL_ERROR,
+    CALL_RAN,
+    CALL_REFUSED,
+    ModelEnforcer,
+    strip_language_tag,
+)
 from kaare_core.tools import work_round
 from kaare_core.tools.executor import execute_tool
+from kaare_core.tools.executor_ha import pop_entity_note, pop_location_results
 from kaare_core.tools.i18n import get_lang as _get_lang
 from kaare_core.tools.i18n import t as _t_i18n
 from kaare_core.tools.lister import reminder_login_reminders as get_login_reminders
@@ -117,7 +133,7 @@ def _gap_note(previous: datetime | None, lang: str, now: datetime | None = None)
 # ── P105 Phase 7: context budget — replay window, tool-result stubs, token guard ─────────
 # Stress test 2026-09-28 reached 39,770 of 43,008 input tokens in round 6 with nothing but the
 # 6-round cap in the way. A tool result is read in the round after it arrives; from then on a
-# large one is replaced by a stub naming the exact call (Stian's rule), and under budget
+# large one is replaced by a stub naming the exact call (the project's rule), and under budget
 # pressure remaining results are stubbed oldest-first.
 
 _BUDGET_DEFAULTS = {
@@ -191,7 +207,7 @@ def _stub_message(msg: dict, meta: dict, lang: str, cfg: dict) -> float:
 
 
 def _stub_after_one_round(tracked: list, current_round: int, cfg: dict, lang: str) -> float:
-    """Stian's rule: large results and all images are dropped once Kåre has read them one round.
+    """Rule: large results and all images are dropped once Kåre has read them one round.
 
     Rounds are 1-based. A result produced by round r's tool calls is read by the model in round
     r+1, so it is stubbed from round r+2 on."""
@@ -401,6 +417,55 @@ def refuse_unoffered_call(name: str, args: dict, offered: dict, lang: str) -> st
     return None
 
 
+def _role_withheld_note(role: str, user_id: str, lang: str) -> str:
+    """DT04-S05b: the tools this user's role does not have, by name (no schema), so Kåre gives the real reason instead
+    of guessing one. System identities (stranger/household, P120 knowledge boundary) get no names."""
+    try:
+        withheld = get_tools_withheld_for_role(role, user_id)
+    except Exception as exc:  # never break a request over a hint
+        print(f"[ROUTER] role_withheld_note failed (non-critical): {exc}")
+        return ""
+    if not withheld:
+        return ""
+    if role in set(get_tool_permissions().get("no_always_included", ["household", "stranger"])):
+        return _t_i18n("gen_role_withheld_identity", lang)
+    return _t_i18n("gen_role_withheld", lang, tools=", ".join(withheld))
+
+
+_LAST_RID: dict[str, str] = {}  # J30: user → the rid of their previous turn (RAM; a restart forgets it — harmless)
+
+
+def _is_answering(user_id: str, memory, pending_verification) -> bool:
+    """Is this turn an answer to something Kåre asked? An open LTM verification, an open question card
+    (read before chat_questions.settle() closes last turn's cards), or Kåre's previous reply ending with «?».
+    Then a «nei»/«takk» is an answer, not praise or criticism of the last action. Never raises."""
+    if pending_verification:
+        return True
+    try:
+        if chat_questions.open_cards(user_id):
+            return True
+    except Exception:
+        pass
+    try:
+        pairs = memory.get_dialog_pairs(user_id=user_id, n=1)
+        if pairs and str(pairs[-1][1]).rstrip().endswith("?"):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _rid_note(user_id: str, rid: str, lang: str) -> str:
+    """The per-turn rid note (code fact) + J30: the same user's previous turn's rid, so Kåre never has to guess one."""
+    if not rid:
+        return ""
+    prev = _LAST_RID.get(user_id) if user_id else None
+    if user_id:
+        _LAST_RID[user_id] = rid
+    note = _t_i18n("rid_note", lang, rid=rid)
+    return note + ("\n" + _t_i18n("rid_note_prev", lang, rid=prev) if prev and prev != rid else "")
+
+
 async def handle_generate(
     *,
     prompt: str,
@@ -413,7 +478,6 @@ async def handle_generate(
     api_intent_to_ha=None,  # kept in signature for backwards compatibility
     api_exec_ha_direct=None,  # kept in signature for backwards compatibility
     api_ask_llm=None,  # kept in signature for backwards compatibility
-    api_ask_vlm=None,
     api_ask_cloud=None,
     block_ha_write: bool = False,  # True for VPN users with vpn_access="ai_only"
     network_context: str = "local",  # "local" | "vpn" | "external"
@@ -495,8 +559,11 @@ async def handle_generate(
             except Exception as e:
                 print(f"[LTM] close_verification feilet: {e}")
 
-    # Regular feedback check (tied to the last action)
-    feedback_signal = ltm.detect_feedback_signal(user_text, user_id)
+    # Regular feedback check (tied to the last action) — never while the user is answering something
+    # («nei, det var en annen» on a camera card is an answer, not a complaint — rid-1794859092971)
+    feedback_signal = ltm.detect_feedback_signal(
+        user_text, user_id, answering=_is_answering(user_id, memory, _pending_ver)
+    )
     if feedback_signal:
         spawn(ltm.update_feedback(ltm._last_id.get(user_id), feedback=feedback_signal))
         print(f"[LTM] Feedback: {feedback_signal} på {ltm._last_id.get(user_id)}")
@@ -568,6 +635,10 @@ async def handle_generate(
     )
 
     mk_note = _t_i18n("gen_mk_note", lang) if miss_kare_addressed else ""
+    # J11 (P149 D12): the question KTSB put at the end of the last chat answer, if any — Kåre stores the answer
+    # N39: open question cards also on voice (owner decision 2026-11-16, option A: read aloud as camera + time);
+    # offers stay chat-only (D12)
+    cq_note = chat_questions.pending_note(user_id, lang, source=source) if source in ("gui", "stt") else ""
 
     # Build static context (state, actions, daily summary) — WITHOUT dialog.
     # Dialog is injected below as real message objects to give the LLM the correct multi-turn structure.
@@ -598,7 +669,7 @@ async def handle_generate(
         else _t_i18n("gen_network_local", lang)
     )
 
-    rid_note = _t_i18n("rid_note", _get_lang(user_id), rid=rid) if rid else ""
+    rid_note = _rid_note(user_id, rid, _get_lang(user_id))
 
     # Pending timer notifications — injiseres til brukeren kvitterer (timer: ack)
     pending_note = ""
@@ -709,6 +780,12 @@ async def handle_generate(
     except Exception as e:
         print(f"[ROUTER] time_note failed (non-critical): {e}")
 
+    # The user's record and role (dict lookup in adapter, no disk I/O). No record → the most restricted role, never
+    # admin (P120). Read here so the role note can go into this request's notes (DT04-S05b).
+    _user_rec = _user_store.get_user(user_id)
+    _user_role = (_user_rec or {}).get("role", "stranger")
+    role_note = _role_withheld_note(_user_role, user_id, lang)
+
     # Notes that apply only to this request (STT, verification, Miss Kåre, network, rid, reminders)
     current_content = "\n\n".join(
         p
@@ -716,6 +793,7 @@ async def handle_generate(
             stt_note,
             speaker_note,
             ver_note,
+            cq_note,
             mk_note,
             network_note,
             rid_note,
@@ -724,6 +802,7 @@ async def handle_generate(
             mechanic_note,
             system_notes_note,
             time_note,
+            role_note,
             user_text,
         ]
         if p
@@ -741,14 +820,11 @@ async def handle_generate(
     )
 
     # A work-round turn's prompt carries the raw search result — STM keeps only its marker
-    # line (P122, Stian: «jeg vil ikke ha det inn i STM»).
+    # line (P122, «jeg vil ikke ha det inn i STM»).
     memory.add_dialog(role="user", text=work_round.stm_text(user_text, source), user_id=user_id)
 
-    # Fetch the user's selected personality variant (dict lookup in adapter, no disk I/O)
-    _user_rec = _user_store.get_user(user_id)
+    # The user's personality variant; `_user_rec` / `_user_role` were read before the request notes (DT04-S05b)
     _personality = (_user_rec or {}).get("personality", "standard") or "standard"
-    # No record → the most restricted role, never admin (P120; was «admin»)
-    _user_role = (_user_rec or {}).get("role", "stranger")
     if _user_role == "child" and _personality == "standard":
         _personality = "barnevennlig"
     _tools = _get_tools_for_role(_user_role, user_id)
@@ -764,14 +840,19 @@ async def handle_generate(
     _offered = offered_tool_actions(_tools)
 
     text_out = ""
-    used_tools = []
-    ha_actions = []  # list of (entity_id, action, ok) for all styr_enhet calls
+    ha_actions = []  # (entity_id, action, ok, note) for all ha_control calls; note: "" | unconfirmed | not_found
     tool_trace = []  # visible thought process for frontend
     _used_fallback = False  # True if any round in this request used the 9B backup
     _generated_image_urls: list[str] = []  # /api/image/{id} URLs from kare_image calls
-    enforcer = ModelEnforcer(
-        lang, rid=rid
-    )  # forces at most one correction round per request — see kaare_core/model_enforcement.py
+    # The enforcer block owns every correction decision and the request's tool-call ledger (P142);
+    # this loop only runs the model and the tools — see kaare_core/model_enforcement.py.
+    enforcer = ModelEnforcer.for_profile("chat", lang, rid=rid)
+    enforcer.offer_tools(tl.get("function", {}).get("name", "") for tl in _tools)
+    # P142 `ungrounded_object`: what the user said counts as shown (an object the user names is not Kåre's invention).
+    enforcer.add_grounding(user_text)
+    # R140: did an image reach the model in this turn (the user's own, or an image tool's [VISION:] round)? A code fact
+    # for the shadow detector `visual_claim_no_image` — never read from the answer's text.
+    _turn_has_image = bool(images)
     # Set after an enforcement retry round that made tool calls: one more round without tools, so
     # the model answers with the real tool results in view (N24 A2).
     _answer_only = False
@@ -877,18 +958,18 @@ async def handle_generate(
             # Final answer — Kåre is done
             _raw_text = result.get("text", "").strip()
 
-            action = enforcer.check(text_out=_raw_text, used_tools=used_tools, meta=_meta)
+            action = enforcer.on_answer(
+                _raw_text, {**_meta, "turn_has_image": _turn_has_image},
+                final_round=round_num == _MAX_TOOL_ROUNDS - 1,
+            )
             if action:
                 messages.append(result["message"])
-                if round_num < _MAX_TOOL_ROUNDS - 1:
-                    messages.append({"role": "user", "content": action.correction_message})
+                messages.append({"role": "user", "content": action.correction_message})
+                if action.tools_left:
                     continue  # send the correction to the model — do NOT break here
                 # Last tool round (N24 A6): long answers after many tools end here, and no tool
-                # round is left for a correction that demands a call. Ask for an honest answer
-                # instead, in one call without tools; resolve() below then uses that answer.
-                messages.append(
-                    {"role": "user", "content": _t_i18n("gen_correction_no_tools_left", lang)}
-                )
+                # round is left for a correction that demands a call. The correction asks for an
+                # honest answer instead, in one call without tools; finish() then uses that answer.
                 _token_guard(_MAX_TOOL_ROUNDS + 1, [])
                 try:
                     _honest = await ask_llm_with_tools(
@@ -905,9 +986,9 @@ async def handle_generate(
                     print(f"[ROUTER] last-round honesty call failed: {_hon_exc}")
                     _raw_text = ""
 
-            text_out = _raw_text or _t_i18n("gen_no_response", lang)
-            if enforcer.pending:
-                text_out = enforcer.resolve(text_out, None)
+            # finish() gets the raw text: after a correction it decides between the new answer,
+            # the original reply and «no response» itself (P142 Phase 0); never an empty reply.
+            text_out = enforcer.finish(_raw_text)
 
             print(f"[ROUTER] final answer after {round_num + 1} round(s)")
             break
@@ -927,47 +1008,57 @@ async def handle_generate(
             args["_node_locked"] = _node_locked
             args["_source"] = source or "user"  # e.g. «work_round» turns search directly (P122)
             print(f"[ROUTER] tool-kall: {name}({args})")
-            # Fourth value = the tool actually ran. Refused, corrected and crashed calls do not
-            # count as used, so they cannot cover a claim in the reply (N24 A3).
+            # Fourth value = what happened to the call, for the enforcer's ledger: refused,
+            # corrected and crashed calls do not count as used (N24 A3, P142 D8).
             refusal = refuse_unoffered_call(name, args, _offered, lang)
             if refusal:
                 print(f"[ROUTER] tool call refused (not offered for role {_user_role}): {name}")
                 _log_tool_call(name, args, refusal, 0, source="kare", rid=rid)
-                return name, args, refusal, False
+                return name, args, refusal, CALL_REFUSED
             correction = enforcer.check_tool_call(name, args)  # e.g. web_search without near_home
             if correction:
                 _log_tool_call(name, args, correction, 0, source="kare", rid=rid)
-                return name, args, correction, False
+                return name, args, correction, CALL_CORRECTED
             try:
                 res = await execute_tool(name, args)
             except Exception as _tc_exc:
                 res = _t_i18n("gen_tool_exec_error", lang, name=name, error=_tc_exc)
                 print(f"[ROUTER] execute_tool exception ({name}): {_tc_exc}")
-                return name, args, res, False
+                return name, args, res, CALL_ERROR
             print(f"[ROUTER] tool-resultat: {res[:120]}")
-            return name, args, res, True
+            return name, args, res, CALL_RAN
 
         _runs = await asyncio.gather(*[_run_tc(tc) for tc in tool_calls])
-        call_results = [(n, a, r) for n, a, r, _ran in _runs]
-        for n, a, _r, _ran in _runs:
-            if _ran:
-                used_tools.extend(tool_usage_tags(n, a))
+        call_results = [(n, a, r) for n, a, r, _status in _runs]
+        for n, a, _r, _status in _runs:
+            # the result is kept as grounding only when a detector judges by it (ungrounded_object, P142)
+            enforcer.record_call(n, a, _status, _r if _status == CALL_RAN else None)
 
         _round_vision: list[str] = []
 
         for fn_name, fn_args, tool_result in call_results:
             if fn_name in ("ha_control", "styr_enhet"):
-                ok = "OK:" in tool_result
-                ha_actions.append((fn_args.get("entity_id"), fn_args.get("action"), ok))
+                if fn_args.get("entity_id"):
+                    ok = "OK:" in tool_result
+                    note = pop_entity_note(rid, str(fn_args.get("entity_id")))
+                    ha_actions.append((fn_args.get("entity_id"), fn_args.get("action"), ok, note))
+                else:  # P137 room/floor command — one entry per entity the code switched
+                    for _ref, _ok, _note in pop_location_results(rid):
+                        ha_actions.append((_ref, fn_args.get("action"), _ok, _note))
 
             if fn_name in ("kare_image", "view_images", "camera", "se_bilder", "kamera"):
                 for _m in re.finditer(r"/api/image/[a-zA-Z0-9_-]+", tool_result):
                     _url = _m.group(0)
                     if _url not in _generated_image_urls:
                         _generated_image_urls.append(_url)
+            if fn_name == "library":  # P151: a recipe card goes to the chat the same way as a picture
+                for _m in re.finditer(r"/api/card/card_[a-zA-Z0-9_-]+", tool_result):
+                    if _m.group(0) not in _generated_image_urls:
+                        _generated_image_urls.append(_m.group(0))
 
             if tool_result.startswith("[VISION:") and tool_result.endswith("]"):
                 _round_vision.append(tool_result[8:-1])
+                _turn_has_image = True
                 tool_result = _t_i18n("tool_vision_loaded", lang)
 
             args_str = ", ".join(f"{k}={v}" for k, v in fn_args.items() if not k.startswith("_"))
@@ -1019,9 +1110,8 @@ async def handle_generate(
 
         # The enforcement retry round made tool calls: give the model one more round without
         # tools to answer from the real results (N24 A2) — never the original claim plus a «✓»
-        # the code cannot verify. That round ends in the final-answer branch above, which
-        # calls enforcer.resolve().
-        if enforcer.pending:
+        # the code cannot verify. That round ends in the final-answer branch above (finish()).
+        if enforcer.needs_answer_round():
             _answer_only = True
 
     else:
@@ -1042,7 +1132,8 @@ async def handle_generate(
             text_out = (_final.get("text") or "").strip()
         except Exception as e:
             print(f"[ROUTER] output-runde feilet: {e}")
-        text_out = text_out or _t_i18n("gen_timeout", lang)
+        # A correction from round 6 is still pending here — finish() resolves it too.
+        text_out = enforcer.finish(text_out, "gen_timeout")
 
     # Strip the [LANG:xx] self-report tag (see model_enforcement.py) — internal signal
     # only, never shown to the user. Every exit path above converges here first.
@@ -1053,19 +1144,37 @@ async def handle_generate(
         if _img_url not in text_out:
             text_out = text_out.rstrip() + f"\n{_img_url}"
 
+    # J11 (P149 D12): settle the question asked last turn, then maybe one question after a light chat turn (never voice)
+    try:
+        _ran = enforcer.ran_calls()
+        chat_questions.settle(user_id, _ran)
+        _cq_line = chat_questions.offer(user_id, source, user_text, [t for t, _a in _ran], lang)
+        if _cq_line and text_out.strip():
+            text_out = text_out.rstrip() + "\n\n" + _cq_line
+        if source == "stt":  # N39: a raw question id is never spoken
+            text_out = chat_questions.scrub_for_voice(text_out)
+    except Exception as e:
+        print(f"[CHAT_Q] skipped: {type(e).__name__}")
+
     # =========================================================
     # Update short-term and long-term memory
     # =========================================================
 
     # Log all HA actions to STM (not just the last one)
-    for entity, action, ok in ha_actions:
+    for entity, action, ok, note in ha_actions:
         if entity and action:
-            memory.record_action(action=action, entity_id=entity, ok=ok, user_id=user_id)
+            memory.record_action(
+                action=action, entity_id=entity, ok=ok, result=note, user_id=user_id
+            )
             if ok:
                 memory.set_state(key=entity, value=action, source="ha")
+            elif (
+                note == "not_found"
+            ):  # N26: HA has no such entity — earlier «OK»s about it were false
+                memory.correct_actions(entity, "not_found", user_id=user_id)
 
     # LTM uses the last successful action
-    successful = [(e, a) for e, a, ok in ha_actions if ok]
+    successful = [(e, a) for e, a, ok, _n in ha_actions if ok]
     final_entity = successful[-1][0] if successful else None
     final_action = successful[-1][1] if successful else None
 

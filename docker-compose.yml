@@ -12,7 +12,7 @@ services:
   # ── Infrastructure ────────────────────────────────────────────────────────────
 
   qdrant:
-    image: qdrant/qdrant:v1.19.2   # pinned (DT03) — must match qdrant-client 1.19.x
+    image: qdrant/qdrant:v1.20.0   # pinned (P145) — must match qdrant-client 1.20.x
     restart: unless-stopped
     # No published port: every KTSB container reaches it as http://qdrant:6333. A host port let any web page
     # opened on this machine read or delete the memory collections (Qdrant has no key in Docker and allows any
@@ -27,7 +27,7 @@ services:
   # Enabled by default via COMPOSE_PROFILES=ollama in .env.
   # Remove "ollama" from COMPOSE_PROFILES if you have your own LLM server.
   ollama:
-    image: ollama/ollama:0.35.1    # pinned (DT03), bump deliberately each release
+    image: ollama/ollama:0.40.11   # pinned (P145), bump deliberately each release
     restart: unless-stopped
     # not published (P120): only KTSB's containers use it, by name (http://ollama:11434)
     volumes:
@@ -50,7 +50,7 @@ services:
   # Default web search engine (P121): self-hosted metasearch, no API key. Internal only —
   # kaare-api reaches it as http://searxng:8080 (configs_default/services.yaml web_search).
   searxng:
-    image: searxng/searxng:2026.10.4-d48c4b555   # pinned (DT03)
+    image: searxng/searxng:2026.10.23-629368e40   # pinned (P145)
     restart: unless-stopped
     # not published: only kaare-api talks to it
     environment:
@@ -150,8 +150,8 @@ services:
     image: ghcr.io/wg-easy/wg-easy:15
     restart: unless-stopped
     environment:
-      WG_HOST: ${WG_HOST}
-      PASSWORD_HASH: ${WG_PASSWORD_HASH}
+      WG_HOST: ${WG_HOST:-}
+      PASSWORD_HASH: ${WG_PASSWORD_HASH:-}
       WG_DEFAULT_ADDRESS: "10.0.0.x"
       WG_DEFAULT_DNS: "1.1.1.1"
       WG_PORT: 51820
@@ -208,7 +208,8 @@ services:
       - bge_model:/kaare/models/bge-m3
     profiles: [medium, full]
 
-  # profiles: [full]
+  # Every profile (P139 D5): the voice bridge is KTSB's output hub — speakers, Cast, DLNA, pictures on TVs. The
+  # speech model loads only when speech recognition is on (Settings → LLM → Whisper; smallest model by default).
   kaare-voice:
     image: ghcr.io/dursnif/kaare-voice:${KTSB_VERSION:-latest}
     restart: unless-stopped
@@ -217,7 +218,9 @@ services:
       - ./configs:/kaare/configs
       - ./state:/kaare/state
       - ./models:/kaare/models
-    profiles: [full]
+    environment:
+      # Speech models are downloaded/loaded at start only with the `full` profile (else on first use).
+      COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
 
   kaare-jing:
     image: ghcr.io/dursnif/kaare-inner-voices:${KTSB_VERSION:-latest}

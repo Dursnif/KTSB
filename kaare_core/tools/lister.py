@@ -16,6 +16,7 @@ import re
 import uuid
 from pathlib import Path
 
+from kaare_core import receipts
 from kaare_core.config import get_settings as _get_settings
 from kaare_core.config import today_local
 from kaare_core.tools.i18n import t
@@ -79,7 +80,7 @@ def _today() -> str:
 
 
 def shopping_add(
-    text: str, amount: str = "", unit: str = "", added_by: str = "", lang: str = "nb"
+    text: str, amount: str = "", unit: str = "", added_by: str = "", lang: str = "nb", receipt_who: str | None = None
 ) -> str:
     if not text.strip():
         return t("list_empty_text", lang)
@@ -100,7 +101,9 @@ def shopping_add(
     items.append(item)
     _write(_SHOPPING_PATH, items)
     amount_str = f" ({amount} {unit})".rstrip() if amount else ""
-    return t("list_added", lang, text=text, amount=amount_str, id=item["id"])
+    return t("list_added", lang, text=text, amount=amount_str, id=item["id"]) + receipts.suffix(
+        "note", ref=f"shopping:{item['id']}", what=text + amount_str, where=t("rcpt_list_shopping", lang), who=receipt_who,
+        lang=lang)
 
 
 def shopping_read(only_unbought: bool = True, lang: str = "nb") -> str:
@@ -126,7 +129,7 @@ def shopping_mark_bought(item_id: str, lang: str = "nb") -> str:
         if item.get("id") == item_id.strip():
             item["kjøpt"] = True
             _write(_SHOPPING_PATH, items)
-            return t("list_marked_bought", lang, text=item["tekst"])
+            return t("list_marked_bought", lang, text=item["tekst"]) + receipts.change("note_change", ref=f"shopping:{item['id']}", action="bought", where=t("rcpt_list_shopping", lang), lang=lang)
     return t("list_item_not_found", lang, id=item_id)
 
 
@@ -138,7 +141,7 @@ def shopping_delete(item_id: str, lang: str = "nb") -> str:
     if len(kept) == len(items):
         return t("list_item_not_found", lang, id=item_id)
     _write(_SHOPPING_PATH, kept)
-    return t("list_item_deleted", lang)
+    return t("list_item_deleted", lang) + receipts.change("note_removed", ref=f"shopping:{item_id.strip()}", action="deleted", where=t("rcpt_list_shopping", lang), lang=lang)
 
 
 def shopping_clear_bought(lang: str = "nb") -> str:
@@ -148,13 +151,13 @@ def shopping_clear_bought(lang: str = "nb") -> str:
     if count == 0:
         return t("list_no_bought_to_clear", lang)
     _write(_SHOPPING_PATH, kept)
-    return t("list_cleared_bought", lang, count=count)
+    return t("list_cleared_bought", lang, count=count) + receipts.change("note_removed", ref=f"shopping:bought:{count}", action="cleared", where=t("rcpt_list_shopping", lang), lang=lang)
 
 
 def shopping_clear(lang: str = "nb") -> str:
     count = len(_read(_SHOPPING_PATH))
     _write(_SHOPPING_PATH, [])
-    return t("list_cleared_all", lang, count=count)
+    return t("list_cleared_all", lang, count=count) + receipts.change("note_removed", ref=f"shopping:all:{count}", action="cleared", where=t("rcpt_list_shopping", lang), lang=lang)
 
 
 # ─────────────────────────────────────────────
@@ -162,7 +165,8 @@ def shopping_clear(lang: str = "nb") -> str:
 # ─────────────────────────────────────────────
 
 
-def reminder_add(text: str, user_id: str, remind_on_login: bool = False, lang: str = "nb") -> str:
+def reminder_add(text: str, user_id: str, remind_on_login: bool = False, lang: str = "nb",
+                 receipt_who: str | None = None) -> str:
     if not text.strip():
         return t("list_empty_text", lang)
     if not user_id or user_id == "global":
@@ -180,7 +184,9 @@ def reminder_add(text: str, user_id: str, remind_on_login: bool = False, lang: s
     items.append(item)
     _write(path, items)
     remind_str = t("list_remind_on_login", lang) if remind_on_login else ""
-    return t("list_reminder_added", lang, text=text, remind=remind_str, id=item["id"])
+    return t("list_reminder_added", lang, text=text, remind=remind_str, id=item["id"]) + receipts.suffix(
+        "note", ref=f"remember:{item['id']}", what=text, where=t("rcpt_list_remember", lang, user=user_id),
+        who=receipt_who, lang=lang)
 
 
 def reminder_read(user_id: str, only_active: bool = True, lang: str = "nb") -> str:
@@ -211,7 +217,7 @@ def reminder_done(item_id: str, user_id: str, lang: str = "nb") -> str:
             item["ferdig"] = True
             item["påminn_ved_login"] = False
             _write(path, items)
-            return t("list_reminder_done", lang, text=item["tekst"])
+            return t("list_reminder_done", lang, text=item["tekst"]) + receipts.change("note_change", ref=f"remember:{item['id']}", action="done", where=t("rcpt_list_remember", lang, user=user_id), lang=lang)
     return t("list_reminder_not_found", lang, id=item_id)
 
 
@@ -226,7 +232,7 @@ def reminder_delete(item_id: str, user_id: str, lang: str = "nb") -> str:
     if len(kept) == len(items):
         return t("list_reminder_not_found", lang, id=item_id)
     _write(path, kept)
-    return t("list_reminder_deleted", lang)
+    return t("list_reminder_deleted", lang) + receipts.change("note_removed", ref=f"remember:{item_id.strip()}", action="deleted", where=t("rcpt_list_remember", lang, user=user_id), lang=lang)
 
 
 def reminder_clear(user_id: str, lang: str = "nb") -> str:
@@ -235,7 +241,7 @@ def reminder_clear(user_id: str, lang: str = "nb") -> str:
     path = _reminder_path(user_id)
     count = len(_read(path))
     _write(path, [])
-    return t("list_reminder_cleared", lang, count=count)
+    return t("list_reminder_cleared", lang, count=count) + receipts.change("note_removed", ref=f"remember:all:{count}", action="cleared", where=t("rcpt_list_remember", lang, user=user_id), lang=lang)
 
 
 def reminder_login_reminders(user_id: str) -> list[str]:
@@ -335,7 +341,7 @@ def _sort_pinned_first(items: list) -> list:
     return sorted(items, key=lambda i: not i.get("pinned", False))
 
 
-def kare_note_add(text: str, context: str = "", lang: str = "nb", title: str = "") -> str:
+def kare_note_add(text: str, context: str = "", lang: str = "nb", title: str = "", receipt_who: str | None = None) -> str:
     if not text.strip():
         return t("list_empty_text", lang)
     text = _strip_date_stamp(_strip_tool_syntax_leak(text.strip()))
@@ -354,7 +360,9 @@ def kare_note_add(text: str, context: str = "", lang: str = "nb", title: str = "
         if context.strip():
             duplicate["kontekst"] = context.strip()
         _write(_KARE_PATH, items)
-        return t("list_kare_refreshed", lang, text=duplicate["tekst"], id=duplicate["id"])
+        return t("list_kare_refreshed", lang, text=duplicate["tekst"], id=duplicate["id"]) + receipts.suffix(
+            "note", ref=f"kare:{duplicate['id']}", what=duplicate["tekst"], where=t("rcpt_list_kare", lang),
+            who=receipt_who, lang=lang)
 
     item = {
         "id": _new_id(),
@@ -374,7 +382,8 @@ def kare_note_add(text: str, context: str = "", lang: str = "nb", title: str = "
 
     _write(_KARE_PATH, items)
     context_str = t("list_kare_context_suffix", lang, context=context) if context else ""
-    return t("list_kare_added", lang, text=text, context=context_str, id=item["id"])
+    return t("list_kare_added", lang, text=text, context=context_str, id=item["id"]) + receipts.suffix(
+        "note", ref=f"kare:{item['id']}", what=text, where=t("rcpt_list_kare", lang), who=receipt_who, lang=lang)
 
 
 _READ_FULL_MAX = 15  # full-text entries per read (P133 C5 support)
@@ -454,7 +463,7 @@ def kare_note_pin(item_id: str, lang: str = "nb") -> str:
         if item.get("id") == item_id.strip():
             item["pinned"] = True
             _write(_KARE_PATH, items)
-            return t("list_kare_pinned", lang, text=item["tekst"])
+            return t("list_kare_pinned", lang, text=item["tekst"]) + receipts.change("note_change", ref=f"kare:{item['id']}", action="pinned", where=t("rcpt_list_kare", lang), lang=lang)
     return t("list_item_not_found", lang, id=item_id)
 
 
@@ -466,7 +475,7 @@ def kare_note_unpin(item_id: str, lang: str = "nb") -> str:
         if item.get("id") == item_id.strip():
             item["pinned"] = False
             _write(_KARE_PATH, items)
-            return t("list_kare_unpinned", lang, text=item["tekst"])
+            return t("list_kare_unpinned", lang, text=item["tekst"]) + receipts.change("note_change", ref=f"kare:{item['id']}", action="unpinned", where=t("rcpt_list_kare", lang), lang=lang)
     return t("list_item_not_found", lang, id=item_id)
 
 
@@ -478,7 +487,7 @@ def kare_note_done(item_id: str, lang: str = "nb") -> str:
     if len(kept) == len(items):
         return t("list_item_not_found", lang, id=item_id)
     _write(_KARE_PATH, kept)
-    return t("list_kare_removed", lang)
+    return t("list_kare_removed", lang) + receipts.change("note_removed", ref=f"kare:{item_id.strip()}", action="deleted", where=t("rcpt_list_kare", lang), lang=lang)
 
 
 def kare_note_delete(item_id: str, lang: str = "nb") -> str:
@@ -505,14 +514,14 @@ def kare_note_edit(item_id: str, text: str, lang: str = "nb", title: str = "") -
             item["tekst"] = text
             item["endret"] = _today()
             _write(_KARE_PATH, items)
-            return t("list_kare_edited", lang, text=text, id=item["id"])
+            return t("list_kare_edited", lang, text=text, id=item["id"]) + receipts.change("note_change", ref=f"kare:{item['id']}", action="edited", where=t("rcpt_list_kare", lang), lang=lang)
     return t("list_item_not_found", lang, id=item_id)
 
 
 def kare_note_clear(lang: str = "nb") -> str:
     count = len(_read(_KARE_PATH))
     _write(_KARE_PATH, [])
-    return t("list_kare_cleared", lang, count=count)
+    return t("list_kare_cleared", lang, count=count) + receipts.change("note_removed", ref=f"kare:all:{count}", action="cleared", where=t("rcpt_list_kare", lang), lang=lang)
 
 
 def kare_notes_for_prompt(max_chars: int | None = None, lang: str = "nb") -> str:

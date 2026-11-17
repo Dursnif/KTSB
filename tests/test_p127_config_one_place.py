@@ -275,7 +275,7 @@ def test_no_house_subnet_fallback_left_in_code():
 
 _HOUSE_VALUE = re.compile(
     r"192\.168\.0\.\d{1,3}(?![\d/])"  # a host on the house's LAN (subnets like 192.168.0.0/24 are examples)
-    r"|/mnt/ai_disk|/mnt/wiki|/home/stian"  # house disks / home folder
+    r"|/mnt/ai_disk|/mnt/wiki|/home/[a-z][a-z0-9_-]*"  # house disks / any hardcoded home folder
     r"|\bainuc\b|\bdnspi\b|\bproxypi\b|\bha-nuc\b"  # house machines
 )
 _SHIPPED = [

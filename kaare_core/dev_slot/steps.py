@@ -26,7 +26,7 @@ from kaare_core.dev_slot.tools import SlotTools
 from kaare_core.dev_slot.verify import verify_claims
 from kaare_core.memory import learning_store, relevance
 from kaare_core.memory.agenda_themes import FALLBACK_THEME, THEMES
-from kaare_core.model_enforcement import strip_language_tag
+from kaare_core.model_enforcement import CALL_RAN, ModelEnforcer, strip_language_tag
 from kaare_core.think_strip import strip_think_block
 from kaare_core.tools.i18n import t
 
@@ -90,6 +90,10 @@ async def kare_json(
     text = ""
     rounds = 0
     forced = 0
+    # The enforcer box (P142, profile «dev_slot», shadow by default).
+    enforcer = ModelEnforcer.for_profile("dev_slot", lang, rid=rid)
+    if tools:
+        enforcer.offer_tools(tools.names)
     while True:
         if not budget.left():
             return None, text
@@ -112,6 +116,7 @@ async def kare_json(
             for tc in calls:
                 fn = tc.get("function", {})
                 out = await tools.execute(fn.get("name", ""), fn.get("arguments", {}))
+                enforcer.record_call(fn.get("name", ""), fn.get("arguments", {}), CALL_RAN, out)
                 messages.append({"role": "tool", "name": fn.get("name", ""), "content": out})
             rounds += 1
             continue
@@ -124,6 +129,19 @@ async def kare_json(
             schemas = []
             tools = None
             continue
+        if enforcer.pending is None:
+            action = enforcer.on_answer(
+                text, res.get("meta"), final_round=not tools or rounds >= max_rounds
+            )
+            if action:
+                messages.append({"role": "assistant", "content": text})
+                messages.append({"role": "user", "content": action.correction_message})
+                if not action.tools_left:
+                    schemas = []
+                    tools = None
+                continue
+        else:
+            text = enforcer.finish(text)
         data = extract_json(text)
         if data is not None:
             return data, text
@@ -738,6 +756,7 @@ async def janus_end(
                 "proposal": f.get("text", ""),
                 "decided_at": str(f.get("decided_at") or "")[:10],
                 "new_rows_since": f.get("new_rows_since", 0),
+                "built": bool(f.get("built_at")),
             }
             for f in followups
         ],
@@ -892,6 +911,11 @@ def build_report(
                 topic=f.get("topic_id") or "-",
                 date=str(f.get("decided_at") or "")[:10],
                 n=f.get("new_rows_since", 0),
+                built=(
+                    t("slot_report_built", lang, date=str(f["built_at"])[:10])
+                    if f.get("built_at")
+                    else t("slot_report_not_built", lang)
+                ),
             )
             for f in followups
         )

@@ -128,7 +128,7 @@ function OnboardingBanner({ status }: { status: OnboardingStatus }) {
           {t("dashboard.not_configured")}
         </p>
         <p style={{ color: "#a89060", fontSize: 13, margin: "0 0 8px" }}>
-          {t("dashboard.missing", { items: incomplete.map(s => s.label).join(", ") })}
+          {t("dashboard.missing", { items: incomplete.map(s => t(`dashboard.onboarding_steps.${s.id}`, { defaultValue: s.label })).join(", ") })}
         </p>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" as const }}>
           <button

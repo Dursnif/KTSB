@@ -29,16 +29,15 @@ from pathlib import Path
 import yaml
 
 from kaare_core import log_buffer
+from kaare_core.storage import rawlog
 
 logger = logging.getLogger("normalcy")
 
 _BASELINE_PATH = Path("/kaare/state/normalcy_baseline.json")
-_FRIGATE_LOG_PATH = Path("/kaare/logs/frigate_mqtt.log")
 _CORRECTIONS_PATH = Path("/kaare/state/normalcy_corrections.json")
 _SERVICES_PATH = Path("/kaare/configs/services.yaml")
-_WINDOW_DAYS = 28  # rolling window for baseline computation
-_MIN_TRUST_DAYS = 14  # deviation_score not used in alert routing below this
-_CHUNK_BYTES = 5_000_000  # read last 5 MB of log (~35k events)
+_WINDOW_DAYS = rawlog.MIN_KEEP_DAYS["frigate_mqtt"]  # rolling window (28 days); the raw archive keeps at least this
+MIN_TRUST_DAYS = 14  # deviation_score not used in alert routing below this; «unusual» gate in P144-s06e
 _ANOMALY_CHUNK = 10_000_000  # read last 10 MB for get_recent_anomalies (7+ days)
 
 _WEEKDAY_NAMES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -122,68 +121,73 @@ def _load_corrections() -> list[dict]:
         return []
 
 
+def _detection_ends_since(cutoff_iso: str):
+    """(ts_dt, camera, label) for every detection_end at/after cutoff_iso, streamed line by line across the raw
+    frigate_mqtt segments (P150: kaare_core.storage.rawlog — day segments are skipped by name, the old single file is
+    bisected on `ts`)."""
+    for raw in rawlog.lines_since("frigate_mqtt", cutoff_iso):
+        if b'"detection_end"' not in raw:  # cheap pre-filter: most lines are detection_update
+            continue
+        try:
+            ev = json.loads(raw)
+        except Exception:
+            continue
+        if ev.get("stage") != "detection_end":
+            continue
+        ts_str = ev.get("ts", "")
+        if ts_str < cutoff_iso:
+            continue
+        try:
+            ts_dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        except Exception:
+            continue
+        yield ts_dt, ev.get("camera", ""), ev.get("label", "")
+
+
+def baseline_days(cameras: list[str], baseline: dict | None = None) -> int:
+    """How many days of data the baseline has for these cameras: the smallest per-camera day count (a camera added
+    last week has a week, whatever the others have), the overall count for an older file without `camera_days`."""
+    baseline = _load_baseline() if baseline is None else baseline
+    days = int((baseline or {}).get("days_of_data", 0) or 0)
+    per_camera = (baseline or {}).get("camera_days")
+    if not isinstance(per_camera, dict) or not cameras:
+        return days
+    return min(days, *(int(per_camera.get(c, 0) or 0) for c in cameras))
+
+
 def compute_baseline() -> dict:
     """
     Build the normalcy baseline from the last _WINDOW_DAYS of frigate_mqtt.log.
     Writes state/normalcy_baseline.json and returns the baseline dict.
+
+    The window is a time window: the log is read from the cutoff on (P144-s06e — a fixed 5 MB tail covered ~1 day
+    on a house with road traffic, so the baseline had 2 days).
     """
-    log_buffer.flush(
-        _FRIGATE_LOG_PATH
-    )  # include lines still buffered in RAM in this process (P131)
-    if not _FRIGATE_LOG_PATH.exists():
-        logger.info("[normalcy] frigate_mqtt.log not found — skipping baseline")
+    log_buffer.flush(rawlog.current_segment("frigate_mqtt"))  # lines still buffered in RAM in this process (P131)
+    if not rawlog.segments("frigate_mqtt"):
+        logger.info("[normalcy] no raw frigate_mqtt log — skipping baseline")
         return {}
 
     now_utc = datetime.now(UTC)
     cutoff = now_utc - timedelta(days=_WINDOW_DAYS)
     cutoff_iso = cutoff.isoformat(timespec="seconds")
 
-    # Read last _CHUNK_BYTES — covers ~28 days at typical traffic
+    # bucket_days[key] = set of "YYYY-MM-DD" days that had at least one event
+    bucket_days: dict[str, set] = defaultdict(set)
+    observed_days: set = set()  # set of "YYYY-MM-DD"
+    # Days observed per (weekday, hour) combination — denominator for p_normal
+    wday_hour_days: dict[tuple, set] = defaultdict(set)
+    camera_days: dict[str, set] = defaultdict(set)
     try:
-        with _FRIGATE_LOG_PATH.open("rb") as fh:
-            fh.seek(0, 2)
-            size = fh.tell()
-            fh.seek(max(0, size - _CHUNK_BYTES))
-            raw = fh.read().decode("utf-8", errors="replace")
+        for ts_dt, camera, label in _detection_ends_since(cutoff_iso):
+            day_str = ts_dt.strftime("%Y-%m-%d")
+            bucket_days[f"{camera}|{label}|{ts_dt.hour}|{ts_dt.weekday()}"].add(day_str)
+            observed_days.add(day_str)
+            wday_hour_days[(ts_dt.weekday(), ts_dt.hour)].add(day_str)
+            camera_days[camera].add(day_str)
     except Exception as e:
         logger.warning("[normalcy] log read error: %s", e)
         return {}
-
-    # bucket_days[key] = set of "YYYY-MM-DD" days that had at least one event
-    bucket_days: dict[str, set] = defaultdict(set)
-    # all_days: set of (weekday, hour) days we observed any traffic in the window
-    observed_days: set = set()  # set of "YYYY-MM-DD"
-
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            ev = json.loads(line)
-        except Exception:
-            continue
-
-        if ev.get("stage") != "detection_end":
-            continue
-
-        ts_str = ev.get("ts", "")
-        if ts_str < cutoff_iso:
-            continue
-
-        try:
-            ts_dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-        except Exception:
-            continue
-
-        camera = ev.get("camera", "")
-        label = ev.get("label", "")
-        hour = ts_dt.hour
-        weekday = ts_dt.weekday()
-        day_str = ts_dt.strftime("%Y-%m-%d")
-
-        key = f"{camera}|{label}|{hour}|{weekday}"
-        bucket_days[key].add(day_str)
-        observed_days.add(day_str)
 
     days_of_data = len(observed_days)
     confidence = min(days_of_data / 30.0, 1.0)
@@ -217,28 +221,6 @@ def compute_baseline() -> dict:
                 bucket_days[key].add(f"correction-{i}")
 
     # Build buckets
-    # Days observed per (weekday, hour) combination — denominator for p_normal
-    wday_hour_days: dict[tuple, set] = defaultdict(set)
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            ev = json.loads(line)
-        except Exception:
-            continue
-        if ev.get("stage") != "detection_end":
-            continue
-        ts_str = ev.get("ts", "")
-        if ts_str < cutoff_iso:
-            continue
-        try:
-            ts_dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-        except Exception:
-            continue
-        day_str = ts_dt.strftime("%Y-%m-%d")
-        wday_hour_days[(ts_dt.weekday(), ts_dt.hour)].add(day_str)
-
     buckets: dict[str, dict] = {}
     for key, days_with_event in bucket_days.items():
         parts = key.split("|")
@@ -267,6 +249,7 @@ def compute_baseline() -> dict:
         "days_of_data": days_of_data,
         "confidence": round(confidence, 3),
         "bucket_count": len(buckets),
+        "camera_days": {cam: len(days) for cam, days in sorted(camera_days.items())},
         "buckets": buckets,
     }
 
@@ -308,10 +291,8 @@ def get_recent_anomalies(
 
     Results are sorted by ts descending, capped at limit.
     """
-    log_buffer.flush(
-        _FRIGATE_LOG_PATH
-    )  # include lines still buffered in RAM in this process (P131)
-    if not _FRIGATE_LOG_PATH.exists():
+    log_buffer.flush(rawlog.current_segment("frigate_mqtt"))  # lines still buffered in RAM in this process (P131)
+    if not rawlog.segments("frigate_mqtt"):
         return []
 
     now_utc = datetime.now(UTC)
@@ -319,11 +300,7 @@ def get_recent_anomalies(
     cutoff_iso = cutoff.isoformat(timespec="seconds")
 
     try:
-        with _FRIGATE_LOG_PATH.open("rb") as fh:
-            fh.seek(0, 2)
-            size = fh.tell()
-            fh.seek(max(0, size - _ANOMALY_CHUNK))
-            raw = fh.read().decode("utf-8", errors="replace")
+        raw = rawlog.tail_text("frigate_mqtt", _ANOMALY_CHUNK)  # P150: the newest bytes across raw segments
     except Exception as e:
         logger.warning("[normalcy] get_recent_anomalies read error: %s", e)
         return []

@@ -9,10 +9,11 @@ import {
   apiUpdatePin, apiDeleteUser, apiListPersonalities,
   apiVpnListClients, apiVpnCreateClient, apiVpnDeleteClient,
   apiVoiceStatus, apiVoiceEnroll, apiVoiceDelete,
-  apiGetToolPermissions, apiSaveToolPermissions, apiGenerateTempPin,
+  apiGetToolPermissions, apiSaveToolPermissions, apiGenerateTempPin, apiGetPlexAccounts, apiGetFrigateFaces,
   type KaareUser, type Role, type VpnAccess, type VpnClient, type ToolPermissions,
 } from "../../services/api";
 import { apiErrorDetail } from "@/lib/apiError";
+import FrigateTrackingCard from "../../components/FrigateTrackingCard";
 
 const VPN_COLORS: Record<VpnAccess, string> = {
   local_only:  "#2a2a2a",
@@ -93,6 +94,7 @@ const TOOL_ROWS: { key: string; indent?: boolean; always?: boolean; adminOnly?: 
   { key: "reason_freely" },
   { key: "memory" },
   { key: "camera" },
+  { key: "camera_analyse" },  // N41: a flag (like library_online) — may start a NEW analysis on the image model
   { key: "search_argus" },
   { key: "read_meeting" },
   { key: "mechanic" },
@@ -232,6 +234,11 @@ function ToolPermissionsMatrix() {
           <tr>
             <td colSpan={PERM_ROLES.length + 1} style={MS.internal}>
               {t("users.tools.always_included")} {t("users.tools.admin_only")}
+            </td>
+          </tr>
+          <tr>
+            <td colSpan={PERM_ROLES.length + 1} style={MS.internal}>
+              {t("users.tools.camera_note")}
             </td>
           </tr>
         </tbody>
@@ -583,7 +590,7 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
       onClick={() => onChange(!on)}
       style={{
         display: "inline-block", width: 44, height: 24,
-        background: on ? "#4caf50" : "#333",
+        background: on ? "#16a34a" : "#333",
         borderRadius: 12, cursor: "pointer",
         position: "relative", transition: "background 0.2s", flexShrink: 0,
       }}
@@ -630,10 +637,25 @@ function EditModal({ user, allUsers, onDone, onError, error }: {
   const [personalities, setPersonalities] = useState<{ key: string; label: string }[]>([]);
   const [tempPin, setTempPin] = useState<string | null>(null);
   const [pinLoading, setPinLoading] = useState(false);
+  // P140: Plex account link — only shown when the Plex server answers with accounts
+  const [plexAccounts, setPlexAccounts] = useState<{ id: number; name: string }[]>([]);
+  const [plexAccount, setPlexAccount] = useState<number>(user.plex_account_id ?? -1);
+  // P144-s02: Frigate face names that are this person — picked from Frigate's face library, or
+  // typed when Frigate is absent / has face recognition off
+  const [frigateFaces, setFrigateFaces] = useState<string[]>(user.frigate_faces ?? []);
+  const [faceLibrary, setFaceLibrary] = useState<string[]>([]);
+  const [faceLibraryError, setFaceLibraryError] = useState("");
+  const [faceInput, setFaceInput] = useState("");
 
   useEffect(() => {
     apiListPersonalities().then(setPersonalities).catch(() => {});
-  }, []);
+    if (!isSystemUser(user.username)) {
+      apiGetPlexAccounts().then(d => setPlexAccounts(d.accounts)).catch(() => {});
+      apiGetFrigateFaces()
+        .then(d => { setFaceLibrary(d.faces); setFaceLibraryError(d.error); })
+        .catch(() => setFaceLibraryError("unreachable"));
+    }
+  }, [user.username]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -641,6 +663,8 @@ function EditModal({ user, allUsers, onDone, onError, error }: {
       await apiUpdateUser(user.username, {
         ...f,
         managed_children: f.is_parent ? JSON.stringify(f.managed_children_arr) : null,
+        ...(plexAccount !== (user.plex_account_id ?? -1) ? { plex_account_id: plexAccount } : {}),
+        ...(JSON.stringify(frigateFaces) !== JSON.stringify(user.frigate_faces ?? []) ? { frigate_faces: frigateFaces } : {}),
       });
       onDone();
     } catch (err) {
@@ -694,6 +718,66 @@ function EditModal({ user, allUsers, onDone, onError, error }: {
           <option value="ai_only">{t("users.edit.vpn_ai_only")}</option>
           <option value="full_access">{t("users.edit.vpn_full_access")}</option>
         </select>
+        {plexAccounts.length > 0 && (
+          <>
+            <label style={S.label}>{t("users.edit.plex_account")}</label>
+            <select style={S.select} value={plexAccount} onChange={e => setPlexAccount(Number(e.target.value))}>
+              <option value={-1}>{t("users.edit.plex_account_none")}</option>
+              {plexAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+            <div style={{ color: "#888", fontSize: 12, marginTop: -8, marginBottom: 14 }}>{t("users.edit.plex_account_desc")}</div>
+          </>
+        )}
+        {!isSystemUser(user.username) && (
+          <>
+            <label style={S.label}>{t("users.frigate_faces_label")}</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+              {[...faceLibrary, ...frigateFaces.filter(n => !faceLibrary.includes(n))].map(name => {
+                const selected = frigateFaces.includes(name);
+                return (
+                  <div
+                    key={name}
+                    onClick={() => setFrigateFaces(selected ? frigateFaces.filter(n => n !== name) : [...frigateFaces, name])}
+                    style={{
+                      padding: "4px 10px", borderRadius: 12, cursor: "pointer", fontSize: 13,
+                      background: selected ? "#1a4a2a" : "#222",
+                      border: `1px solid ${selected ? "#4caf50" : "#444"}`,
+                      color: selected ? "#4caf50" : "#aaa",
+                    }}
+                  >
+                    {name}
+                  </div>
+                );
+              })}
+            </div>
+            {(faceLibraryError || faceLibrary.length === 0) && (
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                <input
+                  style={{ ...S.input, marginBottom: 0, flex: 1 }}
+                  value={faceInput}
+                  placeholder={t("users.frigate_faces_placeholder")}
+                  onChange={e => setFaceInput(e.target.value)}
+                />
+                <button
+                  type="button"
+                  style={{ ...S.btn(), flexShrink: 0 }}
+                  disabled={!faceInput.trim() || frigateFaces.includes(faceInput.trim())}
+                  onClick={() => { setFrigateFaces([...frigateFaces, faceInput.trim()]); setFaceInput(""); }}
+                >
+                  {t("users.frigate_faces_add")}
+                </button>
+              </div>
+            )}
+            <div style={{ color: "#888", fontSize: 12, marginBottom: 14 }}>
+              {faceLibraryError === "unreachable"
+                ? t("users.frigate_faces_unreachable")
+                : faceLibraryError === "not_configured" || faceLibrary.length === 0
+                  ? t("users.frigate_faces_free_text")
+                  : t("users.frigate_faces_desc")}
+            </div>
+            <FrigateTrackingCard username={user.username} compact />
+          </>
+        )}
         <label style={S.label}>
           <input type="checkbox" checked={f.is_active} onChange={e => setF({ ...f, is_active: e.target.checked })} />
           {" "}{t("users.edit.active_label")}
@@ -761,12 +845,12 @@ function EditModal({ user, allUsers, onDone, onError, error }: {
           </div>
         )}
 
-        <label style={S.label}>{t("users.notify_channel_label")}</label>
+        <label style={S.label}>{t("user_settings.notify_channel_label")}</label>
         <select style={S.select} value={f.notify_channel} onChange={e => setF({ ...f, notify_channel: e.target.value })}>
-          <option value="sound_node">{t("users.notify_channel.sound_node")}</option>
-          <option value="push">{t("users.notify_channel.push")}</option>
-          <option value="chat">{t("users.notify_channel.chat")}</option>
-          <option value="silent">{t("users.notify_channel.silent")}</option>
+          <option value="sound_node">{t("user_settings.notify_channel.sound_node")}</option>
+          <option value="push">{t("user_settings.notify_channel.push")}</option>
+          <option value="chat">{t("user_settings.notify_channel.chat")}</option>
+          <option value="silent">{t("user_settings.notify_channel.silent")}</option>
         </select>
 
         {error && <div style={S.err}>{error}</div>}

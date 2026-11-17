@@ -337,6 +337,22 @@ async def _provider_results(chain: list[str], query: str) -> list[dict]:
     return results
 
 
+async def search_sources(query: str) -> list[dict]:
+    """The search hits as ordered sources ({title, url, tier}) — same providers, trust list and order as web_search,
+    without fetching or Miss Library. For jobs code does itself (P151: a recipe by search words). [] when no
+    provider is set up or nothing is found."""
+    if not query.strip() or web_fetch.trust_list_state() == "unreadable":
+        return []
+    chain = [p for p in dict.fromkeys([_WS_CFG.get("provider"), _WS_CFG.get("fallback")]) if p and _provider_ready(p)]
+    if not chain:
+        return []
+    try:
+        return await _provider_results(chain, query)
+    except Exception as e:
+        log.warning("[web_search] search_sources failed: %s", type(e).__name__)
+        return []
+
+
 async def web_search(
     query: str,
     user_id: str = "global",

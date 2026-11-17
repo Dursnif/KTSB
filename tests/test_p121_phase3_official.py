@@ -288,7 +288,7 @@ def test_official_label_and_keywords_param(lang):
     assert kw["type"] == "array" and kw["items"] == {"type": "string"} and kw["description"]
 
 
-# ── Translation is for the big model (Stian 2026-10-03) ─────────────────────
+# ── Translation is for the big model (2026-10-03) ─────────────────────
 
 
 def _grounded(claims):

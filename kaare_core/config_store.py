@@ -447,6 +447,24 @@ def _sync(rt: Any, new: Any) -> Any:
     return rt if same_data(rt, new) else new
 
 
+# Called with the path after every committed write (DT04-S05d): lets kaare_core.config refresh its in-memory copy so a
+# GUI save is in use at once (rule 25). A listener must never raise into the writer.
+_write_listeners: list = []
+
+
+def add_write_listener(fn) -> None:
+    if fn not in _write_listeners:
+        _write_listeners.append(fn)
+
+
+def _notify_written(path: Path) -> None:
+    for fn in _write_listeners:
+        try:
+            fn(path)
+        except Exception as exc:
+            _log.warning("[CONFIG] reload after writing %s failed: %s", path.name, exc)
+
+
 def _commit(
     path: Path, out: str, old: bytes | None, reason: str, mode: int | None, tag: str = ""
 ) -> bool:
@@ -460,6 +478,7 @@ def _commit(
         _log.info("[CONFIG] wrote %s (%s)", path.name, reason)
     except Exception:
         pass
+    _notify_written(path)
     return True
 
 

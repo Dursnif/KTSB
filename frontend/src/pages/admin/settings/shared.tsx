@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import type { SaveState } from "./useSaveState";
 import { CheckCircle2, XCircle, Loader2, Eye, EyeOff, Wifi, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { apiTestConnection } from "@/services/api";
 import { useTranslation } from "react-i18next";
 import { useSettingsLevel } from "@/hooks/useSettingsLevel";
@@ -15,9 +17,24 @@ export function ExpertOnly({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-export function SaveFeedback({ state }: { state: SaveState }) {
+export function SaveFeedback({ state, applies }: { state: SaveState; applies?: string }) {
   const { t } = useTranslation();
   if (state === "saving") return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
+  if (state === "saved" && applies?.startsWith("restart:")) {
+    // Names the real restart button (Maintenance → Service restart → <service>), rule 25
+    const key = applies.slice("restart:".length);
+    const service = t(`system.services.labels.${key}.label`, { defaultValue: key });
+    return (
+      <span className="flex flex-col gap-0.5">
+        <span className="flex items-center gap-1 text-sm text-green-500"><CheckCircle2 className="h-4 w-4" /> {t("common.saved")}</span>
+        <span className="text-xs text-amber-500">
+          {t("common.saved_needs_restart", { service })}{" "}
+          <Link to="/admin/system" className="underline">{t("common.open_maintenance")} →</Link>
+        </span>
+      </span>
+    );
+  }
+  if (state === "saved" && applies === "now") return <span className="flex items-center gap-1 text-sm text-green-500"><CheckCircle2 className="h-4 w-4" /> {t("common.saved_in_use")}</span>;
   if (state === "saved")  return <span className="flex items-center gap-1 text-sm text-green-500"><CheckCircle2 className="h-4 w-4" /> {t("common.saved")}</span>;
   if (state === "error")  return <span className="flex items-center gap-1 text-sm text-destructive"><XCircle className="h-4 w-4" /> {t("common.error")}</span>;
   return null;
@@ -104,5 +121,20 @@ export function RadioOption({ value, current, onChange, label, description }: {
         <span className="text-xs text-muted-foreground">{description}</span>
       </span>
     </button>
+  );
+}
+
+// Basic/Expert switch shown in the page header of Settings and Integrations; the level itself is shared
+// (SettingsLevelProvider keeps it in localStorage).
+export function SettingsLevelToggle() {
+  const { t } = useTranslation();
+  const { level, toggle } = useSettingsLevel();
+  return (
+    <div className="flex items-center gap-2" title={t("settings.level.toggle_hint")}>
+      <Label htmlFor="settings-level-toggle" className="text-sm text-muted-foreground cursor-pointer" onClick={toggle}>
+        {level === "expert" ? t("settings.level.expert") : t("settings.level.basic")}
+      </Label>
+      <Switch id="settings-level-toggle" checked={level === "expert"} onCheckedChange={toggle} />
+    </div>
   );
 }

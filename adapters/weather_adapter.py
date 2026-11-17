@@ -2005,6 +2005,92 @@ async def fetch_weather(sted: str | None = None, lang: str = "nb") -> str:
     return "\n\n".join(parts)
 
 
+# ── structured «weather now» for code context (P144-s14: Frigate episodes) ──────
+# The user's one weather config decides the source: the HA sensors under Settings → Weather when they are on, else
+# the chosen service. Only met.no and open-meteo give structured «now» here; another service → None (the home's
+# coordinates are never sent to a service the user did not choose). Cached: many episodes close in one night.
+_CONDITIONS_TTL_S = 600
+_conditions_cache: dict = {"ts": 0.0, "value": None}
+
+
+def _as_float(value) -> float | None:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return v if math.isfinite(v) else None
+
+
+async def _ha_conditions(cfg: dict) -> dict | None:
+    entities = {k: cfg.get(e, "") for k, e in (
+        ("precip_mm_h", "ha_precip_entity"), ("precip_last_hour_mm", "ha_precip_last_hour_entity"),
+        ("wind", "ha_wind_entity"), ("gust", "ha_wind_gust_entity"))}
+    entities = {k: v for k, v in entities.items() if v}
+    ha_url, token = _read_ha_config()
+    if not entities or not ha_url or not token:
+        return None
+    out: dict = {"status": "ok", "source": "Home Assistant"}
+    async with httpx.AsyncClient(timeout=4.0, headers={"Authorization": f"Bearer {token}"}) as client:
+        responses = await asyncio.gather(
+            *(client.get(f"{ha_url}/api/states/{eid}") for eid in entities.values()), return_exceptions=True)
+    for key, resp in zip(entities, responses, strict=False):
+        if isinstance(resp, Exception) or resp.status_code != 200:
+            continue
+        data = resp.json()
+        value = _as_float(data.get("state"))
+        if value is None:
+            continue
+        out[key] = value
+        if key == "wind":
+            out["wind_unit"] = (data.get("attributes") or {}).get("unit_of_measurement") or "m/s"
+    return out if len(out) > 2 else None
+
+
+async def _service_conditions(provider: str) -> dict | None:
+    lat, lon, _name = _read_default_location()
+    if lat == 0.0 and lon == 0.0:
+        return None
+    async with httpx.AsyncClient(timeout=8.0, headers={"User-Agent": _USER_AGENT}) as client:
+        if provider == "open-meteo":
+            r = await client.get(_OPEN_METEO_URL, params={
+                "latitude": round(lat, 4), "longitude": round(lon, 4), "wind_speed_unit": "ms",
+                "current": "precipitation,wind_speed_10m,wind_gusts_10m,cloud_cover"})
+            r.raise_for_status()
+            cur = r.json().get("current") or {}
+            return {"status": "ok", "source": "open-meteo", "precip_mm_h": _as_float(cur.get("precipitation")),
+                    "wind": _as_float(cur.get("wind_speed_10m")), "gust": _as_float(cur.get("wind_gusts_10m")),
+                    "wind_unit": "m/s", "cloud_pct": _as_float(cur.get("cloud_cover"))}
+        if provider == "met.no":
+            r = await client.get(_MET_URL, params={"lat": round(lat, 4), "lon": round(lon, 4)})
+            r.raise_for_status()
+            series = (r.json().get("properties") or {}).get("timeseries") or []
+            if not series:
+                return None
+            data = series[0].get("data") or {}
+            inst = (data.get("instant") or {}).get("details") or {}
+            nxt = (data.get("next_1_hours") or {}).get("details") or {}
+            return {"status": "ok", "source": "met.no", "precip_mm_h": _as_float(nxt.get("precipitation_amount")),
+                    "wind": _as_float(inst.get("wind_speed")), "wind_unit": "m/s",
+                    "cloud_pct": _as_float(inst.get("cloud_area_fraction"))}
+    return None
+
+
+async def current_conditions() -> dict | None:
+    """{status: ok, source, precip_mm_h, precip_last_hour_mm, wind, gust, wind_unit, cloud_pct} — keys present only
+    when known — or None (no usable source). May raise on a network error; callers catch."""
+    now = datetime.now(UTC).timestamp()
+    if now - _conditions_cache["ts"] < _CONDITIONS_TTL_S and _conditions_cache["value"] is not None:
+        return dict(_conditions_cache["value"])
+    cfg = _read_weather_config()
+    value = await _ha_conditions(cfg) if cfg["use_ha_sensors"] else None
+    if value is None:
+        value = await _service_conditions(cfg["provider"])
+    if value is not None:
+        value = {k: v for k, v in value.items() if v is not None}
+        _conditions_cache.update(ts=now, value=value)
+    return value
+
+
 # primary alias (new name)
 get_weather = fetch_weather
 # backward-compatible alias (deprecated)

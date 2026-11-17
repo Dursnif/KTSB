@@ -14,7 +14,6 @@ SETTINGS_PATH = KAARE_BASE / "configs" / "settings.yaml"
 SERVICES_PATH = KAARE_BASE / "configs" / "services.yaml"
 JING_THOUGHTS = KAARE_BASE / "state" / "jing_thoughts.txt"
 INNER_THOUGHTS = KAARE_BASE / "state" / "inner_thoughts.txt"
-FACE_EVENTS = KAARE_BASE / "state" / "argus" / "face_events.txt"
 DIGEST = KAARE_BASE / "state" / "argus" / "digest.txt"
 PERSONALITY = KAARE_BASE / "state" / "personality_self.md"
 MODEL_CACHE_DIR = KAARE_BASE / "services" / "inner_voices" / "ov_cache"
@@ -35,12 +34,29 @@ def load_behavior_config(name: str) -> dict:
         return {}
 
 
+def inner_thoughts_max_bytes() -> int:
+    """Size limit of inner_thoughts.txt (P150: size, not hours) — settings.yaml storage_limits.inner_thoughts_mb, set in
+    the GUI under Settings → Logs/Storage; 0 = off; default 10 MB (same as kaare_core.storage.limits)."""
+    try:
+        raw = (yaml.safe_load(SETTINGS_PATH.read_text()).get("storage_limits") or {}).get("inner_thoughts_mb", 10)
+        mb = int(raw)
+        return mb * 1_048_576 if mb >= 0 else 10 * 1_048_576
+    except Exception:
+        return 10 * 1_048_576
+
+
 def load_service_config(name: str) -> dict:
     """Load jing or jang infrastructure config from services.yaml."""
     try:
         return yaml.safe_load(SERVICES_PATH.read_text()).get(name, {})
     except Exception:
         return {}
+
+
+def push_token(service_cfg: dict) -> str:
+    """The token for KTSB's inner-voices API: the voice's own, else the shared one the GUI writes under inner_voices
+    (Settings → inner voices). Before J21b only the voice's own was read, so a GUI-made token was never sent (401)."""
+    return (service_cfg.get("push_token") or load_service_config("inner_voices").get("push_token") or "").strip()
 
 
 def get_pipe_lang() -> str:

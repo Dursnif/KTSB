@@ -202,13 +202,14 @@ def walk_onboarding(page, base_url: str) -> dict:
         step_ok("distribusjon")
 
         # Step 3 — LLM source: 4 buttons = 2 choice + save/skip (default "builtin", 0 inputs).
+        # Next step (Integrasjoner) has 7 inputs since P127: HA/MQTT/Frigate/Plex URLs + HA token + subnet + media host.
         content.get_by_role("button").nth(2).click()  # save — after the 2 choice buttons
-        if not wait_for_signature(expected_buttons=2, expected_inputs=4):
+        if not wait_for_signature(expected_buttons=2, expected_inputs=7):
             step_fail("llm", f"didn't reach 'integrasjoner' step. Now: {describe_content()}")
             return result
         step_ok("llm")
 
-        # Step 4 — Integrasjoner: 4 inputs (all optional, left empty), 2 buttons (save/skip).
+        # Step 4 — Integrasjoner: 7 inputs (all optional, left empty), 2 buttons (save/skip).
         content.get_by_role("button").nth(0).click()
         if not wait_for_signature(expected_buttons=1, expected_inputs=0):
             step_fail("integrasjoner", f"didn't reach 'ferdig' step. Now: {describe_content()}")

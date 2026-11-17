@@ -6,16 +6,19 @@ from pathlib import Path
 import httpx
 import yaml
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 import kaare_core.app_state as app_state
 from adapters.llm_adapter import reload_config as _reload_llm_config
 from kaare_core import config_store
 from kaare_core.background import spawn
+from kaare_core.cards import store as card_store
 from kaare_core.config import reload_config as _reload_core_config
-from kaare_core.image_store import all_users_stats, find_image
+from kaare_core.domain.frigate_store import SNAPSHOT_DIR
+from kaare_core.frigate_user.questions import may_see_snapshot
+from kaare_core.frigate_user.sealing import read_picture
+from kaare_core.image_store import all_users_stats, find_image, find_image_any
 from kaare_core.users.auth import require_admin as _require_admin
-from kaare_core.users.auth import require_auth as _require_auth
 from kaare_core.users.auth import require_image_auth as _require_image_auth
 
 _LLM_PATH = Path("/kaare/configs/llm.yaml")
@@ -29,7 +32,7 @@ _OLLAMA_ROLE_KEYS = {
     "mechanic",
     "fallback",
 }  # llm.yaml keys — Kåre is "default"
-_SERVICES_OLLAMA_KEYS = {"kare", "library", "miss_kare", "proxy"}
+_SERVICES_OLLAMA_KEYS = {"kare", "library", "miss_kare"}
 
 router = APIRouter()
 
@@ -74,7 +77,7 @@ async def _stream_ollama_pull(role: str, base_url: str, model: str) -> None:
 
 
 @router.get("/api/ollama/models/{role}")
-async def api_get_ollama_models(role: str, _u=Depends(_require_auth)):
+async def api_get_ollama_models(role: str, _u=Depends(_require_admin)):
     """List models installed in the Ollama instance used by this role."""
     base_url = _ollama_base_url(role)
     try:
@@ -120,7 +123,7 @@ async def api_ollama_pull(role: str, payload: dict, _u=Depends(_require_admin)):
 
 
 @router.get("/api/ollama/pull/status/{role}")
-async def api_ollama_pull_status(role: str, _u=Depends(_require_auth)):
+async def api_ollama_pull_status(role: str, _u=Depends(_require_admin)):
     """Return current pull progress for a role."""
     return app_state._OLLAMA_PULL_STATUS.get(
         role, {"pulling": False, "status": "", "completed": 0, "total": 0, "error": None}
@@ -128,7 +131,7 @@ async def api_ollama_pull_status(role: str, _u=Depends(_require_auth)):
 
 
 @router.get("/api/settings/ollama_source")
-async def api_get_ollama_source(_u=Depends(_require_auth)):
+async def api_get_ollama_source(_u=Depends(_require_admin)):
     data = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
     url = ""
     for role in ("default", "miss_kare", "library", "mechanic", "fallback"):
@@ -169,7 +172,8 @@ async def api_put_ollama_source(payload: dict, _u=Depends(_require_admin)):
 @router.get("/api/image/{image_id}")
 async def api_serve_image(image_id: str, _u=Depends(_require_image_auth)):
     safe_id = "".join(c for c in image_id if c.isalnum() or c in "_-")
-    path = find_image(safe_id)
+    # Security 2026-11-16: the owner's own pictures, or admin; anyone else gets the same 404 as a missing picture
+    path = find_image_any(safe_id) if _u.get("role") == "admin" else find_image(safe_id, owner=_u.get("sub"))
     if not path:
         raise HTTPException(404, "Image not found")
     suffix = path.suffix.lower()
@@ -182,13 +186,30 @@ async def api_serve_image(image_id: str, _u=Depends(_require_image_auth)):
     return FileResponse(path, media_type=media)
 
 
+_CARD_CSP = "default-src 'none'; img-src https: http:; style-src 'unsafe-inline'"  # the chat shows it via srcdoc
+
+
+@router.get("/api/card/{card_id}")
+async def api_serve_card(card_id: str, _u=Depends(_require_image_auth)):
+    """P151: a card KTSB rendered by code (a recipe) for the chat — no scripts may run in it (CSP)."""
+    path = card_store.path_of(card_id)
+    if not path:
+        raise HTTPException(404, "Card not found")
+    return FileResponse(path, media_type="text/html", headers={"Content-Security-Policy": _CARD_CSP,
+                                                               "Cache-Control": "private, max-age=3600"})
+
+
 @router.get("/api/frigate_snapshot/{event_id:path}")
 async def api_serve_frigate_snapshot(event_id: str, _u=Depends(_require_image_auth)):
     safe = _re.sub(r"[^A-Za-z0-9._\-]", "", event_id)
-    path = Path("/kaare/state/frigate_snapshots") / f"{safe}.jpg"
-    if not path.is_file():
+    # J24: admin sees every picture; a normal user only their own «Var det deg?» events, never an untracked one
+    if not await asyncio.to_thread(may_see_snapshot, _u.get("sub", ""), _u.get("role"), safe):
+        raise HTTPException(403, "Not your event")
+    path = SNAPSHOT_DIR / f"{safe}.jpg"
+    data = await asyncio.to_thread(read_picture, path) if path.is_file() else None  # sealed at rest (R0.6a)
+    if not data:
         raise HTTPException(404, "Frigate snapshot not found")
-    return FileResponse(path, media_type="image/jpeg")
+    return Response(content=data, media_type="image/jpeg")
 
 
 @router.get("/api/admin/images/stats")

@@ -25,6 +25,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from kaare_core.memory.agenda_themes import TOOL_HINT_SOURCES, normalize_theme, resolve_theme
+from kaare_core.storage import sqlite_files
 from kaare_core.tools.trace_reader import tools_by_rid
 
 logger = logging.getLogger(__name__)
@@ -116,7 +117,8 @@ CREATE TABLE IF NOT EXISTS proposals (
     ts          TEXT    NOT NULL,
     decided_at  TEXT,
     topic_id    INTEGER REFERENCES topics(id),
-    kind        TEXT    NOT NULL DEFAULT 'change'
+    kind        TEXT    NOT NULL DEFAULT 'change',
+    built_at    TEXT
 );
 
 CREATE TABLE IF NOT EXISTS consolidations (
@@ -172,7 +174,7 @@ def _utc_ts() -> str:
 def _get_conn() -> sqlite3.Connection:
     """Opens a connection in WAL mode — same pattern as long_term.py / knowledge_store.py."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    conn = sqlite_files.connect(str(DB_PATH), check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -209,6 +211,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         ("topics", "conclusion", "TEXT NOT NULL DEFAULT ''"),
         ("proposals", "topic_id", "INTEGER REFERENCES topics(id)"),
         ("proposals", "kind", "TEXT NOT NULL DEFAULT 'change'"),
+        # T32b: when a confirmed proposal was actually built — confirmed ≠ built (#78 sat confirmed for weeks)
+        ("proposals", "built_at", "TEXT"),
     ):
         existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
         if existing and col not in existing:
@@ -1019,7 +1023,7 @@ def proposal_followups(since_utc: str) -> list[dict]:
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
-            "SELECT p.id, p.text, p.decided_at, COALESCE(f.topic_id, p.topic_id) AS topic_id, "
+            "SELECT p.id, p.text, p.decided_at, p.built_at, COALESCE(f.topic_id, p.topic_id) AS topic_id, "
             "t.label AS topic_label FROM proposals p "
             "LEFT JOIN findings f ON f.id = p.finding_id "
             "LEFT JOIN topics t ON t.id = COALESCE(f.topic_id, p.topic_id) "
@@ -1171,6 +1175,23 @@ def decide_proposal(proposal_id: int, status: str, decided_by: str) -> dict | No
             )
             conn.commit()
         return dict(conn.execute("SELECT * FROM proposals WHERE id = ?", (proposal_id,)).fetchone())
+    finally:
+        conn.close()
+
+
+def mark_proposal_built(proposal_id: int, built_by: str) -> bool:
+    """Record that a confirmed change proposal has been built (T32b). Only for confirmed proposals; never overwrites an
+    earlier build date. Returns True if the row was marked."""
+    _ensure_db()
+    conn = _get_conn()
+    try:
+        cur = conn.execute(
+            "UPDATE proposals SET built_at = ?, decided_by = CASE WHEN decided_by = '' THEN ? ELSE decided_by END "
+            "WHERE id = ? AND status = 'confirmed' AND built_at IS NULL",
+            (_utc_ts(), built_by, proposal_id),
+        )
+        conn.commit()
+        return bool(cur.rowcount)
     finally:
         conn.close()
 

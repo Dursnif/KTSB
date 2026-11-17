@@ -1,4 +1,4 @@
-// Settings → General → «Logs and data» (Expert, P131): log write interval + data retention.
+// Settings → Logs/Storage → «Logs and data» (Expert, P131; moved from General in P150): log write interval + data retention.
 // Self-contained card so the GUI redesign (I21) can move it as one block.
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -19,7 +19,6 @@ import { useSaveState } from "./useSaveState";
 const RETENTION_FIELDS: { key: keyof RetentionDays; label: string }[] = [
   { key: "interactions_retention_days", label: "settings.generelt.logs.interactions_label" },
   { key: "episodes_retention_days", label: "settings.generelt.logs.episodes_label" },
-  { key: "think_cache_retention_days", label: "settings.generelt.logs.think_label" },
 ];
 
 /** Amber line under a field when the chosen value is outside the recommended range (P131 D14). */
@@ -35,17 +34,17 @@ export default function LogsAndDataCard() {
   const [days, setDays] = useState<Record<keyof RetentionDays, string>>({
     interactions_retention_days: "",
     episodes_retention_days: "",
-    think_cache_retention_days: "",
   });
+  const [replyChars, setReplyChars] = useState("");
   const [error, setError] = useState("");
 
   const apply = (d: LogsAndDataSettings) => {
     setInfo(d);
     setFlush(String(d.flush_interval_seconds));
+    setReplyChars(String(d.think_response_max_chars));
     setDays({
       interactions_retention_days: String(d.retention.interactions_retention_days),
       episodes_retention_days: String(d.retention.episodes_retention_days),
-      think_cache_retention_days: String(d.retention.think_cache_retention_days),
     });
   };
 
@@ -61,6 +60,7 @@ export default function LogsAndDataCard() {
       retention: Object.fromEntries(
         RETENTION_FIELDS.map(f => [f.key, Number(days[f.key])]),
       ) as RetentionDays,
+      think_response_max_chars: Number(replyChars),
     })
       .then(d => { apply(d); ss.saved(); })
       .catch(err => { setError(apiErrorDetail(err) ?? t("common.error")); ss.error(); });
@@ -107,6 +107,20 @@ export default function LogsAndDataCard() {
               {(() => { const w = retentionWarning(days[f.key]); return w && <Warning text={w} />; })()}
             </FieldRow>
           ))}
+          <FieldRow
+            label={t("settings.generelt.logs.think_reply_label")}
+            hint={t("settings.generelt.logs.think_reply_hint", {
+              min: info?.limits.think_response_min ?? 500,
+              max: info?.limits.think_response_max ?? 20000,
+              def: info?.defaults.think_response_max_chars ?? 4000,
+            })}
+          >
+            <Input
+              type="number" step={500} value={replyChars}
+              min={info?.limits.think_response_min ?? 500} max={info?.limits.think_response_max ?? 20000}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setReplyChars(e.target.value)}
+            />
+          </FieldRow>
         </div>
         <div className="flex items-center gap-3 mt-4">
           <Button onClick={save} disabled={!info || ss.state === "saving"}>

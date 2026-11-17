@@ -24,6 +24,7 @@ from kaare_core.think_strip import strip_think_block
 from kaare_core.tools.executor_library import _ask_library_wiki
 from kaare_core.tools.i18n import get_lang, t
 from kaare_core.tools.think_cache import log_think
+from kaare_core.users import ktsb_file
 from kaare_core.users.profile_manager import (
     get_display_name,
     get_section_fields,
@@ -133,8 +134,12 @@ async def evaluate(
     kare_response: str,
     user_id: str = "global",
     addressed_directly: bool = False,
+    previous: tuple[str, str] | None = None,
 ) -> str:
     """
+    `previous` = (user message, Kåre's reply) of the turn before, so a short answer to Kåre's question is judged with
+    that question in view, not as a cut-off fragment (owner decision 2026-11-16, option A; thread 4).
+
     Returns [STILLE] if Miss Kåre has nothing to say,
     or a short comment (2-3 sentences) if something moved her.
 
@@ -171,6 +176,8 @@ async def evaluate(
     )
 
     user_content = t("mk_eval_user_content", lang, user_msg=user_msg, kare_response=kare_response)
+    if previous and (previous[0] or previous[1]):
+        user_content = t("mk_eval_previous_turn", lang, user_msg=previous[0], kare_response=previous[1]) + user_content
 
     messages = [
         {"role": "system", "content": system},
@@ -333,7 +340,7 @@ async def extract_and_store_fact(user_id: str, prior_question: str, user_reply: 
         _write_fact_if_novel(user_id, fact["section"], fact["field"], fact["value"])
 
 
-async def extract_facts_from_meeting(user_id: str, kare_closing: str) -> None:
+async def extract_facts_from_meeting(user_id: str, kare_closing: str, rid: str = "") -> None:
     """
     Called after the nightly reflection meeting concludes. Extracts at most one concrete
     biographical fact from Kåre's closing synthesis about the user and writes it into the
@@ -348,4 +355,7 @@ async def extract_facts_from_meeting(user_id: str, kare_closing: str) -> None:
     lang = get_lang(user_id)
     fact = await _extract_fact_json(kare_closing.strip(), t("mk_extract_hint_meeting", lang), lang)
     if fact:
-        _write_fact_if_novel(user_id, fact["section"], fact["field"], fact["value"])
+        # J26: the meeting never writes the profile — its finding is a labelled guess in KTSB's own file
+        result = ktsb_file.add_guess(user_id, fact["section"], fact["field"], fact["value"], source="meeting", rid=rid)
+        log.info("[Miss Kare] meeting finding for %s → KTSB file (%s.%s, %s)", user_id, fact["section"], fact["field"],
+                 result)

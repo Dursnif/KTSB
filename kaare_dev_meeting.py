@@ -4,8 +4,8 @@ Kåre utviklingsmøte – kjøres kl. 05:30 via systemd timer.
 
 Deltakere:
   - Mechanic (9B, 5060 Ti port 11445) – teknisk graving med verktøy
-  - Kåre (27B, Blackwell GPU via proxy port 11441) – systemperspektiv med verktøy
-  - Møteleder (27B, deler GPU-proxy port 11441) – regissør og prioriterer
+  - Kåre (27B, Blackwell GPU, port 11440) – systemperspektiv med verktøy
+  - Møteleder (27B, deler Kåres modell) – regissør og prioriterer
   - Online (405B cloud) – ekstern vurdering
 
 Flyt:
@@ -34,9 +34,10 @@ from pathlib import Path
 import httpx
 import yaml
 
+from kaare_core.storage import sqlite_files
+
 sys.path.insert(0, "/kaare")
 import json as _json
-import sqlite3
 
 from adapters.llm_adapter import _current_rid as _rid_ctx_meet
 from adapters.llm_adapter import _current_source as _src_ctx_meet
@@ -252,9 +253,9 @@ def _get_memory_context(lang: str = "nb") -> str:
         log.warning("Could not load STM daily summaries: %s", e)
 
     try:
-        conn = sqlite3.connect("/kaare/state/memory/interactions.db")
+        conn = sqlite_files.connect("/kaare/state/memory/interactions.db")
         rows = conn.execute(
-            "SELECT narrative, topics, user_id FROM episodes ORDER BY id DESC LIMIT 5"
+            "SELECT narrative, topics, user_id FROM episodes WHERE status = 'ok' ORDER BY id DESC LIMIT 5"
         ).fetchall()
         conn.close()
         if rows:

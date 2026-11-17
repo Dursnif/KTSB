@@ -12,15 +12,15 @@ Exported: REFLEX_TOOLS, dispatch()
 
 import json
 import re
-import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
 
 import kaare_fastpath as _fp
-from kaare_core import config_store
+from kaare_core import config_store, receipts
 from kaare_core.memory.long_term import DB_PATH as _LTM_DB_PATH
+from kaare_core.storage import sqlite_files
 from kaare_core.tools.i18n import get_lang, t
 from kaare_core.tools.trace_reader import get_recent_traces
 from kaare_core.users.contributors import contributor_allowed
@@ -90,7 +90,7 @@ def _suggest(lang: str, user_id: str) -> str:
     # Find repeated HA commands in LTM with consistent outcomes
     ltm_candidates = []
     try:
-        conn = sqlite3.connect(str(_LTM_DB_PATH))
+        conn = sqlite_files.connect(str(_LTM_DB_PATH))
         cur = conn.execute(
             """
             SELECT LOWER(TRIM(prompt)) as norm_prompt,
@@ -181,7 +181,7 @@ def _suggest(lang: str, user_id: str) -> str:
     return "\n".join(lines)
 
 
-def _confirm(proposal_id: str, lang: str) -> str:
+def _confirm(proposal_id: str, lang: str, receipt_who: str | None = None) -> str:
     proposals = _load_proposals()
     proposal = next((p for p in proposals if p.get("id") == proposal_id), None)
     if not proposal:
@@ -230,10 +230,12 @@ def _confirm(proposal_id: str, lang: str) -> str:
             p["reflex_id"] = reflex_id
     _save_proposals(proposals)
 
-    return t("reflex_confirmed", lang, reflex_id=reflex_id, phrase=proposal["phrase"])
+    return t("reflex_confirmed", lang, reflex_id=reflex_id, phrase=proposal["phrase"]) + receipts.suffix(
+        "reflex", ref=f"reflex:{reflex_id}", what=t("rcpt_reflex_what", lang, phrase=proposal["phrase"]),
+        where=t("rcpt_reflex_where", lang), who=receipt_who, lang=lang)
 
 
-def _reject(proposal_id: str, lang: str) -> str:
+def _reject(proposal_id: str, lang: str, receipt_who: str | None = None) -> str:
     proposals = _load_proposals()
     proposal = next((p for p in proposals if p.get("id") == proposal_id), None)
     if not proposal:
@@ -245,7 +247,10 @@ def _reject(proposal_id: str, lang: str) -> str:
             p["rejected_at"] = datetime.now(UTC).isoformat()
     _save_proposals(proposals)
 
-    return t("reflex_rejected", lang, phrase=proposal.get("phrase", proposal_id))
+    return t("reflex_rejected", lang, phrase=proposal.get("phrase", proposal_id)) + receipts.suffix(
+        "reflex_rejected", ref=f"reflex_proposal:{proposal_id}", what=t("rcpt_reflex_rejected_what", lang,
+                                                                       phrase=proposal.get("phrase", proposal_id)),
+        where=t("rcpt_reflex_where", lang), who=receipt_who, lang=lang)
 
 
 def _list_proposals(lang: str) -> str:
@@ -274,11 +279,11 @@ async def dispatch(name: str, arguments: dict) -> str:
         if action == "confirm":
             if not _is_allowed_reflex_contributor(user_id):
                 return t("reflex_not_allowed", lang)
-            return _confirm(arguments.get("proposal_id", ""), lang)
+            return _confirm(arguments.get("proposal_id", ""), lang, receipt_who=user_id)
         if action == "reject":
             if not _is_allowed_reflex_contributor(user_id):
                 return t("reflex_not_allowed", lang)
-            return _reject(arguments.get("proposal_id", ""), lang)
+            return _reject(arguments.get("proposal_id", ""), lang, receipt_who=user_id)
         if action == "list":
             return _list_proposals(lang)
         return (

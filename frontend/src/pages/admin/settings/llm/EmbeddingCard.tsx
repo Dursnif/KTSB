@@ -49,13 +49,13 @@ export function EmbeddingCard({ data, onSaved }: { data: EmbServicesData; onSave
   const save = async () => {
     ss.saving();
     try {
-      await apiPutEmbeddingBackend({
+      const saveRes = await apiPutEmbeddingBackend({
         device,
         hf_model:    hfModel,
         model_path:  isOpenvino ? modelPath : undefined,
         emb_enabled: embEnabled,
       });
-      ss.saved();
+      ss.saved(saveRes?.applies);
       onSaved();
     } catch { ss.error(); }
   };
@@ -87,7 +87,6 @@ export function EmbeddingCard({ data, onSaved }: { data: EmbServicesData; onSave
           <Switch
             checked={embEnabled}
             onCheckedChange={v => setEmbEnabled(v)}
-            className="data-checked:bg-green-600 data-unchecked:bg-red-600"
             onClick={e => e.stopPropagation()}
           />
           {collapsed
@@ -183,7 +182,7 @@ export function EmbeddingCard({ data, onSaved }: { data: EmbServicesData; onSave
               {ss.state === "saving" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {t("common.save")}
             </Button>
-            <SaveFeedback state={ss.state} />
+            <SaveFeedback state={ss.state} applies={ss.applies} />
           </div>
         </CardContent>
       )}

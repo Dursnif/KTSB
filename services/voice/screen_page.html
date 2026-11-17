@@ -1,0 +1,153 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KTSB</title>
+<style>
+/* P151: KTSB's screen page. Black while idle; shows a live camera (MSE) or a card. No text of its own except the
+   pairing code and errors, which come from the bridge in the household language. */
+html,body{margin:0;height:100%;background:#000;color:#ddd;overflow:hidden;font-family:sans-serif}
+video,iframe{position:fixed;inset:0;width:100%;height:100%;border:0;background:#000}
+video{object-fit:contain}
+#msg{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:5vh 6vw;box-sizing:border-box}
+#code{font:700 22vh/1 sans-serif;letter-spacing:.12em;color:#fff;margin:2vh 0}
+#text{font-size:3.4vh;line-height:1.4;max-width:80vw;color:#bbb;white-space:pre-line}
+</style></head>
+<body>
+<div id="stage"></div>
+<div id="msg"><div id="code"></div><div id="text"></div></div>
+<script>
+"use strict";
+const node = decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || "");
+const params = new URLSearchParams(location.search);
+const sessionKey = params.get("s") || "";
+let deviceKey = "";
+if (!sessionKey) {  // a paired screen (no Cast): its own random key, kept in this browser
+  try { deviceKey = localStorage.getItem("ktsb_screen_key") || ""; } catch (e) {}
+  if (!deviceKey) {
+    const a = new Uint8Array(18); (window.crypto || window.msCrypto).getRandomValues(a);
+    deviceKey = Array.from(a, b => b.toString(16).padStart(2, "0")).join("");
+    try { localStorage.setItem("ktsb_screen_key", deviceKey); } catch (e) {}
+  }
+}
+const stage = document.getElementById("stage"), msg = document.getElementById("msg");
+let cur = null;          // content shown now (from the bridge)
+let video = null, ws = null, abort = null, lastT = 0, stillSince = 0, restartTimer = null;
+
+function showMsg(code, text) {
+  document.getElementById("code").textContent = code || "";
+  document.getElementById("text").textContent = text || "";
+  msg.style.display = (code || text) ? "flex" : "none";
+}
+function clearStage() {
+  if (ws) { try { ws.close(); } catch (e) {} ws = null; }
+  if (abort) { try { abort.abort(); } catch (e) {} abort = null; }
+  if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
+  stage.innerHTML = ""; video = null; lastT = 0; stillSince = 0;
+}
+function report(extra) {
+  if (!cur) return;
+  const q = video && video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality() : {};
+  const buf = video && video.buffered.length ? video.buffered.end(video.buffered.length - 1) - video.currentTime : 0;
+  const body = Object.assign({token: cur.token, rev: cur.rev, t: video ? video.currentTime : 0, buf: buf,
+    frames: q.totalVideoFrames || 0, dropped: q.droppedVideoFrames || 0,
+    w: video ? video.videoWidth : 0, h: video ? video.videoHeight : 0}, extra || {});
+  fetch("/screen/" + encodeURIComponent(node) + "/report", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(body)}).catch(() => {});
+}
+function restartSoon() {  // stream ended or broke while the content is still wanted → start it again
+  if (restartTimer || !cur) return;
+  const keep = cur;
+  restartTimer = setTimeout(() => { restartTimer = null; if (cur === keep) render(keep); }, 2000);
+}
+function newVideo() {
+  video = document.createElement("video");
+  video.autoplay = true; video.muted = true; video.playsInline = true;
+  stage.appendChild(video);
+  return video;
+}
+function startMse(c, source) {  // source: (ms, sb-setter) → feeds data
+  const v = newVideo(), ms = new MediaSource();
+  v.src = URL.createObjectURL(ms);
+  ms.addEventListener("sourceopen", () => source(ms), {once: true});
+}
+function appender(ms, type) {
+  const sb = ms.addSourceBuffer(type), q = [];
+  sb.mode = "segments";
+  const pump = () => { if (!sb.updating && q.length) { try { sb.appendBuffer(q.shift()); } catch (e) {
+    if (video && video.buffered.length && video.currentTime - video.buffered.start(0) > 10) {
+      try { sb.remove(0, video.currentTime - 5); } catch (e2) {} } } } };
+  sb.addEventListener("updateend", pump);
+  return (data) => { q.push(data); pump(); };
+}
+function render(c) {
+  clearStage();
+  cur = c;
+  showMsg("", "");
+  if (!c) return;
+  if (c.kind === "card") {
+    const f = document.createElement("iframe");
+    f.src = "/screen/card/" + encodeURIComponent(c.token);
+    f.onload = () => report({event: "loaded"});
+    stage.appendChild(f);
+    return;
+  }
+  if (!window.MediaSource) { report({event: "no_mse"}); showMsg("", c.error_text || ""); return; }
+  if (c.mode === "mse") {
+    startMse(c, (ms) => {
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      ws = new WebSocket(proto + "//" + location.host + "/screen/ws/" + encodeURIComponent(c.token));
+      ws.binaryType = "arraybuffer";
+      let push = null;
+      ws.onopen = () => ws.send(JSON.stringify({type: "mse",
+        value: "avc1.640029,avc1.64002A,avc1.640033,avc1.4D0029,avc1.4D401F,avc1.42E01E,mp4a.40.2"}));
+      ws.onmessage = (ev) => {
+        if (typeof ev.data === "string") {
+          const m = JSON.parse(ev.data);
+          if (m.type === "mse") push = appender(ms, m.value);
+          else if (m.type === "error") report({event: "error"});
+          return;
+        }
+        if (push) push(ev.data);
+      };
+      ws.onclose = () => restartSoon();
+    });
+  } else if (c.mode === "fmp4") {
+    startMse(c, async (ms) => {
+      const push = appender(ms, 'video/mp4; codecs="' + (c.codec || "avc1.4D401F") + '"');
+      abort = new AbortController();
+      try {
+        const r = await fetch("/screen/mp4/" + encodeURIComponent(c.token), {signal: abort.signal});
+        const rd = r.body.getReader();
+        for (;;) { const {value, done} = await rd.read(); if (done) break; push(value); }
+      } catch (e) {}
+      restartSoon();
+    });
+  }
+}
+// keep a live stream at the live edge, notice a frozen picture
+setInterval(() => {
+  if (!video || !video.buffered.length) return;
+  const end = video.buffered.end(video.buffered.length - 1);
+  if (end - video.currentTime > 1.2) video.currentTime = end - 0.3;
+  if (video.currentTime > lastT + 0.05) { lastT = video.currentTime; stillSince = 0; }
+  else if (!stillSince) stillSince = Date.now();
+  else if (Date.now() - stillSince > 6000) { report({event: "stalled"}); stillSince = 0; restartSoon(); }
+}, 250);
+setInterval(() => report(), 3000);
+async function poll() {
+  try {
+    const qs = "?key=" + encodeURIComponent(sessionKey || deviceKey) + (sessionKey ? "" : "&device=" + encodeURIComponent(deviceKey));
+    const r = await fetch("/screen/" + encodeURIComponent(node) + "/state" + qs, {cache: "no-store"});
+    const s = await r.json();
+    if (s.off) { render(null); showMsg("", s.text || ""); }
+    else if (!s.paired) { if (cur) render(null); showMsg(s.pair_code || "", s.text || ""); }
+    else {
+      const c = s.content;
+      if (!c) { if (cur) render(null); showMsg("", ""); }
+      else if (!cur || cur.token !== c.token || cur.rev !== c.rev) render(c);
+    }
+  } catch (e) {}
+  setTimeout(poll, 2000);
+}
+poll();
+</script>
+</body></html>

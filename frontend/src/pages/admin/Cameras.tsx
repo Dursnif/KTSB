@@ -1,30 +1,14 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ExpertOnly } from "./settings/shared";
-import { API_BASE } from "@/services/api";
-
-type AnalysisEntry = {
-  ts: string;
-  camera: string;
-  display_name: string;
-  role: string;
-  label: string;
-  score: number;
-  top_score: number;
-  duration: number;
-  sub_label: string | null;
-  zones: string[];
-  event_id: string;
-  analysis: string;
-  failed: boolean;
-  has_snapshot: boolean;
-};
+import { API_BASE, apiGetEpisodeFramesUsage, apiGetFrigateUserPipe, apiPutFrigateUserPipe } from "@/services/api";
+import { ChevronDown } from "lucide-react";
+import StorageBar from "@/components/StorageBar";
 
 type LabelConfig = {
   analyze: boolean;
   min_confidence: number;
   min_duration_seconds?: number;
-  announce: boolean;
 };
 
 type CameraConfig = {
@@ -32,6 +16,9 @@ type CameraConfig = {
   display_name: string;
   role: string;
   labels: Record<string, LabelConfig>;
+  frigate_type?: string | null;  // read-only, from Frigate's config (e.g. "lpr")
+  episodes?: boolean;  // «Kan lage episoder» (P144-s14); missing = the role's default
+  episodes_default?: boolean;  // read-only, from the API (road-facing off, others on) — never saved
 };
 
 type Role = {
@@ -40,7 +27,6 @@ type Role = {
 
 type StorageConfig = {
   snapshots_max_mb?: number;
-  log_max_mb?: number;
 };
 
 type AwayModeConfig = {
@@ -71,18 +57,22 @@ export default function Cameras() {
   const { t } = useTranslation();
   const [data, setData] = useState<CamerasData | null>(null);
   const [cameras, setCameras] = useState<CameraConfig[]>([]);
-  const [globalEnabled, setGlobalEnabled] = useState(true);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [saved, setSaved] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
 
   const [snapshotsMb, setSnapshotsMb] = useState<number>(500);
-  const [logMb, setLogMb] = useState<number>(50);
   const [storageSaving, setStorageSaving] = useState(false);
   const [storageSaved, setStorageSaved] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [usageSnap, setUsageSnap] = useState<number>(0);
-  const [usageLog, setUsageLog] = useState<number>(0);
+  // P144-s11: episode frames (configs/frigate_user.yaml via the Frigate user's API)
+  const [framesMb, setFramesMb] = useState<number>(500);
+  const [keepMb, setKeepMb] = useState<number>(500);
+  const [dbMb, setDbMb] = useState<number>(500);          // P150: frigate.db size limit (0 = off)
+  const [usageDb, setUsageDb] = useState<number>(0);
+  const [usageFrames, setUsageFrames] = useState<number>(0);
+  const [usageKeep, setUsageKeep] = useState<number>(0);
 
   const [awayMode, setAwayMode] = useState<AwayModeConfig>({
     nighttime_start: 22, nighttime_end: 6,
@@ -98,33 +88,27 @@ export default function Cameras() {
       })
       .then((d: CamerasData) => {
         setData(d);
-        setGlobalEnabled(d.enabled ?? true);
         setCameras(d.cameras ?? []);
         setSnapshotsMb(d.storage?.snapshots_max_mb ?? 500);
-        setLogMb(d.storage?.log_max_mb ?? 50);
         if (d.away_mode) setAwayMode(d.away_mode);
       })
       .catch((e: Error) => setError(e.message || t("cameras.error_load")));
 
     fetch(`${API_BASE}/api/settings/cameras/_storage_usage`, { headers: authHeaders() })
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) { setUsageSnap(d.snapshots_mb); setUsageLog(d.log_mb); } })
+      .then(d => { if (d) setUsageSnap(d.snapshots_mb); })
+      .catch(() => {});
+
+    apiGetFrigateUserPipe()
+      .then(p => {
+        setFramesMb(p.episode_frames_max_mb); setKeepMb(p.episode_frames_keep_mb);
+        if (p.frigate_db_max_mb !== undefined) setDbMb(p.frigate_db_max_mb);
+      })
+      .catch(() => {});
+    apiGetEpisodeFramesUsage()
+      .then(u => { setUsageFrames(u.full_mb); setUsageKeep(u.keep_mb); setUsageDb(u.db_mb ?? 0); })
       .catch(() => {});
   }, [t]);
-
-  const handleGlobalToggle = async (val: boolean) => {
-    setGlobalEnabled(val);
-    try {
-      const r = await fetch(`${API_BASE}/api/settings/cameras/_global`, {
-        method: "PUT",
-        headers: authHeaders(),
-        body: JSON.stringify({ enabled: val }),
-      });
-      if (!r.ok) throw new Error(`${r.status}`);
-    } catch (e: unknown) {
-      setError(t("cameras.error_save_global", { msg: e instanceof Error ? e.message : e }));
-    }
-  };
 
   const updateCamera = (camId: string, updated: CameraConfig) => {
     setCameras(prev => prev.map(c => c._id === camId ? updated : c));
@@ -134,7 +118,10 @@ export default function Cameras() {
     setSaving(prev => ({ ...prev, [cam._id]: true }));
     setError(null);
     try {
-      const { _id, ...payload } = cam;
+      const { _id, ...rest } = cam;
+      // frigate_type (from Frigate) and episodes_default (from the role) are read-only — never saved
+      const payload = Object.fromEntries(
+        Object.entries(rest).filter(([k]) => k !== "frigate_type" && k !== "episodes_default"));
       await fetch(`${API_BASE}/api/settings/cameras/${_id}`, {
         method: "PUT",
         headers: authHeaders(),
@@ -151,9 +138,8 @@ export default function Cameras() {
 
   const saveStorage = async () => {
     const snapVal = snapshotsMb;
-    const logVal = logMb;
     if ((snapVal !== 0 && (snapVal < 100 || snapVal > 10000)) ||
-        (logVal !== 0 && (logVal < 10 || logVal > 1000))) {
+        framesMb < 0 || framesMb > 100000 || keepMb < 0 || keepMb > 100000 || dbMb < 0 || dbMb > 1000000) {
       setStorageError(t("cameras.storage_error_invalid"));
       return;
     }
@@ -163,9 +149,10 @@ export default function Cameras() {
       const r = await fetch(`${API_BASE}/api/settings/cameras/_storage`, {
         method: "PUT",
         headers: authHeaders(),
-        body: JSON.stringify({ snapshots_max_mb: snapVal, log_max_mb: logVal }),
+        body: JSON.stringify({ snapshots_max_mb: snapVal }),
       });
       if (!r.ok) throw new Error(`${r.status}`);
+      await apiPutFrigateUserPipe({ episode_frames_max_mb: framesMb, episode_frames_keep_mb: keepMb, frigate_db_max_mb: dbMb });
       setStorageSaved(true);
       setTimeout(() => setStorageSaved(false), 2000);
     } catch (e: unknown) {
@@ -203,28 +190,44 @@ export default function Cameras() {
   }
 
   return (
-    <div style={{ marginTop: 8 }}>
-      {/* Global toggle */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 14,
-        background: "#111", border: "1px solid #222", borderRadius: 10,
-        padding: "14px 20px", marginBottom: 14,
-      }}>
-        <Toggle value={globalEnabled} onChange={handleGlobalToggle} />
-        <div>
-          <div style={{ color: "#ddd", fontWeight: 600, fontSize: 14 }}>
-            {t("cameras.global_title")}
-          </div>
-          <div style={{ color: "#666", fontSize: 12, marginTop: 2 }}>
-            {t("cameras.global_off_hint")}
-          </div>
-        </div>
+    <div>
+      {/* Header: card title (P144 phase 6: the old analysis switch is gone — the module panel governs the pipe) */}
+      <div style={{ marginBottom: 18 }}>
+        <div style={{ color: "#ddd", fontSize: 15, fontWeight: 600 }}>{t("cameras.title")}</div>
+        <div style={{ color: "#666", fontSize: 13, marginTop: 4 }}>{t("cameras.description")}</div>
       </div>
 
-      {/* Storage settings */}
+      {/* Camera cards — folded lines first: what gets adjusted most */}
       <ExpertOnly><div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 460px), 1fr))",
+        gap: 14,
+        alignItems: "start",  // a folded card stays one line next to an open one
+        marginBottom: 20,
+      }}>
+        {cameras.map(cam => (
+          <CameraCard
+            key={cam._id}
+            cam={cam}
+            roles={allRoleOptions}
+            availableLabels={data.available_labels}
+            saving={saving[cam._id] || false}
+            savedOk={saved[cam._id] || false}
+            onChange={updated => updateCamera(cam._id, updated)}
+            onSave={() => saveCamera(cam)}
+          />
+        ))}
+      </div></ExpertOnly>
+
+      {/* Set-once settings side by side: storage | away mode (stack on narrow screens) */}
+      <ExpertOnly><div style={{
+        display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))", gap: 14,
+      }}>
+
+      {/* Storage settings */}
+      <div style={{
         background: "#111", border: "1px solid #222", borderRadius: 10,
-        padding: "16px 20px", marginBottom: 20,
+        padding: "16px 20px",
       }}>
         <div style={{ color: "#aaa", fontWeight: 600, fontSize: 13, marginBottom: 14 }}>
           {t("cameras.storage_title")}
@@ -245,21 +248,27 @@ export default function Cameras() {
             />
             <span style={{ color: "#555", fontSize: 12 }}>{t("cameras.storage_snapshot_hint")}</span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <label style={{ color: "#888", fontSize: 13, minWidth: 160 }}>
-              {t("cameras.storage_log")}
-            </label>
-            <input
-              type="number" min={0} max={1000} step={10}
-              value={logMb}
-              onChange={e => setLogMb(parseInt(e.target.value) || 0)}
-              style={{
-                width: 90, background: "#1a1a1a", border: "1px solid #333",
-                borderRadius: 5, color: "#ccc", padding: "5px 8px", fontSize: 13,
-              }}
-            />
-            <span style={{ color: "#555", fontSize: 12 }}>{t("cameras.storage_log_hint")}</span>
-          </div>
+          {([
+            ["frames", framesMb, setFramesMb],
+            ["keep", keepMb, setKeepMb],
+            ["db", dbMb, setDbMb],
+          ] as const).map(([key, value, set]) => (
+            <div key={key} style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <label style={{ color: "#888", fontSize: 13, minWidth: 160 }}>
+                {t(`integrations.frigate_episodes.storage_${key}`)}
+              </label>
+              <input
+                type="number" min={0} max={100000} step={100}
+                value={value}
+                onChange={e => set(parseInt(e.target.value) || 0)}
+                style={{
+                  width: 90, background: "#1a1a1a", border: "1px solid #333",
+                  borderRadius: 5, color: "#ccc", padding: "5px 8px", fontSize: 13,
+                }}
+              />
+              <span style={{ color: "#555", fontSize: 12 }}>{t(`integrations.frigate_episodes.storage_${key}_hint`)}</span>
+            </div>
+          ))}
           {storageError && (
             <div style={{ color: "#f87171", fontSize: 12 }}>{storageError}</div>
           )}
@@ -283,37 +292,14 @@ export default function Cameras() {
           {/* Storage usage bars */}
           <div style={{ borderTop: "1px solid #1e1e1e", marginTop: 14, paddingTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
             <StorageBar label={t("cameras.storage_snapshot")} usedMb={usageSnap} limitMb={snapshotsMb} />
-            <StorageBar label={t("cameras.storage_log")} usedMb={usageLog} limitMb={logMb} />
+            <StorageBar label={t("integrations.frigate_episodes.storage_frames")} usedMb={usageFrames} limitMb={framesMb} />
+            <StorageBar label={t("integrations.frigate_episodes.storage_keep")} usedMb={usageKeep} limitMb={keepMb} />
+            <StorageBar label={t("integrations.frigate_episodes.storage_db")} usedMb={usageDb} limitMb={dbMb} />
           </div>
         </div>
-      </div></ExpertOnly>
+      </div>
 
-      {/* Away mode settings */}
-      <ExpertOnly><AwayModePanel awayMode={awayMode} onChange={setAwayMode} /></ExpertOnly>
-
-      {/* Analysis log panel */}
-      <ExpertOnly><AnalysisPanel /></ExpertOnly>
-
-      {/* Camera cards — 2-column grid */}
-      <ExpertOnly><div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(2, 1fr)",
-        gap: 14,
-        opacity: globalEnabled ? 1 : 0.4,
-        pointerEvents: globalEnabled ? "auto" : "none",
-      }}>
-        {cameras.map(cam => (
-          <CameraCard
-            key={cam._id}
-            cam={cam}
-            roles={allRoleOptions}
-            availableLabels={data.available_labels}
-            saving={saving[cam._id] || false}
-            savedOk={saved[cam._id] || false}
-            onChange={updated => updateCamera(cam._id, updated)}
-            onSave={() => saveCamera(cam)}
-          />
-        ))}
+      <AwayModePanel awayMode={awayMode} onChange={setAwayMode} />
       </div></ExpertOnly>
     </div>
   );
@@ -356,7 +342,7 @@ function AwayModePanel({ awayMode, onChange }: { awayMode: AwayModeConfig; onCha
   return (
     <div style={{
       background: "#111", border: "1px solid #222", borderRadius: 10,
-      padding: "16px 20px", marginBottom: 20,
+      padding: "16px 20px",
     }}>
       <div style={{ color: "#aaa", fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
         {t("cameras.away_mode_title")}
@@ -415,346 +401,6 @@ function AwayModePanel({ awayMode, onChange }: { awayMode: AwayModeConfig; onCha
 }
 
 
-function AnalysisPanel() {
-  const { t } = useTranslation();
-  const [entries, setEntries] = useState<AnalysisEntry[]>([]);
-  const [loading, setLoading] = useState(true); // first load runs on mount
-  const [selected, setSelected] = useState<AnalysisEntry | null>(null);
-  const [retrying, setRetrying] = useState(false);
-  const [retryError, setRetryError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(false);
-  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const token = sessionStorage.getItem("kaare_token") ?? "";
-
-  const fetchLog = useCallback(() =>
-    fetch(`${API_BASE}/api/settings/cameras/_analysis_log?limit=40`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(r => (r.ok ? r.json() : null))
-      .then(d => {
-        if (!d) return;
-        setEntries(d.entries ?? []);
-        setSelected(prev => {
-          if (!prev) return null;
-          return (d.entries as AnalysisEntry[]).find(e => e.event_id === prev.event_id) ?? null;
-        });
-      })
-      .finally(() => setLoading(false)), [token]);
-
-  useEffect(() => { fetchLog(); }, [fetchLog]);
-
-  const refreshLog = () => { setLoading(true); fetchLog(); };
-
-  const handleRetry = async () => {
-    if (!selected) return;
-    setRetrying(true);
-    setRetryError(null);
-    try {
-      const r = await fetch(`${API_BASE}/api/settings/cameras/_retry_analysis`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          event_id: selected.event_id,
-          camera: selected.camera,
-          label: selected.label,
-          score: selected.score,
-          top_score: selected.top_score,
-          duration: selected.duration,
-          sub_label: selected.sub_label,
-          zones: selected.zones,
-        }),
-      });
-      if (!r.ok) throw new Error(`${r.status}`);
-      const d = await r.json();
-      const updated: AnalysisEntry = { ...selected, analysis: d.analysis, failed: d.failed };
-      setSelected(updated);
-      setEntries(prev => prev.map(e => e.event_id === updated.event_id ? updated : e));
-    } catch {
-      setRetryError(t("cameras.log_retry_error"));
-    } finally {
-      setRetrying(false);
-    }
-  };
-
-  const handleThumbClick = (entry: AnalysisEntry) => {
-    if (clickTimer.current) clearTimeout(clickTimer.current);
-    clickTimer.current = setTimeout(() => {
-      setSelected(entry);
-      setRetryError(null);
-    }, 200);
-  };
-
-  const handleThumbDblClick = (entry: AnalysisEntry) => {
-    if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; }
-    if (!entry.has_snapshot) return;
-    setSelected(entry);
-    setExpanded(true);
-  };
-
-  const fmtTime = (ts: string) => {
-    try {
-      const d = new Date(ts);
-      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    } catch { return ts; }
-  };
-
-  const fmtDate = (ts: string) => {
-    try {
-      const d = new Date(ts);
-      return d.toLocaleDateString([], { day: "2-digit", month: "2-digit" });
-    } catch { return ""; }
-  };
-
-  const snapUrl = (eid: string) =>
-    `${API_BASE}/api/frigate_snapshot/${eid}?token=${encodeURIComponent(token)}`;
-
-  return (
-    <div style={{
-      background: "#111", border: "1px solid #222", borderRadius: 10,
-      padding: "16px 20px", marginBottom: 20,
-    }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-        <span style={{ color: "#aaa", fontWeight: 600, fontSize: 13 }}>{t("cameras.log_title")}</span>
-        <button
-          onClick={refreshLog}
-          disabled={loading}
-          style={{
-            background: "#1e1e1e", border: "1px solid #333", borderRadius: 6,
-            color: loading ? "#555" : "#ccc", padding: "4px 12px", fontSize: 12,
-            cursor: loading ? "not-allowed" : "pointer",
-          }}
-        >
-          {loading ? "…" : t("cameras.log_refresh")}
-        </button>
-      </div>
-
-      {entries.length === 0 && !loading && (
-        <div style={{ color: "#555", fontSize: 12 }}>{t("cameras.log_empty")}</div>
-      )}
-
-      {entries.length > 0 && (
-        <div style={{ display: "flex", gap: 14, minHeight: 360 }}>
-
-          {/* ── Left: scrollable thumbnail list ── */}
-          <div style={{
-            width: 170, flexShrink: 0,
-            overflowY: "auto", display: "flex", flexDirection: "column", gap: 8,
-            maxHeight: 480,
-          }}>
-            {entries.map(entry => {
-              const isSelected = selected?.event_id === entry.event_id;
-              return (
-                <div
-                  key={entry.event_id}
-                  onClick={() => handleThumbClick(entry)}
-                  onDoubleClick={() => handleThumbDblClick(entry)}
-                  style={{
-                    position: "relative", borderRadius: 7, overflow: "hidden",
-                    border: isSelected ? "2px solid #6366f1" : "2px solid #1e1e1e",
-                    cursor: "pointer", flexShrink: 0,
-                    transition: "border-color 0.15s",
-                  }}
-                >
-                  {/* Snapshot or placeholder */}
-                  {entry.has_snapshot ? (
-                    <img
-                      src={snapUrl(entry.event_id)}
-                      alt={entry.label}
-                      style={{ width: "100%", height: 100, objectFit: "cover", display: "block" }}
-                      draggable={false}
-                    />
-                  ) : (
-                    <div style={{
-                      width: "100%", height: 100,
-                      background: "#1a1a1a", display: "flex", alignItems: "center",
-                      justifyContent: "center", flexDirection: "column", gap: 4,
-                    }}>
-                      <span style={{ fontSize: 22 }}>🎞</span>
-                      <span style={{ color: "#444", fontSize: 10 }}>{t("cameras.log_no_snapshot")}</span>
-                    </div>
-                  )}
-
-                  {/* Face badge — top right */}
-                  {entry.sub_label && (
-                    <div style={{
-                      position: "absolute", top: 4, right: 4,
-                      background: "rgba(99,102,241,0.9)", borderRadius: 4,
-                      padding: "2px 5px", fontSize: 9, fontWeight: 700, color: "#fff",
-                      maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                    }}>
-                      {entry.sub_label}
-                    </div>
-                  )}
-
-                  {/* Failed badge — top left */}
-                  {entry.failed && (
-                    <div style={{
-                      position: "absolute", top: 4, left: 4,
-                      background: "rgba(220,38,38,0.9)", borderRadius: 4,
-                      padding: "2px 5px", fontSize: 9, fontWeight: 700, color: "#fff",
-                    }}>
-                      {t("cameras.log_failed_label")}
-                    </div>
-                  )}
-
-                  {/* Bottom meta strip */}
-                  <div style={{
-                    background: "rgba(0,0,0,0.75)", padding: "3px 6px",
-                    display: "flex", flexDirection: "column", gap: 1,
-                  }}>
-                    <span style={{ color: "#ccc", fontSize: 10, fontWeight: 600 }}>
-                      {fmtTime(entry.ts)} · {fmtDate(entry.ts)}
-                    </span>
-                    <span style={{ color: "#888", fontSize: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {entry.display_name || entry.camera}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* ── Right: detail panel ── */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
-            {!selected ? (
-              <div style={{
-                flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-                color: "#333", fontSize: 13,
-              }}>
-                ←
-              </div>
-            ) : (
-              <>
-                {/* Metadata box */}
-                <div style={{
-                  background: "#0e0e0e", border: "1px solid #1e1e1e", borderRadius: 8, padding: "12px 14px",
-                }}>
-                  <div style={{ color: "#555", fontSize: 10, fontWeight: 600, marginBottom: 8, letterSpacing: "0.05em" }}>
-                    {t("cameras.log_meta_camera").toUpperCase()}
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 12px" }}>
-                    {[
-                      [t("cameras.log_meta_camera"), selected.display_name || selected.camera],
-                      [t("cameras.log_meta_time"), `${fmtDate(selected.ts)} ${fmtTime(selected.ts)}`],
-                      [t("cameras.log_meta_label"), selected.label],
-                      [t("cameras.log_meta_score"), `${Math.round(selected.top_score * 100)}%`],
-                      ...(selected.sub_label ? [[t("cameras.log_meta_face"), selected.sub_label]] : []),
-                      ...(selected.zones?.length ? [[t("cameras.log_meta_zones"), selected.zones.join(", ")]] : []),
-                      ...(selected.duration > 0 ? [[t("cameras.log_meta_duration"), `${selected.duration}s`]] : []),
-                    ].map(([label, value]) => (
-                      <div key={label as string} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                        <span style={{ color: "#555", fontSize: 10 }}>{label}</span>
-                        <span style={{ color: "#ccc", fontSize: 12, fontWeight: 500 }}>{value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Analysis text box */}
-                <div style={{
-                  background: "#0e0e0e", border: "1px solid #1e1e1e", borderRadius: 8, padding: "12px 14px",
-                  flex: 1,
-                }}>
-                  <div style={{ color: "#555", fontSize: 10, fontWeight: 600, marginBottom: 8, letterSpacing: "0.05em" }}>
-                    ANALYSE
-                  </div>
-                  {selected.failed ? (
-                    <span style={{ color: "#f87171", fontSize: 13 }}>{t("cameras.log_failed_text")}</span>
-                  ) : (
-                    <p style={{ color: "#ccc", fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-                      {selected.analysis}
-                    </p>
-                  )}
-                </div>
-
-                {/* Retry button — only when failed */}
-                {selected.failed && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <button
-                      onClick={handleRetry}
-                      disabled={retrying}
-                      style={{
-                        background: "#6366f1", border: "none", borderRadius: 7, color: "#fff",
-                        padding: "7px 18px", fontSize: 12, fontWeight: 600,
-                        cursor: retrying ? "not-allowed" : "pointer",
-                        opacity: retrying ? 0.7 : 1,
-                      }}
-                    >
-                      {retrying ? t("cameras.log_retrying") : t("cameras.log_retry")}
-                    </button>
-                    {retryError && (
-                      <span style={{ color: "#f87171", fontSize: 12 }}>{retryError}</span>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Expand modal (double-click) ── */}
-      {expanded && selected?.has_snapshot && (
-        <div
-          onClick={() => setExpanded(false)}
-          style={{
-            position: "fixed", inset: 0, zIndex: 9999,
-            background: "rgba(0,0,0,0.88)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: "zoom-out",
-          }}
-        >
-          <img
-            src={snapUrl(selected.event_id)}
-            alt={selected.label}
-            style={{
-              maxWidth: "min(90vw, 1200px)",
-              maxHeight: "85vh",
-              objectFit: "contain",
-              borderRadius: 8,
-              boxShadow: "0 0 60px rgba(0,0,0,0.8)",
-            }}
-            draggable={false}
-            onClick={e => e.stopPropagation()}
-          />
-          <button
-            onClick={() => setExpanded(false)}
-            style={{
-              position: "fixed", top: 20, right: 24,
-              background: "rgba(30,30,30,0.9)", border: "1px solid #444",
-              borderRadius: 6, color: "#ccc", padding: "4px 12px",
-              fontSize: 14, cursor: "pointer",
-            }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StorageBar({ label, usedMb, limitMb }: { label: string; usedMb: number; limitMb: number }) {
-  const pct = limitMb > 0 ? Math.min(100, Math.round((usedMb / limitMb) * 100)) : 0;
-  const color = pct >= 90 ? "#f87171" : pct >= 70 ? "#fb923c" : "#6366f1";
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-        <span style={{ color: "#888", fontSize: 12 }}>{label}</span>
-        <span style={{ color: "#666", fontSize: 12 }}>
-          {usedMb} / {limitMb > 0 ? limitMb : "∞"} MB
-          {limitMb > 0 && <span style={{ marginLeft: 6, color: pct >= 70 ? color : "#555" }}>({pct}%)</span>}
-        </span>
-      </div>
-      <div style={{ height: 6, background: "#1e1e1e", borderRadius: 4, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 4, transition: "width 0.3s" }} />
-      </div>
-    </div>
-  );
-}
-
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
@@ -789,42 +435,68 @@ function CameraCard({
   onSave: () => void;
 }) {
   const { t } = useTranslation();
+  // Folded by default: one line per camera, the table opens with the arrow (2026-10-26).
+  const [open, setOpen] = useState(false);
   const setRole = (role: string) => onChange({ ...cam, role });
 
   const setLabel = (label: string, field: keyof LabelConfig, val: boolean | number) => {
     const labels = { ...cam.labels };
-    labels[label] = { ...(labels[label] || { analyze: false, min_confidence: 0.65, announce: false }), [field]: val };
+    labels[label] = { ...(labels[label] || { analyze: false, min_confidence: 0.65 }), [field]: val };
     onChange({ ...cam, labels });
   };
 
   const allLabels = [...new Set([...availableLabels, ...Object.keys(cam.labels ?? {})])];
+
+  const analyzed = allLabels.filter(l => cam.labels?.[l]?.analyze);
+  const roleLabel = roles.find(r => r.key === cam.role)?.label ?? cam.role;
 
   const tableHeaders = [
     t("cameras.col_object"),
     t("cameras.col_analyze"),
     t("cameras.col_min_confidence"),
     t("cameras.col_min_duration"),
-    t("cameras.col_announce"),
   ];
 
   return (
     <div style={{
       background: "#111", border: "1px solid #222", borderRadius: 10, overflow: "hidden",
     }}>
-      {/* Header */}
-      <div style={{
-        padding: "12px 16px", borderBottom: "1px solid #1a1a1a",
-        display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
-      }}>
+      {/* Header — always visible; click folds/unfolds (the role dropdown only shows when open) */}
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{
+          padding: "12px 16px", borderBottom: open ? "1px solid #1a1a1a" : "none",
+          display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", cursor: "pointer",
+        }}
+      >
         <div style={{ flex: 1, minWidth: 120 }}>
           <div style={{ color: "#fff", fontWeight: 600, fontSize: 13 }}>
             {cam.display_name || cam._id}
+            {cam.frigate_type === "lpr" && (
+              <span
+                title={t("cameras.frigate_type_lpr_hint")}
+                style={{
+                  marginLeft: 8, padding: "1px 6px", borderRadius: 4, border: "1px solid #333",
+                  color: "#aaa", fontSize: 10, fontWeight: 500,
+                }}
+              >
+                {t("cameras.frigate_type_lpr")}
+              </span>
+            )}
           </div>
-          <div style={{ color: "#555", fontSize: 11, marginTop: 2 }}>{cam._id}</div>
+          <div style={{ color: "#555", fontSize: 11, marginTop: 2 }}>
+            {open ? cam._id : (
+              <>
+                {roleLabel} · {analyzed.length
+                  ? <span style={{ color: "#4ade80" }}>{t("cameras.summary_analyzes", { labels: analyzed.join(", ") })}</span>
+                  : t("cameras.summary_none")}
+              </>
+            )}
+          </div>
         </div>
 
         {/* Role dropdown */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        {open && <div style={{ display: "flex", flexDirection: "column", gap: 3 }} onClick={e => e.stopPropagation()}>
           <label style={{ color: "#888", fontSize: 10 }}>{t("cameras.role_label")}</label>
           <select
             value={cam.role}
@@ -838,11 +510,27 @@ function CameraCard({
               <option key={r.key} value={r.key}>{r.label}</option>
             ))}
           </select>
-        </div>
+        </div>}
+
+        <ChevronDown
+          size={18}
+          aria-label={open ? t("cameras.fold") : t("cameras.unfold")}
+          style={{ color: "#888", flexShrink: 0, transition: "transform 0.15s", transform: open ? "rotate(180deg)" : "none" }}
+        />
       </div>
 
+      {open && <>
+      {/* «Kan lage episoder» (P144-s14): this camera may start/keep a situation; the ticks below decide what */}
+      <div style={{ padding: "10px 16px 0", display: "flex", alignItems: "center", gap: 10 }}>
+        <Toggle value={cam.episodes ?? cam.episodes_default ?? true} onChange={v => onChange({ ...cam, episodes: v })} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color: "#ccc", fontSize: 12 }}>{t("cameras.episodes_label")}</div>
+          <div style={{ color: "#555", fontSize: 11 }}>{t("cameras.episodes_hint")}</div>
+        </div>
+      </div>
       {/* Label table */}
       <div style={{ padding: "0 16px 12px" }}>
+        <div style={{ color: "#555", fontSize: 11, marginTop: 10 }}>{t("cameras.labels_hint")}</div>
         <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 10 }}>
           <thead>
             <tr>
@@ -859,7 +547,7 @@ function CameraCard({
           </thead>
           <tbody>
             {allLabels.map(lbl => {
-              const lcfg: LabelConfig = cam.labels[lbl] || { analyze: false, min_confidence: 0.65, announce: false };
+              const lcfg: LabelConfig = cam.labels[lbl] || { analyze: false, min_confidence: 0.65 };
               return (
                 <tr key={lbl} style={{ opacity: lcfg.analyze ? 1 : 0.5 }}>
                   <td style={{ padding: "6px 6px 6px 0", color: "#ccc", fontSize: 12, width: 90 }}>
@@ -882,7 +570,7 @@ function CameraCard({
                       </span>
                     </div>
                   </td>
-                  <td style={{ padding: "6px 12px 6px 0" }}>
+                  <td style={{ padding: "6px 0" }}>
                     <input
                       type="number" min={0} max={300} step={5}
                       value={lcfg.min_duration_seconds ?? 0}
@@ -893,9 +581,6 @@ function CameraCard({
                         borderRadius: 5, color: "#ccc", padding: "3px 6px", fontSize: 12,
                       }}
                     />
-                  </td>
-                  <td style={{ padding: "6px 0" }}>
-                    <Toggle value={lcfg.announce} onChange={v => setLabel(lbl, "announce", v)} />
                   </td>
                 </tr>
               );
@@ -924,6 +609,7 @@ function CameraCard({
           {saving ? t("cameras.saving") : savedOk ? t("cameras.saved") : t("cameras.save")}
         </button>
       </div>
+      </>}
     </div>
   );
 }

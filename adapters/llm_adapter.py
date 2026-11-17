@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import contextlib
 import contextvars
 import fcntl
 import glob as _glob
@@ -13,7 +14,6 @@ import re
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from pathlib import Path as _Path
 from typing import Any
 
 import httpx
@@ -21,7 +21,7 @@ import yaml
 from PIL import Image
 
 from kaare_core import log_buffer
-from kaare_core.config import apply_agent_pool, pool_call_options
+from kaare_core.config import apply_agent_pool, get_service, pool_call_options
 from kaare_core.config import filter_tools_by_tier_ceiling as _filter_tools_by_tier_ceiling
 from kaare_core.config import get_capability_map as _get_capability_map
 from kaare_core.config import get_local_tz as _get_local_tz
@@ -46,6 +46,7 @@ from kaare_core.tools.household_state import household_mode_block as _household_
 from kaare_core.tools.i18n import get_lang, get_user_lang_override, t
 from kaare_core.tools.think_cache import extract_conclusion, log_think
 from kaare_core.users import store as _store
+from kaare_core.users import user_knowledge as _user_knowledge
 from kaare_core.users.profile_manager import (
     format_household_block,
     get_all_household_visible,
@@ -69,6 +70,34 @@ def _get_kare_lock() -> asyncio.Lock:
     if _kare_lock is None:
         _kare_lock = asyncio.Lock()
     return _kare_lock
+
+
+# Background work on the main model that must not hold _kare_lock (a user never waits for the camera — P144-s06c), but
+# that low-priority callers (the reflection, source="jang") must wait for: a whole camera episode analysis, or one camera
+# call to a role that runs on the main model. Order: user > camera > reflection (2026-11-05). One event loop, so a
+# plain counter is enough.
+_main_model_background = 0
+
+
+@contextlib.contextmanager
+def main_model_background_work():
+    """Mark background work on the main model while the block runs. Never blocks; nests."""
+    global _main_model_background
+    _main_model_background += 1
+    try:
+        yield
+    finally:
+        _main_model_background -= 1
+
+
+def main_model_background_busy() -> bool:
+    """True while camera work runs on the main model; the reflection then defers to its next tick."""
+    return _main_model_background > 0
+
+
+def _runs_on_main_model(cfg: dict) -> bool:
+    main = (CFG.get("default") or {}).get("base_url") or ""
+    return bool(main) and (cfg.get("base_url") or "").rstrip("/") == main.rstrip("/")
 
 
 async def _try_acquire_kare_lock_nowait() -> bool:
@@ -503,10 +532,7 @@ def _load_user_knowledge(user_id: str, lang: str = "nb") -> str:
     if not user_id or user_id == "global":
         return ""
     try:
-        path = _Path(f"/kaare/state/users/{user_id}/user_knowledge.md")
-        if not path.exists():
-            return ""
-        content = path.read_text(encoding="utf-8").strip()
+        content = _user_knowledge.read(user_id)  # J26: encrypted; session key only (interactive path)
         if not content:
             return ""
         if len(content) > 2000:
@@ -540,6 +566,24 @@ def _get_user_role(user_id: str) -> str:
         return (rec or {}).get("role", "adult")
     except Exception:
         return "adult"
+
+
+def _build_not_connected_block(lang: str = "nb") -> str:
+    """Names the integrations with no address entered (Home Assistant, Frigate), so the model does
+    not claim to know rooms, sensors or cameras it has no source for (DT04 2.5, thread 9). '' when
+    both are connected. Reads the in-memory services config only — no IO per prompt."""
+    missing = [
+        label
+        for section, label in (("home_assistant", "Home Assistant"), ("frigate", "Frigate"))
+        if not get_service(section, "url")
+    ]
+    if not missing:
+        return ""
+    return (
+        t("llm_not_connected_header", lang)
+        + "\n"
+        + t("llm_not_connected", lang, names=" + ".join(missing))
+    )
 
 
 def _build_disabled_modules_block(lang: str = "nb") -> str:
@@ -686,6 +730,7 @@ def _build_system(
             world_ctx,
             relevant,  # P133 C3: «Relevant nå» — full text of the 2–3 entries this message needs
             _build_disabled_modules_block(lang),
+            "" if _stranger else _build_not_connected_block(lang),
             _time_block(lang) if include_time else "",
         ]
         if p
@@ -1082,6 +1127,7 @@ async def _call_vllm_chat(
     options: dict[str, Any] | None = None,
     timeout: float | None = None,
     disable_thinking: bool = False,
+    api_key: str = "",
 ) -> dict[str, Any]:
     """
     OpenAI-compatible /v1/chat/completions call for vLLM.
@@ -1110,7 +1156,7 @@ async def _call_vllm_chat(
         r = await client.post(
             f"{base_url}/v1/chat/completions",
             json=payload,
-            headers={"x-kaare-source": "kaare"},
+            headers={"x-kaare-source": "kaare", **({"Authorization": f"Bearer {api_key}"} if api_key else {})},
         )
         if r.status_code >= 400:
             logger.warning("_call_vllm_chat %s: vLLM body: %s", r.status_code, r.text[:500])
@@ -1517,7 +1563,8 @@ async def ask_llm_with_tools(
                 # Low-priority background caller: fail fast instead of queueing behind
                 # a live user request on _kare_lock. Caller (reflection_loop.py) treats
                 # meta.busy as "defer this cycle to the next tick," not a real failure.
-                if not await _try_acquire_kare_lock_nowait():
+                # It also waits for the camera's background work on the main model (last in the queue).
+                if main_model_background_busy() or not await _try_acquire_kare_lock_nowait():
                     return {
                         "ok": False,
                         "text": "",
@@ -1663,6 +1710,8 @@ async def ask_llm_with_tools(
                         "cached_tokens": (usage.get("prompt_tokens_details") or {}).get(
                             "cached_tokens"
                         ),
+                        # J23: the same preview as the background calls — the meetings write no generate_in line
+                        "prompt_preview": call_log_extra(full_messages, "", None)["prompt_preview"],
                         "prompt_meta": _build_prompt_meta(_sys, user_id, is_fallback=in_fallback),
                     },
                 )
@@ -1915,6 +1964,16 @@ async def _call_huggingface_chat(
     return result
 
 
+_LLM_KEYS_FILE = "/kaare/configs/llm_keys.env"  # API keys the GUI writes for model roles (Settings → LLM/Models)
+
+
+def _role_api_key(role: str, cfg: dict) -> str:
+    """J27: the API key a model role sends as Bearer (a model server elsewhere in the house), "" for none. The GUI writes
+    it to llm_keys.env under `api_key_env` (default <ROLE>_API_KEY). Never logged."""
+    env_name = cfg.get("api_key_env") or f"{role.upper()}_API_KEY"
+    return _load_env_file(_LLM_KEYS_FILE).get(env_name, "")
+
+
 def _load_env_file(path: str) -> dict[str, str]:
     """Leser en enkel KEY=VALUE .env-fil."""
     result: dict[str, str] = {}
@@ -1986,6 +2045,33 @@ async def ask_llm_cloud(prompt: str) -> dict[str, Any]:
     return result
 
 
+_PREVIEW_CHARS = 120
+
+
+def call_log_extra(messages: list[dict[str, Any]], base_url: str, asked_role: str | None) -> dict[str, Any]:
+    """What a background call's llm_calls.log line adds so a trace can be read (run-queue J7): the role that was asked
+    (a camera call borrows e.g. Miss Kåre's model but is not Miss Kåre), the endpoint it ran on, whether images went
+    with it, and the last user message's length + first characters. Never the images themselves."""
+    has_images, text = False, ""
+    for m in messages:
+        content = m.get("content")
+        if m.get("images"):
+            has_images = True
+        if isinstance(content, list):
+            parts = [p for p in content if isinstance(p, dict)]
+            if any(p.get("type") == "image_url" for p in parts):
+                has_images = True
+            if m.get("role") == "user":
+                text = " ".join(str(p.get("text") or "") for p in parts if p.get("type") == "text")
+        elif m.get("role") == "user" and isinstance(content, str):
+            text = content
+    out: dict[str, Any] = {"endpoint": base_url or "", "has_images": has_images,
+                           "prompt_preview": f"[{len(text)} chars] {text[:_PREVIEW_CHARS]}".rstrip()}
+    if asked_role:
+        out["role"] = asked_role
+    return out
+
+
 def _log_llm_call_bg(
     rid: str,
     source: str,
@@ -1998,8 +2084,9 @@ def _log_llm_call_bg(
     recovered: bool,
     ok: bool,
     usage: dict[str, Any] | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> None:
-    """Log background-job LLM calls to llm_calls.log. Fire-and-forget."""
+    """Log background-job LLM calls to llm_calls.log. Fire-and-forget. `extra` = `call_log_extra()` (J7)."""
     try:
         usage = usage or {}
         log_buffer.write(
@@ -2018,6 +2105,8 @@ def _log_llm_call_bg(
                 "status": "ok" if ok else "error",
                 "prompt_tokens": usage.get("prompt_tokens"),
                 "cached_tokens": (usage.get("prompt_tokens_details") or {}).get("cached_tokens"),
+                **{key: v for key, v in (extra or {}).items() if key != "has_images"},
+                **({"has_images": True} if (extra or {}).get("has_images") else {}),
             },
         )
     except Exception:
@@ -2035,6 +2124,7 @@ async def call_llm_chat(
     source: str = "",
     base_url: str | None = None,
     response_format: dict[str, Any] | None = None,
+    asked_role: str | None = None,
 ) -> dict[str, Any]:
     """
     Provider-agnostic multi-turn chat call for background jobs and agents.
@@ -2059,7 +2149,9 @@ async def call_llm_chat(
     _t0 = time.perf_counter()
 
     base_url = base_url or cfg["base_url"]
-    model = _get_model(cfg["model_role"])
+    _extra = call_log_extra(messages, base_url, asked_role)  # J7: role asked, endpoint, preview, images
+    # A role saved from the GUI without model_role keeps its model under its own name (router PUT)
+    model = _get_model(cfg.get("model_role", role))
     _opts = pool_call_options(cfg, options)
     _timeout = timeout if timeout is not None else cfg.get("timeout")
     provider = cfg.get("provider", "ollama")
@@ -2075,6 +2167,7 @@ async def call_llm_chat(
                 options=_opts,
                 timeout=_timeout,
                 disable_thinking=disable_thinking,
+                api_key=_role_api_key(role, cfg),  # J27: a model server elsewhere in the house
             )
             elapsed_ms = int((time.perf_counter() - _t0) * 1000)
             _log_llm_call_bg(
@@ -2087,13 +2180,15 @@ async def call_llm_chat(
                 has_think=bool(result.get("think_content")),
                 has_images=False,
                 recovered=False,
+                extra=_extra,
                 ok=result.get("ok", False),
                 usage=result.get("usage"),
             )
             return result
         except Exception as exc:
             logger.warning("call_llm_chat(%s) vLLM feilet: %s", role, exc)
-            return {"ok": False, "error": str(exc), "text": "", "tool_calls": None}
+            return {"ok": False, "error": str(exc), "text": "", "tool_calls": None,
+                    "unreachable": _unreachable(exc)}
 
     if provider == "huggingface":
         try:
@@ -2117,6 +2212,7 @@ async def call_llm_chat(
                 has_think=False,
                 has_images=False,
                 recovered=False,
+                extra=_extra,
                 ok=result.get("ok", False),
             )
             return result
@@ -2130,7 +2226,7 @@ async def call_llm_chat(
         "messages": messages,
         "stream": False,
         "options": _opts or {},
-        "think": cfg.get("think", False),
+        "think": False if disable_thinking else cfg.get("think", False),
     }
     if cfg.get("keep_warm"):
         payload["keep_alive"] = -1
@@ -2177,6 +2273,7 @@ async def call_llm_chat(
             has_think=bool(think_content or msg.get("thinking")),
             has_images=False,
             recovered=False,
+            extra=_extra,
             ok=bool(content or tool_calls),
             usage={"prompt_tokens": data.get("prompt_eval_count")},
         )
@@ -2195,25 +2292,124 @@ async def call_llm_chat(
         }
     except Exception as exc:
         logger.warning("call_llm_chat(%s) feilet: %s", role, exc)
-        return {"ok": False, "error": str(exc), "text": "", "tool_calls": None}
+        return {"ok": False, "error": str(exc), "text": "", "tool_calls": None,
+                "unreachable": _unreachable(exc)}
 
 
-async def ask_vlm(
-    prompt: str, images: list[str], rid: str = "", user_id: str = ""
+# A role call without a configured timeout must not hang forever on a remote model.
+_ROLE_CALL_TIMEOUT_S = 120
+
+
+def _unreachable(exc: BaseException) -> bool:
+    """The instance could not be reached at all (refused / no route / connect timeout) — as opposed to a model that
+    answered badly. P144-s24: only this kind of failure moves a Frigate call to another agent-pool instance."""
+    return isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout))
+
+
+def _instance_num_ctx(role: str, base_url: str) -> int | None:
+    """num_ctx another Ollama role already uses on this instance — a different value makes Ollama
+    reload the model (CLAUDE.md GPU policy), so a role joining an instance must use the same one."""
+    url = (base_url or "").rstrip("/")
+    for name, cfg in CFG.items():
+        if name == role or not isinstance(cfg, dict) or cfg.get("share_with"):
+            continue
+        if cfg.get("provider", "ollama") != "ollama" or (cfg.get("base_url") or "").rstrip("/") != url:
+            continue
+        num_ctx = (cfg.get("options") or {}).get("num_ctx")
+        if num_ctx:
+            return int(num_ctx)
+    return None
+
+
+async def ask_llm_role(
+    role: str, prompt: str, images: list[str] | None = None, rid: str = ""
 ) -> dict[str, Any]:
-    cfg = CFG["vision"]
-    return await _call_ollama(
-        role="vision",
-        base_url=cfg["base_url"],
-        model=_get_model(cfg["model_role"]),
-        prompt=prompt,
-        images=images,
-        stream=cfg.get("stream", False),
-        options=cfg.get("options"),
-        system=_resolve_lang_dict(cfg.get("system"), get_lang(user_id)),
-        keep_warm=bool(cfg.get("keep_warm", False)),
-        rid=rid,
+    """
+    One prompt (+ images) to a model role the user picks in the GUI (`frigate`, `frigate_conclude` — P144).
+
+    Lean call (P144-s06c): thinking off, no Kåre system prompt, no Kåre lock — also when the role shares
+    Kåre's model. A role that shares another role (`share_with: default`, the shipped default) or is missing
+    from llm.yaml is called directly at that role's URL/model/options; a role with its own model at its own.
+    ask_llm() — Kåre's chat path — is not used, so a long camera call never makes a user wait for the lock.
+    The caller's prompt carries the instructions; an optional `system:` on the role itself is honoured.
+    No 9B fallback chain: the callers store a failed call and retry later (s06b `max_attempts`).
+    P144-s24: an Ollama role whose instance cannot be *reached* tries the other agent-pool instances (pool_order);
+    every one unreachable → `unreachable: True` in the result (the caller keeps the episode waiting, never concludes it).
+    """
+    own = CFG.get(role) or {}
+    target, cfg = _resolve_shared_role(role)
+    if not cfg:
+        return {"ok": False, "error": f"unknown_role:{role}", "text": "", "tool_calls": None}
+
+    provider = cfg.get("provider", "ollama")
+    msg: dict[str, Any] = {"role": "user", "content": prompt}
+    if images:
+        if provider in ("ollama", "vllm"):
+            msg["images"] = images  # vLLM path converts these via _normalise_messages_for_vllm
+        else:
+            msg["content"] = _ollama_images_to_openai_content(prompt, images)
+    messages: list[dict[str, Any]] = []
+    system = own.get("system")
+    if system:
+        messages.append({"role": "system", "content": _resolve_lang_dict(system, get_lang())})
+    messages.append(msg)
+
+    options = None  # a shared role keeps the shared role's options, num_ctx included (one value per instance)
+    if provider == "ollama" and target == role:
+        num_ctx = _instance_num_ctx(role, cfg.get("base_url", ""))
+        if num_ctx:
+            options = {**(cfg.get("options") or {}), "num_ctx": num_ctx}
+    timeout = (
+        own.get("timeout")
+        or cfg.get("timeout")
+        or CFG.get("default", {}).get("timeout")
+        or _ROLE_CALL_TIMEOUT_S
     )
+    with main_model_background_work() if _runs_on_main_model(cfg) else contextlib.nullcontext():
+        result = await call_llm_chat(
+            target,
+            messages,
+            options=options,
+            timeout=timeout,
+            disable_thinking=True,
+            rid=rid,
+            source="frigate",
+            asked_role=role,
+        )
+    if not result.get("unreachable") or provider != "ollama":
+        return result
+    # P144-s24 item 1: the own instance cannot be reached → the next agent-pool instance from config (pool_order: same
+    # model, same num_ctx by the GPU policy), still lean and lock-free. One instance = nothing to fail over to.
+    own_url = (cfg.get("base_url") or "").rstrip("/")
+    for url in pool_order(own_url)[1:]:
+        logger.info("ask_llm_role(%s) %s unreachable, trying %s (rid=%s)", role, own_url, url, rid)
+        result = await call_llm_chat(
+            target,
+            messages,
+            options=options,
+            timeout=timeout,
+            disable_thinking=True,
+            rid=rid,
+            source="frigate",
+            base_url=url,
+            asked_role=role,
+        )
+        if not result.get("unreachable"):
+            result.setdefault("meta", {})["failover_from"] = own_url
+            return result
+    return result
+
+
+def _resolve_shared_role(role: str) -> tuple[str, dict | None]:
+    """Follow `share_with` to the role whose endpoint/model is used; a missing role means `default`."""
+    target, cfg = role, CFG.get(role)
+    for _ in range(len(CFG) + 1):  # bounded: a share_with cycle in a hand-edited llm.yaml must not hang
+        if not cfg:
+            return "default", CFG.get("default")
+        if not cfg.get("share_with"):
+            return target, cfg
+        target, cfg = cfg["share_with"], CFG.get(cfg["share_with"])
+    return "default", CFG.get("default")
 
 
 def reload_config() -> list[str]:

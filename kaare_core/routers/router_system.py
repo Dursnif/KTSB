@@ -1,7 +1,5 @@
 import asyncio
-import base64
 import json
-import logging as _logging
 import os
 import platform
 import re
@@ -10,7 +8,7 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -25,19 +23,20 @@ from fastapi import (
 from pydantic import BaseModel
 
 import kaare_core.app_state as app_state
+from adapters.frigate_adapter import camera_display_name as _camera_display_name
+from adapters.frigate_adapter import camera_types_from_config as _frigate_camera_types
 from adapters.frigate_adapter import get_cameras as _get_cameras
+from adapters.frigate_adapter import tracked_labels_from_config as _frigate_tracked_labels
 from adapters.mqtt_adapter import get_status as mqtt_status
 from kaare_core import config_store
 from kaare_core.audit import read_recent as _audit_read
 from kaare_core.config import CAPABILITY_MAP_PATH as _CAPMAP_PATH
 from kaare_core.config import get_model, get_service
 from kaare_core.config import get_service as _svc
-from kaare_core.domain.frigate_responder import (
-    _cfg,
-    _write_analysis_log,
-    analyze_event,
-    load_camera_config,
-)
+from kaare_core.domain import frigate_store
+from kaare_core.domain.frigate_store import camera_config as _cfg
+from kaare_core.domain.frigate_store import load_camera_config
+from kaare_core.frigate_user import settings as fu_settings
 from kaare_core.memory.memory_embed_models import active_model
 from kaare_core.normalcy import (
     add_correction as _add_correction,
@@ -49,7 +48,6 @@ from kaare_core.normalcy import (
     get_recent_anomalies as _get_anomalies,
 )
 from kaare_core.users.auth import require_admin as _require_admin
-from kaare_core.users.auth import require_auth as _require_auth
 from kaare_core.vpn import create_client, delete_client, list_clients
 
 router = APIRouter()
@@ -68,6 +66,8 @@ _RESTARTABLE_SERVICES = {
     "voice": "kaare-voice-bridge.service",
     "frontend": "kaare-frontend.service",
     "ha-log-bridge": "kaare-ha-log-bridge.service",
+    "jing": "kaare-jing.service",  # J27: the inner voices as KTSB units
+    "jang": "kaare-jang.service",
 }
 
 _IN_DOCKER = os.path.exists("/.dockerenv")
@@ -85,6 +85,8 @@ _DOCKER_COMPOSE_SERVICE = {
     "voice": "kaare-voice",
     "frontend": "kaare-frontend",
     "ha-log-bridge": "kaare-ha-log-bridge",
+    "jing": "kaare-jing",
+    "jang": "kaare-jang",
 }
 
 _docker_http_client: httpx.Client | None = None
@@ -208,6 +210,7 @@ async def api_get_cameras(_u=Depends(_require_admin)):
 
     available_labels: list[str] = []
     frigate_cameras: list[str] = []
+    frigate_types: dict[str, str] = {}  # P144-s12: read-only, from Frigate (e.g. «lpr»)
     try:
         frigate_cam_list = await _get_cameras()
         frigate_cameras = [c["api_name"] for c in frigate_cam_list]
@@ -222,8 +225,8 @@ async def api_get_cameras(_u=Depends(_require_admin)):
         async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.get(f"{frigate_url}/api/config")
             fcfg = r.json()
-            objects = fcfg.get("objects", {}) or {}
-            available_labels = objects.get("track", [])
+            available_labels = _frigate_tracked_labels(fcfg)  # global + each camera's own list (R137)
+            frigate_types = _frigate_camera_types(fcfg)
     except Exception:
         available_labels = ["person", "car", "postnord", "deer", "dog", "cat"]
 
@@ -236,14 +239,18 @@ async def api_get_cameras(_u=Depends(_require_admin)):
             merged_cameras[cam_id] = saved_cameras[cam_id]
         else:
             merged_cameras[cam_id] = {
-                "display_name": svc_cam_names.get(cam_id, cam_id),
+                # J24: a new card starts with services.yaml's name, else Frigate's own friendly_name, else the id
+                "display_name": svc_cam_names.get(cam_id) or _camera_display_name(cam_id, {}, fetch=False),
                 "role": "road_facing",
                 "labels": {
-                    lbl: {"analyze": False, "min_confidence": 0.65, "announce": False}
+                    lbl: {"analyze": False, "min_confidence": 0.65}
                     for lbl in available_labels
                 },
             }
         merged_cameras[cam_id]["_id"] = cam_id
+        # «Kan lage episoder» (P144-s14): the default a card without the switch gets — read-only, never saved
+        merged_cameras[cam_id]["episodes_default"] = fu_settings.camera_episodes_default(
+            merged_cameras[cam_id].get("role"))
 
     away_mode_defaults = {
         "nighttime_start": 22,
@@ -255,7 +262,7 @@ async def api_get_cameras(_u=Depends(_require_admin)):
 
     return {
         "enabled": enabled,
-        "cameras": list(merged_cameras.values()),
+        "cameras": [{**c, "frigate_type": frigate_types.get(c["_id"])} for c in merged_cameras.values()],
         "roles": roles,
         "available_labels": available_labels,
         "storage": cfg.get("storage", {}),
@@ -265,174 +272,21 @@ async def api_get_cameras(_u=Depends(_require_admin)):
 
 @router.get("/api/settings/cameras/_storage_usage")
 async def api_get_cameras_storage_usage(_u=Depends(_require_admin)):
-    """Returns actual disk usage for camera snapshots and analysis log in MB."""
-    snap_dir = Path("/kaare/state/frigate_snapshots")
-    log_file = Path("/kaare/logs/frigate_analysis.log")
+    """Returns actual disk usage for the event snapshots in MB."""
+    snap_dir = Path(frigate_store.SNAPSHOT_DIR)  # the store's folder, read per call (P150: was a hardcoded house path)
     try:
         snap_mb = round(
-            sum(f.stat().st_size for f in snap_dir.iterdir() if f.is_file()) / 1_048_576, 1
+            sum(f.stat().st_size for f in snap_dir.iterdir() if f.is_file() and f.suffix == ".jpg") / 1_048_576, 1
         )
     except Exception:
         snap_mb = 0.0
-    try:
-        log_mb = round(log_file.stat().st_size / 1_048_576, 1) if log_file.exists() else 0.0
-    except Exception:
-        log_mb = 0.0
-    return {"snapshots_mb": snap_mb, "log_mb": log_mb}
-
-
-_FAILED_ANALYSIS_PATTERNS = ["ikke kontakt", "kontakt med noen"]
-
-
-def _is_failed_analysis(text: str) -> bool:
-    if not text or len(text.strip()) < 20:
-        return True
-    return any(pat in text for pat in _FAILED_ANALYSIS_PATTERNS)
-
-
-@router.get("/api/settings/cameras/_analysis_log")
-async def api_get_analysis_log(limit: int = 40, _u=Depends(_require_admin)):
-    """Returns recent Frigate analysis log entries, newest first, deduplicated by event_id."""
-    log_file = Path("/kaare/logs/frigate_analysis.log")
-    snap_dir = Path("/kaare/state/frigate_snapshots")
-
-    if not log_file.exists():
-        return {"entries": []}
-
-    try:
-        lines = [ln for ln in log_file.read_text(encoding="utf-8").splitlines() if ln.strip()]
-    except Exception:
-        return {"entries": []}
-
-    seen: dict[str, dict] = {}
-    for line in lines:
-        try:
-            entry = json.loads(line)
-            eid = entry.get("event_id", "")
-            seen[eid] = entry
-        except Exception:
-            continue
-
-    entries = sorted(seen.values(), key=lambda e: e.get("ts", ""), reverse=True)[:limit]
-
-    result = []
-    for e in entries:
-        eid = e.get("event_id", "")
-        analysis = e.get("analysis", "")
-        result.append(
-            {
-                "ts": e.get("ts", ""),
-                "camera": e.get("camera", ""),
-                "display_name": e.get("display_name") or e.get("camera", ""),
-                "role": e.get("role", ""),
-                "label": e.get("label", ""),
-                "score": e.get("score", 0),
-                "top_score": e.get("top_score", e.get("score", 0)),
-                "duration": e.get("duration", 0),
-                "sub_label": e.get("sub_label"),
-                "zones": e.get("zones", []),
-                "event_id": eid,
-                "analysis": analysis,
-                "failed": _is_failed_analysis(analysis),
-                "has_snapshot": bool(eid and (snap_dir / f"{eid}.jpg").is_file()),
-            }
-        )
-
-    return {"entries": result}
-
-
-class RetryAnalysisRequest(BaseModel):
-    event_id: str
-    camera: str
-    label: str
-    score: float
-    top_score: float = 0.0
-    duration: float = 0.0
-    sub_label: str | None = None
-    sub_label_score: float | None = None
-    zones: list[str] = []
-
-
-@router.post("/api/settings/cameras/_retry_analysis")
-async def api_retry_analysis(req: RetryAnalysisRequest, _u=Depends(_require_admin)):
-    """Re-runs VLM analysis for a given event. Uses local snapshot if available."""
-
-    argus_log = _logging.getLogger("frigate_responder")
-    snap_dir = Path("/kaare/state/frigate_snapshots")
-    snap_path = snap_dir / f"{req.event_id}.jpg"
-
-    img_b64_override: str | None = None
-    if snap_path.is_file():
-        try:
-            img_b64_override = base64.b64encode(snap_path.read_bytes()).decode()
-        except Exception as e:
-            argus_log.error("retry_analysis: could not read local snapshot %s: %s", snap_path, e)
-
-    event_dict = {
-        "event_id": req.event_id,
-        "camera": req.camera,
-        "label": req.label,
-        "score": req.score,
-        "top_score": req.top_score or req.score,
-        "duration": req.duration,
-        "sub_label": req.sub_label,
-        "sub_label_score": req.sub_label_score,
-        "zones": req.zones,
-    }
-
-    try:
-        result = await analyze_event(event_dict, img_b64_override=img_b64_override)
-    except Exception as e:
-        argus_log.error("retry_analysis: analyze_event raised for %s: %s", req.event_id, e)
-        raise HTTPException(500, f"Analysis failed: {e}") from e
-
-    if not result:
-        argus_log.error(
-            "retry_analysis: no result for event %s (no snapshot or VLM unreachable)", req.event_id
-        )
-        raise HTTPException(500, "Analysis failed — no snapshot available or VLM unreachable")
-
-    analysis_text = result.get("analysis", "").strip()
-
-    cfg = _cfg()
-    cam_cfg = cfg.get("cameras", {}).get(req.camera, {})
-    entry = {
-        "ts": datetime.now(UTC).isoformat(),
-        "camera": req.camera,
-        "display_name": cam_cfg.get("display_name") or req.camera,
-        "role": cam_cfg.get("role", ""),
-        "label": req.label,
-        "score": req.score,
-        "top_score": req.top_score or req.score,
-        "duration": req.duration,
-        "sub_label": req.sub_label,
-        "zones": req.zones,
-        "event_id": req.event_id,
-        "analysis": analysis_text,
-    }
-    _write_analysis_log(entry)
-
-    return {"ok": True, "analysis": analysis_text, "failed": _is_failed_analysis(analysis_text)}
-
-
-@router.put("/api/settings/cameras/_global")
-async def api_put_cameras_global(payload: dict, _u=Depends(_require_admin)):
-    """Toggle global enabled flag for all automatic Frigate event analysis."""
-    try:
-        raw = config_store.load_for_update(_FRIGATE_CAMERAS_PATH)
-    except Exception:
-        raw = {"enabled": True, "cameras": {}, "roles": {}}
-
-    raw["enabled"] = bool(payload.get("enabled", True))
-    config_store.write_yaml(_FRIGATE_CAMERAS_PATH, raw, "gui:put_cameras_global")
-
-    load_camera_config()
-    return {"ok": True, "enabled": raw["enabled"]}
+    return {"snapshots_mb": snap_mb}
 
 
 @router.put("/api/settings/cameras/_storage")
 async def api_put_cameras_storage(payload: dict, _u=Depends(_require_admin)):
-    """Update storage size limits. Values are clamped: 0=disabled, snapshots 100–10000 MB, log 10–1000 MB."""
+    """Update the snapshot folder's size limit (0 = disabled, else 100–10000 MB). P150: the old «analysis log» limit
+    (log_max_mb) is gone — its GUI field went with P144 List B and nothing read it."""
     try:
         raw = config_store.load_for_update(_FRIGATE_CAMERAS_PATH)
     except Exception:
@@ -443,10 +297,6 @@ async def api_put_cameras_storage(payload: dict, _u=Depends(_require_admin)):
     if "snapshots_max_mb" in payload:
         val = int(payload["snapshots_max_mb"])
         storage["snapshots_max_mb"] = 0 if val == 0 else max(100, min(val, 10_000))
-
-    if "log_max_mb" in payload:
-        val = int(payload["log_max_mb"])
-        storage["log_max_mb"] = 0 if val == 0 else max(10, min(val, 1_000))
 
     config_store.write_yaml(_FRIGATE_CAMERAS_PATH, raw, "gui:put_cameras_storage")
 
@@ -490,8 +340,12 @@ async def api_put_camera(camera_id: str, payload: dict, _u=Depends(_require_admi
     if "cameras" not in raw:
         raw["cameras"] = {}
 
-    # Remove internal _id field before saving
+    # Remove internal _id field before saving (and Frigate's read-only camera type, P144-s12)
     payload.pop("_id", None)
+    payload.pop("frigate_type", None)
+    payload.pop("episodes_default", None)  # P144-s14: derived from the role, never stored
+    if "episodes" in payload and not isinstance(payload["episodes"], bool):
+        raise HTTPException(status_code=400, detail="episodes must be true or false")
     raw["cameras"][camera_id] = payload
 
     config_store.write_yaml(_FRIGATE_CAMERAS_PATH, raw, "gui:put_camera")
@@ -568,7 +422,7 @@ async def api_put_vpn_settings(payload: dict, _u=Depends(_require_admin)):
 
 
 @router.get("/api/system_status")
-def api_system_status(_u=Depends(_require_auth)):
+def api_system_status(_u=Depends(_require_admin)):
     """Return active module status. Domain must be enabled AND configured to show as active."""
     domains = app_state.CAPABILITY_MAP.get("domains", {})
 
@@ -836,7 +690,7 @@ def _build_model_catalog() -> list[dict]:
 
 
 @router.get("/api/system/gpus")
-async def api_get_gpus(_u=Depends(_require_auth)):
+async def api_get_gpus(_u=Depends(_require_admin)):
     """List available GPUs via nvidia-smi. Returns empty list if not available."""
     try:
         result = await asyncio.to_thread(
@@ -864,7 +718,7 @@ async def api_get_gpus(_u=Depends(_require_auth)):
 
 
 @router.get("/api/system/hardware")
-async def api_get_hardware(refresh: bool = False, _u=Depends(_require_auth)):
+async def api_get_hardware(refresh: bool = False, _u=Depends(_require_admin)):
     """Detect host hardware (CPU, RAM, GPU, NPU) and cache result in state/hardware.json."""
     return await asyncio.to_thread(_detect_hardware, refresh)
 
@@ -1132,7 +986,7 @@ async def api_settings_rollback(_u=Depends(_require_admin)):
 
 
 @router.get("/api/admin/services")
-async def api_admin_services(_u=Depends(_require_auth)):
+async def api_admin_services(_u=Depends(_require_admin)):
     """Return list of restartable services with current status."""
     statuses = {}
     if _IN_DOCKER:

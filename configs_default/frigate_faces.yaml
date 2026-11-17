@@ -1,0 +1,4 @@
+# Face classification for the Frigate user (P144-s05) — set in Integrations → Frigate → Face classification.
+# Personal: which faces from Frigate's face library are household / safe guest / not welcome. Ships empty.
+unclassified_name_days: 7
+faces: {}

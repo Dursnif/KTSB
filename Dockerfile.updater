@@ -1,6 +1,6 @@
 # KTSB updater (P57): docker CLI + compose plugin, Python 3 (stdlib only) and cosign — nothing else.
 # Everything is pinned: this container holds the keys to the house (docker.sock).
-FROM docker:29.9.0-cli-alpine3.24 AS dockercli
+FROM docker:29.9.2-cli-alpine3.24 AS dockercli
 
 FROM alpine:3.24
 

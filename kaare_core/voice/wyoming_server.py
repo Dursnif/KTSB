@@ -7,18 +7,26 @@ import math
 import os
 import wave
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from wyoming.asr import Transcript
-from wyoming.audio import AudioChunk, AudioStart, AudioStop
-from wyoming.event import async_read_event, async_write_event
+from wyoming.audio import AudioChunk, AudioChunkConverter, AudioStart, AudioStop
+from wyoming.error import Error
+from wyoming.event import Event, async_read_event, async_write_event
 from wyoming.info import AsrModel, AsrProgram, Attribution, Describe, Info
+from wyoming.vad import VoiceStopped
 
 from kaare_core.background import spawn
 from kaare_core.config import now_local
+from kaare_core.voice.silence import SilenceDetector
 
 log = logging.getLogger(__name__)
 
+# Reply audio rate a satellite asked for in its last audio-start (0 = the WAV's own rate). peer_ip → rate.
+_out_rates: dict[str, int] = {}
+# Each satellite mic's noise floor from its last round — the next round starts from it (P138, 2026-10-18).
+_floors: dict[str, float] = {}
 # Active satellite connections: peer_ip → (reader, writer, write_lock)
 _active_connections: dict[str, tuple[asyncio.StreamReader, asyncio.StreamWriter, asyncio.Lock]] = {}
 
@@ -84,9 +92,41 @@ def _get_record_ack_wav() -> Path:
     return _RECORD_ACK_WAV_PATH
 
 
+# Sent instead of reply audio when the answer is played on another node (P138) — the satellite ends its reply
+# cycle and can show it (kare_wyoming `on_routed`). Not a standard Wyoming event; other satellites ignore it and
+# end on the AudioStop that always follows.
+ROUTED_EVENT = "kare-routed"
+# Wyoming `error` codes this server sends (kare_wyoming `on_error` gets the code).
+ERROR_OUTPUT_UNREACHABLE = "output-unreachable"
+
+
+@dataclass
+class WyomingReply:
+    """What the satellite gets back for one answer (P138): audio to play on its own speaker (or None), the nodes
+    the answer was played on instead, and an error code when the chosen output could not be reached."""
+
+    play_here: Path | None = None
+    routed_to: list[str] = field(default_factory=list)
+    error_code: str = ""
+    error_text: str = ""
+
+
+# A satellite that wants the server to decide when the user stopped talking says so in its audio-start data
+# (kare_wyoming `end_of_speech: server`, P138). Satellites without it keep their own end of speech, as before.
+SERVER_VAD_KEY = "kare_vad"
+SERVER_VAD_VALUE = "server"
+# A satellite whose speaker runs at a fixed rate (e.g. one I2S bus shared with the mic, M5Stack Atom Echo) asks for
+# its reply audio at that rate; the server converts (P138). Without it the WAV's own rate is sent, as before.
+OUT_RATE_KEY = "kare_out_rate"
+
+
 SttCallback = Callable[[bytes, int], Awaitable[str]]
 KaareCallback = Callable[[str, str], Awaitable[str]]
 TtsCallback = Callable[[str], Path]
+# (answer text, satellite IP) → WyomingReply. Optional: without it the answer always goes back to the satellite.
+RouteCallback = Callable[[str, str], Awaitable[WyomingReply]]
+# satellite IP → None: a satellite started streaming / its reply cycle ended (P138 ducking). Optional.
+PeerCallback = Callable[[str], Awaitable[None]]
 
 
 class WyomingServer:
@@ -97,17 +137,29 @@ class WyomingServer:
         stt_fn: SttCallback,
         kaare_fn: KaareCallback,
         tts_fn: TtsCallback,
+        route_fn: RouteCallback | None = None,
+        listen_start_fn: PeerCallback | None = None,
+        cycle_end_fn: PeerCallback | None = None,
+        silence_sec: float = 1.5,
     ):
         self._host = host
         self._port = port
         self._stt = stt_fn
         self._kaare = kaare_fn
         self._tts = tts_fn
+        self._route = route_fn
+        self._listen_start = listen_start_fn
+        self._cycle_end = cycle_end_fn
+        self._silence_sec = silence_sec
         self._server: asyncio.AbstractServer | None = None
+
+    def set_silence_sec(self, seconds: float) -> None:
+        """GUI change (P138): used from the next listen on."""
+        self._silence_sec = seconds
 
     async def start(self) -> None:
         self._server = await asyncio.start_server(self._handle_client, self._host, self._port)
-        log.info("Wyoming server aktiv på %s:%s", self._host, self._port)
+        log.info("Wyoming server listening on %s:%s", self._host, self._port)
 
     async def stop(self) -> None:
         if self._server:
@@ -122,7 +174,7 @@ class WyomingServer:
     ) -> None:
         peer = writer.get_extra_info("peername", ("unknown", 0))
         peer_host = str(peer[0])
-        log.info("Wyoming: satellitt tilkoblet fra %s", peer_host)
+        log.info("Wyoming: satellite connected from %s", peer_host)
 
         lock = asyncio.Lock()
         _active_connections[peer_host] = (reader, writer, lock)
@@ -130,6 +182,9 @@ class WyomingServer:
         audio_buffer = bytearray()
         audio_rate = 16000
         audio_width = 2
+        detector: SilenceDetector | None = None
+        ended_early = False  # server-side end of speech already started the pipeline this round
+        _out_rates[peer_host] = 0
 
         record_dir = os.environ.get(_RECORD_DIR_ENV)
         record_person = os.environ.get(_RECORD_PERSON_ENV, "user")
@@ -165,15 +220,33 @@ class WyomingServer:
                         ]
                     )
                     await async_write_event(info.event(), writer)
-                    log.debug("Wyoming: describe → info sendt til %s", peer_host)
+                    log.debug("Wyoming: describe → info sent to %s", peer_host)
 
                 elif AudioStart.is_type(event.type):
                     fmt = AudioStart.from_event(event)
                     audio_rate = fmt.rate
                     audio_width = fmt.width
                     audio_buffer = bytearray()
+                    ended_early = False
+                    wants_vad = (event.data or {}).get(SERVER_VAD_KEY) == SERVER_VAD_VALUE
+                    try:
+                        _out_rates[peer_host] = int((event.data or {}).get(OUT_RATE_KEY) or 0)
+                    except (TypeError, ValueError):
+                        _out_rates[peer_host] = 0
+                    detector = (
+                        SilenceDetector(
+                            self._silence_sec,
+                            audio_rate,
+                            audio_width,
+                            prior_floor=_floors.get(peer_host),
+                        )
+                        if wants_vad and not record_dir
+                        else None
+                    )
+                    if self._listen_start is not None and not record_dir:
+                        spawn(self._listen_start(peer_host))
                     log.debug(
-                        "Wyoming: audio-start %dHz/%dbit fra %s",
+                        "Wyoming: audio-start %dHz/%dbit from %s",
                         audio_rate,
                         audio_width * 8,
                         peer_host,
@@ -196,8 +269,34 @@ class WyomingServer:
                         elapsed = asyncio.get_event_loop().time() - record_start_monotonic
                         if elapsed >= _RECORD_LEAD_TRIM_SEC:
                             audio_buffer.extend(AudioChunk.from_event(event).audio)
-                    else:
-                        audio_buffer.extend(AudioChunk.from_event(event).audio)
+                    elif not ended_early:
+                        chunk = AudioChunk.from_event(event).audio
+                        audio_buffer.extend(chunk)
+                        if detector is not None and detector.feed(chunk):
+                            ended_early = True
+                            log.info(
+                                "Wyoming: end of speech from %s (%s, %.1f s, floor %.4f, peak %.4f, speech %.4f)",
+                                peer_host,
+                                detector.reason,
+                                detector.total_sec,
+                                detector.floor or 0.0,
+                                detector.peak,
+                                detector.speech_level,
+                            )
+                            if detector.floor and detector.reason in SilenceDetector.SPEECH_REASONS:
+                                _floors[peer_host] = detector.floor
+                            await async_write_event(VoiceStopped().event(), writer)
+                            if detector.reason in SilenceDetector.SPEECH_REASONS and audio_buffer:
+                                spawn(
+                                    self._pipeline(
+                                        bytes(audio_buffer), audio_rate, peer_host, writer, lock
+                                    )
+                                )
+                            else:
+                                await _deliver_reply(writer, lock, WyomingReply())
+                                if self._cycle_end is not None:
+                                    spawn(self._cycle_end(peer_host))
+                            audio_buffer = bytearray()
 
                 elif AudioStop.is_type(event.type):
                     if record_dir:
@@ -216,7 +315,7 @@ class WyomingServer:
                                 audio_width,
                             )
                         log.info(
-                            "Wyoming: opptaksmodus — lagret runde %s (%d bytes fra %s)",
+                            "Wyoming: recording mode — saved round %s (%d bytes from %s)",
                             record_session_id,
                             len(audio_buffer),
                             peer_host,
@@ -235,18 +334,23 @@ class WyomingServer:
                         )
                         async with lock:
                             await _send_wav(writer, _get_record_ack_wav())
+                    elif ended_early:
+                        pass  # the server already ended this round on silence
                     elif audio_buffer:
                         spawn(
                             self._pipeline(bytes(audio_buffer), audio_rate, peer_host, writer, lock)
                         )
+                    elif self._cycle_end is not None:
+                        spawn(self._cycle_end(peer_host))
                     audio_buffer = bytearray()
 
         except (asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError):
             pass
         except Exception as exc:
-            log.error("Wyoming: feil fra %s: %s", peer_host, exc)
+            log.error("Wyoming: error from %s: %s", peer_host, exc)
         finally:
             _active_connections.pop(peer_host, None)
+            _out_rates.pop(peer_host, None)
             try:
                 writer.close()
             except Exception:
@@ -268,29 +372,37 @@ class WyomingServer:
 
             text = await self._stt(audio_bytes, rate)
             if not text.strip():
-                log.info("Wyoming: STT ga tom tekst fra %s", peer_host)
+                log.info("Wyoming: STT returned empty text from %s", peer_host)
                 return
 
-            log.info("Wyoming: STT '%s' fra %s", text, peer_host)
+            log.info("Wyoming: STT '%s' from %s", text, peer_host)
             await async_write_event(Transcript(text=text).event(), writer)
 
             answer = await self._kaare(text, peer_host)  # the callback maps the IP to a node (P120)
             if not answer.strip():
                 return
 
-            log.info("Wyoming: svar '%s...' til %s", answer[:60], peer_host)
+            log.info("Wyoming: reply '%s...' to %s", answer[:60], peer_host)
 
-            loop = asyncio.get_event_loop()
-            wav_path = await loop.run_in_executor(None, self._tts, answer)
-
-            async with lock:
-                await _send_wav(writer, wav_path)
-
-            await asyncio.sleep(3)
-            wav_path.unlink(missing_ok=True)
+            if self._route is None:
+                loop = asyncio.get_event_loop()
+                reply = WyomingReply(play_here=await loop.run_in_executor(None, self._tts, answer))
+            else:
+                reply = await self._route(answer, peer_host)
+            if writer.is_closing():
+                # The satellite gave up waiting (its reply timeout) — a routed reply was still delivered elsewhere.
+                log.info("Wyoming: %s left before the reply; nothing more to send it", peer_host)
+            else:
+                await _deliver_reply(writer, lock, reply, _out_rates.get(peer_host, 0))
 
         except Exception as exc:
-            log.error("Wyoming: pipeline feil for %s: %s", peer_host, exc)
+            log.error("Wyoming: pipeline failed for %s: %s", peer_host, exc)
+        finally:
+            if self._cycle_end is not None:
+                try:
+                    await self._cycle_end(peer_host)
+                except Exception as exc:
+                    log.warning("Wyoming: cycle-end hook failed for %s: %s", peer_host, exc)
 
 
 def _record_out_path(record_dir: str, source: str, person: str, session_id: str) -> Path:
@@ -349,7 +461,7 @@ async def _stop_local_recorders(procs: dict[str, asyncio.subprocess.Process]) ->
         try:
             await asyncio.wait_for(proc.wait(), timeout=3.0)
         except TimeoutError:
-            log.warning("Wyoming: opptaksmodus — %s-mic svarte ikke på SIGINT, dreper", label)
+            log.warning("Wyoming: recording mode — %s mic ignored SIGINT, killing it", label)
             proc.kill()
 
 
@@ -370,28 +482,58 @@ def _save_recorded_clip(
         wf.writeframes(audio_bytes)
 
 
-async def _send_wav(writer: asyncio.StreamWriter, wav_path: Path) -> None:
+async def _send_wav(writer: asyncio.StreamWriter, wav_path: Path, out_rate: int = 0) -> None:
     with wave.open(str(wav_path), "rb") as wf:
         rate = wf.getframerate()
         width = wf.getsampwidth()
         channels = wf.getnchannels()
         chunk_frames = rate // 4  # 250ms per chunk
+        converter = AudioChunkConverter(rate=out_rate) if out_rate and out_rate != rate else None
+        send_rate = out_rate if converter else rate
 
         await async_write_event(
-            AudioStart(rate=rate, width=width, channels=channels).event(), writer
+            AudioStart(rate=send_rate, width=width, channels=channels).event(), writer
         )
 
         while True:
             frames = wf.readframes(chunk_frames)
             if not frames:
                 break
-            await async_write_event(
-                AudioChunk(rate=rate, width=width, channels=channels, audio=frames).event(),
-                writer,
-            )
+            chunk = AudioChunk(rate=rate, width=width, channels=channels, audio=frames)
+            if converter is not None:
+                chunk = converter.convert(chunk)
+            await async_write_event(chunk.event(), writer)
 
         await async_write_event(AudioStop().event(), writer)
-    log.info("Wyoming: WAV sendt (%s)", wav_path.name)
+    log.info("Wyoming: WAV sent (%s)", wav_path.name)
+
+
+async def _deliver_reply(
+    writer: asyncio.StreamWriter, lock: asyncio.Lock, reply: WyomingReply, out_rate: int = 0
+) -> None:
+    """Send one WyomingReply: error event, «played elsewhere» event, then the audio — or a bare AudioStop so the
+    satellite always gets the end of its reply cycle (older firmware would otherwise wait for its timeout)."""
+    async with lock:
+        if reply.error_code:
+            await async_write_event(
+                Error(text=reply.error_text, code=reply.error_code).event(), writer
+            )
+        if reply.routed_to:
+            await async_write_event(
+                Event(type=ROUTED_EVENT, data={"nodes": reply.routed_to}), writer
+            )
+        if reply.play_here is not None:
+            await _send_wav(writer, reply.play_here, out_rate)
+        else:
+            await async_write_event(AudioStop().event(), writer)
+    if reply.play_here is not None:
+        await asyncio.sleep(3)
+        reply.play_here.unlink(missing_ok=True)
+
+
+def is_satellite_connected(host: str) -> bool:
+    """A Wyoming satellite with this IP has an open connection right now (P138 availability check)."""
+    return bool(host) and host in _active_connections
 
 
 async def speak_to_satellite(host: str, wav_path: Path) -> bool:
@@ -407,9 +549,9 @@ async def speak_to_satellite(host: str, wav_path: Path) -> bool:
     _, writer, lock = conn
     try:
         async with lock:
-            await _send_wav(writer, wav_path)
+            await _send_wav(writer, wav_path, _out_rates.get(host, 0))
         return True
     except Exception as exc:
-        log.error("Wyoming: speak push feil til %s: %s", host, exc)
+        log.error("Wyoming: speak push to %s failed: %s", host, exc)
         _active_connections.pop(host, None)
         return False

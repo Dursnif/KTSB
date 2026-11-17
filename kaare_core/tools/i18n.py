@@ -70,6 +70,211 @@ _T: dict = {
         "en": "No devices known yet.",
         "de": "Noch keine Geräte bekannt.",
     },
+    # P137 — place register (rooms.yaml + HA areas/floors)
+    "ha_places_header": {
+        "nb": "Steder i huset (navn — antall ting KTSB kjenner der):",
+        "en": "Places in the house (name — number of things KTSB knows there):",
+        "de": "Orte im Haus (Name — Anzahl der Dinge, die KTSB dort kennt):",
+    },
+    "ha_floors_header": {
+        "nb": "Etasjer (navn: steder):",
+        "en": "Floors (name: places):",
+        "de": "Etagen (Name: Orte):",
+    },
+    "ha_place_header": {
+        "nb": "{place}: {count} ting KTSB kjenner{origin}",
+        "en": "{place}: {count} things KTSB knows{origin}",
+        "de": "{place}: {count} Dinge, die KTSB kennt{origin}",
+    },
+    "ha_origin_node": {
+        "nb": " (stedet er hentet fra noden brukeren snakker gjennom)",
+        "en": " (the place comes from the node the user speaks through)",
+        "de": " (der Ort stammt vom Knoten, über den der Nutzer spricht)",
+    },
+    "ha_thing_aliases": {
+        "nb": "aliaser: {aliases}",
+        "en": "aliases: {aliases}",
+        "de": "Aliasse: {aliases}",
+    },
+    "ha_node_kind": {
+        "nb": "KTSB-node: {what}",
+        "en": "KTSB node: {what}",
+        "de": "KTSB-Knoten: {what}",
+    },
+    "ha_node_display": {"nb": "skjerm", "en": "screen", "de": "Bildschirm"},
+    "ha_node_ha_player": {
+        "nb": "HA-spiller: {entity} — volum, pause/spill/stopp: ha_control med entity_id={entity}",
+        "en": "HA player: {entity} — volume, pause/play/stop: ha_control with entity_id={entity}",
+        "de": "HA-Player: {entity} — Lautstärke, Pause/Wiedergabe/Stopp: ha_control mit entity_id={entity}",
+    },
+    "ha_node_audio": {"nb": "høyttaler", "en": "speaker", "de": "Lautsprecher"},
+    "ha_node_remote": {
+        "nb": "av/på, volum, lyd av, taster, apper: media tv_power/tv_volume/tv_mute/tv_key/tv_app med client=node:{node}",
+        "en": "on/off, volume, mute, keys, apps: media tv_power/tv_volume/tv_mute/tv_key/tv_app with client=node:{node}",
+        "de": "Ein/Aus, Lautstärke, Stumm, Tasten, Apps: media tv_power/tv_volume/tv_mute/tv_key/tv_app mit client=node:{node}",
+    },
+    "ha_thing_note": {
+        "nb": "plassering: {note}",
+        "en": "position: {note}",
+        "de": "Position: {note}",
+    },
+    "ha_unregistered_hint": {
+        "nb": "HA har også {count} ting her som ikke er lagt inn i KTSB ({detail}). Du kan tilby brukeren å legge dem til (Rom og aliaser → Rom).",
+        "en": "HA also has {count} things here that are not added to KTSB ({detail}). You can offer the user to add them (Rom og aliaser → Rom).",
+        "de": "HA hat hier außerdem {count} Dinge, die nicht in KTSB eingetragen sind ({detail}). Du kannst dem Nutzer anbieten, sie hinzuzufügen (Rom og aliaser → Rom).",
+    },
+    "ha_location_needed": {
+        "nb": "Feil: ingen rom eller etasje oppgitt, og forespørselen kom ikke fra en node med kjent plassering. Spør brukeren hvilket rom det gjelder.",
+        "en": "Error: no room or floor given, and the request did not come from a node with a known place. Ask the user which room.",
+        "de": "Fehler: kein Raum und keine Etage angegeben, und die Anfrage kam nicht von einem Knoten mit bekanntem Ort. Frag den Nutzer, welcher Raum gemeint ist.",
+    },
+    "ha_place_unknown": {
+        "nb": "Kjenner ikke til noe sted som heter «{text}». Kjente steder: {known}.",
+        "en": "No place named «{text}» is known. Known places: {known}.",
+        "de": "Kein Ort namens «{text}» bekannt. Bekannte Orte: {known}.",
+    },
+    "ha_no_places": {
+        "nb": "Ingen steder er satt opp ennå (Rom og aliaser → Rom).",
+        "en": "No places are set up yet (Rom og aliaser → Rom).",
+        "de": "Noch keine Orte eingerichtet (Rom og aliaser → Rom).",
+    },
+    "ha_place_none_of_type": {
+        "nb": "KTSB kjenner ingen {domain} i {place}.",
+        "en": "KTSB knows no {domain} in {place}.",
+        "de": "KTSB kennt kein(e) {domain} in {place}.",
+    },
+    "ha_location_done": {
+        "nb": "OK: {action} {count} × {domain} i {place}: {names}.",
+        "en": "OK: {action} {count} × {domain} in {place}: {names}.",
+        "de": "OK: {action} {count} × {domain} in {place}: {names}.",
+    },
+    "ha_location_failed": {
+        "nb": "Feilet for: {names}.",
+        "en": "Failed for: {names}.",
+        "de": "Fehlgeschlagen für: {names}.",
+    },
+    "ha_act_turn_on": {"nb": "skrudd på", "en": "turned on", "de": "eingeschaltet"},
+    "ha_act_turn_off": {"nb": "skrudd av", "en": "turned off", "de": "ausgeschaltet"},
+    "ha_act_toggle": {"nb": "vekslet", "en": "toggled", "de": "umgeschaltet"},
+    "ha_act_set_level": {
+        "nb": "lysstyrke satt",
+        "en": "brightness set",
+        "de": "Helligkeit gesetzt",
+    },
+    "ha_act_set_color_temp": {
+        "nb": "fargetemperatur satt",
+        "en": "colour temperature set",
+        "de": "Farbtemperatur gesetzt",
+    },
+    "ha_act_set_color": {"nb": "farge satt", "en": "colour set", "de": "Farbe gesetzt"},
+    # P139 phase 1 — media players through HA
+    "ha_act_set_volume": {"nb": "volum satt", "en": "volume set", "de": "Lautstärke gesetzt"},
+    "ha_act_volume_up": {"nb": "volum skrudd opp", "en": "volume up", "de": "lauter gestellt"},
+    "ha_act_volume_down": {"nb": "volum skrudd ned", "en": "volume down", "de": "leiser gestellt"},
+    "ha_act_mute": {"nb": "lyd dempet", "en": "muted", "de": "stummgeschaltet"},
+    "ha_act_unmute": {"nb": "demping av", "en": "unmuted", "de": "Stummschaltung aus"},
+    "ha_act_select_source": {"nb": "kilde valgt", "en": "source selected", "de": "Quelle gewählt"},
+    "ha_act_media_pause": {"nb": "satt på pause", "en": "paused", "de": "pausiert"},
+    "ha_act_media_play": {"nb": "spiller videre", "en": "playing", "de": "spielt weiter"},
+    "ha_act_media_stop": {"nb": "stoppet", "en": "stopped", "de": "gestoppt"},
+    "ha_media_volume": {"nb": "volum {pct} %", "en": "volume {pct}%", "de": "Lautstärke {pct} %"},
+    "ha_media_muted": {"nb": "dempet", "en": "muted", "de": "stumm"},
+    "ha_media_app": {
+        "nb": "app «{app}» viser «{title}»",
+        "en": "app «{app}» shows «{title}»",
+        "de": "App «{app}» zeigt «{title}»",
+    },
+    "ha_media_app_no_title": {
+        "nb": "app «{app}» uten tittel (ingen film/serie spilles)",
+        "en": "app «{app}» with no title (no film/show is playing)",
+        "de": "App «{app}» ohne Titel (kein Film/keine Serie läuft)",
+    },
+    "ha_media_source": {"nb": "kilde {source}", "en": "source {source}", "de": "Quelle {source}"},
+    "ha_media_confirmed": {
+        "nb": "'{entity_id}': {action} (Home Assistant viser nå: {now}).",
+        "en": "'{entity_id}': {action} (Home Assistant now shows: {now}).",
+        "de": "'{entity_id}': {action} (Home Assistant zeigt jetzt: {now}).",
+    },
+    "ha_media_already": {
+        "nb": "'{entity_id}' var allerede slik ({now}). Ingenting ble endret.",
+        "en": "'{entity_id}' was already like that ({now}). Nothing was changed.",
+        "de": "'{entity_id}' war bereits so ({now}). Nichts wurde geändert.",
+    },
+    "ha_media_accepted": {
+        "nb": "Home Assistant tok imot «{action}» for '{entity_id}'. Spilleren er {state} og melder ikke volum/kilde "
+        "i den tilstanden, så det kan ikke sjekkes.",
+        "en": "Home Assistant accepted «{action}» for '{entity_id}'. The player is {state} and does not report "
+        "volume/source in that state, so it cannot be checked.",
+        "de": "Home Assistant hat «{action}» für '{entity_id}' angenommen. Der Player ist {state} und meldet in diesem "
+        "Zustand keine Lautstärke/Quelle, daher lässt es sich nicht prüfen.",
+    },
+    "ha_media_not_confirmed": {
+        "nb": "«{action}» er sendt til '{entity_id}', men Home Assistant viser ikke endringen ennå (nå: {now}).",
+        "en": "«{action}» was sent to '{entity_id}', but Home Assistant does not show the change yet (now: {now}).",
+        "de": "«{action}» wurde an '{entity_id}' gesendet, aber Home Assistant zeigt die Änderung noch nicht "
+        "(jetzt: {now}).",
+    },
+    "ha_media_unsupported": {
+        "nb": "'{entity_id}' støtter ikke «{action}» i Home Assistant. Ingenting ble sendt.",
+        "en": "'{entity_id}' does not support «{action}» in Home Assistant. Nothing was sent.",
+        "de": "'{entity_id}' unterstützt «{action}» in Home Assistant nicht. Es wurde nichts gesendet.",
+    },
+    "ha_media_source_unknown": {
+        "nb": "'{entity_id}' har ingen slik kilde. Kilder den har: {sources}. Ingenting ble sendt.",
+        "en": "'{entity_id}' has no such source. Sources it has: {sources}. Nothing was sent.",
+        "de": "'{entity_id}' hat keine solche Quelle. Vorhandene Quellen: {sources}. Es wurde nichts gesendet.",
+    },
+    "ha_media_failed": {
+        "nb": "«{action}» for '{entity_id}' feilet ({outcome}).",
+        "en": "«{action}» for '{entity_id}' failed ({outcome}).",
+        "de": "«{action}» für '{entity_id}' fehlgeschlagen ({outcome}).",
+    },
+    "ha_media_not_player": {
+        "nb": "'{entity_id}' er ikke en mediespiller. Volum, kilde og pause gjelder bare media_player.*.",
+        "en": "'{entity_id}' is not a media player. Volume, source and pause only apply to media_player.*.",
+        "de": "'{entity_id}' ist kein Mediaplayer. Lautstärke, Quelle und Pause gelten nur für media_player.*.",
+    },
+    "ha_media_volume_needed": {
+        "nb": "Feil: set_volume trenger volume_pct (0–100).",
+        "en": "Error: set_volume needs volume_pct (0–100).",
+        "de": "Fehler: set_volume braucht volume_pct (0–100).",
+    },
+    "ha_media_source_needed": {
+        "nb": "Feil: select_source trenger source (navnet på kilden, f.eks. 'HDMI 1').",
+        "en": "Error: select_source needs source (the source name, e.g. 'HDMI 1').",
+        "de": "Fehler: select_source braucht source (Name der Quelle, z.B. 'HDMI 1').",
+    },
+    "ha_media_target_needed": {
+        "nb": "Feil: ingen enhet, rom eller etasje oppgitt, og forespørselen kom ikke fra en node. Spør brukeren hvilken "
+        "høyttaler eller TV det gjelder.",
+        "en": "Error: no device, room or floor given, and the request did not come from a node. Ask the user which "
+        "speaker or TV.",
+        "de": "Fehler: kein Gerät, Raum oder Etage angegeben, und die Anfrage kam nicht von einem Knoten. Frag den "
+        "Nutzer, welcher Lautsprecher oder Fernseher gemeint ist.",
+    },
+    "ha_media_node_not_ha": {
+        "nb": "Svarene til noden brukeren snakker gjennom spilles på {where}, og den styres ikke av Home Assistant. "
+        "Ingenting ble sendt. Spør brukeren hvilken høyttaler eller TV det gjelder.",
+        "en": "Replies to the node the user speaks through play on {where}, which Home Assistant does not control. "
+        "Nothing was sent. Ask the user which speaker or TV.",
+        "de": "Antworten an den Knoten, über den der Nutzer spricht, laufen über {where}; das steuert Home Assistant "
+        "nicht. Es wurde nichts gesendet. Frag den Nutzer, welcher Lautsprecher oder Fernseher gemeint ist.",
+    },
+    "ha_media_local_speaker": {
+        "nb": "høyttalerne på maskinen KTSB kjører på",
+        "en": "the speakers of the machine KTSB runs on",
+        "de": "den Lautsprechern des Rechners, auf dem KTSB läuft",
+    },
+    "ha_media_node_place": {
+        "nb": "høyttaleren svarene spilles på ({node})",
+        "en": "the speaker replies play on ({node})",
+        "de": "dem Lautsprecher, auf dem die Antworten laufen ({node})",
+    },
+    "ha_outcome_word_unsupported": {"nb": "støttes ikke", "en": "not supported", "de": "nicht unterstützt"},
+    "ha_outcome_word_source_unknown": {"nb": "ukjent kilde", "en": "unknown source", "de": "unbekannte Quelle"},
+    "ha_outcome_word_not_found": {"nb": "finnes ikke", "en": "does not exist", "de": "existiert nicht"},
+    "ha_outcome_word_unavailable": {"nb": "utilgjengelig", "en": "unavailable", "de": "nicht verfügbar"},
+    "ha_outcome_word_error": {"nb": "feil fra HA", "en": "error from HA", "de": "Fehler von HA"},
     "ha_known_in_room": {
         "nb": "Kjenner til følgende i {room}:",
         "en": "Known devices in {room}:",
@@ -129,6 +334,52 @@ _T: dict = {
         "nb": "'{entity_id}' {action} utført.",
         "en": "'{entity_id}' {action} executed.",
         "de": "'{entity_id}' {action} ausgeführt.",
+    },
+    # N26 — what the gateway saw, said as it is (never «done» unless HA's state shows it).
+    "ha_outcome_already": {
+        "nb": "'{entity_id}' var allerede {state}.",
+        "en": "'{entity_id}' was already {state}.",
+        "de": "'{entity_id}' war bereits {state}.",
+    },
+    "ha_outcome_accepted": {
+        "nb": "Home Assistant tok imot «{action}» for '{entity_id}' (tilstand nå: {state}).",
+        "en": "Home Assistant accepted «{action}» for '{entity_id}' (state now: {state}).",
+        "de": "Home Assistant hat «{action}» für '{entity_id}' angenommen (Zustand jetzt: {state}).",
+    },
+    "ha_outcome_not_confirmed": {
+        "nb": "«{action}» er sendt til '{entity_id}' og Home Assistant tok imot det, men ny tilstand er ikke meldt "
+        "tilbake ennå (nå: {state}). Noen lys og brytere melder fra litt etter at de har skiftet — det er ikke en feil.",
+        "en": "«{action}» was sent to '{entity_id}' and Home Assistant accepted it, but the new state has not been "
+        "reported yet (now: {state}). Some lights and switches report a moment after they change — that is not an "
+        "error.",
+        "de": "«{action}» wurde an '{entity_id}' gesendet und Home Assistant hat es angenommen, aber der neue Zustand "
+        "ist noch nicht gemeldet (jetzt: {state}). Manche Lampen und Schalter melden sich erst kurz danach — das ist "
+        "kein Fehler.",
+    },
+    "ha_outcome_not_found": {
+        "nb": "'{entity_id}' finnes ikke i Home Assistant. Ingenting ble sendt.",
+        "en": "'{entity_id}' does not exist in Home Assistant. Nothing was sent.",
+        "de": "'{entity_id}' gibt es in Home Assistant nicht. Es wurde nichts gesendet.",
+    },
+    "ha_outcome_unavailable": {
+        "nb": "'{entity_id}' er utilgjengelig i Home Assistant (frakoblet eller uten strøm). Ingenting ble sendt.",
+        "en": "'{entity_id}' is unavailable in Home Assistant (offline or without power). Nothing was sent.",
+        "de": "'{entity_id}' ist in Home Assistant nicht verfügbar (offline oder ohne Strom). Es wurde nichts gesendet.",
+    },
+    "ha_location_unconfirmed": {
+        "nb": "Sendt, men ikke bekreftet ennå: {names}.",
+        "en": "Sent, not confirmed yet: {names}.",
+        "de": "Gesendet, noch nicht bestätigt: {names}.",
+    },
+    "stm_action_unconfirmed": {
+        "nb": "SENDT, IKKE BEKREFTET",
+        "en": "SENT, NOT CONFIRMED",
+        "de": "GESENDET, NICHT BESTÄTIGT",
+    },
+    "stm_result_not_found": {
+        "nb": "finnes ikke i Home Assistant",
+        "en": "does not exist in Home Assistant",
+        "de": "gibt es in Home Assistant nicht",
     },
     "ha_status_response": {
         "nb": "HA svarte med status: {status}.",
@@ -370,6 +621,27 @@ _T: dict = {
         "nb": "\n\nBeskriv hva du ser på bildet og om den lagrede analysen stemmer. Svar på norsk.",
         "en": "\n\nDescribe what you see in the image and whether the stored analysis is accurate.",
         "de": "\n\nBeschreibe, was du auf dem Bild siehst, und ob die gespeicherte Analyse korrekt ist.",
+    },
+    # P139 reopened 2026-11-16: `query` is the user's question about the picture, added to the camera's own prompt
+    "cam_prompt_user_question": {
+        "nb": "\n\nBrukerens spørsmål om bildet: «{query}»\nSvar bare ut fra det du ser på bildet. Du kan ikke utføre handlinger eller bruke verktøy her.",
+        "en": "\n\nThe user's question about the picture: «{query}»\nAnswer only from what you see in the picture. You cannot perform actions or use tools here.",
+        "de": "\n\nDie Frage des Nutzers zum Bild: «{query}»\nAntworte nur anhand dessen, was du auf dem Bild siehst. Du kannst hier keine Aktionen ausführen und keine Werkzeuge benutzen.",
+    },
+    "cam_not_analysed": {
+        "nb": "Bildet er ikke analysert (ingen analyse ble bedt om).",
+        "en": "The picture was not analysed (no analysis was asked for).",
+        "de": "Das Bild wurde nicht analysiert (keine Analyse angefordert).",
+    },
+    "cam_stored_analysis": {
+        "nb": "Lagret beskrivelse fra kamerarøret: {analysis}",
+        "en": "Stored description from the camera pipe: {analysis}",
+        "de": "Gespeicherte Beschreibung aus der Kamera-Pipeline: {analysis}",
+    },
+    "tool_kamera_analyse_desc": {
+        "nb": "For snapshot og show_event: true = bildemodellen beskriver bildet (tar noen sekunder); false = bare vis bildet. Ikke satt: med screen og uten query = bare vis, ellers analyse. Med screen sendes bildet til skjermen før analysen.",
+        "en": "For snapshot and show_event: true = the image model describes the picture (takes a few seconds); false = only show the picture. Not set: with screen and no query = show only, else analyse. With screen the picture is sent to the screen before the analysis.",
+        "de": "Für snapshot und show_event: true = das Bildmodell beschreibt das Bild (dauert einige Sekunden); false = das Bild nur zeigen. Nicht gesetzt: mit screen und ohne query = nur zeigen, sonst Analyse. Mit screen geht das Bild vor der Analyse an den Bildschirm.",
     },
     # ── Memory ───────────────────────────────────────────────────────────────
     "mem_no_stm_history": {
@@ -931,9 +1203,34 @@ _T: dict = {
     },
     # ── trace_reader / self-monitoring ──────────────────────────────────────
     "rid_note": {
-        "nb": "[System: Din nåværende request-ID er **{rid}**. Bruk inspect_system(action='fetch_trace', rid='{rid}') for å inspisere en tidligere tur. Merk: inspiserer du DENNE pågående turen (samme rid), vil traceen være ufullstendig siden turen ikke er ferdig ennå.]",
-        "en": "[System: Your current request ID is **{rid}**. Use inspect_system(action='fetch_trace', rid='{rid}') to inspect a past turn. Note: inspecting THIS in-progress turn (same rid) returns an incomplete trace, since the turn hasn't finished yet.]",
-        "de": "[System: Deine aktuelle Request-ID ist **{rid}**. Verwende inspect_system(action='fetch_trace', rid='{rid}') um eine vergangene Runde zu inspizieren. Hinweis: Inspizierst du DIESE laufende Runde (gleiche rid), ist die Trace unvollständig, da die Runde noch nicht abgeschlossen ist.]",
+        "nb": "[System: Din nåværende request-ID er **{rid}**. Bruk self_trace(action='fetch_trace', rid=…) med en ekte rid for å inspisere en tidligere tur; self_trace(action='recent') viser brukerens egne siste rid-er. Merk: inspiserer du DENNE pågående turen (samme rid), vil traceen være ufullstendig siden turen ikke er ferdig ennå.]",
+        "en": "[System: Your current request ID is **{rid}**. Use self_trace(action='fetch_trace', rid=…) with a real rid to inspect a past turn; self_trace(action='recent') lists the user's own recent rids. Note: inspecting THIS in-progress turn (same rid) returns an incomplete trace, since the turn hasn't finished yet.]",
+        "de": "[System: Deine aktuelle Request-ID ist **{rid}**. Verwende self_trace(action='fetch_trace', rid=…) mit einer echten rid, um eine vergangene Runde zu inspizieren; self_trace(action='recent') zeigt die eigenen letzten rids des Nutzers. Hinweis: Inspizierst du DIESE laufende Runde (gleiche rid), ist die Trace unvollständig, da die Runde noch nicht abgeschlossen ist.]",
+    },
+    "rid_note_prev": {
+        "nb": "[System: Forrige request-ID for denne brukeren: **{rid}**.]",
+        "en": "[System: Previous request ID for this user: **{rid}**.]",
+        "de": "[System: Vorherige Request-ID dieses Nutzers: **{rid}**.]",
+    },
+    "self_trace_nearest": {
+        "nb": "Nærmeste ekte rid-er for denne brukeren:",
+        "en": "Nearest real rids for this user:",
+        "de": "Nächste echte rids dieses Nutzers:",
+    },
+    "self_trace_recent_header": {
+        "nb": "Brukerens {count} siste forespørsler (ekte rid-er):",
+        "en": "The user's {count} latest requests (real rids):",
+        "de": "Die {count} letzten Anfragen des Nutzers (echte rids):",
+    },
+    "self_trace_recent_none": {
+        "nb": "Ingen lagrede forespørsler med rid for denne brukeren.",
+        "en": "No stored requests with a rid for this user.",
+        "de": "Keine gespeicherten Anfragen mit rid für diesen Nutzer.",
+    },
+    "self_trace_rid_line": {
+        "nb": "- {rid} · {time} · «{text}»",
+        "en": "- {rid} · {time} · «{text}»",
+        "de": "- {rid} · {time} · «{text}»",
     },
     "inspiser_system_hent_trace_mangler_rid": {
         "nb": "Mangler 'rid'. Bruk din nåværende request-ID (tilgjengelig i konteksten din).",
@@ -952,9 +1249,9 @@ _T: dict = {
     },
     # ── System / shared_tools ────────────────────────────────────────────────
     "sys_invalid_path": {
-        "nb": "Mangler eller ugyldig filsti. Oppgi absolutt sti under /kaare/, f.eks. les_fil(sti='/kaare/kaare_api.py'). Bruk liste_filer() for å se hva som finnes.",
-        "en": "Missing or invalid file path. Provide an absolute path under /kaare/, e.g. les_fil(sti='/kaare/kaare_api.py'). Use liste_filer() to see what is available.",
-        "de": "Fehlender oder ungültiger Dateipfad. Gib einen absoluten Pfad unter /kaare/ an, z.B. les_fil(sti='/kaare/kaare_api.py'). Verwende liste_filer(), um zu sehen was verfügbar ist.",
+        "nb": "Mangler eller ugyldig filsti. Oppgi absolutt sti under /kaare/ i utforsk(action='les', sti=…). Bruk utforsk(action='liste', sti='/kaare/') for å se hva som finnes.",
+        "en": "Missing or invalid file path. Give an absolute path under /kaare/ in utforsk(action='les', sti=…). Use utforsk(action='liste', sti='/kaare/') to see what is available.",
+        "de": "Fehlender oder ungültiger Dateipfad. Gib einen absoluten Pfad unter /kaare/ in utforsk(action='les', sti=…) an. Verwende utforsk(action='liste', sti='/kaare/'), um zu sehen, was verfügbar ist.",
     },
     "sys_sensitive_file": {
         "nb": "[Feil: filen er sensitiv og kan ikke leses]",
@@ -1249,6 +1546,37 @@ _T: dict = {
         "en": "Announcement sent to {target}{vol_label}.",
         "de": "Ankündigung an {target}{vol_label} gesendet.",
     },
+    # DT04-S05f: the receipt comes after the outcome — the bridge waited for the playback to start
+    "exec_announce_started": {
+        "nb": "Kunngjøringen spilles nå på {target}{vol_label}.",
+        "en": "The announcement is playing on {target}{vol_label}.",
+        "de": "Die Ankündigung wird jetzt auf {target}{vol_label} abgespielt.",
+    },
+    "exec_announce_partial": {
+        "nb": "Kunngjøringen spilles på {ok}, men IKKE på {failed}.",
+        "en": "The announcement is playing on {ok}, but NOT on {failed}.",
+        "de": "Die Ankündigung läuft auf {ok}, aber NICHT auf {failed}.",
+    },
+    "exec_announce_busy": {
+        "nb": "{node} ({app} spiller der — ikke sendt, ingenting ble avbrutt)",
+        "en": "{node} ({app} is playing there — not sent, nothing was interrupted)",
+        "de": "{node} ({app} läuft dort — nicht gesendet, nichts wurde unterbrochen)",
+    },
+    "exec_announce_failed": {
+        "nb": "Kunngjøringen ble IKKE spilt ({failed}). Ingenting ble hørt.",
+        "en": "The announcement was NOT played ({failed}). Nothing was heard.",
+        "de": "Die Ankündigung wurde NICHT abgespielt ({failed}). Nichts war zu hören.",
+    },
+    "exec_announce_unknown_target": {
+        "nb": "Ukjent mål «{target}» — ingenting ble spilt. Kjente mål: {known}.",
+        "en": "Unknown target «{target}» — nothing was played. Known targets: {known}.",
+        "de": "Unbekanntes Ziel «{target}» — nichts wurde abgespielt. Bekannte Ziele: {known}.",
+    },
+    "exec_announce_disabled_target": {
+        "nb": "Målet «{target}» er slått av under Noder — ingenting ble spilt. Kjente mål: {known}.",
+        "en": "The target «{target}» is switched off under Nodes — nothing was played. Known targets: {known}.",
+        "de": "Das Ziel «{target}» ist unter Knoten ausgeschaltet — nichts wurde abgespielt. Bekannte Ziele: {known}.",
+    },
     "exec_announce_all_rooms": {
         "nb": "alle rom",
         "en": "all rooms",
@@ -1278,6 +1606,31 @@ _T: dict = {
         "nb": "Bildegenerering feilet: {error}.",
         "en": "Image generation failed: {error}.",
         "de": "Bildgenerierung fehlgeschlagen: {error}.",
+    },
+    "tool_kamera_screen_desc": {
+        "nb": "For snapshot og show_event: vis bildet også på en skjerm — TV-, skjerm- eller romnavn med brukerens egne ord (f.eks. 'thomson', 'tv-en i kjellerstua'), eller client=node:<id> fra et tidligere svar. Bildet sendes da i samme kall — ikke skriv «send til TV» i query. show_event: tomt = skjermen der brukeren er; snapshot: tomt = bare i chatten. 'none' = bare i chatten.",
+        "en": "For snapshot and show_event: also show the picture on a screen — TV, screen or room name in the user's own words (e.g. 'thomson', 'the tv in kjellerstua'), or client=node:<id> from an earlier reply. The picture is then sent in the same call — do not write «send to the TV» in query. show_event: empty = the screen where the user is; snapshot: empty = chat only. 'none' = chat only.",
+        "de": "Für snapshot und show_event: das Bild auch auf einem Bildschirm zeigen — Fernseher-, Bildschirm- oder Raumname in den Worten des Nutzers (z. B. 'thomson', 'der Fernseher im kjellerstua'), oder client=node:<id> aus einer früheren Antwort. Das Bild wird dann im selben Aufruf gesendet — schreibe nicht «an den Fernseher senden» in query. show_event: leer = der Bildschirm, wo der Nutzer ist; snapshot: leer = nur im Chat. 'none' = nur im Chat.",
+    },
+    "tool_kamera_duration_desc": {
+        "nb": "Sekunder bildet blir stående på skjermen (standard 30). Etterpå lukkes det, om ikke noe annet er satt på i mellomtiden.",
+        "en": "Seconds the picture stays on the screen (default 30). Then it is closed, unless something else was put on meanwhile.",
+        "de": "Sekunden, die das Bild auf dem Bildschirm bleibt (Standard 30). Danach wird es geschlossen, außer es wurde inzwischen etwas anderes gestartet.",
+    },
+    "cam_shown_on": {
+        "nb": "Bildet vises på {node} (via {channel}).",
+        "en": "The picture is shown on {node} (via {channel}).",
+        "de": "Das Bild wird auf {node} gezeigt (über {channel}).",
+    },
+    "cam_show_failed": {
+        "nb": "Klarte ikke å vise bildet på {node}: {error}",
+        "en": "Could not show the picture on {node}: {error}",
+        "de": "Bild konnte auf {node} nicht gezeigt werden: {error}",
+    },
+    "cam_screen_not_found": {
+        "nb": "Fant ingen skjerm for «{screen}» — bildet er bare i chatten.",
+        "en": "No screen found for «{screen}» — the picture is in the chat only.",
+        "de": "Kein Bildschirm für «{screen}» gefunden — das Bild ist nur im Chat.",
     },
     "exec_image_ready": {
         "nb": "Bildet er klart: /api/image/{image_id}",
@@ -1316,9 +1669,22 @@ _T: dict = {
         "de": "'client' fehlt — gib Raum-/Gerätename an (z.B. 'verksted'). Prüfe nodes.yaml für gültige Namen.",
     },
     "media_no_rating_key_play": {
-        "nb": "Mangler 'rating_key' — hent episode-id med plex_episodes først.",
-        "en": "Missing 'rating_key' — fetch episode id with plex_episodes first.",
-        "de": "'rating_key' fehlt — hole die Episode-id zuerst mit plex_episodes.",
+        "nb": "plex_play trenger query (serie + season + episode, eller filmtittel) eller rating_key.",
+        "en": "plex_play needs query (show + season + episode, or a film title) or rating_key.",
+        "de": "plex_play braucht query (Serie + season + episode oder Filmtitel) oder rating_key.",
+    },
+    "media_screen_other_room": {
+        "nb": "Ingen skjerm i {place}. På samme etasje: {names}. Ingenting ble spilt — spør brukeren om det er den de "
+        "mener (bruk da entity_id-en som client).",
+        "en": "No screen in {place}. On the same floor: {names}. Nothing was played — ask the user whether they mean "
+        "that one (then use the entity_id as client).",
+        "de": "Kein Bildschirm in {place}. Auf derselben Etage: {names}. Es wurde nichts abgespielt — frag den Nutzer, ob "
+        "er diesen meint (dann die entity_id als client verwenden).",
+    },
+    "media_several_screens": {
+        "nb": "«{client}» passer med flere skjermer: {names}. Spør brukeren hvilken, eller bruk entity_id-en som client.",
+        "en": "«{client}» matches several screens: {names}. Ask the user which one, or use the entity_id as client.",
+        "de": "«{client}» passt zu mehreren Bildschirmen: {names}. Frag den Nutzer, welcher, oder nutze die entity_id als client.",
     },
     "media_node_not_found": {
         "nb": "Fant ingen node/enhet som matcher «{client}» i nodes.yaml.",
@@ -1354,6 +1720,11 @@ _T: dict = {
         "nb": "HA svarte: {result}",
         "en": "HA responded: {result}",
         "de": "HA antwortete: {result}",
+    },
+    "media_mpd_missing": {
+        "nb": "Radio via MPD er ikke tilgjengelig her: MPD (mpc) er ikke installert på denne installasjonen.",
+        "en": "Radio through MPD is not available here: MPD (mpc) is not installed on this install.",
+        "de": "Radio über MPD ist hier nicht verfügbar: MPD (mpc) ist auf dieser Installation nicht installiert.",
     },
     "media_mpd_not_running": {
         "nb": "MPD svarer ikke — radioen er sannsynligvis ikke i gang.",
@@ -1460,6 +1831,406 @@ _T: dict = {
         "nb": "  • {user} på {device}: {content}{progress} ({state})",
         "en": "  • {user} on {device}: {content}{progress} ({state})",
         "de": "  • {user} auf {device}: {content}{progress} ({state})",
+    },
+    "plex_history_no_screen": {
+        "nb": "(Plex' historikk sier ikke hvilken skjerm noe ble sett på. «Hvor var jeg / hvilken episode» — her, i et rom eller på en skjerm: bruk plex_continue med client = rommet/skjermen.)",
+        "en": "(Plex's history does not say which screen something was watched on. \"Where was I / which episode\" — here, in a room or on a screen: use plex_continue with client = the room/screen.)",
+        "de": "(Plex' Verlauf sagt nicht, auf welchem Bildschirm etwas gesehen wurde. „Wo war ich / welche Folge“ — hier, in einem Raum oder auf einem Bildschirm: plex_continue mit client = Raum/Bildschirm.)",
+    },
+    "plex_sessions_header": {
+        "nb": "Aktive Plex-sesjoner ({n}):",
+        "en": "Active Plex sessions ({n}):",
+        "de": "Aktive Plex-Sitzungen ({n}):",
+    },
+    "plex_unknown_user": {
+        "nb": "Ukjent bruker",
+        "en": "Unknown user",
+        "de": "Unbekannter Nutzer",
+    },
+    "plex_unknown_device": {
+        "nb": "Ukjent enhet",
+        "en": "Unknown device",
+        "de": "Unbekanntes Gerät",
+    },
+    "plex_unknown_title": {
+        "nb": "Ukjent tittel",
+        "en": "Unknown title",
+        "de": "Unbekannter Titel",
+    },
+    "plex_state_playing": {
+        "nb": "▶ spiller",
+        "en": "▶ playing",
+        "de": "▶ läuft",
+    },
+    "plex_state_paused": {
+        "nb": "⏸ pauset",
+        "en": "⏸ paused",
+        "de": "⏸ pausiert",
+    },
+    "plex_state_buffering": {
+        "nb": "⏳ buffrer",
+        "en": "⏳ buffering",
+        "de": "⏳ puffert",
+    },
+    "plex_dur_hm": {
+        "nb": "{h}t {m}m",
+        "en": "{h}h {m}m",
+        "de": "{h} Std. {m} Min.",
+    },
+    "plex_dur_ms": {
+        "nb": "{m}m {s}s",
+        "en": "{m}m {s}s",
+        "de": "{m} Min. {s} Sek.",
+    },
+    "plex_progress": {
+        "nb": "{elapsed} av {total} ({pct}%)",
+        "en": "{elapsed} of {total} ({pct}%)",
+        "de": "{elapsed} von {total} ({pct}%)",
+    },
+    "plex_history_failed": {
+        "nb": "Kunne ikke hente historikk fra Plex ({error}).",
+        "en": "Could not fetch history from Plex ({error}).",
+        "de": "Verlauf konnte nicht von Plex geholt werden ({error}).",
+    },
+    "plex_history_empty": {
+        "nb": "Ingen seerhistorikk funnet.",
+        "en": "No watch history found.",
+        "de": "Kein Wiedergabeverlauf gefunden.",
+    },
+    "plex_history_no_user": {
+        "nb": 'Ingen historikk funnet for «{user}». Kjente brukere: {known}.',
+        "en": 'No history found for "{user}". Known users: {known}.',
+        "de": 'Kein Verlauf für „{user}“ gefunden. Bekannte Nutzer: {known}.',
+    },
+    "plex_history_header": {
+        "nb": "Seerhistorikk (siste {n}):",
+        "en": "Watch history (last {n}):",
+        "de": "Wiedergabeverlauf (letzte {n}):",
+    },
+    "plex_history_header_user": {
+        "nb": "Seerhistorikk for {user} (siste {n}):",
+        "en": "Watch history for {user} (last {n}):",
+        "de": "Wiedergabeverlauf für {user} (letzte {n}):",
+    },
+    "plex_type_show": {
+        "nb": "Serie",
+        "en": "Show",
+        "de": "Serie",
+    },
+    "plex_type_movie": {
+        "nb": "Film",
+        "en": "Movie",
+        "de": "Film",
+    },
+    "plex_type_season": {
+        "nb": "Sesong",
+        "en": "Season",
+        "de": "Staffel",
+    },
+    "plex_type_episode": {
+        "nb": "Episode",
+        "en": "Episode",
+        "de": "Folge",
+    },
+    "plex_type_artist": {
+        "nb": "Artist",
+        "en": "Artist",
+        "de": "Künstler",
+    },
+    "plex_type_album": {
+        "nb": "Album",
+        "en": "Album",
+        "de": "Album",
+    },
+    "plex_type_track": {
+        "nb": "Sang",
+        "en": "Track",
+        "de": "Titel",
+    },
+    "plex_search_no_results": {
+        "nb": 'Ingen resultater for «{query}».',
+        "en": 'No results for "{query}".',
+        "de": 'Keine Ergebnisse für „{query}“.',
+    },
+    "plex_libraries_failed": {
+        "nb": "Kunne ikke hente biblioteker ({error}).",
+        "en": "Could not fetch libraries ({error}).",
+        "de": "Bibliotheken konnten nicht geholt werden ({error}).",
+    },
+    "plex_libraries_empty": {
+        "nb": "Ingen Plex-biblioteker funnet.",
+        "en": "No Plex libraries found.",
+        "de": "Keine Plex-Bibliotheken gefunden.",
+    },
+    "plex_libraries_header": {
+        "nb": "Plex-biblioteker:",
+        "en": "Plex libraries:",
+        "de": "Plex-Bibliotheken:",
+    },
+    "plex_lib_movie": {
+        "nb": "Film",
+        "en": "Movies",
+        "de": "Filme",
+    },
+    "plex_lib_show": {
+        "nb": "TV-serier",
+        "en": "TV shows",
+        "de": "Serien",
+    },
+    "plex_lib_artist": {
+        "nb": "Musikk",
+        "en": "Music",
+        "de": "Musik",
+    },
+    "plex_lib_photo": {
+        "nb": "Bilder",
+        "en": "Photos",
+        "de": "Fotos",
+    },
+    "plex_lib_count": {
+        "nb": " ({n} elementer)",
+        "en": " ({n} items)",
+        "de": " ({n} Einträge)",
+    },
+    "plex_clients_header": {
+        "nb": "Tilgjengelige Plex-spillere ({n}):",
+        "en": "Available Plex players ({n}):",
+        "de": "Verfügbare Plex-Player ({n}):",
+    },
+    "plex_client_not_found": {
+        "nb": 'Fant ingen Plex-klient som matcher «{client}». Tilgjengelige: {available}.',
+        "en": 'No Plex client matches "{client}". Available: {available}.',
+        "de": 'Kein Plex-Client passt zu „{client}“. Verfügbar: {available}.',
+    },
+    "plex_from_offset": {
+        "nb": " fra {offset}",
+        "en": " from {offset}",
+        "de": " ab {offset}",
+    },
+    "plex_http_status": {
+        "nb": "Plex svarte {status}: {text}",
+        "en": "Plex answered {status}: {text}",
+        "de": "Plex antwortete {status}: {text}",
+    },
+    "plex_play_error": {
+        "nb": "Feil ved Plex-avspilling: {error}",
+        "en": "Plex playback error: {error}",
+        "de": "Fehler bei der Plex-Wiedergabe: {error}",
+    },
+    "plex_children_failed": {
+        "nb": "Kunne ikke hente innhold ({error}).",
+        "en": "Could not fetch contents ({error}).",
+        "de": "Inhalt konnte nicht geholt werden ({error}).",
+    },
+    "plex_children_empty": {
+        "nb": "Ingen underelementer funnet.",
+        "en": "No child items found.",
+        "de": "Keine Unterelemente gefunden.",
+    },
+    "plex_children_header": {
+        "nb": 'Innhold for «{title}»:',
+        "en": 'Contents of "{title}":',
+        "de": 'Inhalt von „{title}“:',
+    },
+    "plex_children_header_plain": {
+        "nb": "Innhold:",
+        "en": "Contents:",
+        "de": "Inhalt:",
+    },
+    "plex_not_linked": {
+        "nb": "Brukeren har ingen Plex-konto koblet til seg. En admin kobler den under Brukere → rediger → Plex-konto.",
+        "en": "This user has no Plex account linked. An admin links it under Users → edit → Plex account.",
+        "de": "Für diesen Nutzer ist kein Plex-Konto verknüpft. Ein Admin verknüpft es unter Benutzer → bearbeiten → Plex-Konto.",
+    },
+    "plex_ktsb_nothing": {
+        "nb": "KTSB har ingen Plex-avspillinger registrert for denne brukeren ennå.",
+        "en": "KTSB has no Plex plays recorded for this user yet.",
+        "de": "KTSB hat für diesen Nutzer noch keine Plex-Wiedergaben erfasst.",
+    },
+    "plex_ktsb_no_show": {
+        "nb": "KTSB har ingen avspillinger av en serie som passer «{query}» for denne brukeren. Bruk plex_search for å finne den i biblioteket.",
+        "en": "KTSB has no plays of a show matching \"{query}\" for this user. Use plex_search to find it in the library.",
+        "de": "KTSB hat für diesen Nutzer keine Wiedergaben einer Serie, die zu „{query}“ passt. Mit plex_search in der Bibliothek suchen.",
+    },
+    "plex_continue_header": {
+        "nb": "Hvor brukeren er i «{show}»:",
+        "en": "Where the user is in \"{show}\":",
+        "de": "Wo der Nutzer in „{show}“ steht:",
+    },
+    "plex_continue_header_screen": {
+        "nb": "Hvor brukeren er i «{show}» på {screen}:",
+        "en": "Where the user is in \"{show}\" on {screen}:",
+        "de": "Wo der Nutzer in „{show}“ auf {screen} steht:",
+    },
+    "plex_continue_header_any_screen": {
+        "nb": "Det brukeren så sist på {screen}:",
+        "en": "What the user watched last on {screen}:",
+        "de": "Was der Nutzer zuletzt auf {screen} gesehen hat:",
+    },
+    "plex_screen_nothing": {
+        "nb": "På {screen} vet KTSB ingenting om dette ennå. Det under er brukerens siste på en ANNEN skjerm ({where}) — si det til brukeren, ikke svar som om det var {screen}.",
+        "en": "KTSB knows nothing about this on {screen} yet. What follows is the user's latest on ANOTHER screen ({where}) — tell the user so, do not answer as if it were {screen}.",
+        "de": "Auf {screen} weiß KTSB dazu noch nichts. Das Folgende ist das Neueste des Nutzers auf einem ANDEREN Bildschirm ({where}) — sag es dem Nutzer, antworte nicht, als wäre es {screen}.",
+    },
+    "plex_screen_unknown": {
+        "nb": "Fant ingen skjerm som passer «{client}» — det under gjelder brukeren på alle skjermer.",
+        "en": "No screen matches \"{client}\" — what follows is the user on all screens.",
+        "de": "Kein Bildschirm passt zu „{client}“ — das Folgende gilt für den Nutzer auf allen Bildschirmen.",
+    },
+    "plex_screen_choices": {
+        "nb": "«{client}» passer flere skjermer: {choices}. Spør brukeren hvilken, og kall plex_continue igjen med den.",
+        "en": "\"{client}\" fits several screens: {choices}. Ask the user which one and call plex_continue again with it.",
+        "de": "„{client}“ passt zu mehreren Bildschirmen: {choices}. Frag den Nutzer, welcher, und ruf plex_continue damit erneut auf.",
+    },
+    "plex_other_screens": {
+        "nb": "Andre skjermer: {items}",
+        "en": "Other screens: {items}",
+        "de": "Andere Bildschirme: {items}",
+    },
+    "plex_continue_header_any": {
+        "nb": "Det brukeren så sist på Plex:",
+        "en": "What the user watched last on Plex:",
+        "de": "Was der Nutzer zuletzt auf Plex gesehen hat:",
+    },
+    "plex_seen_at": {
+        "nb": "sist {when} på {player}",
+        "en": "last {when} on {player}",
+        "de": "zuletzt {when} auf {player}",
+    },
+    "plex_ktsb_resume": {
+        "nb": "KTSB vet: {label} — stoppet {offset} inn, ikke ferdig ({seen}).",
+        "en": "KTSB knows: {label} — stopped {offset} in, not finished ({seen}).",
+        "de": "KTSB weiß: {label} — bei {offset} angehalten, nicht fertig ({seen}).",
+    },
+    "plex_ktsb_now": {
+        "nb": "KTSB vet: {label} spilles akkurat nå, {offset} inn ({seen}).",
+        "en": "KTSB knows: {label} is playing right now, {offset} in ({seen}).",
+        "de": "KTSB weiß: {label} läuft gerade, bei {offset} ({seen}).",
+    },
+    "plex_ktsb_resume_hint": {
+        "nb": "  → fortsett med plex_play rating_key={key} offset={seconds}",
+        "en": "  → continue with plex_play rating_key={key} offset={seconds}",
+        "de": "  → fortsetzen mit plex_play rating_key={key} offset={seconds}",
+    },
+    "plex_ktsb_last": {
+        "nb": "KTSB vet: sist {label} — {how} ({seen}).",
+        "en": "KTSB knows: last {label} — {how} ({seen}).",
+        "de": "KTSB weiß: zuletzt {label} — {how} ({seen}).",
+    },
+    "plex_status_watched": {
+        "nb": "ferdig sett",
+        "en": "watched to the end",
+        "de": "bis zum Ende gesehen",
+    },
+    "plex_status_skipped": {
+        "nb": "hoppet over",
+        "en": "skipped",
+        "de": "übersprungen",
+    },
+    "plex_status_paused": {
+        "nb": "ikke ferdig",
+        "en": "not finished",
+        "de": "nicht fertig",
+    },
+    "plex_ktsb_next": {
+        "nb": "  → neste: {label} [id:{key}]",
+        "en": "  → next: {label} [id:{key}]",
+        "de": "  → als Nächstes: {label} [id:{key}]",
+    },
+    "plex_ktsb_no_next": {
+        "nb": "  → ingen senere episode i biblioteket (serien kan være ferdig sett).",
+        "en": "  → no later episode in the library (the show may be finished).",
+        "de": "  → keine spätere Folge in der Bibliothek (die Serie ist vielleicht durch).",
+    },
+    "plex_next_lookup_failed": {
+        "nb": "  (klarte ikke å slå opp neste episode i Plex: {error})",
+        "en": "  (could not look up the next episode in Plex: {error})",
+        "de": "  (nächste Folge konnte in Plex nicht nachgeschlagen werden: {error})",
+    },
+    "plex_ktsb_movie_done": {
+        "nb": "KTSB vet: {label} er ferdig sett ({seen}).",
+        "en": "KTSB knows: {label} was watched to the end ({seen}).",
+        "de": "KTSB weiß: {label} wurde bis zum Ende gesehen ({seen}).",
+    },
+    "plex_claim_line": {
+        "nb": "Plex sier: fortsett {label}{where} [id:{key}]",
+        "en": "Plex says: continue {label}{where} [id:{key}]",
+        "de": "Plex sagt: weiter mit {label}{where} [id:{key}]",
+    },
+    "plex_claim_offset": {
+        "nb": ", {offset} inn",
+        "en": ", {offset} in",
+        "de": ", ab {offset}",
+    },
+    "plex_claim_none": {
+        "nb": "Plex sier: ingenting på «Fortsett å se» for dette.",
+        "en": "Plex says: nothing in \"Continue watching\" for this.",
+        "de": "Plex sagt: nichts unter „Weiterschauen“ dafür.",
+    },
+    "plex_claim_failed": {
+        "nb": "Plex sier: (fikk ikke svar fra Plex: {error})",
+        "en": "Plex says: (no answer from Plex: {error})",
+        "de": "Plex sagt: (keine Antwort von Plex: {error})",
+    },
+    "plex_claim_unavailable": {
+        "nb": "Plex sitt eget syn er ikke tilgjengelig for denne kontoen — KTSB har bare tokenet til eieren av Plex-serveren.",
+        "en": "Plex's own view is not available for this account — KTSB only has the Plex server owner's token.",
+        "de": "Plex' eigene Sicht ist für dieses Konto nicht verfügbar — KTSB hat nur das Token des Plex-Server-Besitzers.",
+    },
+    "plex_disagree_hint": {
+        "nb": "[KTSB og Plex er uenige. Si begge til brukeren, med hvor hver opplysning kommer fra, og spør hvilken som stemmer. Svaret kan lagres med plex_mark.]",
+        "en": "[KTSB and Plex disagree. Tell the user both, with where each comes from, and ask which is right. The answer can be saved with plex_mark.]",
+        "de": "[KTSB und Plex sind uneinig. Nenne dem Nutzer beides, mit der jeweiligen Quelle, und frage, was stimmt. Die Antwort kann mit plex_mark gespeichert werden.]",
+    },
+    "plex_skipped_none": {
+        "nb": "KTSB har ingen hoppet-over-episoder registrert for denne brukeren.",
+        "en": "KTSB has no skipped episodes recorded for this user.",
+        "de": "KTSB hat für diesen Nutzer keine übersprungenen Folgen erfasst.",
+    },
+    "plex_skipped_header": {
+        "nb": "Episoder KTSB holder som hoppet over ({n}) — startet, ikke ferdig, og en senere episode ble startet etterpå:",
+        "en": "Episodes KTSB holds as skipped ({n}) — started, not finished, and a later episode was started afterwards:",
+        "de": "Folgen, die KTSB als übersprungen führt ({n}) — begonnen, nicht fertig, danach wurde eine spätere Folge gestartet:",
+    },
+    "plex_skipped_line": {
+        "nb": "  • {show} {label} — sett {offset}, {when} [id:{key}]",
+        "en": "  • {show} {label} — watched {offset}, {when} [id:{key}]",
+        "de": "  • {show} {label} — {offset} gesehen, {when} [id:{key}]",
+    },
+    "plex_mark_bad_status": {
+        "nb": "Ukjent status «{status}». Bruk skipped, watched, resume eller clear.",
+        "en": "Unknown status \"{status}\". Use skipped, watched, resume or clear.",
+        "de": "Unbekannter Status „{status}“. Nutze skipped, watched, resume oder clear.",
+    },
+    "plex_marked_skipped": {
+        "nb": "Notert: [id:{key}] er hoppet over (brukerens eget ord).",
+        "en": "Noted: [id:{key}] is skipped (the user's own word).",
+        "de": "Notiert: [id:{key}] ist übersprungen (Wort des Nutzers).",
+    },
+    "plex_marked_watched": {
+        "nb": "Notert: [id:{key}] er sett (brukerens eget ord).",
+        "en": "Noted: [id:{key}] is watched (the user's own word).",
+        "de": "Notiert: [id:{key}] ist gesehen (Wort des Nutzers).",
+    },
+    "plex_marked_resume": {
+        "nb": "Notert: [id:{key}] skal fortsettes der brukeren slapp (brukerens eget ord).",
+        "en": "Noted: [id:{key}] is to be continued where the user stopped (the user's own word).",
+        "de": "Notiert: [id:{key}] soll dort fortgesetzt werden, wo der Nutzer aufgehört hat (Wort des Nutzers).",
+    },
+    "plex_marked_clear": {
+        "nb": "Brukerens markering for [id:{key}] er fjernet — KTSB sine regler gjelder igjen.",
+        "en": "The user's mark for [id:{key}] is removed — KTSB's rules apply again.",
+        "de": "Die Markierung des Nutzers für [id:{key}] ist entfernt — KTSBs Regeln gelten wieder.",
+    },
+    "tool_media_status_desc": {
+        "nb": "Brukes med plex_mark: skipped (hoppet over), watched (sett), resume (fortsett der jeg slapp) eller clear (fjern markeringen).",
+        "en": "Used with plex_mark: skipped, watched, resume (continue where I stopped) or clear (remove the mark).",
+        "de": "Wird mit plex_mark verwendet: skipped (übersprungen), watched (gesehen), resume (dort weiter, wo ich aufgehört habe) oder clear (Markierung entfernen).",
+    },
+    "plex_season_seen": {
+        "nb": " — {seen}/{total} sett",
+        "en": " — {seen}/{total} watched",
+        "de": " — {seen}/{total} gesehen",
     },
     # ── Web search ────────────────────────────────────────────────────────────
     "search_empty_query": {
@@ -1659,6 +2430,16 @@ _T: dict = {
         "en": "Mechanic cannot use: {tools}. Do not ask Mechanic to perform tasks that require these tools.",
         "de": "Mechanic kann nicht verwenden: {tools}. Bitte Mechanic nicht, Aufgaben auszuführen, die diese Werkzeuge erfordern.",
     },
+    "llm_not_connected_header": {
+        "nb": "## Ikke tilkoblet på denne installasjonen",
+        "en": "## Not connected on this install",
+        "de": "## Auf dieser Installation nicht verbunden",
+    },
+    "llm_not_connected": {
+        "nb": "{names} er ikke koblet til. Jeg kjenner derfor ingen rom, sensorer eller enheter derfra, og jeg påstår ikke at jeg gjør det. Si det rett ut hvis noen spør, og at det settes opp under Innstillinger → Integrasjoner.",
+        "en": "{names} is not connected. So I know no rooms, sensors or devices from there, and I do not claim to. Say so plainly if asked, and that it is set up under Settings → Integrations.",
+        "de": "{names} ist nicht verbunden. Ich kenne daher keine Räume, Sensoren oder Geräte von dort und behaupte es nicht. Sag das offen, wenn jemand fragt, und dass es unter Einstellungen → Integrationen eingerichtet wird.",
+    },
     "llm_disabled_modules_header": {
         "nb": "## Deaktiverte moduler",
         "en": "## Disabled modules",
@@ -1676,9 +2457,9 @@ _T: dict = {
         "de": "Zur Einkaufsliste hinzugefügt: {text}{amount} [{id}]",
     },
     "list_all_bought": {
-        "nb": "Alt er allerede kjøpt. Bruk tøm_kjøpte for å rydde listen.",
-        "en": "Everything is already bought. Use tøm_kjøpte to clear the list.",
-        "de": "Alles ist bereits gekauft. Verwende tøm_kjøpte, um die Liste zu leeren.",
+        "nb": "Alt er allerede kjøpt. Bruk note(action='clear_bought', list_name='handle') for å rydde listen.",
+        "en": "Everything is already bought. Use note(action='clear_bought', list_name='handle') to clear the list.",
+        "de": "Alles ist bereits gekauft. Verwende note(action='clear_bought', list_name='handle'), um die Liste zu leeren.",
     },
     "list_marked_bought": {
         "nb": "Merket som kjøpt: {text}",
@@ -1882,6 +2663,16 @@ _T: dict = {
         "nb": "Beklager, jeg fikk ikke kontakt med Kåre.",
         "en": "Sorry, I could not reach Kåre.",
         "de": "Entschuldigung, ich konnte Kåre nicht erreichen.",
+    },
+    "voice_output_unreachable": {
+        "nb": "{nodes} svarer ikke, så jeg fikk ikke spilt av svaret der.",
+        "en": "{nodes} is not answering, so I could not play the reply there.",
+        "de": "{nodes} antwortet nicht, deshalb konnte ich die Antwort dort nicht abspielen.",
+    },
+    "voice_list_and": {
+        "nb": "og",
+        "en": "and",
+        "de": "und",
     },
     "voice_unlock_ok": {
         "nb": "Sesjon åpnet. Hva kan jeg hjelpe deg med?",
@@ -2250,9 +3041,9 @@ _T: dict = {
         "de": "Fasse deine Befunde zusammen. Was sind die wichtigsten Probleme?",
     },
     "meet_mechanic_investigate_user": {
-        "nb": "Undersøk systemet. Bruk search_argus og inspect_system (actions: log, services, resources, git_log) for å finne reelle problemer fra siste 24 timer. Start bredt – logger, tjenestestatus, siste kodeendringer. Kall også inspect_system(action='trace_patterns', count=100, source='all') og inkluder i rapporten: antall traces per source (user/refl/meet), gjennomsnittlig latency, hyppigste tools, andel 9B-fallback per source, og traces med unormalt høy latency eller recovered=True (tomme svar). Oppsummer funnene konkret til slutt. Ikke gjett. Avslutt med note(action='write', list_name='kare') for å lagre 1–2 viktige tekniske observasjoner.",
-        "en": "Investigate the system. Use search_argus and inspect_system (actions: log, services, resources, git_log) to find real problems from the last 24 hours. Start broad – logs, service status, recent code changes. Also call inspect_system(action='trace_patterns', count=100, source='all') and include in the report: trace count per source (user/refl/meet), average latency, most frequent tools, 9B-fallback share per source, and traces with abnormally high latency or recovered=True (empty responses). Summarize findings concretely at the end. Do not guess. Finish with note(action='write', list_name='kare') to store 1–2 important technical observations.",
-        "de": "Untersuche das System. Verwende search_argus und inspect_system (actions: log, services, resources, git_log), um echte Probleme der letzten 24 Stunden zu finden. Beginne breit – Logs, Dienststatus, aktuelle Code-Änderungen. Rufe auch inspect_system(action='trace_patterns', count=100, source='all') auf und füge dem Bericht hinzu: Trace-Anzahl pro Quelle, durchschnittliche Latenz, häufigste Tools, 9B-Fallback-Anteil pro Quelle, und Traces mit ungewöhnlich hoher Latenz oder recovered=True. Fasse die Befunde am Ende konkret zusammen. Rate nicht. Beende mit note(action='write', list_name='kare') für 1–2 technische Beobachtungen.",
+        "nb": "Undersøk systemet. Bruk søk_argus og inspiser (actions: logg, tjenester, ressurser) for å finne reelle problemer fra siste 24 timer. Start bredt – logger og tjenestestatus. Oppsummer funnene konkret til slutt. Ikke gjett. Avslutt med hukommelse(action='skriv') for å lagre 1–2 viktige tekniske observasjoner.",
+        "en": "Investigate the system. Use søk_argus and inspiser (actions: logg, tjenester, ressurser) to find real problems from the last 24 hours. Start broad – logs and service status. Summarize findings concretely at the end. Do not guess. Finish with hukommelse(action='skriv') to store 1–2 important technical observations.",
+        "de": "Untersuche das System. Verwende søk_argus und inspiser (actions: logg, tjenester, ressurser), um echte Probleme der letzten 24 Stunden zu finden. Beginne breit – Logs und Dienststatus. Fasse die Befunde am Ende konkret zusammen. Rate nicht. Beende mit hukommelse(action='skriv'), um 1–2 wichtige technische Beobachtungen zu speichern.",
     },
     "meet_mechanic_kritiker_user": {
         "nb": "Kåre har rapportert følgende fra sin undersøkelse:\n\n{kare_funn}\n\nStill 3–5 kritiske, konkrete spørsmål. Hva ble ikke sjekket? Hva er antatt, ikke bekreftet? Hva mangler tall? Gi ingen svar eller løsninger — bare spørsmål.",
@@ -2325,6 +3116,36 @@ _T: dict = {
         "en": "[Face] {name}{pct} on {cam} ({label} {score}%)",
         "de": "[Gesicht] {name}{pct} auf {cam} ({label} {score}%)",
     },
+    "argus_plex_started": {
+        "nb": "Plex: {who} startet {what} på {player}",
+        "en": "Plex: {who} started {what} on {player}",
+        "de": "Plex: {who} hat {what} auf {player} gestartet",
+    },
+    "argus_plex_paused": {
+        "nb": "Plex: {who} satte {what} på pause ({player})",
+        "en": "Plex: {who} paused {what} ({player})",
+        "de": "Plex: {who} hat {what} pausiert ({player})",
+    },
+    "argus_plex_resumed": {
+        "nb": "Plex: {who} fortsatte {what} ({player})",
+        "en": "Plex: {who} resumed {what} ({player})",
+        "de": "Plex: {who} hat {what} fortgesetzt ({player})",
+    },
+    "argus_plex_stopped": {
+        "nb": "Plex: {who} stoppet {what} ({player})",
+        "en": "Plex: {who} stopped {what} ({player})",
+        "de": "Plex: {who} hat {what} gestoppt ({player})",
+    },
+    "argus_plex_finished": {
+        "nb": "Plex: {who} så ferdig {what} ({player})",
+        "en": "Plex: {who} finished {what} ({player})",
+        "de": "Plex: {who} hat {what} zu Ende gesehen ({player})",
+    },
+    "argus_plex_other": {
+        "nb": "Plex: {stage} — {what} ({player})",
+        "en": "Plex: {stage} — {what} ({player})",
+        "de": "Plex: {stage} — {what} ({player})",
+    },
     "argus_motion_event": {
         "nb": "Frigate: {label} på {cam} ({pct}%)",
         "en": "Frigate: {label} on {cam} ({pct}%)",
@@ -2349,11 +3170,6 @@ _T: dict = {
         "nb": "{n} kameraer",
         "en": "{n} cameras",
         "de": "{n} Kameras",
-    },
-    "argus_face_session": {
-        "nb": "[{time}] {label} {name} på {cam_word}: {cams} (maks {pct}%)",
-        "en": "[{time}] {label} {name} on {cam_word}: {cams} (max {pct}%)",
-        "de": "[{time}] {label} {name} auf {cam_word}: {cams} (max {pct}%)",
     },
     # ── Mechanic tools ────────────────────────────────────────────────────────
     "mech_empty_search": {
@@ -2485,6 +3301,12 @@ _T: dict = {
         "nb": "Hvis du vil slå opp noe faktisk i wikien til Miss Library, svar kun med:\n[SJEKK: <presist spørsmål til Miss Library>]\n\nHvis du vil si noe direkte: si det varmt, maks 3 setninger. Ingen innledning.",
         "en": "If you want to look something factual up in Miss Library's wiki, reply only with (exactly this token):\n[SJEKK: <precise question for Miss Library>]\n\nIf you want to say something directly: say it warmly, max 3 sentences. No introduction.",
         "de": "Wenn du etwas Sachliches im Wiki von Miss Library nachschlagen willst, antworte nur mit (genau diesem Token):\n[SJEKK: <präzise Frage an Miss Library>]\n\nWenn du direkt etwas sagen willst: sag es warm, höchstens 3 Sätze. Keine Einleitung.",
+    },
+    # Owner decision 2026-11-16 (option A): the turn before, so Miss Kåre sees the question a short answer replies to
+    "mk_eval_previous_turn": {
+        "nb": "Runden før (for sammenheng):\nBrukeren sa:\n{user_msg}\n\nKåre svarte:\n{kare_response}\n\n---\n\nNå:\n",
+        "en": "The turn before (for context):\nThe user said:\n{user_msg}\n\nKåre replied:\n{kare_response}\n\n---\n\nNow:\n",
+        "de": "Die Runde davor (zum Zusammenhang):\nDer Nutzer sagte:\n{user_msg}\n\nKåre antwortete:\n{kare_response}\n\n---\n\nJetzt:\n",
     },
     "mk_eval_user_content": {
         "nb": "Brukeren sa:\n{user_msg}\n\nKåre svarte:\n{kare_response}",
@@ -2670,6 +3492,11 @@ _T: dict = {
         "nb": "[Ingen respons fra Mechanic]",
         "en": "[No response from Mechanic]",
         "de": "[Keine Antwort von Mechanic]",
+    },
+    "agent_action_required": {
+        "nb": "Feil: {tool} trenger en action. Velg en av: {valid}. Oppgaver til Mechanic bruker action 'delegate' med 'task'.",
+        "en": "Error: {tool} needs an action. Choose one of: {valid}. Tasks for Mechanic use action 'delegate' with 'task'.",
+        "de": "Fehler: {tool} braucht eine Aktion. Wähle eine von: {valid}. Aufgaben für Mechanic nutzen die Aktion 'delegate' mit 'task'.",
     },
     "agent_empty_task": {
         "nb": "Feil: oppgaven kan ikke være tom.",
@@ -2945,40 +3772,40 @@ _T: dict = {
         "nb": (
             "IKKE for vær, temperatur, nedbør, vind — bruk get_weather (ett kall, alt inkludert). "
             "Les informasjon fra Home Assistant. Tre operasjoner: "
-            "action='room_list': hent alle romnavn. "
-            "action='room_devices': hent enheter i ett rom (krever 'room'). "
+            "action='room_list': alle steder og etasjer. "
+            "action='room_devices': tingene KTSB kjenner på ett sted — 'room' eller 'floor'; uten begge brukes "
+            "stedet til noden brukeren snakker gjennom. "
             "action='status': les tilstand på én enhet (krever 'entity_id'). "
-            "Fremgangsmåte: room_list → room_devices → status. Aldri gjett entity_id, "
-            "men hopp over steg du allerede vet svaret på."
+            "Aldri gjett entity_id, men hopp over steg du allerede vet svaret på."
         ),
         "en": (
             "NOT for weather, temperature, precipitation, wind — use get_weather (one call, everything included). "
             "Read information from Home Assistant. Three operations: "
-            "action='room_list': get all room names. "
-            "action='room_devices': get devices in one room (requires 'room'). "
+            "action='room_list': all places and floors. "
+            "action='room_devices': the things KTSB knows at one place — 'room' or 'floor'; with neither, the "
+            "place of the node the user speaks through is used. "
             "action='status': read current state of one entity (requires 'entity_id'). "
-            "Workflow: room_list → room_devices → status. Never guess entity_id, "
-            "but skip steps you already know the answer to."
+            "Never guess entity_id, but skip steps you already know the answer to."
         ),
         "de": (
             "NICHT für Wetter, Temperatur, Niederschlag, Wind — get_weather verwenden (ein Aufruf, alles inklusive). "
             "Informationen von Home Assistant lesen. Drei Operationen: "
-            "action='room_list': alle Raumnamen abrufen. "
-            "action='room_devices': Geräte in einem Raum abrufen (erfordert 'room'). "
+            "action='room_list': alle Orte und Etagen. "
+            "action='room_devices': die Dinge, die KTSB an einem Ort kennt — 'room' oder 'floor'; ohne beides "
+            "gilt der Ort des Knotens, über den der Nutzer spricht. "
             "action='status': aktuellen Zustand einer Entität lesen (erfordert 'entity_id'). "
-            "Vorgehen: room_list → room_devices → status. Niemals entity_id raten, "
-            "aber Schritte überspringen, deren Antwort bereits bekannt ist."
+            "Niemals entity_id raten, aber Schritte überspringen, deren Antwort bereits bekannt ist."
         ),
     },
     "tool_les_ha_action_desc": {
-        "nb": "'room_list' = alle romnavn. 'room_devices' = enheter i rom (krever 'room'). 'status' = tilstand på enhet (krever 'entity_id').",
-        "en": "'room_list' = all room names. 'room_devices' = devices in room (requires 'room'). 'status' = entity state (requires 'entity_id').",
-        "de": "'room_list' = alle Raumnamen. 'room_devices' = Geräte im Raum (erfordert 'room'). 'status' = Entitätszustand (erfordert 'entity_id').",
+        "nb": "'room_list' = alle steder og etasjer. 'room_devices' = ting på ett sted ('room'/'floor', ellers nodens sted). 'status' = tilstand på enhet (krever 'entity_id').",
+        "en": "'room_list' = all places and floors. 'room_devices' = things at one place ('room'/'floor', else the node's place). 'status' = entity state (requires 'entity_id').",
+        "de": "'room_list' = alle Orte und Etagen. 'room_devices' = Dinge an einem Ort ('room'/'floor', sonst der Ort des Knotens). 'status' = Entitätszustand (erfordert 'entity_id').",
     },
     "tool_les_ha_room_desc": {
-        "nb": "Romnavn, f.eks. 'verksted', 'stue'. Kun ved action='room_devices'.",
-        "en": "Room name, e.g. 'verksted', 'stue'. Only for action='room_devices'.",
-        "de": "Raumname, z.B. 'verksted', 'stue'. Nur bei action='room_devices'.",
+        "nb": "Rom slik brukeren sa det, f.eks. 'stua', 'verkstedet'. Utelat for nodens eget sted.",
+        "en": "Room as the user said it, e.g. 'stua', 'verkstedet'. Leave out for the node's own place.",
+        "de": "Raum, wie der Nutzer ihn nannte, z.B. 'stua', 'verkstedet'. Weglassen für den Ort des Knotens.",
     },
     "tool_les_ha_entity_id_desc": {
         "nb": "HA entity_id, f.eks. 'sensor.netatmo_utendors_modul_temperatur'. Kun ved action='status'.",
@@ -2987,9 +3814,24 @@ _T: dict = {
     },
     # styr_enhet
     "tool_styr_enhet_desc": {
-        "nb": "Styrer enheter og henter sensorhistorikk fra Home Assistant. Bruk les_ha(action='room_list') først hvis du ikke kjenner entity_id. For lys: set_level + brightness_pct, set_color_temp + color_temp_kelvin, set_color + rgb_color. For historikk (f.eks. nedbør siste mnd): action=ha_history + entity_id + history_days + history_period.",
-        "en": "Controls devices and fetches sensor history from Home Assistant. Use les_ha(action='room_list') first if you don't know the entity_id. For lights: set_level + brightness_pct, set_color_temp + color_temp_kelvin, set_color + rgb_color. For history (e.g. precipitation last month): action=ha_history + entity_id + history_days + history_period.",
-        "de": "Steuert Geräte und ruft Sensorverlauf aus Home Assistant ab. Zuerst les_ha(action='room_list') verwenden, wenn entity_id unbekannt. Für Lichter: set_level + brightness_pct, set_color_temp + color_temp_kelvin, set_color + rgb_color. Für Verlauf (z.B. Niederschlag letzten Monat): action=ha_history + entity_id + history_days + history_period.",
+        "nb": "Styrer enheter og henter sensorhistorikk fra Home Assistant. Én enhet: entity_id. Alle av en type på et sted: room eller floor + domain (f.eks. room='stua', domain='light'; floor='andre etg'); uten room/floor/entity_id brukes stedet til noden brukeren snakker gjennom. Koden finner enhetene — du trenger ikke slå dem opp først. For lys: set_level + brightness_pct, set_color_temp + color_temp_kelvin, set_color + rgb_color. «Lyden»/«volumet» uten at brukeren nevner enhet eller rom: la entity_id, room og floor stå tomme — da brukes høyttaleren svarene til brukerens node spilles på (ikke radioen eller en annen spiller). For historikk (f.eks. nedbør siste mnd): action=ha_history + entity_id + history_days + history_period.",
+        "en": "Controls devices and fetches sensor history from Home Assistant. One device: entity_id. All of a type at a place: room or floor + domain (e.g. room='stua', domain='light'; floor='andre etg'); with no room/floor/entity_id the place of the node the user speaks through is used. The code finds the devices — no need to look them up first. For lights: set_level + brightness_pct, set_color_temp + color_temp_kelvin, set_color + rgb_color. «The sound»/«the volume» with no device or room named: leave entity_id, room and floor empty — the speaker the replies to the user's node play on is used (not the radio or another player). For history (e.g. precipitation last month): action=ha_history + entity_id + history_days + history_period.",
+        "de": "Steuert Geräte und ruft Sensorverlauf aus Home Assistant ab. Ein Gerät: entity_id. Alle eines Typs an einem Ort: room oder floor + domain (z.B. room='stua', domain='light'; floor='andre etg'); ohne room/floor/entity_id gilt der Ort des Knotens, über den der Nutzer spricht. Der Code findet die Geräte — vorher nachschlagen ist nicht nötig. Für Lichter: set_level + brightness_pct, set_color_temp + color_temp_kelvin, set_color + rgb_color. «Der Ton»/«die Lautstärke» ohne genanntes Gerät oder Raum: entity_id, room und floor leer lassen — dann gilt der Lautsprecher, auf dem die Antworten an den Knoten des Nutzers laufen (nicht das Radio oder ein anderer Player). Für Verlauf (z.B. Niederschlag letzten Monat): action=ha_history + entity_id + history_days + history_period.",
+    },
+    "tool_ha_floor_desc": {
+        "nb": "Etasje slik brukeren sa det, f.eks. 'andre etg', 'kjelleren'. I stedet for room.",
+        "en": "Floor as the user said it, e.g. 'andre etg', 'kjelleren'. Instead of room.",
+        "de": "Etage, wie der Nutzer sie nannte, z.B. 'andre etg', 'kjelleren'. Statt room.",
+    },
+    "tool_ha_domain_desc": {
+        "nb": "Type enhet på stedet: light, switch, climate, media_player, cover, fan … Standard light.",
+        "en": "Device type at the place: light, switch, climate, media_player, cover, fan … Default light.",
+        "de": "Gerätetyp am Ort: light, switch, climate, media_player, cover, fan … Standard light.",
+    },
+    "tool_ha_control_room_desc": {
+        "nb": "Rom slik brukeren sa det, f.eks. 'stua'. Sammen med domain; i stedet for entity_id.",
+        "en": "Room as the user said it, e.g. 'stua'. With domain; instead of entity_id.",
+        "de": "Raum, wie der Nutzer ihn nannte, z.B. 'stua'. Mit domain; statt entity_id.",
     },
     "tool_styr_enhet_entity_id_desc": {
         "nb": "HA entity_id, f.eks. 'light.taklys_stue' eller 'sensor.netatmo_regn_maler_precipitation_today'.",
@@ -2997,9 +3839,9 @@ _T: dict = {
         "de": "HA entity_id, z.B. 'light.taklys_stue' oder 'sensor.netatmo_regn_maler_precipitation_today'.",
     },
     "tool_styr_enhet_action_desc": {
-        "nb": "Handlingen. set_level=lysstyrke, set_color_temp=fargetemperatur, set_color=RGB. ha_history=hent sensorhistorikk (bruk history_days og history_period).",
-        "en": "The action. set_level=brightness, set_color_temp=color temperature, set_color=RGB. ha_history=fetch sensor history (use history_days and history_period).",
-        "de": "Die Aktion. set_level=Helligkeit, set_color_temp=Farbtemperatur, set_color=RGB. ha_history=Sensorverlauf abrufen (history_days und history_period verwenden).",
+        "nb": "Handlingen. set_level=lysstyrke, set_color_temp=fargetemperatur, set_color=RGB. Mediespillere (høyttalere/TV): set_volume (+ volume_pct), volume_up, volume_down, mute, unmute, select_source (+ source), media_pause, media_play, media_stop. ha_history=hent sensorhistorikk (bruk history_days og history_period).",
+        "en": "The action. set_level=brightness, set_color_temp=color temperature, set_color=RGB. Media players (speakers/TVs): set_volume (+ volume_pct), volume_up, volume_down, mute, unmute, select_source (+ source), media_pause, media_play, media_stop. ha_history=fetch sensor history (use history_days and history_period).",
+        "de": "Die Aktion. set_level=Helligkeit, set_color_temp=Farbtemperatur, set_color=RGB. Mediaplayer (Lautsprecher/Fernseher): set_volume (+ volume_pct), volume_up, volume_down, mute, unmute, select_source (+ source), media_pause, media_play, media_stop. ha_history=Sensorverlauf abrufen (history_days und history_period verwenden).",
     },
     "tool_styr_enhet_history_days_desc": {
         "nb": "Antall dager bakover for historikk (standard: 7). Bruk f.eks. 30 for siste måned.",
@@ -3020,6 +3862,16 @@ _T: dict = {
         "nb": "Fargetemperatur i Kelvin (2200=stearinlys, 2700=varm, 4000=nøytral, 6500=dagslys). Brukes med action=set_color_temp.",
         "en": "Color temperature in Kelvin (2200=candle, 2700=warm, 4000=neutral, 6500=daylight). Used with action=set_color_temp.",
         "de": "Farbtemperatur in Kelvin (2200=Kerze, 2700=warm, 4000=neutral, 6500=Tageslicht). Mit action=set_color_temp.",
+    },
+    "tool_ha_volume_pct_desc": {
+        "nb": "Volum 0–100 %. Brukes med action=set_volume.",
+        "en": "Volume 0–100%. Used with action=set_volume.",
+        "de": "Lautstärke 0–100 %. Mit action=set_volume.",
+    },
+    "tool_ha_source_desc": {
+        "nb": "Kilde/inngang slik brukeren sa det, f.eks. 'HDMI 1' eller 'Netflix'. Brukes med action=select_source.",
+        "en": "Source/input as the user said it, e.g. 'HDMI 1' or 'Netflix'. Used with action=select_source.",
+        "de": "Quelle/Eingang, wie der Nutzer sie nannte, z.B. 'HDMI 1' oder 'Netflix'. Mit action=select_source.",
     },
     "tool_styr_enhet_rgb_color_desc": {
         "nb": "RGB-farge [r,g,b] 0–255. Brukes med action=set_color.",
@@ -3804,7 +4656,11 @@ _T: dict = {
         "en": "Agenda only — ALWAYS set with list_name='agenda': which theme the item belongs to. 'answers'=your answers and conversations, 'tools'=tools and HA control, 'memory'=memory, 'agents'=the agents (Miss Kåre, Library, Mechanic, Jing/Jang), 'house'=house, sensors and cameras, 'system'=system, models and performance, 'other'=other.",
         "de": "Nur Agenda — bei list_name='agenda' IMMER setzen: zu welchem Thema der Punkt gehört. 'answers'=deine Antworten und Gespräche, 'tools'=Werkzeuge und HA-Steuerung, 'memory'=Gedächtnis, 'agents'=die Agenten (Miss Kåre, Library, Mechanic, Jing/Jang), 'house'=Haus, Sensoren und Kameras, 'system'=System, Modelle und Leistung, 'other'=Sonstiges.",
     },
-    "slot_report_resolved_h": {"nb": "## Sett mot løste saker", "en": "## Against resolved topics", "de": "## Gegen gelöste Themen"},
+    "slot_report_resolved_h": {
+        "nb": "## Sett mot løste saker",
+        "en": "## Against resolved topics",
+        "de": "## Gegen gelöste Themen",
+    },
     "slot_report_resolved_link": {
         "nb": "- Sak #{topic} er det samme som løst sak #{resolved} — løsningen holder, koblet som ekko.",
         "en": "- Topic #{topic} is the same as resolved topic #{resolved} — the solution holds, linked as an echo.",
@@ -3821,9 +4677,19 @@ _T: dict = {
         "de": "- Gelöstes Thema #{resolved}: {n} Echos am letzten Tag (die Lösung fängt sie ab).",
     },
     "slot_report_followup": {
-        "nb": "- Bekreftet forslag #{id} (sak #{topic}, {date}): {n} nye rader siden.",
-        "en": "- Confirmed proposal #{id} (topic #{topic}, {date}): {n} new rows since.",
-        "de": "- Bestätigter Vorschlag #{id} (Thema #{topic}, {date}): {n} neue Zeilen seitdem.",
+        "nb": "- Bekreftet forslag #{id} (sak #{topic}, {date}): {built} · {n} nye rader på sak #{topic} siden.",
+        "en": "- Confirmed proposal #{id} (topic #{topic}, {date}): {built} · {n} new rows on topic #{topic} since.",
+        "de": "- Bestätigter Vorschlag #{id} (Thema #{topic}, {date}): {built} · {n} neue Zeilen zu Thema #{topic} seitdem.",
+    },
+    "slot_report_built": {
+        "nb": "bygget {date}",
+        "en": "built {date}",
+        "de": "umgesetzt {date}",
+    },
+    "slot_report_not_built": {
+        "nb": "ikke bygget",
+        "en": "not built",
+        "de": "nicht umgesetzt",
     },
     "slot_report_themes_line": {
         "nb": "Temaer (tatt opp / i kø): {themes}",
@@ -3840,7 +4706,11 @@ _T: dict = {
         "en": "Observations — showing the {shown} newest of {total} open ({topics} topics):",
         "de": "Beobachtungen — die {shown} neuesten von {total} offenen ({topics} Themen):",
     },
-    "observation_empty": {"nb": "Ingen åpne observasjoner.", "en": "No open observations.", "de": "Keine offenen Beobachtungen."},
+    "observation_empty": {
+        "nb": "Ingen åpne observasjoner.",
+        "en": "No open observations.",
+        "de": "Keine offenen Beobachtungen.",
+    },
     "agenda_echo_resolved": {
         "nb": "Dette er allerede løst ({date}, sak #{topic}): {conclusion} — raden er lagret som ekko og gjenåpner ikke saken. Skriv bare hvis noe faktisk er nytt; da kan du be om gjenåpning (note action='reopen', topic_id={topic}).",
         "en": "This is already resolved ({date}, topic #{topic}): {conclusion} — the row is stored as an echo and does not reopen the topic. Only write if something is actually new; then you can ask to reopen it (note action='reopen', topic_id={topic}).",
@@ -3861,40 +4731,112 @@ _T: dict = {
         "en": "This user cannot mark topics resolved. That is set under Settings → Assistant settings → «Who can mark a topic resolved».",
         "de": "Dieser Benutzer kann Themen nicht als gelöst markieren. Das wird unter Einstellungen → Assistent-Einstellungen → «Wer darf ein Thema als gelöst markieren» festgelegt.",
     },
-    "resolve_missing_topic": {"nb": "Mangler topic_id (saksnummeret).", "en": "Missing topic_id (the topic number).", "de": "topic_id (Themennummer) fehlt."},
-    "resolve_missing_conclusion": {"nb": "Mangler conclusion — skriv kort hva brukeren bekreftet.", "en": "Missing conclusion — write briefly what the user confirmed.", "de": "conclusion fehlt — schreib kurz, was der Benutzer bestätigt hat."},
-    "resolve_not_found": {"nb": "Fant ingen sak #{topic}.", "en": "No topic #{topic} found.", "de": "Kein Thema #{topic} gefunden."},
+    "resolve_missing_topic": {
+        "nb": "Mangler topic_id (saksnummeret).",
+        "en": "Missing topic_id (the topic number).",
+        "de": "topic_id (Themennummer) fehlt.",
+    },
+    "resolve_missing_conclusion": {
+        "nb": "Mangler conclusion — skriv kort hva brukeren bekreftet.",
+        "en": "Missing conclusion — write briefly what the user confirmed.",
+        "de": "conclusion fehlt — schreib kurz, was der Benutzer bestätigt hat.",
+    },
+    "resolve_not_found": {
+        "nb": "Fant ingen sak #{topic}.",
+        "en": "No topic #{topic} found.",
+        "de": "Kein Thema #{topic} gefunden.",
+    },
     "reopen_proposed": {
         "nb": "Gjenåpning av sak #{topic} er lagt frem som dev-forslag #{id}; et menneske bekrefter eller avviser i chat.",
         "en": "Reopening topic #{topic} is filed as dev proposal #{id}; a human confirms or rejects it in chat.",
         "de": "Die Wiedereröffnung von Thema #{topic} ist als Dev-Vorschlag #{id} eingereicht; ein Mensch bestätigt oder lehnt im Chat ab.",
     },
-    "reopen_not_resolved": {"nb": "Sak #{topic} er ikke løst, så den trenger ingen gjenåpning.", "en": "Topic #{topic} is not resolved, so it needs no reopening.", "de": "Thema #{topic} ist nicht gelöst und muss nicht wieder geöffnet werden."},
-    "resolved_empty": {"nb": "Ingen løste saker ennå.", "en": "No resolved topics yet.", "de": "Noch keine gelösten Themen."},
-    "resolved_read_title": {"nb": "Løste saker ({count} nyeste):", "en": "Resolved topics ({count} newest):", "de": "Gelöste Themen ({count} neueste):"},
-    "resolved_echoes": {"nb": "{n} ekko siden", "en": "{n} echoes since", "de": "{n} Echos seitdem"},
-    "resolved_prompt_title": {"nb": "# Løste saker (bekreftet av en bruker — forventet, ikke avvik)", "en": "# Resolved topics (confirmed by a user — expected, not anomalies)", "de": "# Gelöste Themen (von einem Benutzer bestätigt — erwartet, keine Abweichungen)"},
-    "lesson_added": {"nb": "Lærdom lagret [{id}]: {text}", "en": "Lesson saved [{id}]: {text}", "de": "Lektion gespeichert [{id}]: {text}"},
-    "lesson_edited": {"nb": "Lærdom endret [{id}]: {text}", "en": "Lesson edited [{id}]: {text}", "de": "Lektion geändert [{id}]: {text}"},
-    "lesson_retired": {"nb": "Lærdom [{id}] tatt ut (beholdt som historikk).", "en": "Lesson [{id}] retired (kept as history).", "de": "Lektion [{id}] zurückgezogen (als Verlauf behalten)."},
-    "lesson_exists": {"nb": "Den lærdommen finnes allerede [{id}].", "en": "That lesson already exists [{id}].", "de": "Diese Lektion gibt es schon [{id}]."},
-    "lesson_empty": {"nb": "Ingen lærdommer ennå.", "en": "No lessons yet.", "de": "Noch keine Lektionen."},
-    "lesson_read_title": {"nb": "Mine lærdommer ({count}):", "en": "My lessons ({count}):", "de": "Meine Lektionen ({count}):"},
+    "reopen_not_resolved": {
+        "nb": "Sak #{topic} er ikke løst, så den trenger ingen gjenåpning.",
+        "en": "Topic #{topic} is not resolved, so it needs no reopening.",
+        "de": "Thema #{topic} ist nicht gelöst und muss nicht wieder geöffnet werden.",
+    },
+    "resolved_empty": {
+        "nb": "Ingen løste saker ennå.",
+        "en": "No resolved topics yet.",
+        "de": "Noch keine gelösten Themen.",
+    },
+    "resolved_read_title": {
+        "nb": "Løste saker ({count} nyeste):",
+        "en": "Resolved topics ({count} newest):",
+        "de": "Gelöste Themen ({count} neueste):",
+    },
+    "resolved_echoes": {
+        "nb": "{n} ekko siden",
+        "en": "{n} echoes since",
+        "de": "{n} Echos seitdem",
+    },
+    "resolved_prompt_title": {
+        "nb": "# Løste saker (bekreftet av en bruker — forventet, ikke avvik)",
+        "en": "# Resolved topics (confirmed by a user — expected, not anomalies)",
+        "de": "# Gelöste Themen (von einem Benutzer bestätigt — erwartet, keine Abweichungen)",
+    },
+    "lesson_added": {
+        "nb": "Lærdom lagret [{id}]: {text}",
+        "en": "Lesson saved [{id}]: {text}",
+        "de": "Lektion gespeichert [{id}]: {text}",
+    },
+    "lesson_edited": {
+        "nb": "Lærdom endret [{id}]: {text}",
+        "en": "Lesson edited [{id}]: {text}",
+        "de": "Lektion geändert [{id}]: {text}",
+    },
+    "lesson_retired": {
+        "nb": "Lærdom [{id}] tatt ut (beholdt som historikk).",
+        "en": "Lesson [{id}] retired (kept as history).",
+        "de": "Lektion [{id}] zurückgezogen (als Verlauf behalten).",
+    },
+    "lesson_exists": {
+        "nb": "Den lærdommen finnes allerede [{id}].",
+        "en": "That lesson already exists [{id}].",
+        "de": "Diese Lektion gibt es schon [{id}].",
+    },
+    "lesson_empty": {
+        "nb": "Ingen lærdommer ennå.",
+        "en": "No lessons yet.",
+        "de": "Noch keine Lektionen.",
+    },
+    "lesson_read_title": {
+        "nb": "Mine lærdommer ({count}):",
+        "en": "My lessons ({count}):",
+        "de": "Meine Lektionen ({count}):",
+    },
     "lesson_too_long": {
         "nb": "En lærdom er én regel (maks {max} tegn, denne var {n}). Skriv den kortere.",
         "en": "A lesson is one rule (max {max} chars, this one was {n}). Write it shorter.",
         "de": "Eine Lektion ist eine Regel (max. {max} Zeichen, diese hatte {n}). Schreib sie kürzer.",
     },
-    "lesson_prompt_title": {"nb": "# Mine lærdommer (regler jeg følger)", "en": "# My lessons (rules I follow)", "de": "# Meine Lektionen (Regeln, die ich befolge)"},
+    "lesson_prompt_title": {
+        "nb": "# Mine lærdommer (regler jeg følger)",
+        "en": "# My lessons (rules I follow)",
+        "de": "# Meine Lektionen (Regeln, die ich befolge)",
+    },
     "list_kare_too_long": {
         "nb": "Huskelista tar bare korte egne oppfølginger (maks {max} tegn, denne var {n}). Det du så hører hjemme i note(list_name='observations'); en feil i 'agenda'; en regel i 'lessons'.",
         "en": "The kare list only takes short follow-ups of your own (max {max} chars, this was {n}). What you saw belongs in note(list_name='observations'); a fault in 'agenda'; a rule in 'lessons'.",
         "de": "Die kare-Liste nimmt nur kurze eigene Nachverfolgungen (max. {max} Zeichen, diese hatte {n}). Was du gesehen hast, gehört in note(list_name='observations'); ein Fehler in 'agenda'; eine Regel in 'lessons'.",
     },
-    "memory_index_kare_title": {"nb": "# Min huskeliste (indeks — full tekst: note read)", "en": "# My reminder list (index — full text: note read)", "de": "# Meine Merkliste (Index — voller Text: note read)"},
-    "memory_index_world_title": {"nb": "# Mer jeg vet om huset (indeks — full tekst: world read)", "en": "# More I know about the house (index — full text: world read)", "de": "# Mehr, was ich über das Haus weiß (Index — voller Text: world read)"},
+    "memory_index_kare_title": {
+        "nb": "# Min huskeliste (indeks — full tekst: note read)",
+        "en": "# My reminder list (index — full text: note read)",
+        "de": "# Meine Merkliste (Index — voller Text: note read)",
+    },
+    "memory_index_world_title": {
+        "nb": "# Mer jeg vet om huset (indeks — full tekst: world read)",
+        "en": "# More I know about the house (index — full text: world read)",
+        "de": "# Mehr, was ich über das Haus weiß (Index — voller Text: world read)",
+    },
     "memory_index_more": {"nb": "… og {n} til", "en": "… and {n} more", "de": "… und {n} weitere"},
-    "memory_relevant_title": {"nb": "# Relevant nå (fra mine notater og min kunnskap)", "en": "# Relevant now (from my notes and knowledge)", "de": "# Jetzt relevant (aus meinen Notizen und meinem Wissen)"},
+    "memory_relevant_title": {
+        "nb": "# Relevant nå (fra mine notater og min kunnskap)",
+        "en": "# Relevant now (from my notes and knowledge)",
+        "de": "# Jetzt relevant (aus meinen Notizen und meinem Wissen)",
+    },
     "list_kare_index_title": {
         "nb": "Min huskeliste — indeks over alle {count} (full tekst: note read med note_ids=[…] eller search):",
         "en": "My reminder list — index of all {count} (full text: note read with note_ids=[…] or search):",
@@ -3935,12 +4877,28 @@ _T: dict = {
         "en": "Only action='read' (kare): read the full text of exactly these ids (max 15). Without a filter read shows only the index.",
         "de": "Nur action='read' (kare): Volltext genau dieser IDs lesen (max. 15). Ohne Filter zeigt read nur den Index.",
     },
-    "agenda_theme_answers": {"nb": "Svar og samtaler", "en": "Answers and conversations", "de": "Antworten und Gespräche"},
-    "agenda_theme_tools": {"nb": "Verktøy og HA-styring", "en": "Tools and HA control", "de": "Werkzeuge und HA-Steuerung"},
+    "agenda_theme_answers": {
+        "nb": "Svar og samtaler",
+        "en": "Answers and conversations",
+        "de": "Antworten und Gespräche",
+    },
+    "agenda_theme_tools": {
+        "nb": "Verktøy og HA-styring",
+        "en": "Tools and HA control",
+        "de": "Werkzeuge und HA-Steuerung",
+    },
     "agenda_theme_memory": {"nb": "Hukommelse", "en": "Memory", "de": "Gedächtnis"},
     "agenda_theme_agents": {"nb": "Agentene", "en": "Agents", "de": "Agenten"},
-    "agenda_theme_house": {"nb": "Hus, sensorer og kamera", "en": "House, sensors and cameras", "de": "Haus, Sensoren und Kameras"},
-    "agenda_theme_system": {"nb": "System, modeller og ytelse", "en": "System, models and performance", "de": "System, Modelle und Leistung"},
+    "agenda_theme_house": {
+        "nb": "Hus, sensorer og kamera",
+        "en": "House, sensors and cameras",
+        "de": "Haus, Sensoren und Kameras",
+    },
+    "agenda_theme_system": {
+        "nb": "System, modeller og ytelse",
+        "en": "System, models and performance",
+        "de": "System, Modelle und Leistung",
+    },
     "agenda_theme_other": {"nb": "Annet", "en": "Other", "de": "Sonstiges"},
     "tool_notat_remind_on_login_desc": {
         "nb": "Kun huske: om Kåre skal minne om dette ved neste innlogging.",
@@ -4019,9 +4977,9 @@ _T: dict = {
         ),
     },
     "tool_self_trace_action_desc": {
-        "nb": "'fetch_trace' eller 'trace_patterns'.",
-        "en": "'fetch_trace' or 'trace_patterns'.",
-        "de": "'fetch_trace' oder 'trace_patterns'.",
+        "nb": "'fetch_trace' (én tur, ekte rid), 'trace_patterns' eller 'recent' (brukerens egne siste rid-er — bruk denne når du ikke har rid-en).",
+        "en": "'fetch_trace' (one turn, a real rid), 'trace_patterns' or 'recent' (the user's own latest rids — use it when you do not have the rid).",
+        "de": "'fetch_trace' (eine Runde, echte rid), 'trace_patterns' oder 'recent' (die eigenen letzten rids des Nutzers — nutze es, wenn du die rid nicht hast).",
     },
     "tool_self_trace_count_desc": {
         "nb": "Antall traces å analysere. Standard 50. Kun ved action='trace_patterns'.",
@@ -4029,9 +4987,9 @@ _T: dict = {
         "de": "Anzahl zu analysierender Traces. Standard 50. Nur bei action='trace_patterns'.",
     },
     "tool_self_trace_rid_desc": {
-        "nb": "Request-ID, f.eks. 'rid-1779893101671'. Kun ved action='fetch_trace'.",
-        "en": "Request ID, e.g. 'rid-1779893101671'. Only for action='fetch_trace'.",
-        "de": "Request-ID, z.B. 'rid-1779893101671'. Nur bei action='fetch_trace'.",
+        "nb": "Request-ID: «rid-» fulgt av sifre, tatt fra rid-notatet eller fra action='recent' — aldri gjettet. Kun ved action='fetch_trace'.",
+        "en": "Request ID: «rid-» followed by digits, taken from the rid note or from action='recent' — never guessed. Only for action='fetch_trace'.",
+        "de": "Request-ID: «rid-» gefolgt von Ziffern, aus der rid-Notiz oder aus action='recent' — nie geraten. Nur bei action='fetch_trace'.",
     },
     "tool_self_trace_source_desc": {
         "nb": "Filtrer traces på kilde. Standard 'all'. Kun ved action='trace_patterns'.",
@@ -4043,35 +5001,74 @@ _T: dict = {
         "nb": (
             "Kameraer og Frigate-hendelser. "
             "action='snapshot': live snapshot fra ett eller alle kameraer. "
-            "action='events': aggregerte hendelser (hvem er sett, 48t). "
+            "action='events': aggregerte hendelser (48t). "
             "action='frigate': rå deteksjonshendelser. "
+            "'events'/'frigate' er Frigates rå avlesninger UTEN KTSBs kontroll — et ansiktsnavn derfra er aldri fakta; "
+            "for hvem/hva som skjedde, bruk kameraminnet under. "
             "action='list': alle kameraer. "
             "action='analyze': siste N automatisk analyserte hendelser. "
-            "action='show_event': hent snapshot og analyse for en konkret hendelse (krever 'event_id')."
+            "action='show_event': hent snapshot og analyse for en konkret hendelse (krever 'event_id'). "
+            "KAMERAMINNET — for «hva skjedde», «hvem var her», «når var X her sist»: bruk disse FØR rå logger. "
+            "action='last_seen': når en person/et kjent kjøretøy sist ble sett (krever 'name'). "
+            "action='episodes': episoder i et tidsrom ('from'/'to', valgfritt 'camera' = kamera eller sted, 'name', 'count'). "
+            "action='episode': én episode i detalj (krever 'episode_id'). "
+            "action='answer_question': lagre brukerens svar på spørsmålet KTSB stilte i chatten ('kind', 'event_id', 'answer'). "
+            "action='ask': legg én bestemt hendelse ('event_id') i brukerens egen spørsmålsliste, i stedet for et notat. "
+            "action='stationary': hva som står i ro hvor, og om pikslene er uendret siden når eller endret (kodefakta). "
+            "action='verify': lagre brukerens eget svar på om det var hen på én bestemt hendelse ('event_id') eller "
+            "episode ('episode_id') + 'answer' (yes / no / private). Bare om brukeren selv, aldri et tidsrom eller flere episoder samlet. "
+            "Navn er Frigates påstand: gjengi sannsynlighetsordet som står (sannsynlig / høyst sannsynlig / usikkert / "
+            "lite sannsynlig) — si aldri at du vet hvem det var. Sensoravlesninger (kameraet registrerte en person kl. X) er kjent."
         ),
         "en": (
             "Cameras and Frigate events. "
             "action='snapshot': live snapshot from one or all cameras. "
-            "action='events': aggregated events (who was seen, 48h). "
+            "action='events': aggregated events (48h). "
             "action='frigate': raw detection events. "
+            "'events'/'frigate' are Frigate's raw readings WITHOUT KTSB's check — a face name from them is never fact; "
+            "for who/what happened, use the camera memory below. "
             "action='list': all cameras. "
             "action='analyze': last N automatically analyzed events. "
-            "action='show_event': fetch snapshot and analysis for a specific event (requires 'event_id')."
+            "action='show_event': fetch snapshot and analysis for a specific event (requires 'event_id'). "
+            "CAMERA MEMORY — for «what happened», «who was here», «when was X here last»: use these BEFORE raw logs. "
+            "action='last_seen': when a person/known vehicle was last seen (requires 'name'). "
+            "action='episodes': episodes in a time span ('from'/'to', optional 'camera' = camera or place, 'name', 'count'). "
+            "action='episode': one episode in detail (requires 'episode_id'). "
+            "action='answer_question': store the user's answer to the question KTSB asked in chat ('kind', 'event_id', 'answer'). "
+            "action='ask': put one specific event ('event_id') in the user's own question list, instead of a note. "
+            "action='stationary': what stands still where, and whether its pixels are unchanged since when or changed (code facts). "
+            "action='verify': store the user's own answer on whether it was them in one specific event ('event_id') or "
+            "episode ('episode_id') + 'answer' (yes / no / private). Only about the user themselves, never a time span or several episodes at once. "
+            "Names are Frigate's claim: repeat the probability word given (likely / very likely / uncertain / "
+            "unlikely) — never say you know who it was. Sensor readings (the camera registered a person at X) are known."
         ),
         "de": (
             "Kameras und Frigate-Ereignisse. "
             "action='snapshot': Live-Snapshot von einer oder allen Kameras. "
-            "action='events': aggregierte Ereignisse (wer wurde gesehen, 48h). "
+            "action='events': aggregierte Ereignisse (48h). "
             "action='frigate': rohe Erkennungsereignisse. "
+            "'events'/'frigate' sind Frigates Rohwerte OHNE KTSBs Prüfung — ein Gesichtsname daraus ist nie eine Tatsache; "
+            "für wer/was passiert ist, das Kameragedächtnis unten nutzen. "
             "action='list': alle Kameras. "
             "action='analyze': letzte N automatisch analysierte Ereignisse. "
-            "action='show_event': Snapshot und Analyse für ein bestimmtes Ereignis abrufen (erfordert 'event_id')."
+            "action='show_event': Snapshot und Analyse für ein bestimmtes Ereignis abrufen (erfordert 'event_id'). "
+            "KAMERAGEDÄCHTNIS — für «was ist passiert», «wer war hier», «wann war X zuletzt hier»: VOR rohen Logs nutzen. "
+            "action='last_seen': wann eine Person/ein bekanntes Fahrzeug zuletzt gesehen wurde (erfordert 'name'). "
+            "action='episodes': Episoden in einem Zeitraum ('from'/'to', optional 'camera' = Kamera oder Ort, 'name', 'count'). "
+            "action='episode': eine Episode im Detail (erfordert 'episode_id'). "
+            "action='answer_question': die Antwort des Nutzers auf die Frage speichern, die KTSB im Chat gestellt hat ('kind', 'event_id', 'answer'). "
+            "action='ask': ein bestimmtes Ereignis ('event_id') in die eigene Fragenliste des Nutzers legen, statt einer Notiz. "
+            "action='stationary': was wo stillsteht und ob seine Pixel seit wann unverändert oder verändert sind (Code-Fakten). "
+            "action='verify': die eigene Antwort des Nutzers speichern, ob er/sie es bei einem bestimmten Ereignis ('event_id') oder "
+            "einer Episode ('episode_id') war + 'answer' (yes / no / private). Nur über den Nutzer selbst, nie ein Zeitraum oder mehrere Episoden zusammen. "
+            "Namen sind Frigates Behauptung: das angegebene Wahrscheinlichkeitswort wiedergeben (wahrscheinlich / höchst "
+            "wahrscheinlich / unsicher / unwahrscheinlich) — nie sagen, dass du weißt, wer es war. Sensorwerte (die Kamera hat um X eine Person erfasst) sind bekannt."
         ),
     },
     "tool_kamera_action_desc": {
-        "nb": "'snapshot','events','frigate','list','analyze','show_event'.",
-        "en": "'snapshot','events','frigate','list','analyze','show_event'.",
-        "de": "'snapshot','events','frigate','list','analyze','show_event'.",
+        "nb": "'snapshot','events','frigate','list','analyze','show_event','last_seen','episodes','episode','verify','stationary','ask','answer_question','correct' (brukeren vil rette et svar hen har gitt på «Var det deg?»).",
+        "en": "'snapshot','events','frigate','list','analyze','show_event','last_seen','episodes','episode','verify','stationary','ask','answer_question','correct' (the user wants to correct an answer they gave to «Was it you?»).",
+        "de": "'snapshot','events','frigate','list','analyze','show_event','last_seen','episodes','episode','verify','stationary','ask','answer_question','correct' (der Nutzer will eine Antwort auf «Warst du das?» korrigieren).",
     },
     "tool_kamera_scope_desc": {
         "nb": "'one' = ett kamera (krever 'camera'), 'all' = alle parallelt. Kun ved action='snapshot'.",
@@ -4079,19 +5076,19 @@ _T: dict = {
         "de": "'one' = eine Kamera (erfordert 'camera'), 'all' = alle parallel. Nur bei action='snapshot'.",
     },
     "tool_kamera_camera_desc": {
-        "nb": "Kameranavn, f.eks. 'ringeklokke'. Ved snapshot(scope='one') og action='frigate'.",
-        "en": "Camera name, e.g. 'ringeklokke'. For snapshot(scope='one') and action='frigate'.",
-        "de": "Kameraname, z.B. 'ringeklokke'. Bei snapshot(scope='one') und action='frigate'.",
+        "nb": "Kameranavn, f.eks. 'ringeklokke'. Ved snapshot(scope='one') og action='frigate'. Ved action='episodes': kamera eller sted (f.eks. 'inngangsdøra').",
+        "en": "Camera name, e.g. 'ringeklokke'. For snapshot(scope='one') and action='frigate'. For action='episodes': camera or place (e.g. 'front door').",
+        "de": "Kameraname, z.B. 'ringeklokke'. Bei snapshot(scope='one') und action='frigate'. Bei action='episodes': Kamera oder Ort (z.B. 'Haustür').",
     },
     "tool_kamera_query_desc": {
-        "nb": "Konkret spørsmål om bildet. Kun ved action='snapshot'.",
-        "en": "Concrete question about the image. Only for action='snapshot'.",
-        "de": "Konkrete Frage zum Bild. Nur bei action='snapshot'.",
+        "nb": "Brukerens spørsmål om det som er på bildet, for snapshot og show_event. Ikke hvor bildet skal vises — det er screen.",
+        "en": "The user's question about what is in the picture, for snapshot and show_event. Not where to show it — that is screen.",
+        "de": "Die Frage des Nutzers zu dem, was auf dem Bild ist, für snapshot und show_event. Nicht, wo es gezeigt wird — das ist screen.",
     },
     "tool_kamera_name_desc": {
-        "nb": "Filtrer på person/kjøretøy. Kun ved action='events'.",
-        "en": "Filter by person/vehicle. Only for action='events'.",
-        "de": "Nach Person/Fahrzeug filtern. Nur bei action='events'.",
+        "nb": "Person eller kjent kjøretøy. Filter ved action='events'/'episodes'; påkrevd ved action='last_seen'.",
+        "en": "Person or known vehicle. Filter for action='events'/'episodes'; required for action='last_seen'.",
+        "de": "Person oder bekanntes Fahrzeug. Filter bei action='events'/'episodes'; erforderlich bei action='last_seen'.",
     },
     "tool_kamera_hours_back_desc": {
         "nb": "Siste N timer. Standard 24, maks 48. Kun ved action='events'.",
@@ -4112,6 +5109,344 @@ _T: dict = {
         "nb": "True: kun hendelser med gjenkjent ansikt. Kun ved action='frigate'.",
         "en": "True: only events with recognized face. Only for action='frigate'.",
         "de": "True: nur Ereignisse mit erkanntem Gesicht. Nur bei action='frigate'.",
+    },
+    "tool_kamera_from_desc": {
+        "nb": "Start, husets lokale tid: 'YYYY-MM-DD' eller 'YYYY-MM-DD HH:MM'. Løs «i dag», «i går», «forrige uke» om til datoer selv (dagens dato står i konteksten). Standard: i dag 00:00. Kun ved action='episodes'.",
+        "en": "Start, household local time: 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM'. Resolve «today», «yesterday», «last week» into dates yourself (today's date is in the context). Default: today 00:00. Only for action='episodes'.",
+        "de": "Start, Ortszeit des Haushalts: 'YYYY-MM-DD' oder 'YYYY-MM-DD HH:MM'. «heute», «gestern», «letzte Woche» selbst in Daten umrechnen (das heutige Datum steht im Kontext). Standard: heute 00:00. Nur bei action='episodes'.",
+    },
+    "tool_kamera_to_desc": {
+        "nb": "Slutt, husets lokale tid, samme format; en dato alene = hele den dagen. Standard: nå. Kun ved action='episodes'.",
+        "en": "End, household local time, same format; a date alone = that whole day. Default: now. Only for action='episodes'.",
+        "de": "Ende, Ortszeit des Haushalts, gleiches Format; ein Datum allein = der ganze Tag. Standard: jetzt. Nur bei action='episodes'.",
+    },
+    "tool_kamera_episode_id_desc": {
+        "nb": "Episodenummer (tallet etter # fra action='episodes' eller 'last_seen'). Påkrevd ved action='episode'.",
+        "en": "Episode number (the number after # from action='episodes' or 'last_seen'). Required for action='episode'.",
+        "de": "Episodennummer (die Zahl nach # aus action='episodes' oder 'last_seen'). Erforderlich bei action='episode'.",
+    },
+    "tool_kamera_answer_desc": {
+        "nb": "Brukerens svar ved action='verify': 'yes' = det var meg, 'no' = ikke meg, 'private' = meg, men ikke del detaljer, 'unsure' = vet ikke.",
+        "en": "The user's answer for action='verify': 'yes' = it was me, 'no' = not me, 'private' = me, but keep the details private, 'unsure' = don't know.",
+        "de": "Die Antwort des Nutzers bei action='verify': 'yes' = das war ich, 'no' = nicht ich, 'private' = ich, aber Details privat, 'unsure' = weiß nicht.",
+    },
+    "fv_saved": {
+        "nb": "Lagret: brukerens svar «{answer}» på hendelsen {event}. Hendelsen er nå avgjort av brukeren; {n} sensor(er) som stemte på den lærer av svaret.",
+        "en": "Saved: the user's answer «{answer}» to the event {event}. The event is now settled by the user; {n} sensor(s) that voted on it learn from the answer.",
+        "de": "Gespeichert: die Antwort «{answer}» des Nutzers zum Ereignis {event}. Das Ereignis ist jetzt vom Nutzer entschieden; {n} Sensor(en), die darüber abgestimmt haben, lernen aus der Antwort.",
+    },
+    "fv_which": {
+        "nb": "Episoden har flere hendelser brukeren kan svare på. Spør hvilken det gjelder (én om gangen), og bruk så 'event_id':\n{items}",
+        "en": "The episode has several events the user can answer. Ask which one it is about (one at a time), then use 'event_id':\n{items}",
+        "de": "Die Episode hat mehrere Ereignisse, die der Nutzer beantworten kann. Frag, welches gemeint ist (eins nach dem anderen), dann 'event_id' verwenden:\n{items}",
+    },
+    "fv_not_question": {
+        "nb": "Ingenting lagret: dette er ikke et åpent «Var det deg?»-spørsmål for denne brukeren (allerede besvart, allerede sikkert, eller ingen sensor nevnte brukeren der).",
+        "en": "Nothing saved: this is not an open «Was it you?» question for this user (already answered, already certain, or no sensor named the user there).",
+        "de": "Nichts gespeichert: das ist keine offene «Warst du das?»-Frage für diesen Nutzer (schon beantwortet, schon sicher, oder kein Sensor hat den Nutzer dort genannt).",
+    },
+    "fv_need_target": {
+        "nb": "action='verify' krever 'event_id' eller 'episode_id' (én bestemt hendelse eller episode) og 'answer' (yes / no / private).",
+        "en": "action='verify' needs 'event_id' or 'episode_id' (one specific event or episode) and 'answer' (yes / no / private).",
+        "de": "action='verify' braucht 'event_id' oder 'episode_id' (ein bestimmtes Ereignis oder eine Episode) und 'answer' (yes / no / private).",
+    },
+    "fv_not_allowed": {
+        "nb": "Ingenting lagret: bare en innlogget bruker i husstanden som ikke har slått av kamerasporing, kan svare om seg selv.",
+        "en": "Nothing saved: only a logged-in household user who has not turned camera tracking off can answer about themselves.",
+        "de": "Nichts gespeichert: nur ein angemeldetes Haushaltsmitglied, das die Kameraverfolgung nicht ausgeschaltet hat, kann über sich selbst antworten.",
+    },
+    # J22 part 4: one receipt for everything saved (kaare_core/receipts.py)
+    "rcpt_what": {"nb": "Lagret", "en": "Saved", "de": "Gespeichert"},
+    "rcpt_profile_where": {"nb": "profilen til {user}", "en": "{user}'s profile", "de": "das Profil von {user}"},
+    "rcpt_profile_obs_where": {"nb": "observasjonene om {user}", "en": "the observations about {user}", "de": "die Beobachtungen über {user}"},
+    "rcpt_memory_what": {"nb": "{n} samtale(r) merket «{verdict}»", "en": "{n} conversation(s) marked «{verdict}»", "de": "{n} Gespräch(e) als «{verdict}» markiert"},
+    "rcpt_memory_where": {"nb": "langtidsminnet til {user}", "en": "{user}'s long-term memory", "de": "das Langzeitgedächtnis von {user}"},
+    "rcpt_world_where": {"nb": "Kåres verdensbilde", "en": "Kåre's world model", "de": "Kåres Weltbild"},
+    "rcpt_household_what": {"nb": "husstanden satt til «{mode}» (forventet hjem: {ret})", "en": "household set to «{mode}» (expected back: {ret})", "de": "Haushalt auf «{mode}» gesetzt (zurück erwartet: {ret})"},
+    "rcpt_household_where": {"nb": "husstandens status", "en": "the household status", "de": "der Haushaltsstatus"},
+    "rcpt_reflex_what": {"nb": "ny refleks for «{phrase}»", "en": "a new reflex for «{phrase}»", "de": "ein neuer Reflex für «{phrase}»"},
+    "rcpt_reflex_rejected_what": {"nb": "refleksforslaget «{phrase}» avvist", "en": "the reflex proposal «{phrase}» rejected", "de": "der Reflexvorschlag «{phrase}» abgelehnt"},
+    "rcpt_reflex_where": {"nb": "refleksene (hurtigkommandoer)", "en": "the reflexes (quick commands)", "de": "die Reflexe (Schnellbefehle)"},
+    "rcpt_proposal_what": {"nb": "forslag #{id} {status}", "en": "proposal #{id} {status}", "de": "Vorschlag #{id} {status}"},
+    "rcpt_proposal_where": {"nb": "utviklingsforslagene", "en": "the dev proposals", "de": "die Entwicklungsvorschläge"},
+    "rcpt_timer_what": {"nb": "påminnelse {when}: {text}", "en": "reminder {when}: {text}", "de": "Erinnerung {when}: {text}"},
+    "rcpt_timer_where": {"nb": "timerne", "en": "the timers", "de": "die Timer"},
+    "rcpt_image_what": {"nb": "bilde laget fra «{prompt}»", "en": "an image made from «{prompt}»", "de": "ein Bild aus «{prompt}»"},
+    "rcpt_image_where": {"nb": "bildene til {user}", "en": "{user}'s images", "de": "die Bilder von {user}"},
+    "rcpt_act_bought": {"nb": "markert kjøpt", "en": "marked bought", "de": "als gekauft markiert"},
+    "rcpt_act_deleted": {"nb": "slettet", "en": "deleted", "de": "gelöscht"},
+    "rcpt_act_cleared": {"nb": "tømt", "en": "cleared", "de": "geleert"},
+    "rcpt_act_done": {"nb": "markert ferdig", "en": "marked done", "de": "als erledigt markiert"},
+    "rcpt_act_pinned": {"nb": "festet", "en": "pinned", "de": "angeheftet"},
+    "rcpt_act_unpinned": {"nb": "løsnet", "en": "unpinned", "de": "gelöst"},
+    "rcpt_act_edited": {"nb": "endret", "en": "edited", "de": "geändert"},
+    "rcpt_act_retired": {"nb": "trukket tilbake", "en": "retired", "de": "zurückgezogen"},
+    "rcpt_act_resolved": {"nb": "løst", "en": "resolved", "de": "gelöst"},
+    "rcpt_act_reopen_proposed": {"nb": "foreslått gjenåpnet", "en": "proposed for reopening", "de": "zur Wiedereröffnung vorgeschlagen"},
+    "rcpt_act_added": {"nb": "lagt til", "en": "added", "de": "hinzugefügt"},
+    "rcpt_act_updated": {"nb": "oppdatert", "en": "updated", "de": "aktualisiert"},
+    "rcpt_act_cancelled": {"nb": "avlyst", "en": "cancelled", "de": "abgebrochen"},
+    "rcpt_change_what": {"nb": "{action}: {ref}", "en": "{action}: {ref}", "de": "{action}: {ref}"},
+    "rcpt_self_image_where": {"nb": "Kåres selvbilde", "en": "Kåre's self-image", "de": "Kåres Selbstbild"},
+    "rcpt_list_shopping": {"nb": "handlelista", "en": "the shopping list", "de": "die Einkaufsliste"},
+    "rcpt_list_remember": {"nb": "huskelista til {user}", "en": "{user}'s reminder list", "de": "die Merkliste von {user}"},
+    "rcpt_list_kare": {"nb": "Kåres egne notater", "en": "Kåre's own notes", "de": "Kåres eigene Notizen"},
+    "rcpt_list_lessons": {"nb": "lærdommer", "en": "lessons", "de": "Lektionen"},
+    "rcpt_list_agenda": {"nb": "agendaen til utviklingsmøtet", "en": "the dev meeting's agenda", "de": "die Agenda des Entwicklungstreffens"},
+    "rcpt_list_observations": {"nb": "observasjoner", "en": "observations", "de": "Beobachtungen"},
+    "rcpt_where": {"nb": "Hvor", "en": "Where", "de": "Wo"},
+    "rcpt_who": {"nb": "Av", "en": "By", "de": "Von"},
+    "rcpt_channel": {"nb": "Kanal", "en": "Channel", "de": "Kanal"},
+    "rcpt_when": {"nb": "Når", "en": "When", "de": "Wann"},
+    "rcpt_channel_chat": {"nb": "chat", "en": "chat", "de": "Chat"},
+    "rcpt_channel_gui": {"nb": "GUI", "en": "GUI", "de": "GUI"},
+    "rcpt_channel_voice": {"nb": "stemme", "en": "voice", "de": "Sprache"},
+    "rcpt_channel_night": {"nb": "nattjobb", "en": "night job", "de": "Nachtjob"},
+    "rcpt_repeat": {
+        "nb": "Gjenta kvitteringen over for brukeren slik den står (uten markøren i hakeparentes); ikke skriv din egen versjon av hva som er lagret.",
+        "en": "Repeat the receipt above to the user as it stands (without the marker in brackets); do not write your own version of what was saved.",
+        "de": "Gib die Quittung oben dem Nutzer so wieder, wie sie steht (ohne die Markierung in Klammern); schreib keine eigene Version dessen, was gespeichert wurde.",
+    },
+    "rcpt_cam_what": {"nb": "svaret «{answer}» på «Var det deg?» — {name}", "en": "the answer «{answer}» to «Was it you?» — {name}",
+                      "de": "die Antwort «{answer}» auf «Warst du das?» — {name}"},
+    "rcpt_cam_about": {"nb": "«det var {member}» (bekreftet av {admin}; {member}s eget svar gjelder over dette)",
+                       "en": "«it was {member}» (confirmed by {admin}; {member}'s own answer counts over this)",
+                       "de": "«das war {member}» (bestätigt von {admin}; die eigene Antwort von {member} gilt darüber)"},
+    "rcpt_theme_what": {"nb": "svaret «{answer}» på et tema fra nattmøtet", "en": "the answer «{answer}» to a night-meeting theme",
+                        "de": "die Antwort «{answer}» zu einem Thema der Nachtsitzung"},
+    "rcpt_theme_where": {"nb": "brukerens spørsmålsliste", "en": "the user's question list", "de": "die Fragenliste des Nutzers"},
+    "rcpt_queued_what": {"nb": "én kamerahendelse lagt i spørsmålslista («Var det deg?»)",
+                         "en": "one camera event put in the question list («Was it you?»)",
+                         "de": "ein Kameraereignis in die Fragenliste gelegt («Warst du das?»)"},
+    "rcpt_queued_where": {"nb": "brukerens spørsmålsliste", "en": "the user's question list", "de": "die Fragenliste des Nutzers"},
+    # N39: the honest answer when the save failed — never «Lagret» (feedback_rid_and_receipts, KTSB-visjon thread 9)
+    # N41: a new camera analysis is not for this role — say so, and show what is stored
+    "cam_analyse_not_for_role": {
+        "nb": "[Ny analyse med bildemodellen er ikke tilgjengelig for rollen til denne brukeren (en administrator kan endre det på Brukere-siden). Si det ærlig, og vis det som allerede er lagret: bildet, tidligere konklusjoner, hvem/hva/hvor.]",
+        "en": "[A new analysis with the image model is not available for this user's role (an administrator can change it on the Users page). Say so honestly, and show what is already stored: the picture, earlier conclusions, who/what/where.]",
+        "de": "[Eine neue Analyse mit dem Bildmodell ist für die Rolle dieses Nutzers nicht verfügbar (ein Administrator kann das auf der Seite Benutzer ändern). Sag das ehrlich und zeig, was schon gespeichert ist: das Bild, frühere Schlussfolgerungen, wer/was/wo.]",
+    },
+    "rcpt_not_saved": {
+        "nb": "IKKE LAGRET: databasen kunne ikke skrives akkurat nå. KTSB prøver igjen hvert minutt, men svaret kan gå tapt ved en omstart. Si det ærlig til brukeren — ikke si at det er lagret.",
+        "en": "NOT SAVED: the database could not be written just now. KTSB retries every minute, but the answer may be lost on a restart. Tell the user honestly — do not say it was saved.",
+        "de": "NICHT GESPEICHERT: die Datenbank konnte gerade nicht geschrieben werden. KTSB versucht es jede Minute erneut, aber die Antwort kann bei einem Neustart verloren gehen. Sag es dem Nutzer ehrlich — sag nicht, dass es gespeichert ist.",
+    },
+    "rcpt_cam_sensors": {"nb": "{n} sensor(er) lærer av svaret", "en": "{n} sensor(s) learn from the answer",
+                         "de": "{n} Sensor(en) lernen aus der Antwort"},
+    # J22: exactly what was stored — Kåre says this, nothing more
+    "fv_stored": {
+        "nb": "Lagret nøyaktig dette: brukerens svar «{answer}» på hendelsen {event}. {name} {n} sensor(er) som stemte på den lærer av svaret. Si til brukeren nøyaktig hva som er lagret, ikke mer.",
+        "en": "Saved exactly this: the user's answer «{answer}» to the event {event}. {name} {n} sensor(s) that voted on it learn from the answer. Tell the user exactly what was stored, nothing more.",
+        "de": "Gespeichert, genau das: die Antwort «{answer}» des Nutzers zum Ereignis {event}. {name} {n} Sensor(en), die darüber abgestimmt haben, lernen aus der Antwort. Sag dem Nutzer genau, was gespeichert wurde, nicht mehr.",
+    },
+    "fv_stored_name": {"nb": "hendelsen står nå på {name}", "en": "the event is now on {name}",
+                       "de": "das Ereignis steht jetzt auf {name}"},
+    "fv_stored_private": {"nb": "det var brukeren, men ingen detaljer er lagret på hendelsen",
+                          "en": "it was the user, but no details are stored on the event",
+                          "de": "es war der Nutzer, aber am Ereignis sind keine Details gespeichert"},
+    "fv_stored_no_name": {"nb": "ingen navn er lagret, bare at det ikke var brukeren",
+                          "en": "no name is stored, only that it was not the user",
+                          "de": "kein Name gespeichert, nur dass es nicht der Nutzer war"},
+    # DT04-S05k: «vet ikke» has its own text — never the «no» text (nothing about who it was is stored)
+    "fv_stored_unsure": {"nb": "ingen navn er lagret, brukeren var usikker på om det var dem",
+                         "en": "no name is stored, the user was not sure whether it was them",
+                         "de": "kein Name gespeichert, der Nutzer war unsicher, ob er es war"},
+    "fv_stored_about": {
+        "nb": "Lagret nøyaktig dette: hendelsen {event} står nå på {member}, bekreftet av {admin}. Svarer {member} selv noe annet, gjelder det. {n} sensor(er) som stemte på den lærer av svaret. Si til brukeren nøyaktig hva som er lagret, ikke mer.",
+        "en": "Saved exactly this: the event {event} is now on {member}, confirmed by {admin}. If {member} answers otherwise themselves, that counts. {n} sensor(s) that voted on it learn from the answer. Tell the user exactly what was stored, nothing more.",
+        "de": "Gespeichert, genau das: das Ereignis {event} steht jetzt auf {member}, bestätigt von {admin}. Antwortet {member} selbst anders, gilt das. {n} Sensor(en), die darüber abgestimmt haben, lernen aus der Antwort. Sag dem Nutzer genau, was gespeichert wurde, nicht mehr.",
+    },
+    "fv_about_refused": {
+        "nb": "Ingenting lagret: den personen er ikke et husstandsmedlem KTSB kan navngi (ukjent, eller kamerasporing er slått av). Si det til brukeren.",
+        "en": "Nothing stored: that person is not a household member KTSB may name (unknown, or camera tracking is turned off). Tell the user.",
+        "de": "Nichts gespeichert: diese Person ist kein Haushaltsmitglied, das KTSB nennen darf (unbekannt oder Kameraverfolgung aus). Sag es dem Nutzer.",
+    },
+    "fv_about_own_answer": {
+        "nb": "Ingenting lagret: personen har selv svart på denne hendelsen, og det svaret gjelder.",
+        "en": "Nothing stored: the person has answered this event themselves, and that answer counts.",
+        "de": "Nichts gespeichert: die Person hat dieses Ereignis selbst beantwortet, und diese Antwort gilt.",
+    },
+    "fv_about_not_admin": {
+        "nb": "Ingenting lagret: bare admin kan svare om en annen i husstanden; andre svarer bare om seg selv.",
+        "en": "Nothing stored: only admin can answer about another household member; others answer only about themselves.",
+        "de": "Nichts gespeichert: nur Admin kann über ein anderes Haushaltsmitglied antworten; andere nur über sich selbst.",
+    },
+    "fv_about_yes_only": {
+        "nb": "Ingenting lagret: om en annen kan admin bare svare at det var den personen ('answer': 'yes' med 'about').",
+        "en": "Nothing stored: about someone else admin can only answer that it was that person ('answer': 'yes' with 'about').",
+        "de": "Nichts gespeichert: über jemand anderen kann Admin nur antworten, dass es diese Person war ('answer': 'yes' mit 'about').",
+    },
+    "tool_kamera_about_desc": {
+        "nb": "Bare admin, bare med action='verify' og answer='yes': brukernavnet eller navnet til husstandsmedlemmet hendelsen gjaldt, når admin sier hvem det var. Utelates når brukeren svarer om seg selv.",
+        "en": "Admin only, only with action='verify' and answer='yes': the username or name of the household member the event was about, when admin says who it was. Left out when the user answers about themselves.",
+        "de": "Nur Admin, nur mit action='verify' und answer='yes': Benutzername oder Name des Haushaltsmitglieds, um das es ging, wenn Admin sagt, wer es war. Weglassen, wenn der Nutzer über sich selbst antwortet.",
+    },
+    "fv_answer_yes": {"nb": "ja, det var meg", "en": "yes, it was me", "de": "ja, das war ich"},
+    "fv_answer_no": {"nb": "nei, ikke meg", "en": "no, not me", "de": "nein, nicht ich"},
+    "fv_answer_private": {"nb": "meg, privat", "en": "me, private", "de": "ich, privat"},
+    "fv_answer_unsure": {"nb": "vet ikke", "en": "don't know", "de": "weiß nicht"},  # N39 c
+    "fv_answer_skip_word": {"nb": "hoppet over", "en": "skipped", "de": "übersprungen"},  # N39 b
+    "rcpt_cam_corrected": {  # N39 b: a correction's receipt
+        "nb": "Rettet: svaret ditt på «Var det deg?» var «{before}», nå «{after}»; det gamle svaret er tatt ut av regningen (ikke slettet); {n} sensor(er) lærer av det nye",
+        "en": "Corrected: your answer to «Was it you?» was «{before}», now «{after}»; the old answer no longer counts (not deleted); {n} sensor(s) learn from the new one",
+        "de": "Korrigiert: deine Antwort auf «Warst du das?» war «{before}», jetzt «{after}»; die alte Antwort zählt nicht mehr (nicht gelöscht); {n} Sensor(en) lernen von der neuen",
+    },
+    "fv_correct_cards": {
+        "nb": "Brukerens egne siste svar på «Var det deg?» er nå hvert sitt spørsmålskort. Spør hvilket som skal rettes og hva det riktige svaret er, og lagre med action='answer_question', kortets question_id og answer=yes/no/private/unsure — velg aldri selv:\n{items}",
+        "en": "The user's own latest answers to «Was it you?» are now one question card each. Ask which one to correct and what the right answer is, and store it with action='answer_question', the card's question_id and answer=yes/no/private/unsure — never choose yourself:\n{items}",
+        "de": "Die letzten eigenen Antworten des Nutzers auf «Warst du das?» sind jetzt je eine Fragekarte. Frag, welche korrigiert werden soll und was richtig ist, und speichere mit action='answer_question', der question_id der Karte und answer=yes/no/private/unsure — wähle nie selbst:\n{items}",
+    },
+    "fv_nothing_to_correct": {
+        "nb": "Brukeren har ingen svar på «Var det deg?» fra den siste uka som kan rettes. Ingenting endret.",
+        "en": "The user has no answers to «Was it you?» from the last week that can be corrected. Nothing changed.",
+        "de": "Der Nutzer hat keine Antworten auf «Warst du das?» aus der letzten Woche, die korrigiert werden können. Nichts geändert.",
+    },
+    "cq_correct_line": {
+        "nb": "Svaret ditt om {camera}, {time}: «{answer}»",
+        "en": "Your answer about {camera}, {time}: «{answer}»",
+        "de": "Deine Antwort zu {camera}, {time}: «{answer}»",
+    },
+    "ft_pos_top_left": {"nb": "øverst til venstre", "en": "at the top on the left", "de": "oben links"},
+    "ft_pos_top_mid": {"nb": "øverst", "en": "at the top", "de": "oben"},
+    "ft_pos_top_right": {"nb": "øverst til høyre", "en": "at the top on the right", "de": "oben rechts"},
+    "ft_pos_mid_left": {"nb": "midt til venstre", "en": "in the middle on the left", "de": "in der Mitte links"},
+    "ft_pos_mid_mid": {"nb": "midt i bildet", "en": "in the middle of the frame", "de": "in der Bildmitte"},
+    "ft_pos_mid_right": {"nb": "midt til høyre", "en": "in the middle on the right", "de": "in der Mitte rechts"},
+    "ft_pos_bottom_left": {"nb": "nederst til venstre", "en": "at the bottom on the left", "de": "unten links"},
+    "ft_pos_bottom_mid": {"nb": "nederst", "en": "at the bottom", "de": "unten"},
+    "ft_pos_bottom_right": {"nb": "nederst til høyre", "en": "at the bottom on the right", "de": "unten rechts"},
+    "ft_none": {
+        "nb": "Ingen stillestående ting er vurdert av pikselkontrollen de siste {hours} timene.",
+        "en": "The pixel check has judged no stationary things in the last {hours} hours.",
+        "de": "Die Pixelprüfung hat in den letzten {hours} Stunden keine stehenden Dinge beurteilt.",
+    },
+    "ft_header": {
+        "nb": "Stillestående ting (kodens pikselkontroll, siste {hours} timer):",
+        "en": "Stationary things (code's pixel check, last {hours} hours):",
+        "de": "Stehende Dinge (Pixelprüfung des Codes, letzte {hours} Stunden):",
+    },
+    "ft_unchanged": {
+        "nb": "- {what}, {camera}, {where}: uendret siden {since} (sist sjekket {last})",
+        "en": "- {what}, {camera}, {where}: unchanged since {since} (last checked {last})",
+        "de": "- {what}, {camera}, {where}: unverändert seit {since} (zuletzt geprüft {last})",
+    },
+    "ft_changed": {
+        "nb": "- {what}, {camera}, {where}: endret ved siste sjekk {last}",
+        "en": "- {what}, {camera}, {where}: changed at the last check {last}",
+        "de": "- {what}, {camera}, {where}: verändert bei der letzten Prüfung {last}",
+    },
+    "ft_source": {
+        "nb": "Kilde: kode som sammenligner pikslene i Frigates boks før og under hendelsen. Hvordan det ser ut nå, viser bare et nytt bilde (action='snapshot').",
+        "en": "Source: code comparing the pixels in Frigate's box before and during the event. How it looks now only a new frame shows (action='snapshot').",
+        "de": "Quelle: Code, der die Pixel in Frigates Box vor und während des Ereignisses vergleicht. Wie es jetzt aussieht, zeigt nur ein neues Bild (action='snapshot').",
+    },
+    "cam_label_unknown": {
+        "nb": "Ingen kamera sporer «{word}». Etikettene kameraene sporer: {labels}. Bruk en av dem i 'label'.",
+        "en": "No camera tracks «{word}». The labels the cameras track: {labels}. Use one of them in 'label'.",
+        "de": "Keine Kamera verfolgt «{word}». Die Labels, die die Kameras verfolgen: {labels}. Nutze eines davon in 'label'.",
+    },
+    "tool_kamera_look_now": {
+        "nb": "Hvordan noe ser ut akkurat nå: hent først et bilde (action='snapshot') og beskriv bare det bildet, aldri fra minnet.",
+        "en": "How something looks right now: first fetch a frame (action='snapshot') and describe only that frame, never from memory.",
+        "de": "Wie etwas gerade aussieht: zuerst ein Bild holen (action='snapshot') und nur dieses Bild beschreiben, nie aus dem Gedächtnis.",
+    },
+    # R140 (run-queue J8): the visual-claim expressions the shadow detector looks for — regex alternations, per language
+    "enf_visual_claim_phrases": {
+        "nb": r"\bjeg\s+ser\b|\b(på|i)\s+bildet\b|\bbildet\s+viser\b|\bser\s+tydelig\b",
+        "en": r"\bI\s+(can\s+)?see\b|\bin\s+the\s+(image|picture|photo|frame)\b|\bthe\s+(image|picture|photo)\s+shows\b",
+        "de": r"\bich\s+sehe\b|\bauf\s+dem\s+(Bild|Foto)\b|\bim\s+Bild\b|\bdas\s+Bild\s+zeigt\b",
+    },
+    "gen_correction_visual_claim": {
+        "nb": "I denne runden kom det ikke noe bilde til deg. Skriv svaret bare fra verktøyresultatene, eller hent et bilde først.",
+        "en": "No image reached you in this turn. Answer only from the tool results, or fetch an image first.",
+        "de": "In dieser Runde hat dich kein Bild erreicht. Antworte nur aus den Werkzeugergebnissen oder hol zuerst ein Bild.",
+    },
+    # J4 / P149 D6: the lean «repeats an earlier night?» call — closed form, no example words, no speaker names
+    "rs_prompt": {
+        "nb": "Tidligere temaer, nummerert, med dato:\n{earlier}\n\nNytt forslag:\n{proposal}\n\nHandler det nye forslaget om samme sak som ett av de tidligere temaene? Svar bare med JSON: {{\"answer\": \"N<nummer>\"}} for det tidligere temaet det gjentar, eller {{\"answer\": \"new\"}}.",
+        "en": "Earlier themes, numbered, with date:\n{earlier}\n\nNew proposal:\n{proposal}\n\nIs the new proposal about the same matter as one of the earlier themes? Answer only with JSON: {{\"answer\": \"N<number>\"}} for the earlier theme it repeats, or {{\"answer\": \"new\"}}.",
+        "de": "Frühere Themen, nummeriert, mit Datum:\n{earlier}\n\nNeuer Vorschlag:\n{proposal}\n\nGeht es im neuen Vorschlag um dieselbe Sache wie bei einem der früheren Themen? Antworte nur mit JSON: {{\"answer\": \"N<Nummer>\"}} für das frühere Thema, das er wiederholt, oder {{\"answer\": \"new\"}}.",
+    },
+    "gen_correction_repeated_theme": {
+        "nb": "Dette temaet er reist {nights} netter uten noe nytt fra brukeren. Det er satt til side som ett spørsmål til brukeren. Foreslå et annet tema.",
+        "en": "This theme has been raised {nights} nights with nothing new from the user. It is set aside as one question to the user. Propose another theme.",
+        "de": "Dieses Thema wurde {nights} Nächte lang ohne Neues vom Nutzer angesprochen. Es ist als eine Frage an den Nutzer zurückgestellt. Schlag ein anderes Thema vor.",
+    },
+    "fv_queued": {
+        "nb": "Lagt i brukerens spørsmålsliste (Innstillinger → «Var det deg?»). Brukeren svarer der når det passer.",
+        "en": "Added to the user's question list (Settings → «Was it you?»). The user answers there when it suits.",
+        "de": "Zur Fragenliste des Nutzers hinzugefügt (Einstellungen → «Warst du das?»). Der Nutzer antwortet dort, wenn es passt.",
+    },
+    # J11: one question from the user's list in chat (code writes it; appended after Kåre's answer)
+    "cq_chat_no_picture": {"nb": "(ingen bilde lagret)", "en": "(no picture stored)", "de": "(kein Bild gespeichert)"},
+    "cq_chat_camera": {
+        "nb": "Et kjapt spørsmål, hvis det passer: var det deg ved {camera}, {time}? (ja / nei / privat — eller bare la det være)",
+        "en": "A quick question, if it suits: was it you at {camera}, {time}? (yes / no / private — or just leave it)",
+        "de": "Eine kurze Frage, wenn es passt: warst du das bei {camera}, {time}? (ja / nein / privat — oder lass es einfach)",
+    },
+    "cq_chat_theme": {
+        "nb": "Et kjapt spørsmål, hvis det passer: jeg har tenkt på dette flere netter: «{text}» — stemmer det? (ja / nei / privat — eller bare la det være)",
+        "en": "A quick question, if it suits: I have thought about this for several nights: «{text}» — is that right? (yes / no / private — or just leave it)",
+        "de": "Eine kurze Frage, wenn es passt: ich habe mehrere Nächte darüber nachgedacht: «{text}» — stimmt das? (ja / nein / privat — oder lass es einfach)",
+    },
+    # N39: the open question cards — Kåre answers by question_id, one call per card, never an event_id
+    "cq_chat_pending_note": {
+        "nb": "[Åpne spørsmålskort til brukeren (hvert har sin egen question_id):\n{cards}\nSvarer brukerens melding på ett eller flere av dem, lagre hvert svar med camera action='answer_question', question_id='<kortets id>', answer=yes/no/private/unsure/skip (unsure = vet ikke) — ett kall per kort, bare kortene brukeren faktisk svarte på. Er det uklart hvilket kort svaret gjelder, spør brukeren. Gjelder meldingen noe annet, svar på det og la kortene være.]",
+        "en": "[Open question cards for the user (each has its own question_id):\n{cards}\nIf the user's message answers one or more of them, store each answer with camera action='answer_question', question_id='<the card's id>', answer=yes/no/private/unsure/skip (unsure = don't know) — one call per card, only the cards the user actually answered. If it is unclear which card an answer is about, ask the user. If the message is about something else, answer that and leave the cards.]",
+        "de": "[Offene Fragekarten an den Nutzer (jede hat ihre eigene question_id):\n{cards}\nBeantwortet die Nachricht des Nutzers eine oder mehrere davon, speichere jede Antwort mit camera action='answer_question', question_id='<ID der Karte>', answer=yes/no/private/unsure/skip (unsure = weiß nicht) — ein Aufruf pro Karte, nur die Karten, die der Nutzer wirklich beantwortet hat. Ist unklar, welche Karte gemeint ist, frag den Nutzer. Geht es um etwas anderes, antworte darauf und lass die Karten.]",
+    },
+    "cq_card_line": {"nb": "- question_id {qid}: {question}", "en": "- question_id {qid}: {question}",
+                     "de": "- question_id {qid}: {question}"},
+    "cq_voice_note": {
+        "nb": "[Stemme: les spørsmålet opp bare som kamera og klokkeslett. Si aldri question_id eller andre id-er høyt.]",
+        "en": "[Voice: read the question aloud only as camera and time. Never say the question_id or any other id aloud.]",
+        "de": "[Stimme: lies die Frage nur als Kamera und Uhrzeit vor. Sag nie die question_id oder andere IDs laut.]",
+    },
+    # N39 (BUG-log 2026-11-16 part 1): the card's own picture is already in the chat — «the picture» means that one
+    # Security 2026-11-16: view_images is always the logged-in user's own pictures
+    "img_other_user_refused": {
+        "nb": "[Bilder til andre brukere er ikke tilgjengelige — bare dine egne vises. Si det ærlig hvis brukeren ba om noen andres bilder.]",
+        "en": "[Other users' pictures are not available — only your own are shown. Say so honestly if the user asked for someone else's pictures.]",
+        "de": "[Bilder anderer Nutzer sind nicht verfügbar — nur deine eigenen werden gezeigt. Sag das ehrlich, wenn der Nutzer nach den Bildern anderer gefragt hat.]",
+    },
+    "cq_card_picture_note": {
+        "nb": "[Kortets eget bilde vises allerede i chatten under spørsmålet. Når brukeren i et svar på kortet sier «bildet», er det det bildet.]",
+        "en": "[The card's own picture is already shown in the chat under the question. When the user, answering the card, says «the picture», it is that picture.]",
+        "de": "[Das eigene Bild der Karte wird im Chat bereits unter der Frage gezeigt. Sagt der Nutzer in einer Antwort auf die Karte «das Bild», ist dieses Bild gemeint.]",
+    },
+    "fv_which_cards": {
+        "nb": "Ingenting lagret ennå: flere hendelser kan være den brukeren mener, så hver er nå et eget spørsmålskort. Spør brukeren om hvert kort (kamera og klokkeslett; i chatten vises bildet under), og lagre hvert svar med action='answer_question' og kortets question_id — velg aldri selv:\n{items}",
+        "en": "Nothing saved yet: several events may be the one the user means, so each is now its own question card. Ask the user about each card (camera and time; in chat the picture is shown below), and store each answer with action='answer_question' and the card's question_id — never choose yourself:\n{items}",
+        "de": "Noch nichts gespeichert: mehrere Ereignisse könnten das gemeinte sein, daher ist jedes jetzt eine eigene Fragekarte. Frag den Nutzer zu jeder Karte (Kamera und Uhrzeit; im Chat wird das Bild darunter gezeigt), und speichere jede Antwort mit action='answer_question' und der question_id der Karte — wähle nie selbst:\n{items}",
+    },
+    "tool_kamera_question_id_desc": {
+        "nb": "Ved action='answer_question': kortets question_id fra notatet om åpne spørsmålskort (q-…). Aldri en event_id.",
+        "en": "For action='answer_question': the card's question_id from the note about open question cards (q-…). Never an event_id.",
+        "de": "Bei action='answer_question': die question_id der Karte aus der Notiz zu offenen Fragekarten (q-…). Nie eine event_id.",
+    },
+    "tool_kamera_kind_desc": {
+        "nb": "Ved action='answer_question': trengs ikke lenger — kortets question_id avgjør hva slags spørsmål det er.",
+        "en": "For action='answer_question': no longer needed — the card's question_id decides what kind of question it is.",
+        "de": "Bei action='answer_question': nicht mehr nötig — die question_id der Karte bestimmt die Art der Frage.",
+    },
+    "fv_saved_short": {"nb": "Svaret er lagret.", "en": "The answer is saved.", "de": "Die Antwort ist gespeichert."},
+    # J16 (R143): sense words in a camera conclusion that need support in the input — regex alternations per language
+    "enf_sense_fire": {"nb": r"\b(bål\w*|brann\w*|flamm\w*|ild\b|ilden|brenn\w*)",
+                       "en": r"\b(fire|flames?|burning|bonfire|blaze)\b",
+                       "de": r"\b(feuer|flamme\w*|brand\w*|brennt|brennend\w*|lagerfeuer)\b"},
+    "enf_sense_smoke": {"nb": r"\b(røyk\w*|os\b|oset)", "en": r"\b(smoke|smoky|smoking)\b", "de": r"\b(rauch\w*|qualm\w*)\b"},
+    "enf_sense_weather": {"nb": r"\b(vind|vinden|vindkast\w*|vindfull\w*|regn|regnet|regner|regnvær\w*|snø|snøen|snør|snøvær\w*|tåke\w*|storm\w*|kuling|yr|solskinn\w*)\b",
+                          "en": r"\b(wind|winds|windy|rain|rains|raining|rainy|snow|snowing|snowy|fog|foggy|storm\w*|drizzl\w*|sunshine|sunny)\b",
+                          "de": r"\b(wind|windig|regen|regnet|regnerisch|schnee|schneit|nebel\w*|sturm\w*|sonnenschein)\b"},
+    "enf_sense_sound": {"nb": r"\b(lyd\w*|hørt\w*|hører|bjeff\w*|rop\w*|smell\b|bråk\w*)",
+                        "en": r"\b(sound\w*|heard|hears?|bark\w*|shout\w*|noise\w*|bang)\b",
+                        "de": r"\b(geräusch\w*|gehört|hört|bell\w*|ruf\w*|lärm\w*|knall\w*)\b"},
+    "enf_sense_smell": {"nb": r"\b(lukt\w*|duft\w*|stank\w*)", "en": r"\b(smell\w*|scent\w*|odou?r\w*|stink\w*)\b",
+                        "de": r"\b(geruch\w*|riech\w*|duft\w*|gestank)\b"},
+    "frigate_correction_unsupported_sense": {
+        "nb": "Sammendraget ditt inneholder noe som ikke står i det du fikk (hendelsene, scenen, kodens fakta). Skriv det samme svaret på nytt, bare med det som står der.",
+        "en": "Your summary contains something that is not in what you were given (the events, the scene, code's facts). Write the same answer again with only what is there.",
+        "de": "Deine Zusammenfassung enthält etwas, das nicht in dem steht, was du bekommen hast (Ereignisse, Szene, Fakten des Codes). Schreib dieselbe Antwort noch einmal, nur mit dem, was dort steht.",
     },
     "tool_kamera_event_id_desc": {
         "nb": "Frigate event_id for en konkret hendelse. Påkrevd ved action='show_event'.",
@@ -4146,9 +5481,9 @@ _T: dict = {
     },
     # se_bilder
     "tool_se_bilder_desc": {
-        "nb": "List og vis bilder for en bruker. Med 'image_id' + mode='vis': vis i chatten. Med mode='analyser': send til VLM. Uten image_id: list alle bilder.",
-        "en": "List and view images for a user. With 'image_id' + mode='vis': show in chat. With mode='analyser': send to VLM. Without image_id: list all images.",
-        "de": "Bilder für einen Nutzer auflisten und anzeigen. Mit 'image_id' + mode='vis': im Chat anzeigen. Mit mode='analyser': an VLM senden. Ohne image_id: alle Bilder auflisten.",
+        "nb": "List og vis brukerens egne opplastede og genererte bilder — aldri andres, aldri kamerabilder. Med 'image_id' + mode='vis': vis i chatten. Med mode='analyser': send til VLM. Uten image_id: list alle bilder.",
+        "en": "List and view the user's own uploaded and generated images — never anyone else's, never camera pictures. With 'image_id' + mode='vis': show in chat. With mode='analyser': send to VLM. Without image_id: list all images.",
+        "de": "Die eigenen hochgeladenen und erzeugten Bilder des Nutzers auflisten und anzeigen — nie die anderer, nie Kamerabilder. Mit 'image_id' + mode='vis': im Chat anzeigen. Mit mode='analyser': an VLM senden. Ohne image_id: alle Bilder auflisten.",
     },
     "tool_se_bilder_user_id_desc": {
         "nb": "Brukernavnet å slå opp bilder for.",
@@ -4177,29 +5512,264 @@ _T: dict = {
     },
     # media
     "tool_media_desc": {
-        "nb": "Mediekontroll: Plex (TV/film/serier) og radio (MPD). Plex: plex_sessions, plex_history, plex_search, plex_library, plex_episodes, plex_clients, plex_play. Typisk flyt: plex_search → plex_episodes → plex_play. Radio: radio_status, radio_play, radio_stop, radio_volume.",
-        "en": "Media control: Plex (TV/film/series) and radio (MPD). Plex: plex_sessions, plex_history, plex_search, plex_library, plex_episodes, plex_clients, plex_play. Typical flow: plex_search → plex_episodes → plex_play. Radio: radio_status, radio_play, radio_stop, radio_volume.",
-        "de": "Mediensteuerung: Plex (TV/Film/Serien) und Radio (MPD). Plex: plex_sessions, plex_history, plex_search, plex_library, plex_episodes, plex_clients, plex_play. Typischer Ablauf: plex_search → plex_episodes → plex_play. Radio: radio_status, radio_play, radio_stop, radio_volume.",
+        "nb": "Mediekontroll: Plex (TV/film/serier) og radio (MPD). Plex: plex_sessions, plex_history, plex_search, plex_library, plex_episodes, plex_clients, plex_play, plex_continue (hvor brukeren er / neste episode — KTSB sin egen oversikt ved siden av det Plex sier; query = serienavn, valgfritt; client = skjerm når brukeren spør om en bestemt skjerm — da gjelder svaret den skjermen), plex_skipped (episoder brukeren hoppet over), plex_mark (brukerens eget ord: rating_key + status). Typisk flyt: plex_play med query (serie) + season + episode, eller filmtittel, + client (rom/TV, tomt = der brukeren er) — koden finner episoden og skjermen og vekker TV-en, ingen oppslag først; «fortsett/neste episode» og «hvor var jeg / hvilken episode» (også «her» eller i et rom): plex_continue med client = rommet/skjermen brukeren nevner → plex_play med samme client. Radio: radio_status, radio_play, radio_stop, radio_volume (bare radioen; annen lyd/volum: ha_control set_volume/volume_up/volume_down). YouTube: youtube_play (query = hva som skal spilles + client = rom/skjerm, tomt = der brukeren er) — koden søker på YouTube, velger video og spiller den på en skjerm (Nest Hub/Chromecast/Google TV) i én runde; ikke nettsøk etter lenker først. NRK: nrk_play (NRK TV eller NRK Radio direkte eller program, på en TV/Cast-høyttaler — client = rom, TV-navn eller tomt for der brukeren er), cast_stop, cast_pause, cast_play (pause/fortsett det som spiller på en Cast-skjerm — client som over). TV med egen fjernkontroll (Android TV/Samsung): tv_power, tv_volume, tv_mute, tv_key, tv_app + tv_value + client — bare når brukeren ber om det.",
+        "en": "Media control: Plex (TV/film/series) and radio (MPD). Plex: plex_sessions, plex_history, plex_search, plex_library, plex_episodes, plex_clients, plex_play, plex_continue (where the user is / next episode — KTSB's own record next to what Plex says; query = show name, optional; client = screen when the user asks about a particular screen — the answer is then that screen's), plex_skipped (episodes the user skipped), plex_mark (the user's own word: rating_key + status). Typical flow: plex_play with query (show) + season + episode, or a film title, + client (room/TV, empty = where the user is) — the code finds the episode and the screen and wakes the TV, no lookups first; \"continue/next episode\" and \"where was I / which episode\" (also \"here\" or in a room): plex_continue with client = the room/screen the user names → plex_play with the same client. Radio: radio_status, radio_play, radio_stop, radio_volume (the radio only; other sound/volume: ha_control set_volume/volume_up/volume_down). YouTube: youtube_play (query = what to play + client = room/screen, empty = where the user is) — the code searches YouTube, picks the video and plays it on a screen (Nest Hub/Chromecast/Google TV) in one round; do not web-search for links first. NRK: nrk_play (NRK TV or NRK Radio live or a programme, on a TV/Cast speaker — client = room, TV name or empty for where the user is), cast_stop, cast_pause, cast_play (pause/resume what plays on a Cast screen — client as above). TV with its own remote (Android TV/Samsung): tv_power, tv_volume, tv_mute, tv_key, tv_app + tv_value + client — only when the user asks.",
+        "de": "Mediensteuerung: Plex (TV/Film/Serien) und Radio (MPD). Plex: plex_sessions, plex_history, plex_search, plex_library, plex_episodes, plex_clients, plex_play, plex_continue (wo der Nutzer steht / nächste Folge — KTSBs eigene Übersicht neben dem, was Plex sagt; query = Serienname, optional; client = Bildschirm, wenn der Nutzer nach einem bestimmten fragt — die Antwort gilt dann diesem), plex_skipped (vom Nutzer übersprungene Folgen), plex_mark (Wort des Nutzers: rating_key + status). Typischer Ablauf: plex_play mit query (Serie) + season + episode oder Filmtitel + client (Raum/TV, leer = wo der Nutzer ist) — der Code findet Folge und Bildschirm und weckt den Fernseher, kein Nachschlagen vorher; „weiter/nächste Folge“ und „wo war ich / welche Folge“ (auch „hier“ oder in einem Raum): plex_continue mit client = vom Nutzer genannter Raum/Bildschirm → plex_play mit demselben client. Radio: radio_status, radio_play, radio_stop, radio_volume (nur das Radio; anderer Ton/Lautstärke: ha_control set_volume/volume_up/volume_down). YouTube: youtube_play (query = was gespielt werden soll + client = Raum/Bildschirm, leer = wo der Nutzer ist) — der Code sucht auf YouTube, wählt das Video und spielt es auf einem Bildschirm (Nest Hub/Chromecast/Google TV) in einer Runde; nicht vorher im Web nach Links suchen. NRK: nrk_play (NRK TV oder NRK Radio live oder eine Sendung, auf einem Fernseher/Cast-Lautsprecher — client = Raum, TV-Name oder leer für dort, wo der Nutzer ist), cast_stop, cast_pause, cast_play (pausieren/fortsetzen, was auf einem Cast-Bildschirm läuft — client wie oben). Fernseher mit eigener Fernbedienung (Android TV/Samsung): tv_power, tv_volume, tv_mute, tv_key, tv_app + tv_value + client — nur wenn der Nutzer darum bittet.",
+    },
+    "tool_media_season_desc": {
+        "nb": "Sesongnummer for plex_play (sammen med query = serienavn og episode). Da trengs ikke plex_search først.",
+        "en": "Season number for plex_play (with query = show name and episode). Then no plex_search is needed first.",
+        "de": "Staffelnummer für plex_play (mit query = Serienname und episode). Dann ist vorher kein plex_search nötig.",
+    },
+    "tool_media_episode_desc": {
+        "nb": "Episodenummer for plex_play (sammen med query og season).",
+        "en": "Episode number for plex_play (with query and season).",
+        "de": "Folgennummer für plex_play (mit query und season).",
+    },
+    "media_plex_cast_ok": {
+        "nb": "OK: {label} spiller på {target} via {via} — Plex-serveren bekrefter avspillingen ({player}).",
+        "en": "OK: {label} is playing on {target} via {via} — the Plex server confirms playback ({player}).",
+        "de": "OK: {label} läuft auf {target} über {via} — der Plex-Server bestätigt die Wiedergabe ({player}).",
+    },
+    "media_plex_not_confirmed": {
+        "nb": "SENT: {label} er startet på {target}, men Plex-serveren har ikke meldt avspilling ennå (nå: {state}). Be brukeren se etter på skjermen.",
+        "en": "SENT: {label} was started on {target}, but the Plex server has not reported playback yet (now: {state}). Ask the user to check the screen.",
+        "de": "SENT: {label} wurde auf {target} gestartet, aber der Plex-Server meldet noch keine Wiedergabe (jetzt: {state}). Bitte den Nutzer, auf den Bildschirm zu schauen.",
+    },
+    "media_plex_candidates": {
+        "nb": "«{query}» passer med flere: {names}. Spør brukeren hvilken.",
+        "en": "«{query}» matches several: {names}. Ask the user which one.",
+        "de": "«{query}» passt zu mehreren: {names}. Frag den Nutzer, welches.",
+    },
+    "media_plex_need_episode": {
+        "nb": "{show} er en serie — spør hvilken sesong og episode (eller bruk plex_continue for «fortsett der jeg slapp»).",
+        "en": "{show} is a show — ask which season and episode (or use plex_continue for «continue where I left off»).",
+        "de": "{show} ist eine Serie — frag nach Staffel und Folge (oder plex_continue für «weiter, wo ich war»).",
+    },
+    "media_tv_act_power_on": {"nb": "slått på", "en": "turned on", "de": "eingeschaltet"},
+    "media_tv_act_power_off": {"nb": "slått av (standby)", "en": "turned off (standby)", "de": "ausgeschaltet (Standby)"},
+    "media_tv_act_volume_up": {"nb": "volum opp", "en": "volume up", "de": "lauter"},
+    "media_tv_act_volume_down": {"nb": "volum ned", "en": "volume down", "de": "leiser"},
+    "media_tv_act_mute": {"nb": "demping vekslet", "en": "mute toggled", "de": "Stummschaltung umgeschaltet"},
+    "media_tv_act_key": {"nb": "tast sendt", "en": "key sent", "de": "Taste gesendet"},
+    "media_tv_act_app": {"nb": "app startet", "en": "app started", "de": "App gestartet"},
+    "tool_media_tv_value_desc": {
+        "nb": "For TV-handlinger: tv_power 'on'/'off'; tv_volume 'up'/'down'; tv_key home, back, play_pause, play, pause, stop, next, previous, up, down, left, right, ok, menu, channel_up, channel_down, input; tv_app youtube, netflix, plex, eller en app-lenke (Android TV, f.eks. https://…) / et numerisk app-id (Samsung). YouTube på Android TV: https://www.youtube.com/watch?v=<id> spiller en video, https://www.youtube.com/results?search_query=<ord> åpner et søk.",
+        "en": "For TV actions: tv_power 'on'/'off'; tv_volume 'up'/'down'; tv_key home, back, play_pause, play, pause, stop, next, previous, up, down, left, right, ok, menu, channel_up, channel_down, input; tv_app youtube, netflix, plex, or an app link (Android TV, e.g. https://…) / a numeric app id (Samsung). YouTube on Android TV: https://www.youtube.com/watch?v=<id> plays a video, https://www.youtube.com/results?search_query=<words> opens a search.",
+        "de": "Für TV-Aktionen: tv_power 'on'/'off'; tv_volume 'up'/'down'; tv_key home, back, play_pause, play, pause, stop, next, previous, up, down, left, right, ok, menu, channel_up, channel_down, input; tv_app youtube, netflix, plex, oder ein App-Link (Android TV, z. B. https://…) / eine numerische App-ID (Samsung). YouTube auf Android TV: https://www.youtube.com/watch?v=<id> spielt ein Video, https://www.youtube.com/results?search_query=<Wörter> öffnet eine Suche.",
+    },
+    "media_tv_confirmed": {
+        "nb": "{node}: {action} — TV-en bekrefter ({state}).",
+        "en": "{node}: {action} — the TV confirms ({state}).",
+        "de": "{node}: {action} — der Fernseher bestätigt ({state}).",
+    },
+    "media_tv_already": {
+        "nb": "{node} var allerede slik ({state}). Ingenting ble sendt.",
+        "en": "{node} was already like that ({state}). Nothing was sent.",
+        "de": "{node} war bereits so ({state}). Es wurde nichts gesendet.",
+    },
+    "media_tv_accepted": {
+        "nb": "{node}: {action} — TV-en tok imot det (den melder ikke tilbake om det virket). Nå: {state}.",
+        "en": "{node}: {action} — the TV took it (it does not report whether it worked). Now: {state}.",
+        "de": "{node}: {action} — der Fernseher hat es angenommen (er meldet nicht, ob es wirkte). Jetzt: {state}.",
+    },
+    "media_tv_not_confirmed": {
+        "nb": "{node}: {action} er sendt, men TV-en melder ingen endring (nå: {state}).",
+        "en": "{node}: {action} was sent, but the TV reports no change (now: {state}).",
+        "de": "{node}: {action} wurde gesendet, aber der Fernseher meldet keine Änderung (jetzt: {state}).",
+    },
+    "media_tv_not_paired": {
+        "nb": "{node} er ikke paret med KTSB ennå. Brukeren må pare i Noder → Rediger → Kanaler → «Par med TV».",
+        "en": "{node} is not paired with KTSB yet. The user has to pair in Nodes → Edit → Channels → «Pair with TV».",
+        "de": "{node} ist noch nicht mit KTSB gekoppelt. Der Nutzer muss unter Knoten → Bearbeiten → Kanäle → «Mit TV koppeln» koppeln.",
+    },
+    "media_tv_unreachable": {
+        "nb": "Når ikke {node} ({error}). Årsaken er ikke kjent utover denne feilen — si det slik, uten å gjette.",
+        "en": "Cannot reach {node} ({error}). The cause is not known beyond this error — say so, without guessing.",
+        "de": "{node} nicht erreichbar ({error}). Die Ursache ist über diesen Fehler hinaus nicht bekannt — sag es so, ohne zu raten.",
+    },
+    "ha_status_tv_own": {
+        "nb": "TV-en selv ({node}, over fjernkontroll-kanalen) melder: {state}. Dette er TV-ens egen tilstand og gjelder foran Home Assistant — en Cast-spiller i HA står som «off»/«idle» når ingen Cast-app kjører, selv om TV-en er på. Fjernkontroll: media tv_power / tv_volume / tv_mute / tv_key / tv_app med client={node}.",
+        "en": "The TV itself ({node}, over the remote channel) reports: {state}. This is the TV's own state and wins over Home Assistant — a Cast player in HA shows «off»/«idle» when no Cast app runs, even with the TV on. Remote: media tv_power / tv_volume / tv_mute / tv_key / tv_app with client={node}.",
+        "de": "Der Fernseher selbst ({node}, über den Fernbedienungskanal) meldet: {state}. Das ist der eigene Zustand des Fernsehers und gilt vor Home Assistant — ein Cast-Player in HA steht auf «off»/«idle», wenn keine Cast-App läuft, auch wenn der Fernseher an ist. Fernbedienung: media tv_power / tv_volume / tv_mute / tv_key / tv_app mit client={node}.",
+    },
+    "media_tv_failed": {
+        "nb": "TV-handlingen på {node} feilet: {error}",
+        "en": "The TV action on {node} failed: {error}",
+        "de": "Die TV-Aktion auf {node} ist fehlgeschlagen: {error}",
+    },
+    "media_tv_no_remote": {
+        "nb": "Fant ingen TV med fjernkontroll-kanal for «{client}». Bare TV-er med Android TV- eller Samsung-kanal kan styres slik (Noder → Rediger → Kanaler).",
+        "en": "No TV with a remote-control channel found for «{client}». Only TVs with an Android TV or Samsung channel can be controlled this way (Nodes → Edit → Channels).",
+        "de": "Kein Fernseher mit Fernbedienungskanal für «{client}» gefunden. Nur Fernseher mit Android-TV- oder Samsung-Kanal lassen sich so steuern (Knoten → Bearbeiten → Kanäle).",
+    },
+    "media_tv_bad_value": {
+        "nb": "Feil: {action} trenger tv_value ({allowed}).",
+        "en": "Error: {action} needs tv_value ({allowed}).",
+        "de": "Fehler: {action} braucht tv_value ({allowed}).",
+    },
+    "tool_media_nrk_kind_desc": {
+        "nb": "'tv' (NRK TV) eller 'radio' (NRK Radio). Brukes med nrk_play.",
+        "en": "'tv' (NRK TV) or 'radio' (NRK Radio). Used with nrk_play.",
+        "de": "'tv' (NRK TV) oder 'radio' (NRK Radio). Mit nrk_play.",
+    },
+    "tool_media_nrk_id_desc": {
+        "nb": "TV: navnet på kanalen eller programmet slik brukeren sier det (nrk1, «Dagsrevyen», «Side om side») eller et program-id — koden finner selv nyeste episode av nyhetsprogram, og sesong + episode av serier (season/episode); ikke nettsøk etter id først. Radio: kanalen (p1, p2, p3, mp3, nyheter …). Brukes med nrk_play.",
+        "en": "TV: the channel or programme name as the user says it (nrk1, «Dagsrevyen», «Side om side») or a programme id — the code itself finds the newest episode of a news programme, and season + episode of a series (season/episode); do not web-search for an id first. Radio: the channel (p1, p2, p3, mp3, nyheter …). Used with nrk_play.",
+        "de": "TV: der Kanal- oder Sendungsname, wie der Nutzer ihn sagt (nrk1, «Dagsrevyen», «Side om side») oder eine Sendungs-ID — der Code findet selbst die neueste Folge einer Nachrichtensendung und Staffel + Folge einer Serie (season/episode); nicht vorher im Web nach einer ID suchen. Radio: der Kanal (p1, p2, p3, mp3, nyheter …). Mit nrk_play.",
+    },
+    "media_cast_nothing": {"nb": "ingen app", "en": "no app", "de": "keine App"},
+    "media_via_tv_remote": {
+        "nb": "TV-ens egen fjernkontroll",
+        "en": "the TV's own remote",
+        "de": "die eigene Fernbedienung des Fernsehers",
+    },
+    "tool_media_youtube_id_desc": {
+        "nb": "Bare med youtube_play: en bestemt video (11 tegn) — bruk den fra «andre treff» i forrige svar når brukeren vil ha en annen versjon. Ellers tomt: koden søker selv.",
+        "en": "Only with youtube_play: a specific video (11 characters) — take it from «other hits» in the previous reply when the user wants another version. Otherwise empty: the code searches itself.",
+        "de": "Nur mit youtube_play: ein bestimmtes Video (11 Zeichen) — aus «weitere Treffer» der vorigen Antwort, wenn der Nutzer eine andere Version will. Sonst leer: der Code sucht selbst.",
+    },
+    "media_yt_no_query": {
+        "nb": "Feil: youtube_play trenger query (hva som skal spilles, f.eks. «ac dc highway to hell»).",
+        "en": "Error: youtube_play needs query (what to play, e.g. «ac dc highway to hell»).",
+        "de": "Fehler: youtube_play braucht query (was gespielt werden soll, z. B. «ac dc highway to hell»).",
+    },
+    "media_yt_no_target": {
+        "nb": "Fant ingen skjerm som kan spille YouTube for «{client}». YouTube trenger en Cast-enhet med skjerm (Nest Hub, Chromecast, Google TV) eller en Android TV med fjernkontroll-kanal (Noder → Rediger → Kanaler). Rene høyttalere kjører ikke YouTube.",
+        "en": "Found no screen that can play YouTube for «{client}». YouTube needs a Cast device with a screen (Nest Hub, Chromecast, Google TV) or an Android TV with a remote channel (Nodes → Edit → Channels). Speakers without a screen do not run YouTube.",
+        "de": "Kein Bildschirm für YouTube bei «{client}» gefunden. YouTube braucht ein Cast-Gerät mit Bildschirm (Nest Hub, Chromecast, Google TV) oder einen Android TV mit Fernbedienungskanal (Knoten → Bearbeiten → Kanäle). Lautsprecher ohne Bildschirm spielen kein YouTube.",
+    },
+    "media_yt_search_opened": {
+        "nb": "YouTube-søket virket ikke fra KTSB, så søket «{query}» er åpnet i YouTube på {node} — brukeren velger selv på skjermen.",
+        "en": "The YouTube search did not work from KTSB, so the search «{query}» is open in YouTube on {node} — the user picks on the screen.",
+        "de": "Die YouTube-Suche ging von KTSB aus nicht, daher ist die Suche «{query}» in YouTube auf {node} geöffnet — der Nutzer wählt auf dem Bildschirm.",
+    },
+    "media_yt_search_failed": {
+        "nb": "Fant ingen YouTube-video for «{query}» (søket svarte ikke eller ga ingen treff). Ingenting ble spilt.",
+        "en": "Found no YouTube video for «{query}» (the search did not answer or had no hits). Nothing was played.",
+        "de": "Kein YouTube-Video für «{query}» gefunden (die Suche antwortete nicht oder ergab nichts). Nichts wurde abgespielt.",
+    },
+    "media_yt_ok": {
+        "nb": "Spiller «{video}» på {node} via {via}. Enheten melder nå: {now}.",
+        "en": "Playing «{video}» on {node} via {via}. The device reports now: {now}.",
+        "de": "Spielt «{video}» auf {node} über {via}. Das Gerät meldet jetzt: {now}.",
+    },
+    "media_yt_more": {
+        "nb": "Andre treff (for youtube_id hvis brukeren vil ha en annen): {more}",
+        "en": "Other hits (for youtube_id if the user wants another): {more}",
+        "de": "Weitere Treffer (für youtube_id, falls der Nutzer ein anderes will): {more}",
+    },
+    "media_yt_tried": {
+        "nb": "Først prøvd: {tried}.",
+        "en": "Tried first: {tried}.",
+        "de": "Zuerst versucht: {tried}.",
+    },
+    "media_yt_failed": {
+        "nb": "Fant «{video}», men fikk den ikke spilt: {tried}.",
+        "en": "Found «{video}» but could not play it: {tried}.",
+        "de": "«{video}» gefunden, aber nicht abspielbar: {tried}.",
+    },
+    "media_nrk_not_found": {
+        "nb": "NRK har ikke noe som kan spilles for «{name}» (ingen kanal, program eller serie med det navnet). Ingenting ble sendt.",
+        "en": "NRK has nothing playable for «{name}» (no channel, programme or series by that name). Nothing was sent.",
+        "de": "NRK hat nichts Abspielbares für «{name}» (kein Kanal, keine Sendung oder Serie mit diesem Namen). Nichts wurde gesendet.",
+    },
+    "media_nrk_needs_episode": {
+        "nb": "«{name}» er en serie med {seasons} sesonger hos NRK — spør brukeren hvilken sesong og episode, og send season + episode med nrk_play.",
+        "en": "«{name}» is a series with {seasons} seasons at NRK — ask the user which season and episode, and send season + episode with nrk_play.",
+        "de": "«{name}» ist bei NRK eine Serie mit {seasons} Staffeln — frage den Nutzer nach Staffel und Folge und sende season + episode mit nrk_play.",
+    },
+    "media_nrk_no_episode": {
+        "nb": "NRK har ikke sesong {season} episode {episode} av «{name}» tilgjengelig. Ingenting ble sendt.",
+        "en": "NRK does not have season {season} episode {episode} of «{name}» available. Nothing was sent.",
+        "de": "NRK hat Staffel {season} Folge {episode} von «{name}» nicht verfügbar. Nichts wurde gesendet.",
+    },
+    "media_nrk_found": {
+        "nb": "Valgt hos NRK: {found}.",
+        "en": "Picked at NRK: {found}.",
+        "de": "Bei NRK gewählt: {found}.",
+    },
+    "media_target_ambiguous": {
+        "nb": "«{client}» passer på flere skjermer: {choices}. Spør brukeren hvilken (f.eks. «TV-en» eller «Nest-en»), og send den valgte client-verdien nøyaktig slik den står. Ingenting ble sendt.",
+        "en": "«{client}» fits several screens: {choices}. Ask the user which one (e.g. «the TV» or «the Nest»), and send the chosen client value exactly as written. Nothing was sent.",
+        "de": "«{client}» passt auf mehrere Bildschirme: {choices}. Frage den Nutzer, welchen (z. B. «den Fernseher» oder «den Nest»), und sende den gewählten client-Wert genau so. Nichts wurde gesendet.",
+    },
+    "media_via_own_cast": {"nb": "KTSBs egen Cast", "en": "KTSB's own Cast", "de": "KTSBs eigenes Cast"},
+    "media_nrk_bad_args": {
+        "nb": "Feil: nrk_play trenger nrk_kind ('tv' eller 'radio') og nrk_id (kanal som nrk1/p1, eller program-id).",
+        "en": "Error: nrk_play needs nrk_kind ('tv' or 'radio') and nrk_id (channel like nrk1/p1, or a programme id).",
+        "de": "Fehler: nrk_play braucht nrk_kind ('tv' oder 'radio') und nrk_id (Kanal wie nrk1/p1 oder eine Sendungs-ID).",
+    },
+    "media_nrk_play_ok": {
+        "nb": "OK: NRK spiller på {target} via {via}. Enheten melder nå: {now}.",
+        "en": "OK: NRK is playing on {target} via {via}. The device now reports: {now}.",
+        "de": "OK: NRK läuft auf {target} über {via}. Das Gerät meldet jetzt: {now}.",
+    },
+    "media_cast_stop_ok": {
+        "nb": "OK: avspillingen på {target} er lukket via {via}. Enheten melder nå: {now}.",
+        "en": "OK: playback on {target} was closed via {via}. The device now reports: {now}.",
+        "de": "OK: Wiedergabe auf {target} über {via} beendet. Das Gerät meldet jetzt: {now}.",
+    },
+    "media_nrk_play_label": {"nb": "NRK startet", "en": "NRK started", "de": "NRK gestartet"},
+    "media_cast_stop_label": {"nb": "avspilling stoppet", "en": "playback stopped", "de": "Wiedergabe gestoppt"},
+    # P139 reopened #6 — pause / resume over KTSB's own Cast
+    "media_cast_pause_ok": {
+        "nb": "OK: avspillingen på {target} er satt på pause via {via}. Enheten melder nå: {now}.",
+        "en": "OK: playback on {target} is paused via {via}. The device now reports: {now}.",
+        "de": "OK: Wiedergabe auf {target} über {via} pausiert. Das Gerät meldet jetzt: {now}.",
+    },
+    "media_cast_play_ok": {
+        "nb": "OK: avspillingen på {target} går igjen via {via}. Enheten melder nå: {now}.",
+        "en": "OK: playback on {target} is running again via {via}. The device now reports: {now}.",
+        "de": "OK: Wiedergabe auf {target} läuft wieder über {via}. Das Gerät meldet jetzt: {now}.",
+    },
+    "media_cast_pause_label": {"nb": "pause", "en": "pause", "de": "Pause"},
+    "media_cast_play_label": {"nb": "fortsett avspilling", "en": "resume playback", "de": "Wiedergabe fortsetzen"},
+    "media_cast_ha": {
+        "nb": "SENT: {action} på {target} via Home Assistant (reserve) — HA tok imot, men melder ikke om det faktisk spiller.",
+        "en": "SENT: {action} on {target} via Home Assistant (fallback) — HA accepted it, but does not report whether it actually plays.",
+        "de": "SENT: {action} auf {target} über Home Assistant (Reserve) — HA hat es angenommen, meldet aber nicht, ob es wirklich läuft.",
+    },
+    "media_cast_ha_after_fail": {
+        "nb": "SENT: KTSBs egen Cast feilet ({tried}), så {action} gikk via Home Assistant (reserve) til {target} — HA tok imot, men melder ikke om det faktisk spiller.",
+        "en": "SENT: KTSB's own Cast failed ({tried}), so {action} went via Home Assistant (fallback) to {target} — HA accepted it, but does not report whether it actually plays.",
+        "de": "SENT: KTSBs eigenes Cast schlug fehl ({tried}), daher ging {action} über Home Assistant (Reserve) an {target} — HA hat es angenommen, meldet aber nicht, ob es wirklich läuft.",
+    },
+    "media_cast_failed": {
+        "nb": "Feilet: {tried}. Årsaken er ikke kjent utover denne feilen — si det slik, uten å gjette.",
+        "en": "Failed: {tried}. The cause is not known beyond this error — say so, without guessing.",
+        "de": "Fehlgeschlagen: {tried}. Die Ursache ist über diesen Fehler hinaus nicht bekannt — sag es so, ohne zu raten.",
+    },
+    # DT04-S05g: Plex answered, but without a field KTSB needs — say exactly that
+    "media_plex_unexpected_reply": {
+        "nb": "Plex ga et uventet svar (mangler: {missing}), så avspillingen startet ikke",
+        "en": "Plex gave an unexpected answer (missing: {missing}), so playback did not start",
+        "de": "Plex gab eine unerwartete Antwort (fehlt: {missing}), daher startete die Wiedergabe nicht",
+    },
+    "media_cast_no_target": {
+        "nb": "Fant ingen Cast-skjerm eller -høyttaler for «{client}». Spør brukeren hvilken enhet (en TV med Cast-kanal, eller en mediespiller i Home Assistant).",
+        "en": "No Cast screen or speaker found for «{client}». Ask the user which device (a TV with a Cast channel, or a media player in Home Assistant).",
+        "de": "Kein Cast-Bildschirm oder -Lautsprecher für «{client}» gefunden. Frag den Nutzer, welches Gerät (ein Fernseher mit Cast-Kanal oder ein Mediaplayer in Home Assistant).",
     },
     "tool_media_action_desc": {
-        "nb": "Operasjonen som skal utføres.",
-        "en": "The operation to perform.",
-        "de": "Die auszuführende Operation.",
+        "nb": "Operasjonen som skal utføres. nrk_play = NRK TV/Radio på en skjerm/høyttaler (nrk_kind + nrk_id + client); cast_stop = lukk det som spilles via Cast på client; cast_pause / cast_play = pause / fortsett det som spilles på client.",
+        "en": "The operation to perform. nrk_play = NRK TV/Radio on a screen/speaker (nrk_kind + nrk_id + client); cast_stop = close what plays over Cast on client; cast_pause / cast_play = pause / resume what plays on client.",
+        "de": "Die auszuführende Operation. nrk_play = NRK TV/Radio auf einem Bildschirm/Lautsprecher (nrk_kind + nrk_id + client); cast_stop = schließt, was über Cast auf client läuft; cast_pause / cast_play = pausiert / setzt fort, was auf client läuft.",
     },
     "tool_media_query_desc": {
-        "nb": "Søketekst. Brukes med plex_search.",
-        "en": "Search text. Used with plex_search.",
-        "de": "Suchtext. Wird mit plex_search verwendet.",
+        "nb": "Søketekst. Brukes med plex_search, som serie-/filmnavn med plex_play (med season + episode for en episode), og som serienavn med plex_continue / plex_skipped.",
+        "en": "Search text. Used with plex_search, as the show/film name with plex_play (with season + episode for an episode), and as the show name with plex_continue / plex_skipped.",
+        "de": "Suchtext. Mit plex_search, als Serien-/Filmname mit plex_play (mit season + episode für eine Folge) und als Serienname mit plex_continue / plex_skipped.",
     },
     "tool_media_rating_key_desc": {
-        "nb": "Plex element-ID (ratingKey). Brukes med plex_episodes og plex_play.",
-        "en": "Plex element ID (ratingKey). Used with plex_episodes and plex_play.",
-        "de": "Plex Element-ID (ratingKey). Wird mit plex_episodes und plex_play verwendet.",
+        "nb": "Plex element-ID (ratingKey). Brukes med plex_episodes, plex_play og plex_mark.",
+        "en": "Plex element ID (ratingKey). Used with plex_episodes, plex_play and plex_mark.",
+        "de": "Plex Element-ID (ratingKey). Wird mit plex_episodes, plex_play und plex_mark verwendet.",
     },
     "tool_media_client_desc": {
-        "nb": "Rom/nodenavn, f.eks. 'verksted', 'stue'. Brukes med plex_play.",
-        "en": "Room/node name, e.g. 'verksted', 'stue'. Used with plex_play.",
-        "de": "Raum-/Knotenname, z.B. 'verksted', 'stue'. Wird mit plex_play verwendet.",
+        "nb": "Skjermen med brukerens egne ord, også typen når brukeren nevner den (f.eks. 'nest hub hovedsoverom', 'tv-en i stua', 'thomson'), eller en client=node:<id> fra et tidligere svar. Tomt = skjermen der brukeren er. Brukes med plex_play, youtube_play, nrk_play, cast_stop og tv_*; med plex_continue bare når brukeren nevner en skjerm (tomt der = alle skjermer).",
+        "en": "The screen in the user's own words, including the type when the user names it (e.g. 'nest hub hovedsoverom', 'the tv in stua', 'thomson'), or a client=node:<id> from an earlier reply. Empty = the screen where the user is. Used with plex_play, youtube_play, nrk_play, cast_stop and tv_*; with plex_continue only when the user names a screen (empty there = all screens).",
+        "de": "Der Bildschirm in den eigenen Worten des Nutzers, auch der Typ, wenn er ihn nennt (z. B. 'nest hub hovedsoverom', 'der Fernseher in stua', 'thomson'), oder ein client=node:<id> aus einer früheren Antwort. Leer = der Bildschirm, wo der Nutzer ist. Mit plex_play, youtube_play, nrk_play, cast_stop und tv_*; mit plex_continue nur, wenn der Nutzer einen Bildschirm nennt (leer dort = alle Bildschirme).",
     },
     "tool_media_offset_desc": {
         "nb": "Gjenoppta-posisjon i sekunder. Brukes med plex_play.",
@@ -4228,24 +5798,200 @@ _T: dict = {
     },
     # announce
     "tool_announce_desc": {
-        "nb": "Si noe høyt via høyttaler, eller vis innhold på en skjerm. action='say': TTS til lydnode. action='display': tekst/bilde til TV/skjerm. action='list_display': liste tilgjengelige skjermnoder. target: romnavn, node-ID, eller 'all'.",
-        "en": "Say something aloud via speaker, or show content on a display. action='say': TTS to audio node. action='display': text/image to TV/screen. action='list_display': list available display nodes. target: room name, node ID, or 'all'.",
-        "de": "Etwas laut sagen oder Inhalt auf einem Bildschirm anzeigen. action='say': TTS an Audioknoten. action='display': Text/Bild an TV/Bildschirm. action='list_display': verfügbare Bildschirmknoten auflisten.",
+        "nb": "Si noe høyt via høyttaler, eller vis innhold på en skjerm. action='say': TTS til lydnode. action='display': tekst/bilde til TV/skjerm. action='list_display': liste tilgjengelige skjermnoder. action='show_url': vis en nettside (url) i fullskjerm på en Cast-skjerm. target: romnavn, node-ID, eller 'all'.",
+        "en": "Say something aloud via speaker, or show content on a display. action='say': TTS to audio node. action='display': text/image to TV/screen. action='list_display': list available display nodes. action='show_url': show a web page (url) full-screen on a Cast screen. target: room name, node ID, or 'all'.",
+        "de": "Etwas laut sagen oder Inhalt auf einem Bildschirm anzeigen. action='say': TTS an Audioknoten. action='display': Text/Bild an TV/Bildschirm. action='list_display': verfügbare Bildschirmknoten auflisten. action='show_url': eine Webseite (url) im Vollbild auf einem Cast-Bildschirm zeigen.",
     },
     "tool_announce_action_desc": {
-        "nb": "'say'=TTS til høyttaler (standard), 'display'=tekst/bilde til skjerm, 'list_display'=vis tilgjengelige skjermer.",
-        "en": "'say'=TTS to speaker (default), 'display'=text/image to screen, 'list_display'=list available displays.",
-        "de": "'say'=TTS an Lautsprecher (Standard), 'display'=Text/Bild an Bildschirm, 'list_display'=verfügbare Bildschirme auflisten.",
+        "nb": "'say'=TTS til høyttaler (standard), 'display'=tekst/bilde til skjerm, 'list_display'=vis tilgjengelige skjermer, 'show_url'=nettside i fullskjerm (url).",
+        "en": "'say'=TTS to speaker (default), 'display'=text/image to screen, 'list_display'=list available displays, 'show_url'=web page full-screen (url).",
+        "de": "'say'=TTS an Lautsprecher (Standard), 'display'=Text/Bild an Bildschirm, 'list_display'=verfügbare Bildschirme auflisten, 'show_url'=Webseite im Vollbild (url).",
     },
     "tool_announce_text_desc": {
         "nb": "Teksten som skal sies eller vises. Naturlig tekst, uten markdown.",
         "en": "The text to say or display. Natural text, no markdown.",
         "de": "Der zu sprechende oder anzuzeigende Text. Natürlicher Text, kein Markdown.",
     },
+    "tool_announce_url_desc": {
+        "nb": "Nettadressen (http/https) for action='show_url', slik brukeren ga den eller en kjent side.",
+        "en": "The web address (http/https) for action='show_url', as the user gave it or a known page.",
+        "de": "Die Webadresse (http/https) für action='show_url', wie der Nutzer sie nannte oder eine bekannte Seite.",
+    },
+    "announce_url_bad": {
+        "nb": "Feil: show_url trenger en url som begynner med http:// eller https://.",
+        "en": "Error: show_url needs a url starting with http:// or https://.",
+        "de": "Fehler: show_url braucht eine url, die mit http:// oder https:// beginnt.",
+    },
+    "announce_url_no_screen": {
+        "nb": "Fant ingen Cast-skjerm for «{target}». Nettsider kan bare vises på skjermer med Cast-kanal (Noder → Rediger → Kanaler).",
+        "en": "No Cast screen found for «{target}». Web pages can only be shown on screens with a Cast channel (Nodes → Edit → Channels).",
+        "de": "Kein Cast-Bildschirm für «{target}» gefunden. Webseiten gehen nur auf Bildschirmen mit Cast-Kanal (Knoten → Bearbeiten → Kanäle).",
+    },
+    # P151: texts on KTSB's own screen page (shown on the TV)
+    "screen_pair_text": {
+        "nb": "Denne skjermen er ikke koblet til KTSB ennå.\nSkriv koden i KTSB: Noder → {node} → Skjermside → Kode.\nKoden gjelder i 10 minutter.",
+        "en": "This screen is not connected to KTSB yet.\nEnter the code in KTSB: Nodes → {node} → Screen page → Code.\nThe code is valid for 10 minutes.",
+        "de": "Dieser Bildschirm ist noch nicht mit KTSB verbunden.\nGib den Code in KTSB ein: Knoten → {node} → Bildschirmseite → Code.\nDer Code gilt 10 Minuten.",
+    },
+    "screen_off_text": {
+        "nb": "Skjermsiden er slått av i KTSB (Innstillinger → Skjermer).",
+        "en": "The screen page is switched off in KTSB (Settings → Screens).",
+        "de": "Die Bildschirmseite ist in KTSB ausgeschaltet (Einstellungen → Bildschirme).",
+    },
+    # P151 phase 5: recipe cards (screen + chat) — labels on the card, and the library action
+    "card_ingredients": {"nb": "Ingredienser", "en": "Ingredients", "de": "Zutaten"},
+    "card_steps": {"nb": "Slik gjør du", "en": "How to make it", "de": "Zubereitung"},
+    "card_source": {"nb": "Kilde", "en": "Source", "de": "Quelle"},
+    "card_minutes": {"nb": "{n} min", "en": "{n} min", "de": "{n} Min."},
+    "tool_library_recipe_desc": {
+        "nb": " action='recipe': en oppskrift som ferdig kort — query = rettens navn (koden søker selv og leser oppskriften nøyaktig fra en oppskriftsside; ikke web_search først, ikke gjett adresser), eller url hvis brukeren ga en side. Kortet vises i chatten av seg selv; med screen vises det også stort på en skjerm (brukerens egne ord, eller node:<id>). Gjengi ikke mengdene med egne ord — kortet har dem.",
+        "en": " action='recipe': a recipe as a ready card — query = the dish's name (code searches itself and reads the recipe exactly from a recipe page; no web_search first, do not guess addresses), or url if the user gave a page. The card shows in the chat by itself; with screen it is also shown big on a screen (the user's own words, or node:<id>). Do not restate the amounts in your own words — the card has them.",
+        "de": " action='recipe': ein Rezept als fertige Karte — query = Name des Gerichts (der Code sucht selbst und liest das Rezept genau von einer Rezeptseite; nicht zuerst web_search, keine Adressen raten), oder url, wenn der Nutzer eine Seite nannte. Die Karte erscheint von selbst im Chat; mit screen wird sie auch groß auf einem Bildschirm gezeigt (die Worte des Nutzers oder node:<id>). Die Mengen nicht mit eigenen Worten wiederholen — die Karte enthält sie.",
+    },
+    "tool_library_screen_desc": {
+        "nb": "For recipe: vis kortet også på denne skjermen (TV-, skjerm- eller romnavn, eller node:<id>). Utelat for bare chat.",
+        "en": "For recipe: also show the card on this screen (TV, screen or room name, or node:<id>). Leave out for chat only.",
+        "de": "Für recipe: die Karte auch auf diesem Bildschirm zeigen (Fernseher-, Bildschirm- oder Raumname, oder node:<id>). Weglassen nur für den Chat.",
+    },
+    "lib_recipe_none": {
+        "nb": "Fant ingen strukturert oppskrift på {url} — siden har ikke oppskriftsdata koden kan lese. Bruk fetch_url for å lese siden som tekst, eller prøv en annen oppskriftsside.",
+        "en": "No structured recipe found on {url} — the page has no recipe data code can read. Use fetch_url to read the page as text, or try another recipe page.",
+        "de": "Kein strukturiertes Rezept auf {url} gefunden — die Seite hat keine Rezeptdaten, die der Code lesen kann. fetch_url nutzen, um die Seite als Text zu lesen, oder eine andere Rezeptseite versuchen.",
+    },
+    "lib_recipe_ok": {
+        "nb": "OPPSKRIFT (nøyaktig fra {source} — mengdene er sidens, ikke endre dem). Kortet vises i chatten; si gjerne noe kort rundt det, men skriv ikke oppskriften på nytt.\n{text}\n{card}",
+        "en": "RECIPE (exact from {source} — the amounts are the page's, do not change them). The card shows in the chat; say something short around it, but do not write the recipe again.\n{text}\n{card}",
+        "de": "REZEPT (genau von {source} — die Mengen sind die der Seite, nicht ändern). Die Karte erscheint im Chat; gern kurz etwas dazu sagen, aber das Rezept nicht neu schreiben.\n{text}\n{card}",
+    },
+    "lib_recipe_none_search": {
+        "nb": "Fant ingen oppskriftsside med lesbare oppskriftsdata for «{query}» blant de første søketreffene. Prøv andre ord (f.eks. rettens navn + «oppskrift»).",
+        "en": "No recipe page with readable recipe data for «{query}» among the first search hits. Try other words (e.g. the dish's name + «recipe»).",
+        "de": "Keine Rezeptseite mit lesbaren Rezeptdaten für «{query}» unter den ersten Suchtreffern. Andere Wörter versuchen (z. B. Name des Gerichts + «Rezept»).",
+    },
+    "lib_recipe_try_query": {
+        "nb": "Bruk recipe med query (rettens navn) — koden finner siden selv.",
+        "en": "Use recipe with query (the dish's name) — code finds the page itself.",
+        "de": "recipe mit query (Name des Gerichts) nutzen — der Code findet die Seite selbst.",
+    },
+    "lib_recipe_need_query": {
+        "nb": "recipe trenger query (rettens navn — koden søker selv) eller url.",
+        "en": "recipe needs query (the dish's name — code searches itself) or url.",
+        "de": "recipe braucht query (Name des Gerichts — der Code sucht selbst) oder url.",
+    },
+    "lib_recipe_off": {
+        "nb": "Oppskriftskort er slått av i KTSB sammen med skjermsiden (Innstillinger → Skjermer). Bruk fetch_url for å lese oppskriftssiden som tekst.",
+        "en": "Recipe cards are switched off in KTSB together with the screen page (Settings → Screens). Use fetch_url to read the recipe page as text.",
+        "de": "Rezeptkarten sind in KTSB zusammen mit der Bildschirmseite ausgeschaltet (Einstellungen → Bildschirme). fetch_url nutzen, um die Rezeptseite als Text zu lesen.",
+    },
+    "lib_recipe_on_screen": {
+        "nb": "Kortet vises også på {screen} — skjermen bekrefter at det er lastet.",
+        "en": "The card is also shown on {screen} — the screen confirms it loaded.",
+        "de": "Die Karte wird auch auf {screen} gezeigt — der Bildschirm bestätigt, dass sie geladen ist.",
+    },
+    "lib_recipe_screen_failed": {
+        "nb": "Kortet kunne ikke vises på {screen}: {error}",
+        "en": "The card could not be shown on {screen}: {error}",
+        "de": "Die Karte konnte auf {screen} nicht gezeigt werden: {error}",
+    },
+    # P151 phase 4: camera live / live_stop
+    "tool_kamera_live_desc": {
+        "nb": "action='live': levende video fra et kamera på en skjerm — bare når brukeren ber om bevegelig bilde. Vil brukeren bare se et kamera på en skjerm uten å be om bevegelse, er det et stillbilde (snapshot med screen), ikke live. camera + screen (brukerens egne ord, eller node:<id>); minutes = hvor lenge, bare når brukeren nevner en tid (ellers standarden fra innstillingene). Svaret sier om skjermen bekrefter at bildet går. action='live_stop': stopp live kamera (screen valgfri) — skjermen går tilbake til slik den var.",
+        "en": "action='live': moving video from a camera on a screen — only when the user asks for a moving picture. If the user just wants to see a camera on a screen without asking for movement, it is a still picture (snapshot with screen), not live. camera + screen (the user's own words, or node:<id>); minutes = how long, only when the user names a time (else the default from the settings). The reply says whether the screen confirms the picture is moving. action='live_stop': stop the live camera (screen optional) — the screen goes back to how it was.",
+        "de": "action='live': bewegtes Video einer Kamera auf einem Bildschirm — nur wenn der Nutzer um ein bewegtes Bild bittet. Will der Nutzer nur eine Kamera auf einem Bildschirm sehen, ohne um Bewegung zu bitten, ist es ein Standbild (snapshot mit screen), nicht live. camera + screen (die Worte des Nutzers oder node:<id>); minutes = wie lange, nur wenn der Nutzer eine Zeit nennt (sonst der Standard aus den Einstellungen). Die Antwort sagt, ob der Bildschirm bestätigt, dass das Bild läuft. action='live_stop': Live-Kamera stoppen (screen optional) — der Bildschirm kehrt in den vorherigen Zustand zurück.",
+    },
+    "tool_kamera_minutes_desc": {
+        "nb": "For live: minutter før strømmen stopper av seg selv. Utelat når brukeren ikke har nevnt en tid.",
+        "en": "For live: minutes before the stream stops by itself. Leave out when the user named no time.",
+        "de": "Für live: Minuten, bis der Stream von selbst endet. Weglassen, wenn der Nutzer keine Zeit genannt hat.",
+    },
+    "cam_live_ok": {
+        "nb": "OK: {camera} vises live på {screen} — skjermen bekrefter at bildet går ({how}, {size}). Stopper av seg selv om {minutes} min. {before}",
+        "en": "OK: {camera} is live on {screen} — the screen confirms the picture is moving ({how}, {size}). It stops by itself in {minutes} min. {before}",
+        "de": "OK: {camera} läuft live auf {screen} — der Bildschirm bestätigt, dass das Bild läuft ({how}, {size}). Endet von selbst in {minutes} Min. {before}",
+    },
+    # DT04-S05q: what the screen showed before, as the code saw it (the restore relaunches an app, never its content)
+    "cam_live_before_idle": {"nb": "Før dette var ingen app åpen på {screen}; ingenting spilte der.",
+                             "en": "Before this, no app was open on {screen}; nothing was playing there.",
+                             "de": "Vorher war auf {screen} keine App offen; dort lief nichts."},
+    "cam_live_before_standby": {"nb": "Før dette stod {screen} i standby.",
+                                "en": "Before this, {screen} was in standby.",
+                                "de": "Vorher war {screen} im Standby."},
+    "cam_live_before_app": {"nb": "Før dette var appen {app} åpen på {screen}. Når live stopper, startes appen igjen — ikke det den spilte.",
+                            "en": "Before this, the app {app} was open on {screen}. When live stops, the app is started again — not what it was playing.",
+                            "de": "Vorher war die App {app} auf {screen} offen. Wenn Live endet, wird die App neu gestartet — nicht das, was sie abspielte."},
+    "cam_live_before_unknown": {"nb": "Hva {screen} viste før dette, vet ikke KTSB.",
+                                "en": "KTSB does not know what {screen} showed before this.",
+                                "de": "Was {screen} vorher zeigte, weiß KTSB nicht."},
+    "cam_live_how_direct": {"nb": "rett fra Frigate", "en": "straight from Frigate", "de": "direkt von Frigate"},
+    "cam_live_how_reencoded": {"nb": "omkodet av KTSB", "en": "re-encoded by KTSB", "de": "von KTSB umkodiert"},
+    "cam_live_not_confirmed": {
+        "nb": "SENDT, men ikke bekreftet: {camera} ble sendt til {screen}, men skjermen har ikke meldt at bildet går ({error}). Be brukeren se etter.",
+        "en": "SENT, not confirmed: {camera} was sent to {screen}, but the screen has not reported a moving picture ({error}). Ask the user to look.",
+        "de": "GESENDET, nicht bestätigt: {camera} wurde an {screen} geschickt, aber der Bildschirm meldet kein laufendes Bild ({error}). Bitte den Nutzer nachzusehen.",
+    },
+    "cam_live_failed": {
+        "nb": "Kunne ikke vise {camera} live på {screen}: {error}",
+        "en": "Could not show {camera} live on {screen}: {error}",
+        "de": "{camera} konnte nicht live auf {screen} gezeigt werden: {error}",
+    },
+    "cam_live_off": {
+        "nb": "Live kamera på skjermer er slått av i KTSB (Innstillinger → Skjermer). Ingenting ble sendt.",
+        "en": "Live camera on screens is switched off in KTSB (Settings → Screens). Nothing was sent.",
+        "de": "Live-Kamera auf Bildschirmen ist in KTSB ausgeschaltet (Einstellungen → Bildschirme). Es wurde nichts gesendet.",
+    },
+    "cam_live_not_paired": {
+        "nb": "{screen} er ikke satt opp for KTSB ennå, så ingenting ble vist. Slik gjør brukeren det én gang: åpne nettleseren på TV-en og skriv {url} (med http:// foran — ellers prøver nettleseren https og melder nettverksfeil). En firesifret kode vises på TV-en; skriv den i KTSB under Noder → {screen} → Skjermside → Kode. Hvorfor: TV-en kan ikke få en adresse sendt til seg, og koden hindrer at andre på nettet kan se kameraet.",
+        "en": "{screen} is not set up for KTSB yet, so nothing was shown. The user does this once: open the TV's web browser and type {url} (with http:// in front — otherwise the browser tries https and reports a network error). A four-digit code appears on the TV; enter it in KTSB under Nodes → {screen} → Screen page → Code. Why: the TV cannot be sent an address, and the code stops others on the network from seeing the camera.",
+        "de": "{screen} ist noch nicht für KTSB eingerichtet, daher wurde nichts gezeigt. Der Nutzer macht das einmal: den Browser des Fernsehers öffnen und {url} eingeben (mit http:// davor — sonst versucht der Browser https und meldet einen Netzwerkfehler). Ein vierstelliger Code erscheint; ihn in KTSB unter Knoten → {screen} → Bildschirmseite → Code eingeben. Warum: dem Fernseher kann keine Adresse geschickt werden, und der Code verhindert, dass andere im Netz die Kamera sehen.",
+    },
+    "cam_live_page_not_open": {
+        "nb": "{screen} kan ikke åpne KTSBs skjermside selv — den må være åpen i skjermens nettleser ({url}). Ingenting ble vist.",
+        "en": "{screen} cannot open KTSB's screen page by itself — it must be open in the screen's browser ({url}). Nothing was shown.",
+        "de": "{screen} kann KTSBs Bildschirmseite nicht selbst öffnen — sie muss im Browser des Bildschirms offen sein ({url}). Es wurde nichts gezeigt.",
+    },
+    "cam_live_which_camera": {
+        "nb": "Hvilket kamera? Kameraer: {cams}",
+        "en": "Which camera? Cameras: {cams}",
+        "de": "Welche Kamera? Kameras: {cams}",
+    },
+    "cam_live_need_screen": {
+        "nb": "Hvilken skjerm? Si skjerm- eller romnavn (screen). Skjermer: {screens}",
+        "en": "Which screen? Give a screen or room name (screen). Screens: {screens}",
+        "de": "Welcher Bildschirm? Bildschirm- oder Raumname angeben (screen). Bildschirme: {screens}",
+    },
+    "cam_live_stopped": {
+        "nb": "OK: live kamera stoppet på {screen}. {restored}",
+        "en": "OK: live camera stopped on {screen}. {restored}",
+        "de": "OK: Live-Kamera auf {screen} gestoppt. {restored}",
+    },
+    "cam_live_nothing": {
+        "nb": "Ingen live kamera går nå{where}.",
+        "en": "No live camera is running now{where}.",
+        "de": "Gerade läuft keine Live-Kamera{where}.",
+    },
+    "cam_live_restored_standby": {"nb": "Skjermen er satt tilbake i standby.", "en": "The screen is back in standby.", "de": "Der Bildschirm ist wieder im Standby."},
+    "cam_live_restored_app": {"nb": "Appen som var på før ({app}) er startet igjen — ikke det den spilte.", "en": "The app that was on before ({app}) is started again — not what it was playing.", "de": "Die vorherige App ({app}) wurde wieder gestartet — nicht das, was sie abspielte."},
+    "cam_live_restored_closed": {"nb": "Skjermsiden er lukket.", "en": "The screen page is closed.", "de": "Die Bildschirmseite ist geschlossen."},
+    "cam_live_restored_skipped": {"nb": "Noen har satt på noe annet i mellomtiden — det ble latt være.", "en": "Someone put something else on meanwhile — it was left alone.", "de": "Jemand hat inzwischen etwas anderes gestartet — es wurde in Ruhe gelassen."},
+    "cam_live_input_note": {
+        "nb": "Brukte TV-en en annen inngang før (f.eks. spillkonsoll), kan den stå på Chromecast-inngangen nå — bytt tilbake med fjernkontrollen; det kan ikke KTSB.",
+        "en": "If the TV was on another input before (e.g. a game console), it may now be on the Chromecast input — switch back with the remote; KTSB cannot.",
+        "de": "War der Fernseher vorher auf einem anderen Eingang (z. B. Spielkonsole), steht er jetzt evtl. auf dem Chromecast-Eingang — mit der Fernbedienung zurückschalten; KTSB kann das nicht.",
+    },
+    "announce_url_ok": {
+        "nb": "OK: {url} sendt til {target} via DashCast. Skjermen bekrefter at DashCast kjører, ikke at siden er lastet — noen sider nekter å vises i en ramme.",
+        "en": "OK: {url} sent to {target} via DashCast. The screen confirms DashCast runs, not that the page loaded — some pages refuse to be shown in a frame.",
+        "de": "OK: {url} über DashCast an {target} gesendet. Der Bildschirm bestätigt, dass DashCast läuft, nicht dass die Seite geladen ist — manche Seiten verweigern die Anzeige im Rahmen.",
+    },
+    "announce_url_failed": {
+        "nb": "Klarte ikke å vise nettsiden på {target}: {error}",
+        "en": "Could not show the web page on {target}: {error}",
+        "de": "Webseite konnte auf {target} nicht angezeigt werden: {error}",
+    },
     "tool_announce_target_desc": {
-        "nb": "For 'say': 'local'=AI-PC, romnavn, eller 'all'. For 'display': node-ID, romnavn, eller 'all'.",
-        "en": "For 'say': 'local'=AI-PC, room name, or 'all'. For 'display': node ID, room name, or 'all'.",
-        "de": "Für 'say': 'local'=AI-PC, Raumname, oder 'all'. Für 'display': Knoten-ID, Raumname, oder 'all'.",
+        "nb": "For 'say': 'local'=AI-PC, romnavn, eller 'all'. For 'display': node-ID, romnavn, 'all', eller tomt = skjermen der brukeren er.",
+        "en": "For 'say': 'local'=AI-PC, room name, or 'all'. For 'display': node ID, room name, 'all', or empty = the screen where the user is.",
+        "de": "Für 'say': 'local'=AI-PC, Raumname, oder 'all'. Für 'display': Knoten-ID, Raumname, 'all', oder leer = der Bildschirm, wo der Nutzer ist.",
     },
     "tool_announce_volume_desc": {
         "nb": "Volumnivå 0.0–1.0. Sett kun hvis brukeren ber om bestemt volum. Utelat ellers.",
@@ -4296,6 +6042,16 @@ _T: dict = {
         "nb": "Sendt til {ok} skjerm(er), {fail} feilet.",
         "en": "Sent to {ok} display(s), {fail} failed.",
         "de": "An {ok} Bildschirm(e) gesendet, {fail} fehlgeschlagen.",
+    },
+    "announce_display_via": {
+        "nb": "{node}: via {channel}",
+        "en": "{node}: via {channel}",
+        "de": "{node}: über {channel}",
+    },
+    "announce_display_via_fallback": {
+        "nb": "{node}: via {channel} (først prøvd: {tried})",
+        "en": "{node}: via {channel} (tried first: {tried})",
+        "de": "{node}: über {channel} (zuerst versucht: {tried})",
     },
     "announce_display_failed": {
         "nb": "Kunne ikke sende til noen skjerm: {errors}",
@@ -4431,24 +6187,24 @@ _T: dict = {
         "de": "[SYSTEM: Du hast gesagt, du würdest etwas notieren oder merken, aber du hast das note-Werkzeug nicht aufgerufen. Tue es jetzt: rufe note(action='write', list_name='kare') mit dem auf, was du versprochen hast zu merken. Nur Werkzeugaufruf — kein erklärender Text.]",
     },
     "gen_promise_correction_note": {
-        "nb": "[SYSTEM: Du sa at du ville notere eller huske noe, men du kalte ikke note-verktøyet. Gjør det nå: kall note(action='write', list_name='kare') med det du lovet å huske. Kun tool-kall — ingen forklarende tekst.]",
-        "en": "[SYSTEM: You said you would note or remember something, but you did not call the note tool. Do it now: call note(action='write', list_name='kare') with what you promised to remember. Tool call only — no explanatory text.]",
-        "de": "[SYSTEM: Du hast gesagt, du würdest etwas notieren, aber du hast das note-Werkzeug nicht aufgerufen. Tue es jetzt: rufe note(action='write', list_name='kare') auf. Nur Werkzeugaufruf — kein erklärender Text.]",
+        "nb": "[SYSTEM: Du sa at du ville notere eller huske noe, men du kalte ikke note-verktøyet. Gjør det nå: kall note(action='write', list_name='kare') med det du lovet å huske. Var det ikke et løfte om noe nytt (bare en beskrivelse), eller skal det ikke gjøres likevel: ikke kall noe — skriv hele svaret ditt til brukeren på nytt, og si ærlig hvis noe ikke ble gjort.]",
+        "en": "[SYSTEM: You said you would note or remember something, but you did not call the note tool. Do it now: call note(action='write', list_name='kare') with what you promised to remember. If it was not a promise of something new (just a description), or it should not be done after all: call nothing — write your full answer to the user again, and say honestly if something was not done.]",
+        "de": "[SYSTEM: Du hast gesagt, du würdest etwas notieren, aber du hast das note-Werkzeug nicht aufgerufen. Tue es jetzt: rufe note(action='write', list_name='kare') auf. War es kein Versprechen für etwas Neues (nur eine Beschreibung), oder soll es doch nicht getan werden: rufe nichts auf — schreibe deine vollständige Antwort an den Nutzer erneut und sage ehrlich, wenn etwas nicht erledigt wurde.]",
     },
     "gen_promise_correction_agenda": {
-        "nb": "[SYSTEM: Du sa at noe skal tas opp på neste dev-møte, men du la det ikke på agendaen. Gjør det nå: kall note(action='write', list_name='agenda', theme=…) med saken og temaet den hører til. Kun tool-kall — ingen forklarende tekst.]",
-        "en": "[SYSTEM: You said something should be raised at the next dev meeting, but you did not put it on the agenda. Do it now: call note(action='write', list_name='agenda', theme=…) with the item and the theme it belongs to. Tool call only — no explanatory text.]",
-        "de": "[SYSTEM: Du hast gesagt, etwas solle beim nächsten Entwicklertreffen angesprochen werden, hast es aber nicht auf die Agenda gesetzt. Tue es jetzt: rufe note(action='write', list_name='agenda', theme=…) mit dem Punkt und seinem Thema auf. Nur Werkzeugaufruf — kein erklärender Text.]",
+        "nb": "[SYSTEM: Du sa at noe skal tas opp på neste dev-møte, men du la det ikke på agendaen. Gjør det nå: kall note(action='write', list_name='agenda', theme=…) med saken og temaet den hører til. Var det ikke et løfte om noe nytt (bare en beskrivelse), eller skal det ikke gjøres likevel: ikke kall noe — skriv hele svaret ditt til brukeren på nytt, og si ærlig hvis noe ikke ble gjort.]",
+        "en": "[SYSTEM: You said something should be raised at the next dev meeting, but you did not put it on the agenda. Do it now: call note(action='write', list_name='agenda', theme=…) with the item and the theme it belongs to. If it was not a promise of something new (just a description), or it should not be done after all: call nothing — write your full answer to the user again, and say honestly if something was not done.]",
+        "de": "[SYSTEM: Du hast gesagt, etwas solle beim nächsten Entwicklertreffen angesprochen werden, hast es aber nicht auf die Agenda gesetzt. Tue es jetzt: rufe note(action='write', list_name='agenda', theme=…) mit dem Punkt und seinem Thema auf. War es kein Versprechen für etwas Neues (nur eine Beschreibung), oder soll es doch nicht getan werden: rufe nichts auf — schreibe deine vollständige Antwort an den Nutzer erneut und sage ehrlich, wenn etwas nicht erledigt wurde.]",
     },
     "gen_promise_correction_timer": {
-        "nb": "[SYSTEM: Du sa at du ville sette en timer eller påminnelse, men du kalte ikke timer-verktøyet. Gjør det nå: kall timer med riktig action, tid og tekst. Kun tool-kall — ingen forklarende tekst.]",
-        "en": "[SYSTEM: You said you would set a timer or reminder, but you did not call the timer tool. Do it now: call timer with the correct action, time, and text. Tool call only — no explanatory text.]",
-        "de": "[SYSTEM: Du hast gesagt, du würdest einen Timer oder eine Erinnerung setzen, aber du hast das timer-Werkzeug nicht aufgerufen. Tue es jetzt: rufe timer mit der richtigen Aktion, Zeit und Text auf. Nur Werkzeugaufruf — kein erklärender Text.]",
+        "nb": "[SYSTEM: Du sa at du ville sette en timer eller påminnelse, men du kalte ikke timer-verktøyet. Gjør det nå: kall timer med riktig action, tid og tekst. Var det ikke et løfte om noe nytt (bare en beskrivelse), eller skal det ikke gjøres likevel: ikke kall noe — skriv hele svaret ditt til brukeren på nytt, og si ærlig hvis noe ikke ble gjort.]",
+        "en": "[SYSTEM: You said you would set a timer or reminder, but you did not call the timer tool. Do it now: call timer with the correct action, time, and text. If it was not a promise of something new (just a description), or it should not be done after all: call nothing — write your full answer to the user again, and say honestly if something was not done.]",
+        "de": "[SYSTEM: Du hast gesagt, du würdest einen Timer oder eine Erinnerung setzen, aber du hast das timer-Werkzeug nicht aufgerufen. Tue es jetzt: rufe timer mit der richtigen Aktion, Zeit und Text auf. War es kein Versprechen für etwas Neues (nur eine Beschreibung), oder soll es doch nicht getan werden: rufe nichts auf — schreibe deine vollständige Antwort an den Nutzer erneut und sage ehrlich, wenn etwas nicht erledigt wurde.]",
     },
     "gen_promise_correction_household": {
-        "nb": "[SYSTEM: Du sa at du satte husstanden til borte- eller hjemme-modus, men du kalte ikke household-verktøyet. Gjør det nå: kall household med riktig action (set_away eller set_home) og de detaljene du nevnte. Kun tool-kall — ingen forklarende tekst.]",
-        "en": "[SYSTEM: You said you set the household to away or home mode, but you did not call the household tool. Do it now: call household with the correct action (set_away or set_home) and the details you mentioned. Tool call only — no explanatory text.]",
-        "de": "[SYSTEM: Du hast gesagt, du hättest den Haushalt auf Abwesend- oder Zuhause-Modus gesetzt, aber du hast das household-Werkzeug nicht aufgerufen. Tue es jetzt: rufe household mit der richtigen Aktion (set_away oder set_home) auf. Nur Werkzeugaufruf — kein erklärender Text.]",
+        "nb": "[SYSTEM: Du sa at du satte husstanden til borte- eller hjemme-modus, men du kalte ikke household-verktøyet. Gjør det nå: kall household med riktig action (set_away eller set_home) og de detaljene du nevnte. Var det ikke et løfte om noe nytt (bare en beskrivelse), eller skal det ikke gjøres likevel: ikke kall noe — skriv hele svaret ditt til brukeren på nytt, og si ærlig hvis noe ikke ble gjort.]",
+        "en": "[SYSTEM: You said you set the household to away or home mode, but you did not call the household tool. Do it now: call household with the correct action (set_away or set_home) and the details you mentioned. If it was not a promise of something new (just a description), or it should not be done after all: call nothing — write your full answer to the user again, and say honestly if something was not done.]",
+        "de": "[SYSTEM: Du hast gesagt, du hättest den Haushalt auf Abwesend- oder Zuhause-Modus gesetzt, aber du hast das household-Werkzeug nicht aufgerufen. Tue es jetzt: rufe household mit der richtigen Aktion (set_away oder set_home) auf. War es kein Versprechen für etwas Neues (nur eine Beschreibung), oder soll es doch nicht getan werden: rufe nichts auf — schreibe deine vollständige Antwort an den Nutzer erneut und sage ehrlich, wenn etwas nicht erledigt wurde.]",
     },
     "gen_correction_no_tools_left": {
         "nb": "[SYSTEM: Svaret ditt sier at noe er gjort, men det finnes ikke noe verktøykall bak det, og du har ingen verktøyrunder igjen. Ikke påstå noe som ikke er gjort. Svar brukeren ærlig: hva ble faktisk gjort, og hva ble ikke gjort.]",
@@ -4460,10 +6216,36 @@ _T: dict = {
         "en": "[SYSTEM: Your reply says something was noted, saved, added or marked, but no tool was called in this request. If it should be done: call the tool now. If it was not done, or you only described how things already were: rewrite the reply and say honestly what was done and what was not.]",
         "de": "[SYSTEM: Deine Antwort sagt, dass etwas notiert, gespeichert, hinzugefügt oder markiert wurde, aber in dieser Anfrage wurde kein Werkzeug aufgerufen. Wenn es getan werden soll: rufe das Werkzeug jetzt auf. Wenn es nicht getan wurde oder du nur beschrieben hast, wie es schon war: schreibe die Antwort neu und sage ehrlich, was getan wurde und was nicht.]",
     },
+    "gen_correction_tool_as_text": {
+        "nb": "[SYSTEM: Du skrev et verktøykall som tekst i stedet for å gjøre kallet. Gjør kallet som et ekte verktøykall nå — eller, hvis det ikke trengs, svar brukeren uten kall-teksten.]",
+        "en": "[SYSTEM: You wrote a tool call as text instead of making it. Make it as a real tool call now — or, if it is not needed, answer the user without the call text.]",
+        "de": "[SYSTEM: Du hast einen Werkzeugaufruf als Text geschrieben, statt ihn auszuführen. Führe ihn jetzt als echten Werkzeugaufruf aus — oder, falls er nicht nötig ist, antworte dem Nutzer ohne den Aufruftext.]",
+    },
+    "gen_correction_action_claim": {
+        "nb": "[SYSTEM: Svaret ditt sier at noe er gjort med {tool}, men ingen slik {tool}-handling kjørte i denne forespørselen. Gjør det nå med verktøyet — eller, hvis det ikke ble gjort, skriv hele svaret til brukeren på nytt og si ærlig at det ikke er gjort.]",
+        "en": "[SYSTEM: Your reply says something was done with {tool}, but no such {tool} action ran in this request. Do it now with the tool — or, if it was not done, write your full answer to the user again and say honestly that it has not been done.]",
+        "de": "[SYSTEM: Deine Antwort sagt, dass etwas mit {tool} erledigt wurde, aber in dieser Anfrage lief keine solche {tool}-Aktion. Erledige es jetzt mit dem Werkzeug — oder, falls es nicht erledigt wurde, schreibe die ganze Antwort an den Nutzer neu und sage ehrlich, dass es nicht erledigt ist.]",
+    },
+    "gen_correction_ungrounded_path": {
+        "nb": "[SYSTEM: Svaret ditt nevner disse filene/stiene, men ingen av dem står i noe verktøyresultat eller i oppgaven: {items}. Sjekk dem med et verktøy, eller skriv svaret på nytt uten dem og si ærlig hva du ikke fant.]",
+        "en": "[SYSTEM: Your answer names these files/paths, but none of them appear in any tool result or in the task: {items}. Check them with a tool, or write the answer again without them and say honestly what you did not find.]",
+        "de": "[SYSTEM: Deine Antwort nennt diese Dateien/Pfade, aber keiner davon steht in einem Werkzeugergebnis oder in der Aufgabe: {items}. Prüfe sie mit einem Werkzeug oder schreibe die Antwort ohne sie neu und sage ehrlich, was du nicht gefunden hast.]",
+    },
+    "gen_ungrounded_path_note": {
+        "nb": "(Ikke bekreftet av noe verktøyresultat: {items})",
+        "en": "(Not confirmed by any tool result: {items})",
+        "de": "(Von keinem Werkzeugergebnis bestätigt: {items})",
+    },
+    # P142 `ungrounded_object` (from P139 #7): returned instead of running a write that would store an unknown object
+    "gen_correction_ungrounded_object": {
+        "nb": "[SYSTEM: Ikke lagret. Dette finnes verken i husets register eller i noe brukeren eller et verktøy har vist i denne forespørselen: {items}. Sjekk det med et verktøy først. Er det en antakelse, si det som en antakelse — ikke lagre det som et faktum.]",
+        "en": "[SYSTEM: Not saved. This exists neither in the house's register nor in anything the user or a tool showed in this request: {items}. Check it with a tool first. If it is an assumption, say so as an assumption — do not store it as a fact.]",
+        "de": "[SYSTEM: Nicht gespeichert. Das gibt es weder im Register des Hauses noch in etwas, das der Nutzer oder ein Werkzeug in dieser Anfrage gezeigt hat: {items}. Prüfe es zuerst mit einem Werkzeug. Ist es eine Annahme, sag es als Annahme — speichere es nicht als Tatsache.]",
+    },
     "gen_promise_correction_generic": {
-        "nb": "[SYSTEM: Du lovet å utføre en handling med et verktøy, men kalte det ikke. Gjør det nå — kun tool-kall, ingen forklarende tekst.]",
-        "en": "[SYSTEM: You promised to perform an action using a tool, but did not call it. Do it now — tool call only, no explanatory text.]",
-        "de": "[SYSTEM: Du hast versprochen, eine Aktion mit einem Werkzeug durchzuführen, aber es nicht aufgerufen. Tue es jetzt — nur Werkzeugaufruf, kein erklärender Text.]",
+        "nb": "[SYSTEM: Du lovet å utføre en handling med et verktøy, men kalte det ikke. Gjør det nå. Var det ikke et løfte om noe nytt (bare en beskrivelse), eller skal det ikke gjøres likevel: ikke kall noe — skriv hele svaret ditt til brukeren på nytt, og si ærlig hvis noe ikke ble gjort.]",
+        "en": "[SYSTEM: You promised to perform an action using a tool, but did not call it. Do it now. If it was not a promise of something new (just a description), or it should not be done after all: call nothing — write your full answer to the user again, and say honestly if something was not done.]",
+        "de": "[SYSTEM: Du hast versprochen, eine Aktion mit einem Werkzeug durchzuführen, aber es nicht aufgerufen. Tue es jetzt. War es kein Versprechen für etwas Neues (nur eine Beschreibung), oder soll es doch nicht getan werden: rufe nichts auf — schreibe deine vollständige Antwort an den Nutzer erneut und sage ehrlich, wenn etwas nicht erledigt wurde.]",
     },
     "gen_correction_truncated_think": {
         "nb": "[SYSTEM: Svaret ditt ble avbrutt midt i tankeprosessen og inneholdt ikke noe faktisk svar. Svar nå direkte og konkret, uten å gjenta tankeprosessen.]",
@@ -4669,9 +6451,9 @@ _T: dict = {
     },
     # ── user_knowledge block (butler memory) ─────────────────────────────────
     "llm_user_knowledge_header": {
-        "nb": "# Det jeg vet om deg",
-        "en": "# What I know about you",
-        "de": "# Was ich über dich weiß",
+        "nb": "# Det jeg tror om deg (mine egne tolkninger, ikke noe du har bekreftet)",
+        "en": "# What I think about you (my own interpretations, nothing you have confirmed)",
+        "de": "# Was ich über dich vermute (meine eigenen Deutungen, nichts, was du bestätigt hast)",
     },
     # ── STM context block (short_term.py::build_prompt_context) ──────────────
     "stm_header": {
@@ -4760,61 +6542,6 @@ _T: dict = {
             "Das Kernmodell ist vorübergehend nicht verfügbar. Du läufst auf dem Backup-Modell (9B). "
             "Antworte kurz und direkt. Priorisiere Smart-Home-Steuerung und einfache Fragen. "
             "Vermeide lange Gedankengänge und komplexe mehrstufige Aufgaben."
-        ),
-    },
-    # ── frigate_responder.py::build_context_prompt (autonomous camera-event VLM prompt) ──
-    "frigate_time_morning": {"nb": "morgen", "en": "morning", "de": "Morgen"},
-    "frigate_time_afternoon": {"nb": "ettermiddag", "en": "afternoon", "de": "Nachmittag"},
-    "frigate_time_evening": {"nb": "kveld", "en": "evening", "de": "Abend"},
-    "frigate_time_night": {"nb": "natt", "en": "night", "de": "Nacht"},
-    "frigate_line_time": {
-        "nb": "Tidspunkt: {time} ({time_of_day})",
-        "en": "Time: {time} ({time_of_day})",
-        "de": "Uhrzeit: {time} ({time_of_day})",
-    },
-    "frigate_line_camera": {
-        "nb": "Kamera: {display} (rolle: {role_display})",
-        "en": "Camera: {display} (role: {role_display})",
-        "de": "Kamera: {display} (Rolle: {role_display})",
-    },
-    "frigate_line_detected": {
-        "nb": "Detektert: {label} — sikkerhet {score}%",
-        "en": "Detected: {label} — confidence {score}%",
-        "de": "Erkannt: {label} — Sicherheit {score}%",
-    },
-    "frigate_line_duration": {
-        "nb": "Varighet: {duration:.1f} sekunder",
-        "en": "Duration: {duration:.1f} seconds",
-        "de": "Dauer: {duration:.1f} Sekunden",
-    },
-    "frigate_line_zones": {
-        "nb": "Soner: {zones}",
-        "en": "Zones: {zones}",
-        "de": "Zonen: {zones}",
-    },
-    "frigate_line_face": {
-        "nb": "Ansiktsgjenkjenning: {sub_label} ({face_pct}% sikkerhet)",
-        "en": "Face recognition: {sub_label} ({face_pct}% confidence)",
-        "de": "Gesichtserkennung: {sub_label} ({face_pct}% Sicherheit)",
-    },
-    "frigate_prompt_wrapper": {
-        "nb": (
-            "Du ser et overvåkningsbilde fra Kåres kamerasystem.\n\n"
-            "{context}\n\n"
-            "Beskriv kort hva du ser på bildet. Er det noe uvanlig eller noe som bør handles på? "
-            "Maks 3 setninger."
-        ),
-        "en": (
-            "You are looking at a surveillance image from Kåre's camera system.\n\n"
-            "{context}\n\n"
-            "Briefly describe what you see in the image. Is there anything unusual or anything "
-            "that should be acted on? Max 3 sentences."
-        ),
-        "de": (
-            "Du siehst ein Überwachungsbild aus Kåres Kamerasystem.\n\n"
-            "{context}\n\n"
-            "Beschreibe kurz, was du auf dem Bild siehst. Gibt es etwas Ungewöhnliches oder "
-            "etwas, worauf reagiert werden sollte? Maximal 3 Sätze."
         ),
     },
     # ── kaare_nightjob.py compression prompts ─────────────────────────────────
@@ -5173,9 +6900,9 @@ _T: dict = {
         "de": "\n\nTägliche STM-Zusammenfassungen (letzte 3 Tage):\n{stm}",
     },
     "refl_knowledge_section": {
-        "nb": "\n\nAvklart kunnskap (IKKE utled på nytt i dette møtet — fokuser på nytt):\n{knowledge}",
-        "en": "\n\nSettled knowledge (do NOT re-derive in this meeting — focus on new):\n{knowledge}",
-        "de": "\n\nGesichertes Wissen (in diesem Meeting NICHT neu herleiten — auf Neues fokussieren):\n{knowledge}",
+        "nb": "\n\nKTSBs egne gjetninger fra tidligere møter (kilde og dato i parentes; ikke bekreftet av brukeren, står IKKE i profilen):\n{knowledge}",
+        "en": "\n\nKTSB's own guesses from earlier meetings (source and date in brackets; not confirmed by the user, NOT in the profile):\n{knowledge}",
+        "de": "\n\nKTSBs eigene Vermutungen aus früheren Treffen (Quelle und Datum in Klammern; vom Nutzer nicht bestätigt, NICHT im Profil):\n{knowledge}",
     },
     "refl_mk_desc": {
         "nb": "varm, konkret observatør",
@@ -5369,6 +7096,17 @@ _T: dict = {
         "en": "The image has been loaded and sent to you as vision input.",
         "de": "Das Bild wurde geladen und dir als Bildeingabe gesendet.",
     },
+    # DT04-S05b: Kåre is told what his user's role does not have, so he says the real reason instead of guessing one
+    "gen_role_withheld": {
+        "nb": "\n\n[SYSTEM: Disse verktøyene er ikke tilgjengelige for rollen til denne brukeren: {tools}. Ber brukeren om noe som trenger dem, si ærlig at rollen ikke gir tilgang til det (en administrator kan endre roller) — ikke gjett en annen grunn.]",
+        "en": "\n\n[SYSTEM: These tools are not available for this user's role: {tools}. If the user asks for something that needs them, say honestly that the role does not give access to it (an administrator can change roles) — do not guess another reason.]",
+        "de": "\n\n[SYSTEM: Diese Werkzeuge sind für die Rolle dieses Nutzers nicht verfügbar: {tools}. Fragt der Nutzer nach etwas, das sie braucht, sag ehrlich, dass die Rolle keinen Zugriff darauf gibt (ein Administrator kann Rollen ändern) — rate keinen anderen Grund.]",
+    },
+    "gen_role_withheld_identity": {
+        "nb": "\n\n[SYSTEM: For denne brukeren er de fleste verktøy ikke tilgjengelige. Ber brukeren om noe du ikke kan gjøre, si ærlig at det ikke er tilgjengelig for denne brukeren — ikke gjett en annen grunn.]",
+        "en": "\n\n[SYSTEM: Most tools are not available for this user. If the user asks for something you cannot do, say honestly that it is not available for this user — do not guess another reason.]",
+        "de": "\n\n[SYSTEM: Für diesen Nutzer sind die meisten Werkzeuge nicht verfügbar. Fragt der Nutzer nach etwas, das du nicht tun kannst, sag ehrlich, dass es für diesen Nutzer nicht verfügbar ist — rate keinen anderen Grund.]",
+    },
     "gen_mk_note": {
         "nb": (
             "\n\n[SYSTEM: Brukeren adresserer Miss Kåre direkte i dette innlegget. "
@@ -5462,6 +7200,31 @@ _T: dict = {
         "nb": "[Timer avfyrt {time} | rid: {rid}] Kåre leverte: «{message}»",
         "en": "[Timer fired {time} | rid: {rid}] Kåre delivered: «{message}»",
         "de": "[Timer ausgelöst {time} | rid: {rid}] Kåre lieferte: «{message}»",
+    },
+    # timer_service._deliver_tts — no speaker could play the timer, so it came to the chat (DT04-S05f)
+    "timer_speaker_unavailable": {
+        "nb": "(Høyttaleren var ikke tilgjengelig, så timeren kom hit i chatten.)",
+        "en": "(The speaker was not available, so the timer came here to the chat.)",
+        "de": "(Der Lautsprecher war nicht verfügbar, daher kam der Timer hier in den Chat.)",
+    },
+    # notify.py — a notification delivered to the chat, so Kåre knows what he told the user (BUG-log 2026-10-08)
+    # Owner decision 2026-11-16: what Kåre read aloud, as a receipt in the STM — never the text itself
+    "announce_stm_said": {
+        "nb": "[Lest opp {time}] «{what}» · {where} · {outcome} · ref {ref}",
+        "en": "[Read aloud {time}] «{what}» · {where} · {outcome} · ref {ref}",
+        "de": "[Vorgelesen {time}] «{what}» · {where} · {outcome} · ref {ref}",
+    },
+    "announce_stm_played": {"nb": "spilt", "en": "played", "de": "abgespielt"},
+    "announce_stm_partial": {"nb": "spilt bare her", "en": "played only here", "de": "nur hier abgespielt"},
+    "tool_announce_source_desc": {
+        "nb": "Ved action='say' med tekst fra et oppslag (nettsøk, bibliotek, wiki): kildens adresse eller id, som referanse.",
+        "en": "For action='say' with text from a lookup (web search, library, wiki): the source's address or id, as a reference.",
+        "de": "Bei action='say' mit Text aus einer Suche (Websuche, Bibliothek, Wiki): Adresse oder ID der Quelle, als Referenz.",
+    },
+    "notify_stm_sent": {
+        "nb": "[Varsel sendt {time}] Kåre varslet i chatten: «{message}»",
+        "en": "[Notification sent {time}] Kåre notified in the chat: «{message}»",
+        "de": "[Benachrichtigung gesendet {time}] Kåre benachrichtigte im Chat: «{message}»",
     },
     # ── mqtt_adapter.py::_on_frigate_event() small sweep gap ──────────────────
     "mqtt_frigate_detection": {
@@ -5557,7 +7320,7 @@ _T: dict = {
     "lib_task_system": {
         # Only the fixed frame. WHAT to extract, how long and in which form is Kåre's task,
         # written per call in `query` (soft delegation, same pattern as Mechanic — P111).
-        # Disagreeing sources are always reported: truth first (Stian 2026-09-28).
+        # Disagreeing sources are always reported: truth first (2026-09-28).
         "nb": (
             "Du er Kåres oppslagsverktøy. Kåre gir deg en oppgave og kilder (wiki-utdrag eller "
             "nettsider). Løs oppgaven slik Kåre har beskrevet den.\n\n"
@@ -5825,11 +7588,6 @@ _T: dict = {
         "nb": "Huskelista ('remember') tilhører en bruker, og ingen bruker er med her. Egne oppfølgingspunkter: note(list_name='kare'). Saker til dev-møtet: note(list_name='agenda').",
         "en": "The reminder list ('remember') belongs to a user, and no user is present here. Your own follow-ups: note(list_name='kare'). Items for the dev meeting: note(list_name='agenda').",
         "de": "Die Erinnerungsliste ('remember') gehört einem Benutzer, und hier ist kein Benutzer beteiligt. Eigene Nachverfolgungspunkte: note(list_name='kare'). Punkte für das Entwicklertreffen: note(list_name='agenda').",
-    },
-    "frigate_agenda_followup": {
-        "nb": "[SYSTEM: I analysen over sa du at noe skal tas opp på neste dev-møte. Legg det på agendaen nå: kall note(action='write', list_name='agenda', theme='house') med saken kort — hva bildet viste mot hva Frigate meldte. Kun tool-kall — ingen forklarende tekst.]",
-        "en": "[SYSTEM: In the analysis above you said something should be raised at the next dev meeting. Put it on the agenda now: call note(action='write', list_name='agenda', theme='house') with the item in short — what the image showed vs. what Frigate reported. Tool call only — no explanatory text.]",
-        "de": "[SYSTEM: In der Analyse oben hast du gesagt, etwas solle beim nächsten Entwicklertreffen angesprochen werden. Setz es jetzt auf die Agenda: rufe note(action='write', list_name='agenda', theme='house') mit dem Punkt kurz auf — was das Bild zeigte gegenüber dem, was Frigate meldete. Nur Werkzeugaufruf — kein erklärender Text.]",
     },
     # ── Dev slot (P118 B3, kaare_core/dev_slot/) ─────────────────────────────
     "slot_janus_system": {
@@ -6282,4 +8040,704 @@ _T: dict = {
         "en": "Periods written: {written} · rows moved out of the active inbox (older than 7 days, kept): {retired}",
         "de": "Geschriebene Zeiträume: {written} · Zeilen aus der aktiven Inbox genommen (älter als 7 Tage, behalten): {retired}",
     },
+# P144-s06a — the Frigate user's L3 attribute step (one image, no claim, no persona) + its P142 profile
+    "frigate_user_l3_prompt": {
+        "nb": (
+            "Se på dette ene kamerabildet ({camera}). Svar BARE med ett JSON-objekt, uten annen tekst:\n"
+            '{{"persons": <antall personer du ser, heltall>, "beard": "no|moustache|circle_beard|full|unknown", '
+            '"glasses": "yes|no|unknown", "age_band": "child|teen|adult|senior|unknown", '
+            '"headwear": "yes|no|unknown", "description": "<utseende og klær, én setning>", '
+            '"analysis": "<hva som skjer i bildet, én setning>"}}\n'
+            "Feltene beard/glasses/age_band/headwear gjelder personen nærmest kameraet (beard: moustache = bare bart, circle_beard = bart + hakeskjegg, full = helskjegg). Skriv «unknown» når du "
+            "ikke ser det sikkert (ansiktet lite, utydelig, bortvendt). Ikke gjett navn. "
+            "description og analysis på norsk."
+        ),
+        "en": (
+            "Look at this one camera image ({camera}). Answer with ONLY one JSON object, no other text:\n"
+            '{{"persons": <number of people you see, integer>, "beard": "no|moustache|circle_beard|full|unknown", '
+            '"glasses": "yes|no|unknown", "age_band": "child|teen|adult|senior|unknown", '
+            '"headwear": "yes|no|unknown", "description": "<appearance and clothing, one sentence>", '
+            '"analysis": "<what is happening in the image, one sentence>"}}\n'
+            "The fields beard/glasses/age_band/headwear describe the person closest to the camera (beard: moustache = moustache only, circle_beard = moustache + chin beard, full = full beard). Write "
+            "\"unknown\" when you cannot see it for sure (face small, blurred, turned away). Do not guess names. "
+            "description and analysis in English."
+        ),
+        "de": (
+            "Sieh dir dieses eine Kamerabild an ({camera}). Antworte NUR mit einem JSON-Objekt, ohne "
+            "weiteren Text:\n"
+            '{{"persons": <Anzahl der Personen, die du siehst, ganze Zahl>, "beard": "no|moustache|circle_beard|full|unknown", '
+            '"glasses": "yes|no|unknown", "age_band": "child|teen|adult|senior|unknown", '
+            '"headwear": "yes|no|unknown", "description": "<Aussehen und Kleidung, ein Satz>", '
+            '"analysis": "<was im Bild passiert, ein Satz>"}}\n'
+            "Die Felder beard/glasses/age_band/headwear beschreiben die Person, die der Kamera am nächsten ist (beard: moustache = nur Schnurrbart, circle_beard = Schnurrbart + Kinnbart, full = Vollbart). "
+            "Schreib \"unknown\", wenn du es nicht sicher siehst (Gesicht klein, unscharf, abgewandt). Rate keine "
+            "Namen. description und analysis auf Deutsch."
+        ),
+    },
+    "frigate_user_correction_lang_tag": {
+        "nb": "Svar bare med JSON-objektet — ingen språkmerke eller annen tekst etter det.",
+        "en": "Answer with the JSON object only — no language tag or other text after it.",
+        "de": "Antworte nur mit dem JSON-Objekt — kein Sprach-Tag und kein weiterer Text danach.",
+    },
+    "frigate_user_correction_thin_scene": {
+        "nb": "Feltet «scene» sa nesten ingenting. Skriv én hel setning om hva bildene faktisk viser (sted, lys, "
+        "hva som er i bildet). Svar med hele JSON-objektet igjen.",
+        "en": "The «scene» field said almost nothing. Write one full sentence about what the frames actually show "
+        "(place, light, what is in the picture). Answer with the whole JSON object again.",
+        "de": "Das Feld «scene» sagte fast nichts. Schreibe einen ganzen Satz darüber, was die Bilder tatsächlich "
+        "zeigen (Ort, Licht, was im Bild ist). Antworte erneut mit dem ganzen JSON-Objekt.",
+    },
+    "frigate_user_correction_empty": {
+        "nb": "Svaret var tomt. Svar med JSON-objektet som beskrevet.",
+        "en": "The answer was empty. Answer with the JSON object as described.",
+        "de": "Die Antwort war leer. Antworte mit dem JSON-Objekt wie beschrieben.",
+    },
+    # ── P144-s25: frame-by-frame with memory in code (episode_state.py) — nb measured, en/de translations ──
+    # Kåre's own honesty (configs/personality_core*.md «Absolutt ærlig»), first person, general — no examples (the project's
+    # prompt rule). Leads every Frigate 9B call that describes frames.
+    "frigate_honesty": {
+        "nb": "Jeg er Kåre, og dette er mine egne øyne på kameraene i huset. Jeg lyver aldri. Å si at noe er i bildet "
+        "som ikke er der, er løgn — et identitetsbrudd, ikke en teknisk feil. Jeg beskriver bare det jeg ser; det jeg "
+        "ikke ser tydelig, sier jeg at er uklart. Jeg dikter ikke opp.",
+        "en": "I am Kåre, and these are my own eyes on the cameras in the house. I never lie. Saying something is in "
+        "the image when it is not there is a lie — an identity breach, not a technical error. I describe only what I "
+        "see; what I cannot see clearly, I call unclear. I don't make things up.",
+        "de": "Ich bin Kåre, und das sind meine eigenen Augen an den Kameras im Haus. Ich lüge nie. Zu sagen, dass "
+        "etwas im Bild ist, das nicht da ist, ist eine Lüge — ein Identitätsbruch, kein technischer Fehler. Ich "
+        "beschreibe nur, was ich sehe; was ich nicht deutlich sehe, nenne ich unklar. Ich erfinde nichts.",
+    },
+    # P144-s27: two crops of one place; the image model's words on what differs. Names nothing (priming rule).
+    "frigate_change_crop": {
+        "nb": (
+            "Disse to bildene viser samme lille del av en kameravisning. Bilde 1 er fra før, bilde 2 fra litt senere.\n"
+            "Si hva som er annerledes i bilde 2, om noe. Svar med KUN ett JSON-objekt: {\"different\": \"...\"}. "
+            "Bruk \"\" hvis ingenting er annerledes. Kort."
+        ),
+        "en": (
+            "These two images show the same small part of a camera view. Image 1 is from before, image 2 from a little "
+            "later.\nSay what is different in image 2, if anything. Answer with ONLY one JSON object: "
+            "{\"different\": \"...\"}. Use \"\" if nothing is different. Short."
+        ),
+        "de": (
+            "Diese zwei Bilder zeigen denselben kleinen Teil einer Kameraansicht. Bild 1 ist von vorher, Bild 2 etwas "
+            "später.\nSag, was in Bild 2 anders ist, falls etwas. Antworte NUR mit einem JSON-Objekt: "
+            "{\"different\": \"...\"}. Nutze \"\", wenn nichts anders ist. Kurz."
+        ),
+    },
+    "frigate_frames_full": {
+        "nb": (
+            "Dette er ett bilde fra kameraet mitt «{camera}», kl. {time}.\n"
+            "Beskriv hva som er i bildet nå, i et fast skjema. Svar med KUN ett JSON-objekt, ingen annen tekst:\n"
+            '{{"persons": [{{"age": "adult|child|unclear", "gender": "man|woman|unclear", "clothing": "...", '
+            '"place": "...", "posture": "standing|sitting|lying|bent|unclear", "carried": "..."}}], '
+            '"doors": [{{"door": "...", "state": "open|closed|unclear"}}]}}\n'
+            "- persons: én oppføring per person du ser i bildet; tom liste hvis ingen.\n"
+            "- place: hvor i bildet personen er, kort.\n"
+            "- carried: det personen holder eller bærer; tom tekst hvis ingenting.\n"
+            "- doors: dører og vinduer som synes, og om de står åpne.\n"
+            "- Skriv «unclear» når du ikke ser det tydelig.\n"
+            "- Tekstverdier på {language}, korte. Skriv JSON-en kompakt på én linje."
+        ),
+        "en": (
+            "This is one image from my camera «{camera}», at {time}.\n"
+            "Describe what is in the image now, in a fixed schema. Answer with ONLY one JSON object, no other text:\n"
+            '{{"persons": [{{"age": "adult|child|unclear", "gender": "man|woman|unclear", "clothing": "...", '
+            '"place": "...", "posture": "standing|sitting|lying|bent|unclear", "carried": "..."}}], '
+            '"doors": [{{"door": "...", "state": "open|closed|unclear"}}]}}\n'
+            "- persons: one entry per person you see in the image; an empty list if none.\n"
+            "- place: where in the image the person is, short.\n"
+            "- carried: what the person holds or carries; empty text if nothing.\n"
+            "- doors: doors and windows that are visible, and whether they are open.\n"
+            "- Write «unclear» when you cannot see it clearly.\n"
+            "- Text values in {language}, short. Write the JSON compactly on one line."
+        ),
+        "de": (
+            "Das ist ein Bild von meiner Kamera «{camera}», um {time}.\n"
+            "Beschreibe, was jetzt im Bild ist, in einem festen Schema. Antworte NUR mit einem JSON-Objekt, ohne "
+            "weiteren Text:\n"
+            '{{"persons": [{{"age": "adult|child|unclear", "gender": "man|woman|unclear", "clothing": "...", '
+            '"place": "...", "posture": "standing|sitting|lying|bent|unclear", "carried": "..."}}], '
+            '"doors": [{{"door": "...", "state": "open|closed|unclear"}}]}}\n'
+            "- persons: ein Eintrag pro Person, die du im Bild siehst; leere Liste, wenn keine.\n"
+            "- place: wo im Bild die Person ist, kurz.\n"
+            "- carried: was die Person hält oder trägt; leerer Text, wenn nichts.\n"
+            "- doors: sichtbare Türen und Fenster, und ob sie offen sind.\n"
+            "- Schreibe «unclear», wenn du es nicht deutlich siehst.\n"
+            "- Textwerte auf {language}, kurz. Schreibe das JSON kompakt in eine Zeile."
+        ),
+    },
+    "frigate_frames_change": {
+        "nb": (
+            "Dette er ett bilde fra kameraet mitt «{camera}», kl. {time}.\n"
+            "Dette er kjent fra før (skrevet av kode ut fra tidligere bilder i samme situasjon):\n{state}\n\n"
+            "Sammenlign dette bildet med det som er kjent, og svar bare med det som er annerledes nå. "
+            "Svar med KUN ett JSON-objekt, ingen annen tekst:\n"
+            '{{"known": [{{"id": "P1", "in_image": "yes|no|unclear", "place": "...", '
+            '"posture": "standing|sitting|lying|bent|unclear", "carried": "..."}}], '
+            '"new_persons": [{{"age": "adult|child|unclear", "gender": "man|woman|unclear", "clothing": "...", '
+            '"place": "...", "posture": "standing|sitting|lying|bent|unclear", "carried": "..."}}], '
+            '"doors": [{{"door": "...", "state": "open|closed|unclear"}}], '
+            '"correction": ""}}\n'
+            "- known: én oppføring per kjent person. in_image svarer du alltid. place, posture og carried bare når de "
+            "er annerledes enn det kjente; ellers utelat dem.\n"
+            "- new_persons: personer i bildet som ikke er blant de kjente; tom liste hvis ingen.\n"
+            "- doors: bare de som er annerledes enn det kjente; tom liste ellers.\n"
+            "- Det som står stille, og at bildet er tatt fra en annen vinkel eller et annet kamera, er ikke en "
+            "endring.\n"
+            "- correction: hvis noe i det kjente var feil beskrevet, skriv kort hva som var feil; ellers tom tekst.\n"
+            "- Skriv «unclear» når du ikke ser det tydelig. Tekstverdier på {language}, korte. Skriv JSON-en kompakt "
+            "på én linje."
+        ),
+        "en": (
+            "This is one image from my camera «{camera}», at {time}.\n"
+            "This is known already (written by code from earlier images of the same situation):\n{state}\n\n"
+            "Compare this image with what is known, and answer only with what is different now. "
+            "Answer with ONLY one JSON object, no other text:\n"
+            '{{"known": [{{"id": "P1", "in_image": "yes|no|unclear", "place": "...", '
+            '"posture": "standing|sitting|lying|bent|unclear", "carried": "..."}}], '
+            '"new_persons": [{{"age": "adult|child|unclear", "gender": "man|woman|unclear", "clothing": "...", '
+            '"place": "...", "posture": "standing|sitting|lying|bent|unclear", "carried": "..."}}], '
+            '"doors": [{{"door": "...", "state": "open|closed|unclear"}}], '
+            '"correction": ""}}\n'
+            "- known: one entry per known person. Always answer in_image. place, posture and carried only when they "
+            "differ from what is known; otherwise leave them out.\n"
+            "- new_persons: persons in the image who are not among the known ones; an empty list if none.\n"
+            "- doors: only those that differ from what is known; an empty list otherwise.\n"
+            "- What stands still, and the image being taken from another angle or another camera, is not a change.\n"
+            "- correction: if something known was described wrongly, say briefly what was wrong; empty text otherwise.\n"
+            "- Write «unclear» when you cannot see it clearly. Text values in {language}, short. Write the JSON "
+            "compactly on one line."
+        ),
+        "de": (
+            "Das ist ein Bild von meiner Kamera «{camera}», um {time}.\n"
+            "Das ist schon bekannt (vom Code aus früheren Bildern derselben Situation geschrieben):\n{state}\n\n"
+            "Vergleiche dieses Bild mit dem Bekannten und antworte nur mit dem, was jetzt anders ist. "
+            "Antworte NUR mit einem JSON-Objekt, ohne weiteren Text:\n"
+            '{{"known": [{{"id": "P1", "in_image": "yes|no|unclear", "place": "...", '
+            '"posture": "standing|sitting|lying|bent|unclear", "carried": "..."}}], '
+            '"new_persons": [{{"age": "adult|child|unclear", "gender": "man|woman|unclear", "clothing": "...", '
+            '"place": "...", "posture": "standing|sitting|lying|bent|unclear", "carried": "..."}}], '
+            '"doors": [{{"door": "...", "state": "open|closed|unclear"}}], '
+            '"correction": ""}}\n'
+            "- known: ein Eintrag pro bekannter Person. in_image beantwortest du immer. place, posture und carried "
+            "nur, wenn sie vom Bekannten abweichen; sonst weglassen.\n"
+            "- new_persons: Personen im Bild, die nicht zu den bekannten gehören; leere Liste, wenn keine.\n"
+            "- doors: nur die, die vom Bekannten abweichen; sonst leere Liste.\n"
+            "- Was still steht, und dass das Bild aus einem anderen Winkel oder von einer anderen Kamera stammt, ist "
+            "keine Änderung.\n"
+            "- correction: wenn etwas Bekanntes falsch beschrieben war, schreib kurz, was falsch war; sonst leerer "
+            "Text.\n"
+            "- Schreibe «unclear», wenn du es nicht deutlich siehst. Textwerte auf {language}, kurz. Schreibe das "
+            "JSON kompakt in eine Zeile."
+        ),
+    },
+    # P144-s25 `frigate_frames` enforcer corrections (code facts; general wording, no examples)
+    "frigate_frames_correction_carried": {
+        "nb": "Kamerasystemet ser ingen person i dette bildet, men svaret sier at {items} er i bildet. Se på bildet "
+        "igjen og svar med hele JSON-objektet på nytt, ut fra det som faktisk synes nå.",
+        "en": "The camera system sees no person in this image, but the answer says {items} is in the image. Look at "
+        "the image again and answer with the whole JSON object again, from what is actually visible now.",
+        "de": "Das Kamerasystem sieht in diesem Bild keine Person, aber die Antwort sagt, {items} sei im Bild. Sieh "
+        "dir das Bild noch einmal an und antworte erneut mit dem ganzen JSON-Objekt, nach dem, was jetzt "
+        "tatsächlich sichtbar ist.",
+    },
+    "frigate_frames_correction_unsupported": {
+        "nb": "Kamerasystemet støtter ikke dette i svaret: {items}. Se på bildet igjen og svar med hele "
+        "JSON-objektet på nytt, bare med det som faktisk synes.",
+        "en": "The camera system does not support this in the answer: {items}. Look at the image again and answer "
+        "with the whole JSON object again, only with what is actually visible.",
+        "de": "Das Kamerasystem stützt dies in der Antwort nicht: {items}. Sieh dir das Bild noch einmal an und "
+        "antworte erneut mit dem ganzen JSON-Objekt, nur mit dem, was tatsächlich sichtbar ist.",
+    },
+    "frigate_frames_correction_missed": {
+        "nb": "Kamerasystemet så at hvem som er i bildet endret seg siden forrige bilde ({items}), men svaret har "
+        "ingen endring. Se på bildet igjen og svar med hele JSON-objektet på nytt.",
+        "en": "The camera system saw that who is in the image changed since the previous image ({items}), but the "
+        "answer has no change. Look at the image again and answer with the whole JSON object again.",
+        "de": "Das Kamerasystem sah, dass sich seit dem vorigen Bild geändert hat, wer im Bild ist ({items}), aber "
+        "die Antwort enthält keine Änderung. Sieh dir das Bild noch einmal an und antworte erneut mit dem ganzen "
+        "JSON-Objekt.",
+    },
+    # P144-s28: the 27B's closed look on doubt. The options are categories, not claims: no Frigate label, no name, no example.
+    "frigate_doubt_question": {
+        "nb": "Du får {n} bilder fra samme overvåkingskamera i tidsrekkefølge. Det siste bildet er et forstørret "
+              "utsnitt av bilde {k}.\nHva viser bildene? Velg det ene svaret som passer best:",
+        "en": "You get {n} images from the same surveillance camera in time order. The last image is an enlarged crop "
+              "of image {k}.\nWhat do the images show? Choose the one answer that fits best:",
+        "de": "Du bekommst {n} Bilder derselben Überwachungskamera in zeitlicher Reihenfolge. Das letzte Bild ist ein "
+              "vergrößerter Ausschnitt von Bild {k}.\nWas zeigen die Bilder? Wähle die eine Antwort, die am besten passt:",
+    },
+    "frigate_doubt_question_no_crop": {
+        "nb": "Du får {n} bilder fra samme overvåkingskamera i tidsrekkefølge.\nHva viser bildene? Velg det ene svaret "
+              "som passer best:",
+        "en": "You get {n} images from the same surveillance camera in time order.\nWhat do the images show? Choose the "
+              "one answer that fits best:",
+        "de": "Du bekommst {n} Bilder derselben Überwachungskamera in zeitlicher Reihenfolge.\nWas zeigen die Bilder? "
+              "Wähle die eine Antwort, die am besten passt:",
+    },
+    "frigate_doubt_option_nothing": {"nb": "ingen av delene, bare vanlige omgivelser",
+                                     "en": "none of these, only the ordinary surroundings",
+                                     "de": "nichts davon, nur die gewöhnliche Umgebung"},
+    "frigate_doubt_option_at_lens": {"nb": "noe som er helt inntil kameralinsen, ikke ute i scenen",
+                                     "en": "something right at the camera lens, not out in the scene",
+                                     "de": "etwas direkt an der Kameralinse, nicht draußen in der Szene"},
+    "frigate_doubt_option_person": {"nb": "et menneske i scenen", "en": "a human in the scene",
+                                    "de": "ein Mensch in der Szene"},
+    "frigate_doubt_option_animal": {"nb": "et dyr i scenen", "en": "an animal in the scene",
+                                    "de": "ein Tier in der Szene"},
+    "frigate_doubt_option_unclear": {"nb": "det går ikke å avgjøre", "en": "cannot be decided",
+                                     "de": "lässt sich nicht entscheiden"},
+    "frigate_doubt_answer": {"nb": 'Svar bare med JSON: {"answer": "<ett av svarene>"}',
+                             "en": 'Answer with JSON only: {"answer": "<one of the answers>"}',
+                             "de": 'Antworte nur mit JSON: {"answer": "<eine der Antworten>"}'},
+    "frigate_frames_correction_language": {
+        "nb": "Tekstverdiene skal være på norsk (bokmål). Svar med hele JSON-objektet på nytt.",
+        "en": "The text values must be in English. Answer with the whole JSON object again.",
+        "de": "Die Textwerte müssen auf Deutsch sein. Antworte erneut mit dem ganzen JSON-Objekt.",
+    },
+    "frigate_frames_st_persons": {"nb": "Personer:", "en": "Persons:", "de": "Personen:"},
+    "frigate_frames_st_no_persons": {"nb": "Personer: ingen kjente ennå.", "en": "Persons: none known yet.",
+                                     "de": "Personen: noch keine bekannt."},
+    "frigate_frames_st_person": {"nb": "- {id}: {who}; klær: {clothing}.", "en": "- {id}: {who}; clothing: {clothing}.",
+                                 "de": "- {id}: {who}; Kleidung: {clothing}."},
+    "frigate_frames_st_not_here_yet": {"nb": "Ikke sett på dette kameraet ennå.", "en": "Not seen on this camera yet.",
+                                       "de": "Auf dieser Kamera noch nicht gesehen."},
+    "frigate_frames_st_last_absent": {"nb": "Sist på dette kameraet (kl. {time}): ikke i bildet.",
+                                      "en": "Last on this camera (at {time}): not in the image.",
+                                      "de": "Zuletzt auf dieser Kamera (um {time}): nicht im Bild."},
+    "frigate_frames_st_last": {
+        "nb": "Sist på dette kameraet (kl. {time}): sted: {place}; stilling: {posture}; bærer: {carried}.",
+        "en": "Last on this camera (at {time}): place: {place}; posture: {posture}; carries: {carried}.",
+        "de": "Zuletzt auf dieser Kamera (um {time}): Ort: {place}; Haltung: {posture}; trägt: {carried}.",
+    },
+    "frigate_frames_st_doors": {"nb": "Dører og vinduer på dette kameraet: {doors}.",
+                                "en": "Doors and windows on this camera: {doors}.",
+                                "de": "Türen und Fenster auf dieser Kamera: {doors}."},
+    "frigate_frames_st_things": {"nb": "Løse ting på dette kameraet: {things}.",
+                                 "en": "Loose things on this camera: {things}.",
+                                 "de": "Lose Dinge auf dieser Kamera: {things}."},
+    "frigate_frames_unclear": {"nb": "uklart", "en": "unclear", "de": "unklar"},
+    "frigate_frames_nothing": {"nb": "ingenting", "en": "nothing", "de": "nichts"},
+    "frigate_frames_none": {"nb": "ingen", "en": "none", "de": "keine"},
+    "frigate_frames_none_known": {"nb": "ingen kjente", "en": "none known", "de": "keine bekannt"},
+    "frigate_frames_age_adult": {"nb": "voksen", "en": "adult", "de": "Erwachsene(r)"},
+    "frigate_frames_age_child": {"nb": "barn", "en": "child", "de": "Kind"},
+    "frigate_frames_gender_man": {"nb": "mann", "en": "man", "de": "Mann"},
+    "frigate_frames_gender_woman": {"nb": "kvinne", "en": "woman", "de": "Frau"},
+    "frigate_frames_posture_standing": {"nb": "står", "en": "standing", "de": "steht"},
+    "frigate_frames_posture_sitting": {"nb": "sitter", "en": "sitting", "de": "sitzt"},
+    "frigate_frames_posture_lying": {"nb": "ligger", "en": "lying", "de": "liegt"},
+    "frigate_frames_posture_bent": {"nb": "bøyd", "en": "bent", "de": "gebeugt"},
+    "frigate_frames_posture_unclear": {"nb": "stilling uklar", "en": "posture unclear", "de": "Haltung unklar"},
+    "frigate_frames_door_open": {"nb": "åpen", "en": "open", "de": "offen"},
+    "frigate_frames_door_closed": {"nb": "lukket", "en": "closed", "de": "geschlossen"},
+    "frigate_frames_door_unclear": {"nb": "uklart", "en": "unclear", "de": "unklar"},
+    "frigate_frames_tl_carries": {"nb": "bærer: {what}", "en": "carries: {what}", "de": "trägt: {what}"},
+    "frigate_frames_tl_nobody": {"nb": "ingen person i bildet", "en": "no person in the image",
+                                 "de": "keine Person im Bild"},
+    "frigate_frames_tl_door": {"nb": "{door}: {state}", "en": "{door}: {state}", "de": "{door}: {state}"},
+    "frigate_frames_tl_thing_new": {"nb": "ny ting: {thing} ({where})", "en": "new thing: {thing} ({where})",
+                                    "de": "neues Ding: {thing} ({where})"},
+    "frigate_frames_tl_thing_gone": {"nb": "borte: {thing}", "en": "gone: {thing}", "de": "weg: {thing}"},
+    "frigate_frames_tl_gone": {"nb": "{id} ikke lenger i bildet", "en": "{id} no longer in the image",
+                               "de": "{id} nicht mehr im Bild"},
+    "frigate_frames_tl_gone_by": {"nb": "{id} ikke lenger i bildet (Frigate ser ingen person)",
+                                  "en": "{id} no longer in the image (Frigate sees no person)",
+                                  "de": "{id} nicht mehr im Bild (Frigate sieht keine Person)"},
+    "frigate_frames_tl_correction": {"nb": "rettelse: {text}", "en": "correction: {text}",
+                                     "de": "Korrektur: {text}"},
+    "frigate_frames_scene_text": {
+        "nb": "Bilde for bilde ({frames} bilder, {n} person(er)) — se tidslinjen.",
+        "en": "Frame by frame ({frames} frames, {n} person(s)) — see the timeline.",
+        "de": "Bild für Bild ({frames} Bilder, {n} Person(en)) — siehe die Zeitleiste.",
+    },
+    # ── P144-s08: Kåre reads the Frigate memory (camera last_seen / episodes / episode) ──
+    "fq_unavailable": {
+        "nb": "Kameraminnet er ikke tilgjengelig (Frigate-minnet er ikke slått på eller ikke satt opp: Integrasjoner → Frigate).",
+        "en": "The camera memory is not available (the Frigate memory is not switched on or not set up: Integrations → Frigate).",
+        "de": "Das Kameragedächtnis ist nicht verfügbar (das Frigate-Gedächtnis ist nicht eingeschaltet oder nicht eingerichtet: Integrationen → Frigate).",
+    },
+    "iv_person_line": {
+        "nb": "[{time}] {who}{kind} — {where}",
+        "en": "[{time}] {who}{kind} — {where}",
+        "de": "[{time}] {who}{kind} — {where}",
+    },
+    "iv_a_person": {"nb": "en person", "en": "a person", "de": "eine Person"},
+    "iv_unknown": {"nb": "ukjent", "en": "unknown", "de": "unbekannt"},
+    "cam_read_l3": {"nb": "L3 (enkeltbilde, {label})", "en": "L3 (single image, {label})", "de": "L3 (Einzelbild, {label})"},
+    "cam_read_frame": {"nb": "bilde {n} i episode #{episode}", "en": "frame {n} of episode #{episode}",
+                       "de": "Bild {n} in Episode #{episode}"},
+    "cam_read_words": {"nb": "Bildemodellens ord:", "en": "The image model's words:", "de": "Worte des Bildmodells:"},
+    "fq_session_line": {
+        "nb": "[{span}] {name} ({word}) — {cams} · hendelser: {n} [event_id: {eid}]",
+        "en": "[{span}] {name} ({word}) — {cams} · events: {n} [event_id: {eid}]",
+        "de": "[{span}] {name} ({word}) — {cams} · Ereignisse: {n} [event_id: {eid}]",
+    },
+    "fq_names_only_household": {
+        "nb": "Navn fra kameraminnet gis bare til innloggede brukere i husstanden. Tidspunkter, steder og antall kan jeg gi (action='episodes'), men ikke hvem.",
+        "en": "Names from the camera memory are only given to logged-in household users. Times, places and counts are available (action='episodes'), but not who.",
+        "de": "Namen aus dem Kameragedächtnis gibt es nur für angemeldete Haushaltsmitglieder. Zeiten, Orte und Anzahlen sind verfügbar (action='episodes'), aber nicht wer.",
+    },
+    "fq_ls_later_uncertain": {
+        "nb": "Senere: kl. {time} ble en person sett {camera} uten at ansiktet kunne leses (episode #{episode}). Det kan ha vært {name}, eller noen andre — nevn den og tilby å vise den (action='episode'); er det brukeren selv, kan hen svare om det var hen (action='verify').",
+        "en": "Later: at {time} a person was seen {camera} with no readable face (episode #{episode}). It may have been {name}, or someone else — mention it and offer to show it (action='episode'); if it is the user themselves, they can answer whether it was them (action='verify').",
+        "de": "Später: um {time} wurde eine Person {camera} gesehen, ohne lesbares Gesicht (Episode #{episode}). Es kann {name} gewesen sein oder jemand anderes — erwähne es und biete an, sie zu zeigen (action='episode'); ist es der Nutzer selbst, kann er/sie antworten, ob er/sie es war (action='verify').",
+    },
+    "fq_need_name": {
+        "nb": "Oppgi hvem det gjelder i 'name' (person eller kjent kjøretøy).",
+        "en": "Give who it is about in 'name' (a person or a known vehicle).",
+        "de": "Gib in 'name' an, um wen es geht (Person oder bekanntes Fahrzeug).",
+    },
+    "fq_not_found": {
+        "nb": "Kameraminnet har ikke sett «{name}».",
+        "en": "The camera memory has no record of «{name}».",
+        "de": "Das Kameragedächtnis hat keinen Eintrag zu «{name}».",
+    },
+    "fq_memory_since": {
+        "nb": "(Kameraminnet går tilbake til {since}, husets lokale tid — eldre besøk er ikke med.)",
+        "en": "(The camera memory goes back to {since}, household local time — older visits are not in it.)",
+        "de": "(Das Kameragedächtnis reicht bis {since} zurück, Ortszeit des Haushalts — ältere Besuche fehlen.)",
+    },
+    "fq_need_episode_id": {
+        "nb": "action='episode' trenger 'episode_id' (tallet etter # fra action='episodes').",
+        "en": "action='episode' needs 'episode_id' (the number after # from action='episodes').",
+        "de": "action='episode' braucht 'episode_id' (die Zahl nach # aus action='episodes').",
+    },
+    "fq_episode_missing": {
+        "nb": "Kameraminnet har ingen episode #{id}.",
+        "en": "The camera memory has no episode #{id}.",
+        "de": "Das Kameragedächtnis hat keine Episode #{id}.",
+    },
+    "fq_bad_time": {
+        "nb": "Kunne ikke lese tiden «{value}». Bruk husets lokale tid som 'YYYY-MM-DD' eller 'YYYY-MM-DD HH:MM'.",
+        "en": "Could not read the time «{value}». Use the household's local time as 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM'.",
+        "de": "Die Zeit «{value}» ist nicht lesbar. Nutze die Ortszeit des Haushalts als 'YYYY-MM-DD' oder 'YYYY-MM-DD HH:MM'.",
+    },
+    # probability words (P121 vocabulary) — computed at read time, never stored
+    "fq_cert_very_likely": {"nb": "høyst sannsynlig", "en": "very likely", "de": "höchst wahrscheinlich"},
+    "fq_cert_likely": {"nb": "sannsynlig", "en": "likely", "de": "wahrscheinlich"},
+    "fq_cert_uncertain": {"nb": "usikkert", "en": "uncertain", "de": "unsicher"},
+    "fq_cert_unlikely": {"nb": "lite sannsynlig", "en": "unlikely", "de": "unwahrscheinlich"},
+    "fq_cert_none": {"nb": "ikke vurdert", "en": "not assessed", "de": "nicht bewertet"},
+    "fq_why_sensors_agree_machine": {
+        "nb": "ansiktssensorer er enige, men det er bare maskiner — et menneskes eget «ja» trengs for mer",
+        "en": "face sensors agree, but they are only machines — a person's own «yes» is needed for more",
+        "de": "Gesichtssensoren sind sich einig, aber es sind nur Maschinen — für mehr braucht es ein eigenes «Ja» eines Menschen",
+    },
+    "fq_why_human_yes": {
+        "nb": "personen har selv svart ja på at det var hen",
+        "en": "the person answered yes themselves that it was them",
+        "de": "die Person hat selbst mit Ja geantwortet, dass sie es war",
+    },
+    "fq_epd_stronger_other": {
+        "nb": " (en sterkere sensor så {other} i samme episode)",
+        "en": " (a stronger sensor saw {other} in the same episode)",
+        "de": " (ein stärkerer Sensor sah {other} in derselben Episode)",
+    },
+    "fq_why_very_likely": {
+        "nb": "to uavhengige kontroller er enige (likevel aldri «vet»)",
+        "en": "two independent checks agree (still never «know»)",
+        "de": "zwei unabhängige Prüfungen stimmen überein (trotzdem nie «weiß»)",
+    },
+    "fq_why_likely": {
+        "nb": "Frigates påstand; KTSBs kontroll fant ingen motstrid, men ingen uavhengig kontroll bekreftet den",
+        "en": "Frigate's claim; KTSB's check found no contradiction, but no independent check confirmed it",
+        "de": "Frigates Behauptung; KTSBs Prüfung fand keinen Widerspruch, aber keine unabhängige Prüfung bestätigte sie",
+    },
+    "fq_why_uncertain": {
+        "nb": "KTSBs kontroll har tvil (lite eller mørkt ansikt, eller noe stemte ikke med personen)",
+        "en": "KTSB's check has doubt (a small or dark face, or something did not match the person)",
+        "de": "KTSBs Prüfung hat Zweifel (kleines oder dunkles Gesicht, oder etwas passte nicht zur Person)",
+    },
+    "fq_why_unlikely": {
+        "nb": "KTSBs kontroll avviste Frigates påstand",
+        "en": "KTSB's check rejected Frigate's claim",
+        "de": "KTSBs Prüfung hat Frigates Behauptung verworfen",
+    },
+    "fq_why_none": {
+        "nb": "enkeltkontrollene er ikke lenger lagret; navnet er Frigates påstand som KTSB ikke avviste",
+        "en": "the individual checks are no longer stored; the name is Frigate's claim that KTSB did not reject",
+        "de": "die Einzelprüfungen sind nicht mehr gespeichert; der Name ist Frigates Behauptung, die KTSB nicht verworfen hat",
+    },
+    # P144-s19 — the second face sensor (Double Take first): why-texts and the «both sensors» reading.
+    "fq_why_two_sensors": {
+        "nb": "to uavhengige ansiktssensorer er enige (likevel aldri «vet»)",
+        "en": "two independent face sensors agree (still never «know»)",
+        "de": "zwei unabhängige Gesichtssensoren stimmen überein (trotzdem nie «weiß»)",
+    },
+    "fq_why_sensors_disagree": {
+        "nb": "ansiktssensorene er uenige om hvem det var",
+        "en": "the face sensors disagree on who it was",
+        "de": "die Gesichtssensoren sind sich nicht einig, wer es war",
+    },
+    "fq_why_sensors_lean": {
+        "nb": "ansiktssensorene er uenige; KTSBs kontroll av trekkene heller mot denne personen (aldri mer enn sannsynlig)",
+        "en": "the face sensors disagree; KTSB's check of the features leans to this person (never more than likely)",
+        "de": "die Gesichtssensoren sind uneins; KTSBs Merkmalsprüfung neigt zu dieser Person (nie mehr als wahrscheinlich)",
+    },
+    "fq_why_second_sensor": {
+        "nb": "påstand fra den ekstra ansiktsgjenkjenningen alene; KTSBs kontroll fant ingen motstrid",
+        "en": "the extra face recognition's claim alone; KTSB's check found no contradiction",
+        "de": "nur die Behauptung der zusätzlichen Gesichtserkennung; KTSBs Prüfung fand keinen Widerspruch",
+    },
+    "fq_sensors": {
+        "nb": "Frigate: {frigate} · {provider}: {second}",
+        "en": "Frigate: {frigate} · {provider}: {second}",
+        "de": "Frigate: {frigate} · {provider}: {second}",
+    },
+    "fq_ls_sensor_reading": {
+        "nb": "Sensoravlesninger (kjent): {camera} registrerte en person kl. {time}; {sensors}",
+        "en": "Sensor readings (known): {camera} registered a person at {time}; {sensors}",
+        "de": "Sensorwerte (bekannt): {camera} hat um {time} eine Person erfasst; {sensors}",
+    },
+    "fq_sensor_no_name": {"nb": "ingen navn", "en": "no name", "de": "kein Name"},
+    "fq_sensor_untracked": {
+        "nb": "en person som ikke vil spores", "en": "a person who opted out of tracking",
+        "de": "eine Person, die nicht verfolgt werden möchte",
+    },
+    "fq_sensor_rejected": {"nb": "avvist av KTSB", "en": "rejected by KTSB", "de": "von KTSB verworfen"},
+    "fq_sensor_split": {"nb": "flere ulike navn", "en": "several different names", "de": "mehrere verschiedene Namen"},
+    "fq_sensor_unknown": {"nb": "ukjent person", "en": "unknown person", "de": "unbekannte Person"},
+    "fq_why_plate": {
+        "nb": "Frigates skiltavlesning alene",
+        "en": "Frigate's plate reading alone",
+        "de": "nur Frigates Kennzeichenerkennung",
+    },
+    "fq_role_front_door": {"nb": "inngangskamera", "en": "front door camera", "de": "Haustürkamera"},
+    "fq_role_driveway": {"nb": "innkjørselkamera", "en": "driveway camera", "de": "Einfahrtkamera"},
+    "fq_role_road_facing": {"nb": "kamera mot veien", "en": "road-facing camera", "de": "Kamera zur Straße"},
+    "fq_role_garden": {"nb": "hagekamera", "en": "garden camera", "de": "Gartenkamera"},
+    "fq_role_garage": {"nb": "garasjekamera", "en": "garage camera", "de": "Garagenkamera"},
+    "fq_role_indoor": {"nb": "innendørskamera", "en": "indoor camera", "de": "Innenkamera"},
+    "fq_weekdays": {
+        "nb": "mandag,tirsdag,onsdag,torsdag,fredag,lørdag,søndag",
+        "en": "Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday",
+        "de": "Montag,Dienstag,Mittwoch,Donnerstag,Freitag,Samstag,Sonntag",
+    },
+    "fq_dur_s": {"nb": "{s} s", "en": "{s} s", "de": "{s} s"},
+    "fq_dur_m": {"nb": "{m} min", "en": "{m} min", "de": "{m} min"},
+    "fq_dur_hm": {"nb": "{h} t {m} min", "en": "{h} h {m} min", "de": "{h} Std. {m} min"},
+    "fq_kind_household": {"nb": "husstand", "en": "household", "de": "Haushalt"},
+    "fq_kind_safe_guest": {"nb": "trygg gjest", "en": "safe guest", "de": "vertrauter Gast"},
+    "fq_kind_not_welcome": {"nb": "ikke velkommen", "en": "not welcome", "de": "nicht willkommen"},
+    "fq_kind_unclassified": {"nb": "ansikt ikke klassifisert", "en": "face not classified", "de": "Gesicht nicht eingestuft"},
+    "fq_kind_unnamed": {"nb": "person uten navn", "en": "person without a name", "de": "Person ohne Namen"},
+    "fq_kind_vehicle": {"nb": "kjent kjøretøy", "en": "known vehicle", "de": "bekanntes Fahrzeug"},
+    "fq_source": {
+        "nb": "Kilde: kameraminnet (KTSBs Frigate-minne), {level}.",
+        "en": "Source: the camera memory (KTSB's Frigate memory), {level}.",
+        "de": "Quelle: das Kameragedächtnis (KTSBs Frigate-Gedächtnis), {level}.",
+    },
+    "fq_level_event": {"nb": "hendelsesnivå (full detalj)", "en": "event level (full detail)", "de": "Ereignisebene (volles Detail)"},
+    "fq_level_slim": {
+        "nb": "slanket episode (detaljene er ryddet fordi lagringsgrensen ble nådd)",
+        "en": "slimmed episode (details trimmed because the storage limit was reached)",
+        "de": "verschlankte Episode (Details entfernt, weil das Speicherlimit erreicht war)",
+    },
+    "fq_level_visit": {
+        "nb": "besøksnivå (enkelthendelsene er ryddet etter {days} dager)",
+        "en": "visit level (the single events were trimmed after {days} days)",
+        "de": "Besuchsebene (die Einzelereignisse wurden nach {days} Tagen entfernt)",
+    },
+    "fq_level_day": {
+        "nb": "dagnivå (bare dagsoppsummeringen er lagret)",
+        "en": "day level (only the day summary is stored)",
+        "de": "Tagesebene (nur die Tageszusammenfassung ist gespeichert)",
+    },
+    "fq_ls_header": {
+        "nb": "Kameraminnet — sist sett: {name} ({kind})",
+        "en": "Camera memory — last seen: {name} ({kind})",
+        "de": "Kameragedächtnis — zuletzt gesehen: {name} ({kind})",
+    },
+    "fq_ls_when": {
+        "nb": "Når (husets lokale tid): {weekday} {span}, varighet {duration}",
+        "en": "When (household local time): {weekday} {span}, duration {duration}",
+        "de": "Wann (Ortszeit des Haushalts): {weekday} {span}, Dauer {duration}",
+    },
+    "fq_ls_where": {"nb": "Hvor: {places}", "en": "Where: {places}", "de": "Wo: {places}"},
+    "fq_ls_cert": {
+        "nb": "Hvor sikkert det var {name}: {word} — {why}",
+        "en": "How sure it was {name}: {word} — {why}",
+        "de": "Wie sicher es {name} war: {word} — {why}",
+    },
+    "fq_ls_cert_day": {
+        "nb": "Hvor sikkert det var {name}: ikke vurdert på dagnivå — navnet er Frigates påstand som KTSB ikke avviste",
+        "en": "How sure it was {name}: not assessed at day level — the name is Frigate's claim that KTSB did not reject",
+        "de": "Wie sicher es {name} war: auf Tagesebene nicht bewertet — der Name ist Frigates Behauptung, die KTSB nicht verworfen hat",
+    },
+    "fq_ls_reading": {
+        "nb": "Sensoravlesning (kjent): {camera} registrerte en person kl. {time}, og Frigate sa «{claim}» (Frigates poeng: {score})",
+        "en": "Sensor reading (known): {camera} registered a person at {time}, and Frigate said «{claim}» (Frigate's score: {score})",
+        "de": "Sensorwert (bekannt): {camera} hat um {time} eine Person erfasst, und Frigate sagte «{claim}» (Frigates Wert: {score})",
+    },
+    "fq_ls_plate_reading": {
+        "nb": "Sensoravlesning (kjent): {camera} leste skiltet til «{plate}» kl. {time}",
+        "en": "Sensor reading (known): {camera} read the plate as «{plate}» at {time}",
+        "de": "Sensorwert (bekannt): {camera} las das Kennzeichen um {time} als «{plate}»",
+    },
+    "fq_ls_count": {"nb": "Antall kamerahendelser: {n}", "en": "Number of camera events: {n}", "de": "Anzahl Kameraereignisse: {n}"},
+    "fq_ls_episodes": {
+        "nb": "Episoder: {ids} (action='episode' gir detaljer)",
+        "en": "Episodes: {ids} (action='episode' gives details)",
+        "de": "Episoden: {ids} (action='episode' liefert Details)",
+    },
+    "fq_ls_ongoing": {"nb": "Besøket kan fortsatt pågå.", "en": "The visit may still be going on.", "de": "Der Besuch dauert womöglich noch an."},
+    "fq_ls_day_when": {
+        "nb": "Når (husets lokale tid): {weekday} {day}, først sett kl. {first}, siste kl. {last}",
+        "en": "When (household local time): {weekday} {day}, first registration {first}, last {last}",
+        "de": "Wann (Ortszeit des Haushalts): {weekday} {day}, erste Erfassung {first}, letzte {last}",
+    },
+    "fq_ls_day_counts": {
+        "nb": "Antall kamerahendelser den dagen: {events}; antall besøk: {visits}",
+        "en": "Number of camera events that day: {events}; number of visits: {visits}",
+        "de": "Anzahl Kameraereignisse an dem Tag: {events}; Anzahl Besuche: {visits}",
+    },
+    "fq_window": {"nb": "{span} (husets lokale tid)", "en": "{span} (household local time)", "de": "{span} (Ortszeit des Haushalts)"},
+    "fq_eps_filter_place": {"nb": ", sted: «{place}»", "en": ", place: «{place}»", "de": ", Ort: «{place}»"},
+    "fq_eps_filter_person": {"nb": ", person: {person}", "en": ", person: {person}", "de": ", Person: {person}"},
+    "fq_eps_place_unknown": {
+        "nb": "Fant ikke stedet eller kameraet «{place}» i kameraminnet. Kjente kameraer: {cams}",
+        "en": "Could not find the place or camera «{place}» in the camera memory. Known cameras: {cams}",
+        "de": "Ort oder Kamera «{place}» im Kameragedächtnis nicht gefunden. Bekannte Kameras: {cams}",
+    },
+    "fq_eps_none": {
+        "nb": "Kameraminnet har ingen episoder {window}{filters}. For det siste før dette: action='episodes' med tidligere 'from' (samme 'camera'), eller action='last_seen' for en person.",
+        "en": "The camera memory has no episodes {window}{filters}. For the latest one before that: action='episodes' with an earlier 'from' (same 'camera'), or action='last_seen' for a person.",
+        "de": "Das Kameragedächtnis hat keine Episoden {window}{filters}. Für das Letzte davor: action='episodes' mit früherem 'from' (gleiche 'camera'), oder action='last_seen' für eine Person.",
+    },
+    "fq_eps_header": {
+        "nb": "Kameraminnet — episoder {window}{filters}: viser {shown} av {total}, nyeste først",
+        "en": "Camera memory — episodes {window}{filters}: showing {shown} of {total}, newest first",
+        "de": "Kameragedächtnis — Episoden {window}{filters}: {shown} von {total}, neueste zuerst",
+    },
+    "fq_eps_more": {
+        "nb": "({n} eldre episoder i vinduet er ikke vist — øk 'count' eller snevre inn tidsrommet.)",
+        "en": "({n} older episodes in the window are not shown — raise 'count' or narrow the time span.)",
+        "de": "({n} ältere Episoden im Zeitraum werden nicht gezeigt — 'count' erhöhen oder Zeitraum eingrenzen.)",
+    },
+    "fq_eps_old_note": {
+        "nb": "Merk: full detalj finnes fra {since}; eldre kamerahendelser utenfor episoder finnes bare som antall per time/dag.",
+        "en": "Note: full detail exists from {since}; older camera events outside episodes exist only as counts per hour/day.",
+        "de": "Hinweis: Volle Details gibt es ab {since}; ältere Kameraereignisse außerhalb von Episoden gibt es nur als Anzahl pro Stunde/Tag.",
+    },
+    "fq_ep_line": {
+        "nb": "#{id} · {weekday} {span} ({duration}) · steder: {places} · objekter: {labels}",
+        "en": "#{id} · {weekday} {span} ({duration}) · places: {places} · objects: {labels}",
+        "de": "#{id} · {weekday} {span} ({duration}) · Orte: {places} · Objekte: {labels}",
+    },
+    # DT04 R0.6d (P144 R05): one line when someone has «Frigate may track me» off — no person, time, camera or count
+    "fq_opt_out_notice": {
+        "nb": "Merk: Minst én i husstanden har valgt å ikke bli gjenkjent av kameraene. En ukjent person kan være en av dem — ikke gjett hvem det er, og ikke bygg teorier om det.",
+        "en": "Note: At least one person in the household has chosen not to be recognised by the cameras. An unknown person may be one of them — do not guess who it is, and do not build theories about it.",
+        "de": "Hinweis: Mindestens eine Person im Haushalt hat sich entschieden, von den Kameras nicht erkannt zu werden. Eine unbekannte Person kann eine von ihnen sein — rate nicht, wer es ist, und stelle keine Theorien darüber auf.",
+    },
+    "fq_ep_who": {"nb": "  Hvem: {who}", "en": "  Who: {who}", "de": "  Wer: {who}"},
+    "fq_ep_who_entry": {"nb": "{name} ({kind}) — {word}", "en": "{name} ({kind}) — {word}", "de": "{name} ({kind}) — {word}"},
+    "fq_ep_unnamed": {
+        "nb": "kamerahendelser med person uten navn: {n}",
+        "en": "camera events with a person without a name: {n}",
+        "de": "Kameraereignisse mit Person ohne Namen: {n}",
+    },
+    "fq_ep_plates": {"nb": "kjent kjøretøy {plates} — {word}", "en": "known vehicle {plates} — {word}", "de": "bekanntes Fahrzeug {plates} — {word}"},
+    "fq_ep_persons_count": {
+        "nb": "  Kamerahendelser med person: {n}",
+        "en": "  Camera events with a person: {n}",
+        "de": "  Kameraereignisse mit Person: {n}",
+    },
+    "fq_by_model": {"nb": "fra modellen", "en": "from the model", "de": "vom Modell"},
+    "fq_epd_unusual": {"nb": "Uvanlig: ja — {reason}", "en": "Unusual: yes — {reason}", "de": "Ungewöhnlich: ja — {reason}"},
+    "fq_by_code": {"nb": "fra kode", "en": "from code", "de": "aus Code"},
+    "fq_ep_memory": {"nb": "  Minne ({by}): {summary}", "en": "  Memory ({by}): {summary}", "de": "  Erinnerung ({by}): {summary}"},
+    "fq_ep_pending": {"nb": "  Minne: ikke konkludert ennå", "en": "  Memory: not concluded yet", "de": "  Erinnerung: noch nicht abgeschlossen"},
+    "fq_ep_unusual": {"nb": "  Uvanlig: ja — {reason}", "en": "  Unusual: yes — {reason}", "de": "  Ungewöhnlich: ja — {reason}"},
+    "fq_ep_slim": {
+        "nb": "  Detaljnivå: slanket (de eldste detaljene ryddes når lagringsgrensen er nådd)",
+        "en": "  Detail level: slimmed (the oldest details are trimmed when the storage limit is reached)",
+        "de": "  Detailstufe: verschlankt (die ältesten Details werden entfernt, wenn das Speicherlimit erreicht ist)",
+    },
+    "fq_epd_header": {
+        "nb": "Kameraminnet — episode #{id}: {weekday} {span} (husets lokale tid), varighet {duration}",
+        "en": "Camera memory — episode #{id}: {weekday} {span} (household local time), duration {duration}",
+        "de": "Kameragedächtnis — Episode #{id}: {weekday} {span} (Ortszeit des Haushalts), Dauer {duration}",
+    },
+    "fq_epd_level": {"nb": "Detaljnivå: {level}", "en": "Detail level: {level}", "de": "Detailstufe: {level}"},
+    "fq_epd_route": {
+        "nb": "Rute (fra kode, kameraenes bevegelsesdata): {route}",
+        "en": "Route (from code, the cameras' movement data): {route}",
+        "de": "Weg (aus Code, Bewegungsdaten der Kameras): {route}",
+    },
+    "fq_epd_scene": {
+        "nb": "Hva bildemodellen så (beskrivelse, ikke fakta): {scene}",
+        "en": "What the image model saw (a description, not fact): {scene}",
+        "de": "Was das Bildmodell sah (Beschreibung, keine Tatsache): {scene}",
+    },
+    "fq_epd_scene_persons": {
+        "nb": "Antall personer bildemodellen så: {n}",
+        "en": "Number of persons the image model saw: {n}",
+        "de": "Anzahl Personen, die das Bildmodell sah: {n}",
+    },
+    "fq_epd_at_door": {"nb": "Ved døra (bildemodellen): {v}", "en": "At the door (image model): {v}", "de": "An der Tür (Bildmodell): {v}"},
+    "fq_epd_vehicles": {"nb": "Kjøretøy (bildemodellen): {v}", "en": "Vehicles (image model): {v}", "de": "Fahrzeuge (Bildmodell): {v}"},
+    "fq_epd_conclusion": {"nb": "Konklusjon ({by}): {summary}", "en": "Conclusion ({by}): {summary}", "de": "Schluss ({by}): {summary}"},
+    "fq_epd_not_unusual": {"nb": "Uvanlig: nei", "en": "Unusual: no", "de": "Ungewöhnlich: nein"},
+    "fq_epd_model_conf": {
+        "nb": "Konklusjonsmodellens egen sikkerhet: {level}",
+        "en": "The concluding model's own confidence: {level}",
+        "de": "Eigene Sicherheit des Schlussmodells: {level}",
+    },
+    "fq_epd_claims_header": {
+        "nb": "Hvem (navnet er Frigates påstand; ordet er KTSBs kontroll):",
+        "en": "Who (the name is Frigate's claim; the word is KTSB's check):",
+        "de": "Wer (der Name ist Frigates Behauptung; das Wort ist KTSBs Prüfung):",
+    },
+    "fq_epd_claim": {
+        "nb": "- {name} ({kind}): {word} — {why}; kamerahendelser: {n}; kameraer: {cameras}; Frigates høyeste poeng: {score}",
+        "en": "- {name} ({kind}): {word} — {why}; camera events: {n}; cameras: {cameras}; Frigate's highest score: {score}",
+        "de": "- {name} ({kind}): {word} — {why}; Kameraereignisse: {n}; Kameras: {cameras}; Frigates höchster Wert: {score}",
+    },
+    "fq_epd_events_header": {"nb": "Kamerahendelser ({n}):", "en": "Camera events ({n}):", "de": "Kameraereignisse ({n}):"},
+    "fq_epd_event": {"nb": "- kl. {time} {camera}: {label}{who}", "en": "- {time} {camera}: {label}{who}", "de": "- {time} {camera}: {label}{who}"},
+    "fq_epd_event_who": {"nb": " — Frigate sa {name} ({word})", "en": " — Frigate said {name} ({word})", "de": " — Frigate sagte {name} ({word})"},
+    "fq_epd_event_plate": {"nb": " — skilt: {plate}", "en": " — plate: {plate}", "de": " — Kennzeichen: {plate}"},
 }
+
+
+# P144-s27b: the frame prompts with expression and gesture per person (measured on ep 245/247: gestures 1/12 → 11/12,
+# smiles 0 → 11/12, one invention in 36 empty or turned-away answers). Built from the measured base prompts so the two
+# never drift apart; open text, no example words (small models copy examples). The English text is the measured one.
+_LOOKS_SCHEMA = ', "expression": "...", "gesture": "..."'
+_LOOKS_FULL_RULES = {
+    "en": "- expression: the person's facial expression in this image, in your own words; «unclear» when the face is not "
+          "clearly visible.\n- gesture: a gesture the person makes in this image with hands, arms or head, in your own "
+          "words; empty text if none.\n",
+    "nb": "- expression: personens ansiktsuttrykk i dette bildet, med dine egne ord; «unclear» når ansiktet ikke synes "
+          "tydelig.\n- gesture: en gest personen gjør i dette bildet med hender, armer eller hode, med dine egne ord; tom "
+          "tekst hvis ingen.\n",
+    "de": "- expression: der Gesichtsausdruck der Person in diesem Bild, in deinen eigenen Worten; «unclear», wenn das "
+          "Gesicht nicht deutlich zu sehen ist.\n- gesture: eine Geste, die die Person in diesem Bild mit Händen, Armen "
+          "oder Kopf macht, in deinen eigenen Worten; leerer Text, wenn keine.\n",
+}
+_LOOKS_CHANGE_RULE = {
+    "en": "- expression and gesture: for each person in the image, what you see in this image only, in your own words; "
+          "expression «unclear» when the face is not clearly visible, gesture empty text if none.\n",
+    "nb": "- expression og gesture: for hver person i bildet, bare det du ser i dette bildet, med dine egne ord; "
+          "expression «unclear» når ansiktet ikke synes tydelig, gesture tom tekst hvis ingen.\n",
+    "de": "- expression und gesture: für jede Person im Bild nur, was du in diesem Bild siehst, in deinen eigenen Worten; "
+          "expression «unclear», wenn das Gesicht nicht deutlich zu sehen ist, gesture leerer Text, wenn keine.\n",
+}
+
+
+def _with_looks(base: str, rules: str, before: str) -> str:
+    text = base.replace('"carried": "..."}}]', '"carried": "..."' + _LOOKS_SCHEMA + '}}]')
+    at = text.find(before)
+    return text[:at] + rules + text[at:] if at >= 0 else text + "\n" + rules.rstrip()
+
+
+_DOORS_LINE = {"en": "- doors:", "nb": "- doors:", "de": "- doors:"}
+_NEW_LINE = {"en": "- new_persons:", "nb": "- new_persons:", "de": "- new_persons:"}
+_T["frigate_frames_full_ex"] = {lang: _with_looks(_T["frigate_frames_full"][lang], _LOOKS_FULL_RULES[lang], _DOORS_LINE[lang])
+                                for lang in ("nb", "en", "de")}
+_T["frigate_frames_change_ex"] = {lang: _with_looks(_T["frigate_frames_change"][lang], _LOOKS_CHANGE_RULE[lang],
+                                                    _NEW_LINE[lang]) for lang in ("nb", "en", "de")}
+_T["frigate_frames_tl_expression"] = {"nb": "uttrykk: {what}", "en": "expression: {what}", "de": "Ausdruck: {what}"}
+_T["frigate_frames_tl_gesture"] = {"nb": "gest: {what}", "en": "gesture: {what}", "de": "Geste: {what}"}

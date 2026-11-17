@@ -2,11 +2,11 @@
 Tests for P105 Phase 7 — context budget.
 
 A: dynamic replay window (current session first, token budget, few pairs from before).
-B: tool results / images stubbed after Kåre has read them one round (Stian's rule), plus a
+B: tool results / images stubbed after Kåre has read them one round (the user's rule), plus a
    budget guard that stubs oldest-first when the next prompt would not fit.
 C: library fetch_article max_chars coerced + clamped (BUG-log 2026-09-21).
 
-Background: Stian's stress test 2026-09-28 (rid-1790596038131) reached 39,770 of 43,008 input
+Background: the user's stress test 2026-09-28 (rid-1790596038131) reached 39,770 of 43,008 input
 tokens in round 6; only the 6-round cap stopped it.
 
 Run with: cd /kaare && PYTHONPATH=/kaare venv/bin/python -m pytest tests/test_context_budget.py -v

@@ -15,6 +15,8 @@ from pathlib import Path
 import yaml as _yaml
 
 from kaare_core import log_buffer
+from kaare_core.config import get_think_response_max_chars
+from kaare_core.storage import limits, rotation
 
 
 def _load_settings() -> dict:
@@ -28,8 +30,8 @@ def _load_settings() -> dict:
 _settings = _load_settings()
 _tc = _settings.get("think_cache", {})
 _CACHE_PATH = Path(_tc.get("path", "/kaare/state/think_cache.jsonl"))
-_MAX_ENTRIES: int = int(_tc.get("max_entries", 150))
-_TRIM_THRESHOLD: int = _MAX_ENTRIES + int(_tc.get("trim_margin", 30))
+# P150: kept by size (Settings → Logs/Storage, storage_limits.think_cache_mb), not by a line count or days.
+_READ_SCAN_MAX_BYTES = 32 * 1_048_576  # a history search scans at most this much from the end of the file (IO bound)
 
 _write_count = 0
 _trimmed_at = 0
@@ -102,7 +104,8 @@ def log_think(
             "prompt_preview": prompt_preview[:200],
             "think_text": think_text,
             "think_summary": _extract_summary(think_text),
-            "response": response[:500],
+            # Long replies are kept for measuring the model guard (P142); GUI-set length.
+            "response": response[: get_think_response_max_chars()],
             "recovered": recovered,
             "latency_ms": latency_ms,
         }
@@ -113,24 +116,21 @@ def log_think(
 
 
 def _trim_after_flush() -> None:
-    """Runs inside log_buffer's flush of this file: trim once per 20 new entries (as before)."""
+    """Runs inside log_buffer's flush of this file: check the size once per 20 new entries (as before)."""
     global _trimmed_at
     if _write_count - _trimmed_at >= 20:
         _trimmed_at = _write_count
         _trim_cache()
 
 
+def _limit_bytes() -> int:
+    return limits.get_bytes("think_cache_mb")
+
+
 def _trim_cache() -> None:
-    """Keep only the last _MAX_ENTRIES lines in the file."""
+    """Over its size limit the oldest entries go first (0 = off). A stat when under it — no read."""
     try:
-        if not _CACHE_PATH.exists():
-            return
-        lines = _CACHE_PATH.read_text(encoding="utf-8").splitlines()
-        if len(lines) > _TRIM_THRESHOLD:
-            _CACHE_PATH.write_text(
-                "\n".join(lines[-_MAX_ENTRIES:]) + "\n",
-                encoding="utf-8",
-            )
+        rotation.trim_lines_to_bytes(_CACHE_PATH, _limit_bytes())
     except Exception:
         pass
 
@@ -154,9 +154,9 @@ def read_think_history(
         log_buffer.flush(_CACHE_PATH)  # include entries still in RAM (P131)
         if not _CACHE_PATH.exists():
             return []
-        lines = _CACHE_PATH.read_text(encoding="utf-8").splitlines()
         entries: list[dict] = []
-        for line in reversed(lines):
+        # Read from the end (newest first) — never the whole file (P150: it may hold years now)
+        for line in rotation.iter_lines_reverse(_CACHE_PATH, max_bytes=_READ_SCAN_MAX_BYTES):
             line = line.strip()
             if not line:
                 continue

@@ -19,6 +19,7 @@ import websockets
 sys.path.insert(0, "/kaare")
 from kaare_core import log_buffer
 from kaare_core.config import get_service as _svc
+from kaare_core.storage import rawlog
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -110,7 +111,8 @@ def make_entry(event_type: str, data: dict) -> dict | None:
 
 
 def write_entry(entry: dict) -> None:
-    log_buffer.write(LOG_PATH, entry)  # RAM, batched to disk (P131)
+    # P150: today's raw segment (logs/raw/ha_events/), RAM-batched to disk (P131); LOG_PATH is the old single file
+    log_buffer.write(rawlog.current_segment("ha_events"), entry)
 
 
 # ─── WebSocket loop ───────────────────────────────────────────────────────────

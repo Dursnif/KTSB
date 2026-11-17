@@ -29,6 +29,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from adapters.llm_adapter import _current_rid
 from adapters.web_search_adapter import web_search
 from kaare_core.agents.mechanic import shell_guard
 from kaare_core.aio_files import append_text
@@ -41,9 +42,11 @@ from kaare_core.config import get_qdrant_api_key as _qdrant_key
 from kaare_core.config import get_service as _svc
 from kaare_core.config import get_ssh_nodes as _get_ssh_nodes
 from kaare_core.config import pool_call_options as _pool_opts
+from kaare_core.model_enforcement import CALL_RAN, CALL_REFUSED, ModelEnforcer
 from kaare_core.model_lock import LockTimeout, lock_agent_pool, pool_order, role_url
 from kaare_core.ollama_tool_rescue import post_chat
 from kaare_core.think_strip import strip_think_block
+from kaare_core.tools import query_scrub
 from kaare_core.tools.i18n import get_lang, t
 from kaare_core.tools.shared_tools import (
     check_resources as _shared_check_resources,
@@ -456,6 +459,12 @@ async def execute_tool(name: str, arguments: dict, lang: str | None = None) -> s
             query = arguments.get("query", "").strip()
             if not query:
                 return t("mech_empty_search", lang)
+            # T32b: in the dev slot / night meeting (no user chose to share a name) household names never leave
+            _rid = _current_rid.get()
+            if query_scrub.is_night_rid(_rid):
+                query = query_scrub.outgoing_query(query, rid=_rid)
+                if not query:
+                    return t("mech_empty_search", lang)
             sys.path.insert(0, "/kaare")
 
             return await web_search(query)
@@ -511,7 +520,7 @@ async def execute_tool(name: str, arguments: dict, lang: str | None = None) -> s
             # One switch: the shell toggle in Agent settings (backend-enforced here, off unless
             # enabled — also for callers that pass their own tool list, like the dev meeting).
             # Replaces the old settings.yaml-only `developer_tools` gate, which had no GUI
-            # control at all (P116 B28). Mechanic may only READ (Stian 2026-10-01) — every
+            # control at all (P116 B28). Mechanic may only READ (2026-10-01) — every
             # command goes through shell_guard, locally and on nodes (P116 B33).
             if not is_agent_tool_enabled("mechanic", "shell", default=False):
                 return t("mech_shell_disabled", lang)
@@ -724,6 +733,15 @@ async def ask_with_tools(
     _history: list[dict] = []
     _seen_calls: set[str] = set()  # loop detection
 
+    # The enforcer box (P142): profile «mechanic» starts in shadow mode. KTSB reports the offered
+    # tools, the task and every tool result into it; it decides on corrections.
+    enforcer = ModelEnforcer.for_profile("mechanic", lang, rid=rid)
+    enforcer.offer_tools(offered_names)
+    for _m in _fixed:
+        enforcer.add_grounding(_m.get("content") or "")
+    _extra = 0  # rounds granted by an enforcer correction, outside max_tool_rounds
+    _no_tools = False  # the correction asked for an answer without tools
+
     def _build_messages() -> list[dict]:
         # Observation masking (ref. arxiv 2508.21433):
         # Keep last _MSG_WINDOW messages verbatim; replace older tool output with placeholder.
@@ -741,8 +759,12 @@ async def ask_with_tools(
                 masked.append(msg)
         return _fixed + masked
 
-    for round_num in range(max_tool_rounds + 1):
+    round_num = -1
+    while round_num < max_tool_rounds + _extra:
+        round_num += 1
         payload = {**payload_base, "messages": _build_messages()}
+        if _no_tools:
+            payload["tools"] = []
         resp = None
         for attempt in range(_ROUND_RETRIES + 1):
             try:
@@ -785,7 +807,7 @@ async def ask_with_tools(
         msg = resp.get("message", {})
         tool_calls = msg.get("tool_calls", [])
 
-        if not tool_calls or round_num >= max_tool_rounds:
+        if not tool_calls or round_num >= max_tool_rounds + _extra or _no_tools:
             raw_content = msg.get("content", "").strip()
             content, think_content, _think_closed = strip_think_block(raw_content)
             if think_content:
@@ -799,7 +821,16 @@ async def ask_with_tools(
                     )
                 except Exception:
                     pass
-            return content or t("mech_no_response", lang)
+            action = enforcer.on_answer(
+                content, resp.get("meta"), final_round=round_num >= max_tool_rounds + _extra
+            )
+            if action:
+                _history.append({"role": "assistant", "content": content})
+                _history.append({"role": "user", "content": action.correction_message})
+                _extra += 1
+                _no_tools = not action.tools_left
+                continue
+            return enforcer.finish(content, "mech_no_response")
 
         _history.append(
             {
@@ -829,6 +860,7 @@ async def ask_with_tools(
                 )
                 log.warning("[Mechanic] tool not offered, refused: %s", tool_name)
                 _log_tool_call(tool_name, args, refusal, 0, source="mechanic", rid=rid)
+                enforcer.record_call(tool_name, args, CALL_REFUSED)
                 _history.append({"role": "tool", "content": refusal, "name": tool_name})
                 continue
 
@@ -836,6 +868,7 @@ async def ask_with_tools(
             sig = f"{tool_name}:{json.dumps(args, sort_keys=True)}"
             if sig in _seen_calls:
                 log.warning("[Mechanic loop] Duplicate ignored: %s", sig[:80])
+                enforcer.record_call(tool_name, args, CALL_REFUSED)  # not run again
                 _history.append(
                     {
                         "role": "tool",
@@ -852,7 +885,13 @@ async def ask_with_tools(
             _duration_ms = int((_time.monotonic() - _t0) * 1000)
             log.info("[Mechanic result] %s", result[:100])
             _log_tool_call(tool_name, args, result, _duration_ms, source="mechanic", rid=rid)
+            enforcer.record_call(tool_name, args, CALL_RAN, result)
             _history.append({"role": "tool", "content": result, "name": tool_name})
+
+        # The correction round made tool calls: one more round without tools to answer (N24 A2).
+        if enforcer.needs_answer_round() and not _no_tools:
+            _no_tools = True
+            _extra += 1
 
         # Check for injected user comment between rounds
         if job_state is not None:
@@ -860,5 +899,6 @@ async def ask_with_tools(
             if injected:
                 log.info("[Mechanic] injecting user comment: %s", str(injected)[:60])
                 _history.append({"role": "user", "content": f"[User comment mid-task]: {injected}"})
+                enforcer.add_grounding(str(injected))
 
     return t("mech_no_response", lang)

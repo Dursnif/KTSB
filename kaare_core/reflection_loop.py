@@ -8,7 +8,8 @@ from pathlib import Path
 import kaare_core.app_state as app_state
 from adapters.llm_adapter import ask_llm_with_tools
 from kaare_core.config import get_local_tz as _get_local_tz
-from kaare_core.model_enforcement import ModelEnforcer, ToolPromiseDetector, tool_usage_tags
+from kaare_core.model_enforcement import CALL_ERROR, CALL_RAN, ModelEnforcer
+from kaare_core.storage import rotation
 from kaare_core.tools.definitions import get_tools
 from kaare_core.tools.executor import execute_tool
 from kaare_core.tools.i18n import get_lang, t
@@ -101,13 +102,27 @@ def _filter_new_thoughts(text: str, since: datetime | None) -> str:
     return "\n\n".join(entries)
 
 
+# P150: inner thoughts are kept by size now (years, not 24 h) — the reflection reads only the newest part, so neither the
+# disk read nor the prompt grows with the file. A technical bound on one read, not a retention rule.
+INNER_READ_MAX_BYTES = 256 * 1024
+
+
+def _read_inner_tail(path: Path) -> str:
+    """The newest INNER_READ_MAX_BYTES of inner_thoughts.txt, starting at a whole «[Jang …]» entry."""
+    text = rotation.read_tail(path, INNER_READ_MAX_BYTES)
+    if text and not _JANG_TS_RE.match(text):
+        m = re.search(r"^\[Jang ", text, re.MULTILINE)
+        text = text[m.start():] if m else ""
+    return text
+
+
 async def _run_jang_reflection() -> None:
     thoughts_path = _INNER_THOUGHTS_PATH
     if not thoughts_path.exists() or not thoughts_path.stat().st_size:
         return
 
     try:
-        raw_text = thoughts_path.read_text(encoding="utf-8").strip()
+        raw_text = _read_inner_tail(thoughts_path).strip()
     except Exception as e:
         _log.warning("jang_reflection: could not read inner_thoughts: %s", e)
         return
@@ -145,10 +160,9 @@ async def _run_jang_reflection() -> None:
     # cycle shares it, so get_trace(rid) returns the whole cycle as one trace.
     rid = f"rid-refl-{int(time.time() * 1000)}"
     # Same promise check as chat (P118 B1): «I'll note it / raise it at the next dev meeting»
-    # without the tool call gets one forced correction round. Only the tool-promise detector —
-    # the reflection prompt has no [LANG:xx] tag contract, so the language detector would misfire.
-    enforcer = ModelEnforcer(lang, rid=rid, detectors=[ToolPromiseDetector()])
-    used_tools: list[str] = []
+    # without the tool call gets one forced correction round. Profile «reflection» = the
+    # tool-promise detector only (no [LANG:xx] tag contract here) — see model_enforcement.PROFILES.
+    enforcer = ModelEnforcer.for_profile("reflection", lang, rid=rid)
     max_rounds = 3
 
     for _round in range(max_rounds):
@@ -184,9 +198,7 @@ async def _run_jang_reflection() -> None:
         if not tool_calls:
             text_out = (result.get("text") or "").strip()
             if _round < max_rounds - 1:
-                action = enforcer.check(
-                    text_out=text_out, used_tools=used_tools, meta=result.get("meta", {})
-                )
+                action = enforcer.on_answer(text_out, result.get("meta", {}))
                 if action:
                     messages.append({"role": "assistant", "content": text_out})
                     messages.append({"role": "user", "content": action.correction_message})
@@ -209,12 +221,13 @@ async def _run_jang_reflection() -> None:
             if not isinstance(args, dict):
                 args = {}
             args["_rid"] = rid
-            used_tools.extend(tool_usage_tags(name, args))
             print(f"[KÅRE REFLECTION] Tool call: {name}  args={str(args)[:120]}")
             try:
                 tool_result = await execute_tool(name, args)
+                enforcer.record_call(name, args, CALL_RAN)
             except Exception as e:
                 tool_result = t("refl_loop_tool_error", lang, error=e)
+                enforcer.record_call(name, args, CALL_ERROR)  # a crashed call covers no claim
             messages.append({"role": "tool", "name": name, "content": str(tool_result)})
 
     if not deferred:

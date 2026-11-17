@@ -10,6 +10,9 @@ kaare:
 stt:
   # Max length of one local-microphone recording (seconds)
   max_record_seconds: 10
+  # End of speech on this machine's mic (GUI: Nodes → Voice): auto = measured against the mic's own noise and
+  # your voice level (works on any mic); fixed = volume under silence_amplitude_threshold counts as silence
+  end_of_speech: auto
   # Seconds of silence before a recording stops
   silence_threshold_seconds: 1.5
   # Volume below this counts as silence
@@ -20,20 +23,22 @@ fast_responses:
   cache_dir: "cache/fast_responses"
 
 audio:
-  # sounddevice input index for a local microphone; null = the system default
+  # KTSB Direct microphone (GUI: Nodes → KTSB Direct): a device name or index; null = the system default
   mic_device: null
-  # Microphone sample rate (resampled to 16000 Hz for Whisper)
-  mic_sample_rate: 44100
+  # Microphone sample rate; null = the device's own rate (resampled to 16000 Hz for Whisper)
+  mic_sample_rate: null
 
 duck:
   # Pause MPD playback while Kåre speaks through the local speakers
   mpd: true
   # Seconds between end of speech and MPD resuming
   mpd_resume_delay: 0.3
+  # Quiet the reply's output devices from the button press until the answer is done: MPD pauses,
+  # a playing Home Assistant media player is turned down to `volume` (0.0–1.0) and back up before Kåre speaks
+  on_listen: true
+  volume: 0.2
 
 bridge:
-  # UDP port for audio streams from ESP32 nodes
-  udp_port: 8010
   # HTTP port for button presses and wav serving
   http_port: 8011
   # "local" = this machine's speakers, "esp32" = the node's speaker

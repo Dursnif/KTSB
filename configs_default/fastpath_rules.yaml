@@ -1,6 +1,6 @@
 # Fastpath reflexes — data-driven dispatch rules
 #
-# phrase:   Norwegian command to match (lowercase, stripped of punctuation)
+# phrase:   command to match, in the language the user speaks it (lowercase, stripped of punctuation)
 # match:    "contains" (default) or "exact"
 # provider: "ha" / "mqtt" / "os"
 # active:   true (default) / false — set false to disable without deleting

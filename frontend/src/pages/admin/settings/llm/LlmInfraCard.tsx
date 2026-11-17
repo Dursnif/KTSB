@@ -73,7 +73,6 @@ export function LlmInfraCard({ dockerControl, onDockerControlChange }: {
             checked={dockerControl.allow_docker_control}
             onCheckedChange={handleToggle}
             disabled={toggling}
-            className="data-checked:bg-green-500"
           />
         </div>
 

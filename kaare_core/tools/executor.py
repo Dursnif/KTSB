@@ -17,11 +17,14 @@ import httpx
 from adapters.display_adapter import get_display_nodes, send_display
 from adapters.image_generation_adapter import edit_image, generate_image
 from adapters.weather_adapter import fetch_weather as _fetch_weather
+from kaare_core import receipts, rooms
+from kaare_core.app_state import get_stm
 from kaare_core.config import get_llm_config as _llm_cfg
 from kaare_core.config import get_local_tz, now_local
 from kaare_core.config import get_service as _svc
 from kaare_core.image_store import find_image, list_images
 from kaare_core.memory import learning_store
+from kaare_core.memory.long_term import get_ltm
 from kaare_core.service_auth import service_headers
 from kaare_core.tools import (
     executor_agents,
@@ -82,7 +85,9 @@ from kaare_core.tools.trace_reader import (
     get_recent_traces,
     get_trace,
 )
+from kaare_core.users import store as users_store
 from kaare_core.users.profile_manager import get_unlock_config
+from kaare_core.voice import cast_client
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +183,14 @@ _LIST_NAME_ALIASES = {
 }
 
 
+def busy_note(node: str, outcome: str, lang: str) -> str:
+    """A target in a failed list: «node» — or, when another app plays there, «node (YouTube is playing there — not
+    sent)» so Kåre can say why (P-D1, 2026-11-16)."""
+    if outcome.startswith("busy:"):
+        return t("exec_announce_busy", lang, node=node, app=outcome.split(":", 1)[1] or "?")
+    return node
+
+
 def normalize_list_name(raw) -> str:
     """Map a note list_name (English or Norwegian, possibly with leaked tool-call junk after
     it, e.g. «huske\n<parameter=text>…») to the dispatcher's key. Unknown → 'arkitekt'
@@ -185,6 +198,29 @@ def normalize_list_name(raw) -> str:
     first = str(raw or "").strip().split()[0].lower() if str(raw or "").strip() else ""
     first = first.split("<")[0]
     return _LIST_NAME_ALIASES.get(first, "arkitekt")
+
+
+ANNOUNCE_STM_WORDS = 8  # what the STM keeps of a text read aloud: only its first words (never the content)
+
+
+def _announce_stm(arguments: dict, text: str, played: list[str], outcome: str, lang: str) -> None:
+    """Owner decision 2026-11-16: what Kåre read aloud goes into the user's STM as a receipt — that the job was done,
+    where, when, the outcome, and a reference (the turn's RID, the source when the text came from a lookup). Never the
+    text itself (a long web/wiki text must not enter memory). History only: Kåre already has the outcome this turn.
+    Never raises."""
+    uid = str(arguments.get("_user_id") or "").strip()
+    if not uid:
+        return
+    try:
+        words = (text or "").split()
+        what = " ".join(words[:ANNOUNCE_STM_WORDS]) + (" …" if len(words) > ANNOUNCE_STM_WORDS else "")
+        source = str(arguments.get("source") or "").strip()[:200]
+        ref = " · ".join(x for x in (str(arguments.get("_rid") or "").strip(), source) if x) or "-"
+        line = t("announce_stm_said", lang, time=now_local().strftime("%H:%M"), what=what, where=", ".join(played),
+                 outcome=t(f"announce_stm_{outcome}", lang), ref=ref)
+        get_stm(uid).add_dialog(role="system", text=line, user_id=uid)
+    except Exception as e:
+        logger.warning("[announce] STM receipt failed for user '%s': %s", uid, type(e).__name__)
 
 
 async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
@@ -218,6 +254,7 @@ async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
                 tts_text=arguments.get("tts_text", ""),
                 ha_payload=arguments.get("ha_payload") or None,
                 for_user_id=arguments.get("for_user_id") or None,
+                receipt_who=arguments.get("_user_id", "global"),
             )
         if action == "cancel":
             return cancel_timer(arguments.get("timer_id", ""), lang=lang)
@@ -280,6 +317,7 @@ async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
                     lang=lang,
                     theme=str(arguments.get("theme") or ""),
                     title=str(arguments.get("title") or ""),
+                    receipt_who=user_id,  # one receipt from code (J22 part 4 follow-up)
                 )
             if action == "read":
                 return await asyncio.to_thread(reader, lang)
@@ -318,7 +356,7 @@ async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
             text = arguments.get("text") or arguments.get("tekst") or ""
             title = str(arguments.get("title") or "")
             if action in ("write", "add"):
-                return await asyncio.to_thread(lesson_add, text, title, lang)
+                return await asyncio.to_thread(lesson_add, text, title, lang, user_id)
             if action == "read":
                 return await asyncio.to_thread(lesson_read, lang)
             if action == "edit":
@@ -341,6 +379,7 @@ async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
                     unit=(arguments.get("unit") or arguments.get("enhet") or ""),
                     added_by=user_id,
                     lang=lang,
+                    receipt_who=user_id,
                 )
             if action == "read":
                 return shopping_read(lang=lang)
@@ -378,6 +417,7 @@ async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
                         arguments.get("remind_on_login", arguments.get("påminn_ved_login", False))
                     ),
                     lang=lang,
+                    receipt_who=user_id,
                 )
             if action == "read":
                 return reminder_read(user_id=user_id, lang=lang)
@@ -410,6 +450,7 @@ async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
                     context=(arguments.get("context") or arguments.get("kontekst") or ""),
                     lang=lang,
                     title=str(arguments.get("title") or ""),
+                    receipt_who=user_id,
                 )
             if action == "read":
                 ids = arguments.get("note_ids") or []
@@ -515,7 +556,9 @@ async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
             if row is None:
                 return t("dev_proposals_not_pending", lang, id=pid)
             key = "dev_proposals_confirmed" if status == "confirmed" else "dev_proposals_rejected"
-            return t(key, lang, id=pid, user=user)
+            return t(key, lang, id=pid, user=user) + receipts.suffix(
+                "dev_proposal", ref=f"proposal:{pid}", what=t("rcpt_proposal_what", lang, id=pid, status=status),
+                where=t("rcpt_proposal_where", lang), who=user, lang=lang)
         return t(
             "agent_unknown_action",
             lang,
@@ -533,14 +576,30 @@ async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
             rid_arg = arguments.get("rid", "").strip()
             if not rid_arg:
                 return t("inspiser_system_hent_trace_mangler_rid", lang)
-            trace = get_trace(rid_arg)
+            uid = arguments.get("_user_id", "global")
+            allowed = await asyncio.to_thread(_may_see_trace, uid, arguments.get("_source"), rid_arg)
+            trace = get_trace(rid_arg) if allowed else {}  # J30b: refused = exactly like «not found» (fail closed)
             if (
                 not trace.get("stages")
                 and not trace.get("llm_calls")
                 and not trace.get("tool_calls")
             ):
-                return t("inspiser_system_hent_trace_ikke_funnet", lang, rid=rid_arg)
+                # J30: a guessed rid finds nothing — say which real rids of this user are nearest in time (code facts)
+                near = await asyncio.to_thread(_nearest_own_rids, uid, rid_arg)
+                missing = t("inspiser_system_hent_trace_ikke_funnet", lang, rid=rid_arg)
+                if not near:
+                    return missing
+                return missing + "\n" + t("self_trace_nearest", lang) + "\n" + "\n".join(
+                    _own_rid_line(r, lang) for r in near)
             return format_trace_for_kare(trace, lang=lang)
+        if action == "recent":  # J30: the caller's own recent requests — the real rids, never guessed
+            uid = arguments.get("_user_id", "global")
+            n = max(1, min(int(arguments.get("count", 10) or 10), 50))
+            rows = await asyncio.to_thread(_own_rids, uid, n)
+            if not rows:
+                return t("self_trace_recent_none", lang)
+            return t("self_trace_recent_header", lang, count=len(rows)) + "\n" + "\n".join(
+                _own_rid_line(r, lang) for r in rows)
         if action == "trace_patterns":
             n = min(int(arguments.get("count", 50)), 200)
             source = arguments.get("source", "all")
@@ -555,7 +614,7 @@ async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
             lang,
             tool="self_trace",
             action=action,
-            valid="fetch_trace, trace_patterns",
+            valid="fetch_trace, trace_patterns, recent",
         )
 
     if name in executor_camera.CAMERA_TOOLS:
@@ -625,19 +684,29 @@ async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
             res = await generate_image(prompt, negative_prompt, user_id=uid)
         if not res.get("ok"):
             return t("exec_image_failed", lang, error=res.get("error", "ukjent feil"))
-        return t("exec_image_ready", lang, image_id=res["image_id"])
+        return t("exec_image_ready", lang, image_id=res["image_id"]) + receipts.suffix(
+            "image", ref=f"image:{res['image_id']}", what=t("rcpt_image_what", lang, prompt=prompt[:80]),
+            where=t("rcpt_image_where", lang, user=uid), who=uid, lang=lang)
 
     if name in ("view_images", "se_bilder"):
-        uid = arguments.get("user_id") or arguments.get("_user_id", "global")
+        # Security 2026-11-16: always the logged-in user (the router's _user_id) — never a model-chosen user_id
+        uid = str(arguments.get("_user_id") or "").strip()
+        asked = str(arguments.get("user_id") or "").strip()
+        other = bool(asked) and asked != uid
+        if other:
+            logger.warning("[view_images] model asked for another user's pictures (%r) as %r — ignored", asked, uid)
+        if not uid:
+            return t("exec_no_images", lang, uid="-", folder=arguments.get("folder", "all"))
+        refused = (t("img_other_user_refused", lang) + "\n") if other else ""
         folder = arguments.get("folder", "all")
         limit = int(arguments.get("limit", 10))
         image_id = arguments.get("image_id", "").strip()
         mode = arguments.get("mode", "view").strip()
 
         if image_id:
-            path = find_image(image_id)
+            path = find_image(image_id, owner=uid, folders=("input", "output"))  # own pictures, never camera
             if not path:
-                return t("exec_image_not_found", lang, image_id=image_id)
+                return refused + t("exec_image_not_found", lang, image_id=image_id)
             if mode in ("analyze", "analyser"):
                 b64 = _b64.b64encode(path.read_bytes()).decode()
                 return f"[VISION:{b64}]"
@@ -645,9 +714,9 @@ async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
 
         imgs = list_images(uid, folder, limit)
         if not imgs:
-            return t("exec_no_images", lang, uid=uid, folder=folder)
+            return refused + t("exec_no_images", lang, uid=uid, folder=folder)
         lines = [f"{i['folder']}/{i['id']} ({i['size_kb']} KB)" for i in imgs]
-        return t("exec_images_list", lang, uid=uid) + "\n" + "\n".join(lines)
+        return refused + t("exec_images_list", lang, uid=uid) + "\n" + "\n".join(lines)
 
     if name == "announce":
         action = arguments.get("action", "say")
@@ -661,6 +730,26 @@ async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
             ]
             return t("announce_display_list", lang) + "\n" + "\n".join(lines)
 
+        if action == "show_url":
+            # P139 phase 3: a web page full-screen on a Cast screen (DashCast), only http(s).
+            url = str(arguments.get("url") or "").strip()
+            if not url.startswith(("http://", "https://")):
+                return t("announce_url_bad", lang)
+            node = executor_ha.resolve_cast_node(
+                str(arguments.get("target") or ""), str(arguments.get("_source_node") or "")
+            )
+            if not node:
+                choices = executor_ha.cast_choices(str(arguments.get("target") or ""))
+                if choices:
+                    return t("media_target_ambiguous", lang, client=arguments.get("target"),
+                             choices=executor_ha.choices_text(choices))
+                return t("announce_url_no_screen", lang, target=arguments.get("target") or "—")
+            nid, cfg = node
+            res = await cast_client.call("/cast/url", {"host": str(cfg["host"]).strip(), "url": url})
+            if res.get("ok"):
+                return t("announce_url_ok", lang, target=nid, url=url)
+            return t("announce_url_failed", lang, target=nid, error=res.get("error") or "?")
+
         if action == "display":
             text = arguments.get("text", "").strip()
             target = arguments.get("target", "").strip()
@@ -670,24 +759,37 @@ async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
             position = arguments.get("position", "bottom_right")
 
             image_path = None
-            if image_id:
-                found = find_image(image_id)
+            if image_id:  # security 2026-11-16: only the caller's own picture
+                found = find_image(image_id, owner=str(arguments.get("_user_id") or ""))
                 image_path = str(found) if found else None
 
             all_display = await get_display_nodes()
             display_ids = [n["id"] for n in all_display]
 
+            here = (
+                executor_ha.node_image_targets(arguments.get("_source_node") or "", display_ids)
+                if not target
+                else []
+            )
             if target in display_ids:
                 node_ids = [target]
+            elif here:
+                # P138: no target named → the screen(s) where the user is (the input node's image_out)
+                node_ids = here
             elif target in ("alle", "all", ""):
                 node_ids = display_ids
             else:
-                tn = target.lower().replace(" ", "_")
-                node_ids = [
-                    n["id"]
-                    for n in all_display
-                    if n.get("room", "").lower().replace(" ", "_") == tn
-                ]
+                # P137: the target as a place word through the register («verkstedet» → verksted), then the
+                # node's free-text room as before.
+                place = rooms.get_register().resolve_place(target)
+                node_ids = [n["id"] for n in all_display if place and rooms.node_place(n["id"])[0] == place]
+                if not node_ids:
+                    tn = target.lower().replace(" ", "_")
+                    node_ids = [
+                        n["id"]
+                        for n in all_display
+                        if n.get("room", "").lower().replace(" ", "_") == tn
+                    ]
 
             if not node_ids:
                 return t("announce_display_target_not_found", lang, target=target or "all")
@@ -701,16 +803,31 @@ async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
                     image_path=image_path,
                     duration=duration,
                     position=position,
+                    job="picture" if image_path else "notice",  # P139 phase 3: a picture goes full screen first
                 )
                 results.append((nid, res))
 
             ok = sum(1 for _, r in results if r.get("ok"))
             fail = len(results) - ok
+            # P139 phase 2: say which channel showed it, and what was tried first (a fallback is never silent).
+            via = []
+            for nid, r in results:
+                if not r.get("ok"):
+                    continue
+                tried = ", ".join(f"{x['channel']} ({x['error'][:60]})" for x in r.get("tried") or [])
+                key = "announce_display_via_fallback" if tried else "announce_display_via"
+                via.append(t(key, lang, node=nid, channel=r.get("channel") or r.get("method") or "?", tried=tried))
+            detail = ("\n" + "\n".join(via)) if via else ""
             if ok == len(results):
-                return t("announce_display_ok", lang, count=ok)
+                return t("announce_display_ok", lang, count=ok) + detail
             if ok > 0:
-                return t("announce_display_partial", lang, ok=ok, fail=fail)
-            errors = "; ".join(r.get("error", "?") for _, r in results)
+                failed = "; ".join(
+                    busy_note(nid, f"busy:{r['busy']}", lang) if r.get("busy") else f"{nid}: {r.get('error', '?')}"
+                    for nid, r in results if not r.get("ok"))
+                return t("announce_display_partial", lang, ok=ok, fail=fail) + detail + "\n" + failed
+            errors = "; ".join(
+                busy_note(nid, f"busy:{r['busy']}", lang) if r.get("busy") else f"{nid}: {r.get('error', '?')}"
+                for nid, r in results)
             return t("announce_display_failed", lang, errors=errors)
 
         # Default: action == "say"
@@ -720,28 +837,38 @@ async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
         volume = float(raw_volume) if raw_volume is not None else None
         if not text:
             return "No text provided for announcement."
-        payload: dict = {"text": text, "target": target, "lang": lang}
+        # wait=True: the bridge answers once playback has started or failed — the receipt follows the outcome
+        # (DT04-S05f; before, «sent» came at submission while nothing played).
+        payload: dict = {"text": text, "target": target, "lang": lang, "wait": True}
         if volume is not None:
             payload["volume"] = max(0.0, min(1.0, volume))
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(
                     f"{_VOICE_BRIDGE_URL}/speak",
                     json=payload,
                     headers=service_headers(),
                 )
-                resp.raise_for_status()
-            target_label = (
-                t("exec_announce_all_rooms", lang) if target in ("all", "alle") else f"'{target}'"
-            )
-            vol_label = (
-                t("exec_announce_volume_label", lang, pct=int(volume * 100))
-                if volume is not None
-                else ""
-            )
-            return t("exec_announce_sent", lang, target=target_label, vol_label=vol_label)
+            if resp.status_code == 404:
+                detail = (resp.json() or {}).get("detail") or {}
+                key = "exec_announce_disabled_target" if detail.get("error") == "disabled_target" else (
+                    "exec_announce_unknown_target")
+                return t(key, lang, target=target, known=", ".join(detail.get("known") or []))
+            resp.raise_for_status()
+            body = resp.json() or {}
         except Exception as exc:
             return f"Could not reach voice bridge: {exc}"
+        results = body.get("results") or {}
+        played = [n for n, r in results.items() if r in ("played", "playing")]
+        failed = [busy_note(n, str(r), lang) for n, r in results.items() if r not in ("played", "playing")]
+        if body.get("status") == "failed" or not played:
+            return t("exec_announce_failed", lang, failed=", ".join(failed) or body.get("reason") or "?")
+        _announce_stm(arguments, text, played, "partial" if failed else "played", lang)  # owner decision 2026-11-16
+        if failed:
+            return t("exec_announce_partial", lang, ok=", ".join(played), failed=", ".join(failed))
+        target_label = t("exec_announce_all_rooms", lang) if target in ("all", "alle") else ", ".join(played)
+        vol_label = t("exec_announce_volume_label", lang, pct=int(volume * 100)) if volume is not None else ""
+        return t("exec_announce_started", lang, target=target_label, vol_label=vol_label)
 
     if name in executor_media.MEDIA_TOOLS:
         return await executor_media.dispatch(name, arguments)
@@ -750,6 +877,73 @@ async def _dispatch(name: str, arguments: dict[str, Any]) -> str:
         return await executor_reflexes.dispatch(name, arguments)
 
     return t("exec_unknown_tool", lang, name=name)
+
+
+OWN_RIDS_SCAN = 200  # J30: how many of the caller's newest interactions are looked at
+
+
+def _own_rids(uid: str, limit: int = OWN_RIDS_SCAN) -> list[dict]:
+    """J30: the caller's own requests with a rid, newest first — from LTM with this user_id (never another user's).
+    [] for no user. Never raises."""
+    if not uid or uid == "global":
+        return []
+    try:
+        rows = get_ltm().get_recent(limit=OWN_RIDS_SCAN, user_id=uid)
+    except Exception as e:
+        logger.warning("[self_trace] own rids unavailable: %s", type(e).__name__)
+        return []
+    return [r for r in rows if str(r.get("rid") or "").startswith("rid-")][:limit]
+
+
+INTERNAL_TRACE_SOURCES = ("meet", "refl")  # J30b: the night meeting / dev slot / reflection read every trace
+
+
+def _user_role(uid: str) -> str:
+    try:
+        return str((users_store.get_user(uid) or {}).get("role") or "")
+    except Exception:
+        return ""
+
+
+def _may_see_trace(uid: str, source, rid: str) -> bool:
+    """J30b: who may read one trace. Internal callers (no chat `_source` — reflection, the dev meeting — or the
+    meeting/dev-slot source) and admin: every trace. A chat user: only a rid that is theirs in LTM (`interactions`); a
+    camera episode's step rid or any other non-user rid is not theirs. Fail closed."""
+    if source is None or source in INTERNAL_TRACE_SOURCES:
+        return True
+    if not uid or uid == "global":
+        return False
+    if _user_role(uid) == "admin":
+        return True
+    try:
+        return bool(get_ltm().owns_rid(uid, rid))
+    except Exception:
+        return False
+
+
+def _rid_ms(rid: str) -> int | None:
+    try:
+        return int(rid.split("-")[-1].split(":")[0])
+    except (ValueError, IndexError):
+        return None
+
+
+def _nearest_own_rids(uid: str, rid: str, n: int = 3) -> list[dict]:
+    """J30: the caller's real rids nearest in time to `rid` (a rid ends in its ms timestamp), nearest first."""
+    target = _rid_ms(rid)
+    rows = [r for r in _own_rids(uid) if _rid_ms(r["rid"]) is not None]
+    if target is None:
+        return rows[:n]
+    return sorted(rows, key=lambda r: abs(_rid_ms(r["rid"]) - target))[:n]
+
+
+def _own_rid_line(row: dict, lang: str) -> str:
+    try:
+        when = datetime.fromisoformat(str(row.get("ts"))).astimezone(get_local_tz()).strftime("%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError):
+        when = str(row.get("ts") or "?")
+    text = " ".join(str(row.get("prompt") or "").split())[:60]
+    return t("self_trace_rid_line", lang, rid=row["rid"], time=when, text=text)
 
 
 async def execute_tool(name: str, arguments: dict[str, Any]) -> str:
@@ -772,10 +966,13 @@ async def execute_tool(name: str, arguments: dict[str, Any]) -> str:
                 return t("voice_tool_blocked", lang)
 
     t0 = _time.time()
+    _rcpt = receipts.acting_as(arguments.get("_user_id") or "global")  # change/removal receipts (receipts.change)
     try:
         result = await _dispatch(name, arguments)
     except Exception as e:
         result = f"Tool '{name}' feilet uventet: {e}"
+    finally:
+        receipts.done(_rcpt)
     duration_ms = int((_time.time() - t0) * 1000)
 
     # timer tools log themselves via timer_service

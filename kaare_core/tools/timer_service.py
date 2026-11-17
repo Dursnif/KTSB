@@ -26,7 +26,7 @@ from typing import Any
 
 import httpx
 
-from kaare_core import log_buffer
+from kaare_core import log_buffer, receipts
 from kaare_core.app_state import get_stm
 from kaare_core.background import spawn
 from kaare_core.config import (
@@ -267,18 +267,35 @@ async def _deliver_tts(timer_info: dict[str, Any]) -> None:
         tts_text = timer_info.get("tts_text", "")
         if not tts_text:
             return
-        # target_node overrides source_node; falls back to "local" (aplay on the AI-PC)
+        # target_node overrides source_node. A timer is never silent (DT04-S05f, kaare-d7): target → «local» →
+        # the user's chat, each step logged — the bridge no longer plays an unknown target locally by itself.
         target = timer_info.get("target_node") or timer_info.get("source_node") or "local"
         user_id = timer_info.get("user_id", "global")
+        timer_id = timer_info.get("id")
         lang = get_speech_lang(user_id)
         voice_url = _svc("internal", "voice_bridge")
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.post(
-                f"{voice_url}/speak",
-                json={"text": tts_text, "target": target, "lang": lang},
-                headers=service_headers(),
-            )
-        _log("tts_delivered", timer_id=timer_info.get("id"), target=target, status=r.status_code)
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                for attempt in dict.fromkeys([target, "local"]):
+                    r = await client.post(
+                        f"{voice_url}/speak",
+                        json={"text": tts_text, "target": attempt, "lang": lang, "wait": True},
+                        headers=service_headers(),
+                    )
+                    if r.status_code == 404:
+                        _log("tts_target_unknown", timer_id=timer_id, target=attempt)
+                        continue
+                    body = r.json() if r.status_code < 400 else {}
+                    if body.get("status") in ("ok", "partial"):
+                        _log("tts_delivered", timer_id=timer_id, target=attempt, results=body.get("results"))
+                        return
+                    _log("tts_play_failed", timer_id=timer_id, target=attempt, status=r.status_code,
+                         results=body.get("results"))
+        except Exception as e:
+            _log("tts_deliver_error", timer_id=timer_id, error=str(e))
+        note = t("timer_speaker_unavailable", get_lang(user_id))
+        queue_chat_notification(user_id, f"{tts_text}\n\n{note}", source_id=str(timer_id or ""))
+        _log("tts_fallback_chat", timer_id=timer_id, target=target)
     except Exception as e:
         _log("tts_deliver_error", timer_id=timer_info.get("id"), error=str(e))
 
@@ -619,6 +636,7 @@ def set_timer(
     tts_text: str = "",
     ha_payload: dict[str, Any] | None = None,
     for_user_id: str | None = None,  # foreldrestyrt timer for barn
+    receipt_who: str | None = None,
 ) -> str:
     # Normalize notify_via: LLM passes it as a JSON string or plain string
     if isinstance(notify_via, str):
@@ -767,7 +785,8 @@ def set_timer(
         local_time=local_str,
         repeat_str=repeat_str,
         prompt_preview=desc[:60] + ("…" if len(desc) > 60 else ""),
-    )
+    ) + receipts.suffix("timer", ref=f"timer:{timer_id}", what=t("rcpt_timer_what", lang, when=local_str, text=desc[:80]),
+                        where=t("rcpt_timer_where", lang), who=receipt_who, lang=lang)
 
 
 def cancel_timer(timer_id: str, lang: str = "nb") -> str:
@@ -786,7 +805,8 @@ def cancel_timer(timer_id: str, lang: str = "nb") -> str:
     )
     repeat_label = t(f"timer_repeat_{info['repeat']}", lang) if info.get("repeat") else ""
     repeat_str = t("timer_repeat_was", lang, label=repeat_label) if repeat_label else ""
-    return t("timer_cancelled", lang, timer_id=timer_id, repeat_str=repeat_str)
+    return t("timer_cancelled", lang, timer_id=timer_id, repeat_str=repeat_str) + receipts.change("timer_removed", ref=f"timer:{timer_id}", action="cancelled",
+                                                                                       where=t("rcpt_timer_where", lang), lang=lang)
 
 
 def ack_timer(notif_id: str, user_id: str, lang: str = "nb") -> str:

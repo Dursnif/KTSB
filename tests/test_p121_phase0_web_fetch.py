@@ -132,7 +132,7 @@ def test_list_reloads_when_file_changes(trusted_file):
     [
         ("93.184.215.14", True),
         ("127.0.0.1", False),
-        ("192.168.0.232", False),
+        ("192.0.2.232", False),
         ("10.0.0.5", False),
         ("172.16.3.1", False),
         ("169.254.169.254", False),
@@ -140,7 +140,7 @@ def test_list_reloads_when_file_changes(trusted_file):
         ("0.0.0.0", False),
         ("::1", False),
         ("fe80::1%eth0", False),
-        ("::ffff:192.168.0.100", False),
+        ("::ffff:192.0.2.100", False),
         ("2606:4700::1111", True),
         ("not-an-ip", False),
     ],
@@ -158,7 +158,7 @@ def test_ip_is_public(ip, public):
         ("https://example.com:11440/", "port"),
         ("http://127.0.0.1/", "private_address"),
         ("http://[::1]/", "private_address"),
-        ("http://192.168.0.100/api/", "private_address"),
+        ("http://192.0.2.100/api/", "private_address"),
     ],
 )
 def test_check_public_url_refuses(url, reason, monkeypatch):
@@ -172,7 +172,7 @@ def test_check_public_url_refuses(url, reason, monkeypatch):
 
 
 def test_hostname_resolving_to_lan_is_refused(public_dns):
-    public_dns["ha.example.com"] = ["192.168.0.100"]
+    public_dns["ha.example.com"] = ["192.0.2.100"]
     with pytest.raises(wf.FetchError) as e:
         asyncio.run(wf.check_public_url("https://ha.example.com/"))
     assert e.value.reason == "private_address"
@@ -210,7 +210,7 @@ def test_plain_fetch(public_dns):
 
 
 def test_redirect_into_lan_is_refused(public_dns):
-    public_dns["internal.example"] = ["192.168.0.232"]
+    public_dns["internal.example"] = ["192.0.2.232"]
     tr = _transport(
         {
             "https://a.example/": lambda: httpx.Response(

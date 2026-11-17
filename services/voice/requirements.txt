@@ -38,5 +38,9 @@ pyatv>=0.17.0
 # ── DLNA / UPnP ────────────────────────────────────────────────────────────────
 async-upnp-client>=0.47.0
 
+# ── TV remote control (P139 phase 5) ───────────────────────────────────────────
+androidtvremote2>=0.3.2   # Android/Google TV Remote v2 (Apache-2.0)
+samsungtvws>=3.0.6        # Samsung Tizen WebSocket/REST (LGPL-3.0, used as a library)
+
 # ── Speaker recognition (WeSpeaker ResNet34 via ONNX) ─────────────────────────
 wespeakerruntime>=0.0.3

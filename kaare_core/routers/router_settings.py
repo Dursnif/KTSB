@@ -6,11 +6,13 @@ import logging
 import os
 import re
 import re as _re
+import secrets
 import subprocess
 import time
 import uuid as _uuid
 from pathlib import Path
 from pathlib import Path as _Path
+from urllib.parse import urlparse
 
 import httpx
 import httpx as _httpx
@@ -23,6 +25,7 @@ from adapters import lovdata_adapter
 from adapters.display_adapter import send_display
 from adapters.llm_adapter import reload_config as _reload_llm
 from adapters.llm_adapter import reload_config as _reload_llm_config
+from adapters.plex_adapter import get_token as _plex_token
 from adapters.web_fetch import (
     SOURCE_TYPES,
     TRUST_LEVELS,
@@ -33,7 +36,7 @@ from adapters.web_fetch import (
 from adapters.web_fetch import setting as web_fetch_setting
 from adapters.web_search_adapter import load_websearch_config, paid_calls_today
 from adapters.web_search_adapter import reload_config as reload_websearch_config
-from kaare_core import config_store
+from kaare_core import config_store, ha_node_triggers, ha_registry_sync
 from kaare_core.aio_files import append_text
 from kaare_core.background import spawn
 from kaare_core.client_ip import client_ip as _client_ip
@@ -43,6 +46,9 @@ from kaare_core.config import (
     LOG_FLUSH_DEFAULT_SECONDS,
     LOG_FLUSH_MAX_SECONDS,
     POOL_ROLE_OVERRIDABLE,
+    THINK_RESPONSE_DEFAULT_CHARS,
+    THINK_RESPONSE_MAX_CHARS,
+    THINK_RESPONSE_MIN_CHARS,
     apply_agent_pool,
     get_local_tz,
     get_log_flush_seconds,
@@ -51,6 +57,7 @@ from kaare_core.config import (
     get_network_settings,
     get_service,
     get_ssh_nodes,
+    get_think_response_max_chars,
     get_tool_permissions,
     now_local,
     reload_capability_services,
@@ -59,15 +66,24 @@ from kaare_core.config import (
 )
 from kaare_core.config import reload_config as reload_core_config
 from kaare_core.dev_slot.config import get_dev_slot_config_from
+from kaare_core.frigate_user import inner_context
+from kaare_core.frigate_user import query as frigate_query
+from kaare_core.ha import action_truth
 from kaare_core.llm_model_check import check_ollama_role_models
+from kaare_core.media import plex_listener
 from kaare_core.memory import relevance as _relevance
+from kaare_core.model_enforcement import MODES, detector_catalog, enforcement_stats, mode_key
+from kaare_core.retention import argus_size
 from kaare_core.service_auth import service_headers
+from kaare_core.storage import budget as storage_budget
 from kaare_core.tools.i18n import get_lang as _get_lang
 from kaare_core.tools.source_confidence import caution as source_caution
 from kaare_core.users.auth import require_admin as _require_admin
 from kaare_core.users.auth import require_auth as _require_auth
 from kaare_core.users.store import list_users as _list_users
-from kaare_core.voice.media_host import detect_lan_address, in_container
+from kaare_core.voice import channels, direct_node, node_status
+from kaare_core.voice import screen as screen_core
+from kaare_core.voice.media_host import detect_lan_address, in_container, media_host
 from kaare_core.voice.tts_models import PIPER_PRESETS, piper_dir, piper_hf_paths, piper_local_path
 from kaare_night_runner import DEFAULT_START_TIME, load_start_time, parse_start_time, read_last_slot
 
@@ -86,6 +102,7 @@ _NVIDIA_ENV_PATH = Path("/kaare/configs/nvidia.env")
 _LLM_KEYS_PATH = Path("/kaare/configs/llm_keys.env")
 _ALIASES_PATH = Path("/kaare/configs/aliases.yaml")
 _NODES_PATH = Path("/kaare/configs/nodes.yaml")
+_VOICE_SETTINGS_PATH = Path("/kaare/configs/voice_settings.yaml")
 _PLEX_ENV_PATH = Path("/kaare/configs/plex.env")
 _TRUSTED_PATH = Path("/kaare/configs/trusted_sources.yaml")
 _WEATHER_ENV_PATH = Path("/kaare/configs/weather.env")
@@ -104,8 +121,17 @@ _EDITABLE_LLM_ROLES = {
     "cloud",
     "image_edit",
     "reason_freely",
+    "frigate",  # P144-s03: model for Frigate event analysis; shares default unless set
+    "frigate_conclude",  # P144-s06b: concludes per closed episode + urgent bypass; shares default unless set
 }
 _AGENT_TOGGLEABLE = {"miss_kare", "mechanic", "library", "fallback", "cloud", "image_edit"}
+# Which roles a role may borrow its model from (llm.yaml share_with) — P144-s10. Roles not listed may not
+# borrow; Frigate roles borrow from the main agent (default) or the sub-agents (miss_kare).
+_SHARE_TARGETS = {
+    "mechanic": {"miss_kare"},
+    "frigate": {"default", "miss_kare"},
+    "frigate_conclude": {"default", "miss_kare"},
+}
 _OLLAMA_OPTION_KEYS = {
     "num_ctx",
     "num_predict",
@@ -769,7 +795,7 @@ async def api_put_language(payload: dict, _u=Depends(_require_admin)):
 
 
 @router.get("/api/settings/llm")
-def api_get_llm(_u=Depends(_require_auth)):
+def api_get_llm(_u=Depends(_require_admin)):
     raw = yaml.safe_load(_LLM_PATH.read_text(encoding="utf-8")) or {}
     # Agent-pool members show the effective (shared) options/think — P111 Phase 1
     data = apply_agent_pool(raw)
@@ -852,6 +878,24 @@ def api_get_llm(_u=Depends(_require_auth)):
     return result
 
 
+def _check_share_target(data: dict, role: str, target) -> None:
+    """400 unless `role` may borrow from `target`: an allowed, existing role, not itself, no share_with cycle."""
+    if not isinstance(target, str) or target not in _SHARE_TARGETS.get(role, set()):
+        raise HTTPException(400, f"{role} cannot borrow the model from {target!r}")
+    if not isinstance(data.get(target), dict):
+        raise HTTPException(400, f"Role {target} not in llm.yaml")
+    seen = {role}
+    while target not in seen:  # follow the chain like llm_adapter._resolve_shared_role
+        seen.add(target)
+        cfg = data.get(target)
+        if not isinstance(cfg, dict):
+            raise HTTPException(400, f"share_with chain ends in unknown role {target}")
+        if not cfg.get("share_with"):
+            return
+        target = cfg["share_with"]
+    raise HTTPException(400, f"share_with cycle via {target}")
+
+
 @router.put("/api/settings/llm/{role}")
 async def api_put_llm_role(role: str, payload: dict, _u=Depends(_require_admin)):
     if role not in _EDITABLE_LLM_ROLES:
@@ -859,6 +903,19 @@ async def api_put_llm_role(role: str, payload: dict, _u=Depends(_require_admin))
     data = config_store.load_for_update(_LLM_PATH)
     if role not in data:
         raise HTTPException(404, f"Role {role} not in llm.yaml")
+    if payload.get("share_with"):
+        # Borrowing uses the lender's URL/model/num_ctx: write only share_with (+ enabled) — no own fields,
+        # no models.yaml write and no warmup, so the lender's Ollama never reloads (P144-s10).
+        _check_share_target(data, role, payload["share_with"])
+        enabled = bool(payload["enabled"]) if role in _AGENT_TOGGLEABLE and "enabled" in payload else None
+        data[role] = {
+            "share_with": payload["share_with"],
+            "enabled": data[role].get("enabled", True) if enabled is None else enabled,
+        }
+        config_store.write_yaml(_LLM_PATH, data, "gui:put_llm_role")
+        _reload_agent_enabled()
+        _reload_llm_and_core()
+        return {"ok": True, "warmup_started": False}
     s = data[role]
     pool = data.get("agent_pool") or {}
     if (
@@ -960,15 +1017,8 @@ async def api_put_llm_role(role: str, payload: dict, _u=Depends(_require_admin))
     if role in _AGENT_TOGGLEABLE and "enabled" in payload:
         s["enabled"] = bool(payload["enabled"])
     if "share_with" in payload:
-        if payload["share_with"]:
-            # Toggle ON: strip all fields — only share_with + enabled remain
-            data[role] = {
-                "share_with": str(payload["share_with"]),
-                "enabled": s.get("enabled", True),
-            }
-        else:
-            # Toggle OFF: remove share_with flag (payload fields already set above)
-            s.pop("share_with", None)
+        # Own model: remove share_with (borrowing returned early above; payload fields already set)
+        s.pop("share_with", None)
     config_store.write_yaml(_LLM_PATH, data, "gui:put_llm_role")
     _reload_agent_enabled()
     warmup_started = False
@@ -1166,12 +1216,10 @@ async def api_put_night_sequence(payload: dict, _u=Depends(_require_admin)):
 _RETENTION_KEYS = (
     "interactions_retention_days",
     "episodes_retention_days",
-    "think_cache_retention_days",
-)
+)  # P150: the think cache is kept by size (Settings → Logs/Storage), not by days
 _RETENTION_DEFAULTS = {
     "interactions_retention_days": 0,
     "episodes_retention_days": 0,
-    "think_cache_retention_days": 30,
 }
 # Shown as amber warnings in the GUI card — one source for the thresholds.
 _LOGS_RECOMMENDED = {"flush_min": 2, "flush_max": 10, "retention_warn_below_days": 7}
@@ -1179,18 +1227,25 @@ _LOGS_RECOMMENDED = {"flush_min": 2, "flush_max": 10, "retention_warn_below_days
 
 @router.get("/api/settings/logs-and-data")
 async def api_get_logs_and_data(_u=Depends(_require_admin)):
-    """Settings → General → Logs and data (Expert). flush_interval_seconds is read live by
+    """Settings → Logs/Storage → Logs and data (Expert). flush_interval_seconds is read live by
     kaare_core.log_buffer in every process; retention is applied by the night sequence."""
     settings = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
     retention = settings.get("data_retention") or {}
     return {
         "flush_interval_seconds": get_log_flush_seconds(),
         "retention": {k: int(retention.get(k, _RETENTION_DEFAULTS[k])) for k in _RETENTION_KEYS},
+        # How much of each reply the think log keeps (P142) — measured by the model guard replay.
+        "think_response_max_chars": get_think_response_max_chars(),
         "defaults": {
             "flush_interval_seconds": LOG_FLUSH_DEFAULT_SECONDS,
             "retention": _RETENTION_DEFAULTS,
+            "think_response_max_chars": THINK_RESPONSE_DEFAULT_CHARS,
         },
-        "limits": {"flush_max": LOG_FLUSH_MAX_SECONDS},
+        "limits": {
+            "flush_max": LOG_FLUSH_MAX_SECONDS,
+            "think_response_min": THINK_RESPONSE_MIN_CHARS,
+            "think_response_max": THINK_RESPONSE_MAX_CHARS,
+        },
         "recommended": _LOGS_RECOMMENDED,
     }
 
@@ -1225,8 +1280,61 @@ async def api_put_logs_and_data(payload: dict, _u=Depends(_require_admin)):
                 raise HTTPException(400, f"{key} must be 0 (keep forever) or more")
             retention[key] = days
         settings["data_retention"] = retention
+    if "think_response_max_chars" in payload:
+        try:
+            chars = int(payload["think_response_max_chars"])
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, "think_response_max_chars must be a whole number") from exc
+        if not THINK_RESPONSE_MIN_CHARS <= chars <= THINK_RESPONSE_MAX_CHARS:
+            raise HTTPException(
+                400,
+                f"think_response_max_chars must be {THINK_RESPONSE_MIN_CHARS}–{THINK_RESPONSE_MAX_CHARS}",
+            )
+        tc = settings.get("think_cache")
+        settings["think_cache"] = {
+            **(tc if isinstance(tc, dict) else {}),
+            "response_max_chars": chars,
+        }
     config_store.write_yaml(_SETTINGS_PATH, settings, "gui:put_logs_and_data")
     return await api_get_logs_and_data(_u=_u)
+
+
+# ── Logs/Storage (P150): size limits per data class, oldest first ──────────
+@router.get("/api/settings/disk-usage")
+async def api_get_disk_usage(_u=Depends(_require_admin)):
+    """Settings → Logs/Storage. Every data class that grows by itself (storage budget: Basic groups, Expert classes,
+    disk facts, over-commit), plus Argus' detail (size limit, last cleanup, upgrade floor)."""
+    argus, budget_rep = await asyncio.gather(asyncio.to_thread(argus_size.usage), asyncio.to_thread(storage_budget.report))
+    return {"argus": argus, **budget_rep}
+
+
+def _mb_value(raw, name: str) -> int:
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+        raise HTTPException(400, f"{name} must be a whole number of MB")
+    try:
+        mb = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, f"{name} must be a whole number of MB") from exc
+    if not 0 <= mb <= argus_size.ARGUS_MAX_MB:
+        raise HTTPException(400, f"{name} must be 0 (off) to {argus_size.ARGUS_MAX_MB}")
+    return mb
+
+
+@router.put("/api/settings/disk-usage")
+async def api_put_disk_usage(payload: dict, _u=Depends(_require_admin)):
+    """One of: {argus_events_mb} · {group, limit_mb} (Basic, proportional) · {class, limit_mb} (Expert)."""
+    try:
+        if "argus_events_mb" in payload:
+            await asyncio.to_thread(argus_size.save_limit_mb, _mb_value(payload["argus_events_mb"], "argus_events_mb"))
+        elif "group" in payload:
+            await asyncio.to_thread(storage_budget.set_group_limit, str(payload["group"]),
+                                    _mb_value(payload.get("limit_mb"), "limit_mb"))
+        elif "class" in payload:
+            await asyncio.to_thread(storage_budget.set_class_limit, str(payload["class"]),
+                                    _mb_value(payload.get("limit_mb"), "limit_mb"))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return await api_get_disk_usage(_u=_u)
 
 
 @router.get("/api/settings/system/docker_control")
@@ -1377,7 +1485,7 @@ async def api_restart_ollama(role: str, _u=Depends(_require_admin)):
 
 
 @router.get("/api/settings/models")
-def api_get_models(_u=Depends(_require_auth)):
+def api_get_models(_u=Depends(_require_admin)):
     return yaml.safe_load(_MODELS_PATH.read_text(encoding="utf-8")) or {}
 
 
@@ -1397,6 +1505,10 @@ async def api_put_models(payload: dict, _u=Depends(_require_admin)):
 @router.get("/api/settings/services")
 def api_get_services(_u=Depends(_require_auth)):
     data = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
+    if _u.get("role") != "admin":
+        # DT04-S05n: a non-admin sees only what the user Home page needs (allow-list, fail closed) — never the house's
+        # addresses, models or service setup
+        return {"voice": {"stt_enabled": data.get("voice", {}).get("stt", {}).get("enabled", True)}}
     ha = data.get("home_assistant", {})
     mqtt = data.get("mqtt", {})
     frigate = data.get("frigate", {})
@@ -1410,13 +1522,15 @@ def api_get_services(_u=Depends(_require_auth)):
         "home_assistant": {
             "url": ha.get("url", ""),
             "timeout": ha.get("timeout", 5),
+            "verify_seconds": float(
+                ha.get("verify_seconds", 2.0) if ha.get("verify_seconds") is not None else 2.0
+            ),
             "enabled": bool(ha_enabled),
         },
         "mqtt": {
             "host": mqtt.get("host", ""),
             "port": mqtt.get("port", 1883),
             "tls_enabled": bool(mqtt.get("tls_enabled", False)),
-            "topic_prefix": mqtt.get("topic_prefix", "frigate"),
             "client_id": mqtt.get("client_id", ""),
             "reconnect_interval": int(mqtt.get("reconnect_interval", 30)),
         },
@@ -1425,6 +1539,8 @@ def api_get_services(_u=Depends(_require_auth)):
             "timeout": frigate.get("timeout", 10),
             "snapshot_timeout": frigate.get("snapshot_timeout", 5),
             "enabled": frigate_enabled,
+            # P144-s19 item 6: Frigate's MQTT topic prefix belongs to Frigate (old installs: mqtt.topic_prefix).
+            "mqtt_topic_prefix": frigate.get("mqtt_topic_prefix") or mqtt.get("topic_prefix") or "frigate",
         },
         "plex": {
             "url": plex.get("url", ""),
@@ -1473,10 +1589,28 @@ async def _reload_ha_gateway() -> bool:
         return False
 
 
+# What a saved setting needs before it is in use, for the GUI's save feedback (DT04-S05d, rule 25):
+# "now" = in use at once (config cache follows every write) · "restart:<key>" = restart that service in
+# Maintenance → Service restart (<key> as in router_system._RESTARTABLE_SERVICES).
+APPLIES_NOW = "now"
+
+
+def _applies_restart(service_key: str) -> str:
+    return f"restart:{service_key}"
+
+
 @router.put("/api/settings/services/ha")
 async def api_put_services_ha(payload: dict, _u=Depends(_require_admin)):
-    if not all(k in {"url", "timeout", "enabled"} for k in payload):
+    if not all(k in {"url", "timeout", "enabled", "verify_seconds"} for k in payload):
         raise HTTPException(400, "Unknown field in payload")
+    if "verify_seconds" in payload:  # N26: wait for HA to report an action's new state
+        try:
+            vs = float(payload["verify_seconds"])
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, "verify_seconds must be a number") from exc
+        if isinstance(payload["verify_seconds"], bool) or not 0 <= vs <= 10:
+            raise HTTPException(400, "verify_seconds must be between 0 and 10")
+        payload["verify_seconds"] = round(vs, 2)
     enabled = payload.pop("enabled", None)
     data = config_store.load_for_update(_SERVICES_PATH)
     data.setdefault("home_assistant", {}).update(payload)
@@ -1489,9 +1623,14 @@ async def api_put_services_ha(payload: dict, _u=Depends(_require_admin)):
         if "ha_url" in sdata:
             sdata["ha_url"] = payload["url"]
             config_store.write_yaml(_SETTINGS_PATH, sdata, "gui:put_services_ha")
+    applies = APPLIES_NOW
+    if ("url" in payload or "verify_seconds" in payload) and not await _reload_ha_gateway():
+        applies = _applies_restart("gateway")
     if "url" in payload:
-        await _reload_ha_gateway()
-    return {"ok": True}
+        ha_registry_sync.request_resync()  # P137: places from the (new) HA without waiting
+        if applies == APPLIES_NOW:
+            applies = _applies_restart("ha-log-bridge")  # reads the HA address only when it starts
+    return {"ok": True, "applies": applies}
 
 
 def _write_mqtt_env_creds(username: str, password: str) -> None:
@@ -1530,7 +1669,8 @@ async def api_put_services_mqtt(payload: dict, _u=Depends(_require_admin)):
     if "tls_enabled" in payload:
         mqtt["tls_enabled"] = bool(payload["tls_enabled"])
     if "topic_prefix" in payload:
-        mqtt["topic_prefix"] = str(payload["topic_prefix"])
+        # Moved to Integrations → Frigate (P144-s19); an older GUI still sending it writes the Frigate key.
+        data.setdefault("frigate", {})["mqtt_topic_prefix"] = _topic_prefix(payload["topic_prefix"])
     if "client_id" in payload:
         mqtt["client_id"] = str(payload["client_id"])
     if "reconnect_interval" in payload:
@@ -1547,15 +1687,25 @@ async def api_put_services_mqtt(payload: dict, _u=Depends(_require_admin)):
             payload.get("username", existing.get("MQTT_USER", "")),
             payload.get("password", existing.get("MQTT_PASSWORD", "")),
         )
-    return {"ok": True}
+    return {"ok": True, "applies": APPLIES_NOW}  # the MQTT listener reconnects when a connection key changed
+
+
+def _topic_prefix(value) -> str:
+    """An MQTT topic prefix without wildcards or empty levels (400 otherwise)."""
+    text = str(value or "").strip().strip("/")
+    if not text or any(c in text for c in "#+ ") or "//" in text:
+        raise HTTPException(400, "topic prefix must be an MQTT topic without wildcards")
+    return text
 
 
 @router.put("/api/settings/services/frigate")
 async def api_put_services_frigate(payload: dict, _u=Depends(_require_admin)):
-    if not all(k in {"url", "timeout", "snapshot_timeout", "enabled"} for k in payload):
+    if not all(k in {"url", "timeout", "snapshot_timeout", "enabled", "mqtt_topic_prefix"} for k in payload):
         raise HTTPException(400, "Unknown field in payload")
     data = config_store.load_for_update(_SERVICES_PATH)
     frigate = data.setdefault("frigate", {})
+    if "mqtt_topic_prefix" in payload:
+        frigate["mqtt_topic_prefix"] = _topic_prefix(payload["mqtt_topic_prefix"])
     if "url" in payload:
         frigate["url"] = payload["url"]
     if "timeout" in payload:
@@ -1568,7 +1718,7 @@ async def api_put_services_frigate(payload: dict, _u=Depends(_require_admin)):
             _set_domain_enabled("frigate", bool(payload["enabled"]))
         except Exception:
             pass
-    return {"ok": True}
+    return {"ok": True, "applies": APPLIES_NOW}
 
 
 @router.put("/api/settings/services/plex")
@@ -1583,7 +1733,8 @@ async def api_put_services_plex(payload: dict, _u=Depends(_require_admin)):
     if "timeout" in payload:
         plex["timeout"] = int(payload["timeout"])
     config_store.write_yaml(_SERVICES_PATH, data, "gui:put_services_plex")
-    return {"ok": True}
+    plex_listener.wake()  # P140: reconnect with the new URL now
+    return {"ok": True, "applies": APPLIES_NOW}
 
 
 @router.put("/api/settings/services/embedding")
@@ -1606,7 +1757,8 @@ async def api_put_services_embedding(payload: dict, _u=Depends(_require_admin)):
     if "emb_enabled" in payload:
         emb["enabled"] = bool(payload["emb_enabled"])
     config_store.write_yaml(_SERVICES_PATH, data, "gui:put_services_embedding")
-    return {"ok": True}
+    needs_restart = any(k in payload for k in ("device", "hf_model", "model_path"))
+    return {"ok": True, "applies": _applies_restart("embedding") if needs_restart else APPLIES_NOW}
 
 
 @router.put("/api/settings/services/memory-embed")
@@ -1622,7 +1774,7 @@ async def api_put_services_memory_embed(payload: dict, _u=Depends(_require_admin
     if "model_dir" in payload:
         me["model_dir"] = str(payload["model_dir"])
     config_store.write_yaml(_SERVICES_PATH, data, "gui:put_services_memory_embed")
-    return {"ok": True}
+    return {"ok": True, "applies": APPLIES_NOW}
 
 
 @router.put("/api/settings/services/voice")
@@ -1663,7 +1815,7 @@ async def api_put_services_voice(payload: dict, _u=Depends(_require_admin)):
     if "model_dir" in payload:
         stt["model_dir"] = str(payload["model_dir"])
     config_store.write_yaml(_SERVICES_PATH, data, "gui:put_services_voice")
-    return {"ok": True}
+    return {"ok": True, "applies": _applies_restart("voice")}
 
 
 # LAN address speakers fetch audio from (P127): a hostname or IP, no scheme or port.
@@ -1736,7 +1888,7 @@ def _piper_active_models() -> dict[str, str]:
 
 
 @router.get("/api/settings/piper/models")
-def api_get_piper_models(_u=Depends(_require_auth)):
+def api_get_piper_models(_u=Depends(_require_admin)):
     """Return preset list per language with downloaded/active state.
 
     Models may live at the nested HuggingFace path (new downloads) or at a
@@ -1822,7 +1974,7 @@ async def api_post_piper_download(
 
 
 @router.get("/api/settings/piper/download/{job_id}")
-def api_get_piper_download_status(job_id: str, _u=Depends(_require_auth)):
+def api_get_piper_download_status(job_id: str, _u=Depends(_require_admin)):
     job = _piper_download_jobs.get(job_id)
     if not job:
         raise HTTPException(404, "Job not found")
@@ -1853,7 +2005,7 @@ async def api_put_piper_activate(payload: dict, _u=Depends(_require_admin)):
 
 
 @router.get("/api/settings/ha-token")
-def api_get_ha_token(_u=Depends(_require_auth)):
+def api_get_ha_token(_u=Depends(_require_admin)):
     tok = _read_env_key(_HA_TOKEN_PATH, "HA_TOKEN")
     return {"is_set": bool(tok), "masked": _mask_token(tok)}
 
@@ -1865,15 +2017,17 @@ async def api_put_ha_token(payload: dict, _u=Depends(_require_admin)):
         raise HTTPException(400, "Token cannot be empty")
     _write_env_key(_HA_TOKEN_PATH, "HA_TOKEN", tok)
     await _reload_ha_gateway()
+    ha_registry_sync.request_resync()  # P137
     return {"ok": True}
 
 
 @router.get("/api/settings/ha-bridge")
-def api_get_ha_bridge(_u=Depends(_require_auth)):
+def api_get_ha_bridge(_u=Depends(_require_admin)):
     return {
         "log_url": _read_env_key(_KARE_HA_PATH, "KARE_LOG_URL"),
         "timeout": _read_env_key(_KARE_HA_PATH, "KARE_HA_TIMEOUT"),
         "allowed_actions": _read_env_key(_KARE_HA_PATH, "KARE_ALLOWED_ACTIONS"),
+        "actions": list(action_truth.GATEWAY_ACTIONS),  # what the GUI offers (P139)
     }
 
 
@@ -1889,11 +2043,15 @@ async def api_put_ha_bridge(payload: dict, _u=Depends(_require_admin)):
     }
     for k, v in payload.items():
         _write_env_key(_KARE_HA_PATH, env_map[k], str(v))
-    return {"ok": True}
+    if "allowed_actions" in payload:
+        # Record what the user was shown: an action added later is not one they left out (P139).
+        _write_env_key(_KARE_HA_PATH, "KARE_OFFERED_ACTIONS", ",".join(action_truth.GATEWAY_ACTIONS))
+    ok = await _reload_ha_gateway()
+    return {"ok": True, "applies": APPLIES_NOW if ok else _applies_restart("gateway")}
 
 
 @router.get("/api/settings/secrets")
-def api_get_secrets(_u=Depends(_require_auth)):
+def api_get_secrets(_u=Depends(_require_admin)):
     brave = _read_env_key(_BRAVE_ENV_PATH, "BRAVE_API_KEY")
     nvidia = _read_env_key(_NVIDIA_ENV_PATH, "NVIDIA_API_KEY")
     return {
@@ -2554,7 +2712,7 @@ async def api_put_blocked_sources(payload: dict, _u=Depends(_require_admin)):
 
 
 @router.get("/api/settings/plex-token")
-def api_get_plex_token(_u=Depends(_require_auth)):
+def api_get_plex_token(_u=Depends(_require_admin)):
     tok = _read_env_key(_PLEX_ENV_PATH, "PLEX_TOKEN")
     return {"is_set": bool(tok), "masked": _mask_token(tok)}
 
@@ -2565,7 +2723,40 @@ async def api_put_plex_token(payload: dict, _u=Depends(_require_admin)):
     if not tok:
         raise HTTPException(400, "Token cannot be empty")
     _write_env_key(_PLEX_ENV_PATH, "PLEX_TOKEN", tok)
-    return {"ok": True, "restart_required": True}
+    plex_listener.wake()  # P140: the token is read per call — the listener reconnects now, no restart
+    return {"ok": True, "restart_required": False}
+
+
+@router.get("/api/settings/plex/status")
+def api_get_plex_status(_u=Depends(_require_admin)):
+    """P140: Plex listener state — not_configured | connecting | connected | token_rejected | unreachable."""
+    return plex_listener.status()
+
+
+@router.get("/api/settings/plex/accounts")
+async def api_get_plex_accounts(_u=Depends(_require_admin)):
+    """P140: the Plex server's accounts, for linking a KTSB user (Users page). Empty list if Plex is not set up."""
+    url = ((get_service("media", "plex") or {}).get("url") or "").rstrip("/")
+    token = _plex_token()
+    if not url or not token:
+        return {"accounts": [], "error": "not_configured"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                f"{url}/accounts", headers={"X-Plex-Token": token, "Accept": "application/json"}
+            )
+            resp.raise_for_status()
+            raw = resp.json().get("MediaContainer", {}).get("Account") or []
+    except httpx.HTTPStatusError as e:
+        return {"accounts": [], "error": f"HTTP {e.response.status_code}"}
+    except Exception as e:
+        return {"accounts": [], "error": type(e).__name__}
+    accounts = [
+        {"id": int(a["id"]), "name": a.get("name") or a.get("title") or str(a["id"])}
+        for a in raw
+        if a.get("id") is not None and int(a["id"]) > 0
+    ]
+    return {"accounts": accounts, "error": ""}
 
 
 @router.get("/api/settings/aliases")
@@ -2598,7 +2789,9 @@ async def api_put_aliases(payload: dict, _u=Depends(_require_admin)):
 @router.get("/api/settings/nodes")
 def api_get_nodes(_u=Depends(_require_admin)):
     data = yaml.safe_load(_NODES_PATH.read_text(encoding="utf-8")) or {}
-    return {"nodes": data.get("nodes", {})}
+    return {
+        "nodes": direct_node.with_direct(data.get("nodes") or {})
+    }  # P138 4b: this machine is always a node
 
 
 @router.put("/api/settings/nodes")
@@ -2606,8 +2799,39 @@ async def api_put_nodes(payload: dict, _u=Depends(_require_admin)):
     if "nodes" not in payload:
         raise HTTPException(400, "Missing 'nodes' key in payload")
     data = config_store.load_for_update(_NODES_PATH)
-    data["nodes"] = payload["nodes"]
+    old = data.get("nodes") or {}
+    new = payload["nodes"]
+    if not isinstance(new, dict):
+        raise HTTPException(400, "'nodes' must be a mapping")
+    new = direct_node.keep_direct(old, new)  # P138 4b: KTSB Direct cannot be deleted or change type
+    # P138: a node's webhook token is set and removed only by its own endpoint — a save from a page that loaded
+    # before the token was made must not drop it.
+    for nid, cfg in new.items():
+        prev = old.get(nid) if isinstance(old, dict) else None
+        if (
+            isinstance(cfg, dict)
+            and "webhook_token" not in cfg
+            and isinstance(prev, dict)
+            and prev.get("webhook_token")
+        ):
+            cfg["webhook_token"] = prev["webhook_token"]
+    # P139 phase 2: a screen node that is new, got a new address or has no channels yet is probed once on save.
+    to_probe = [
+        nid
+        for nid, cfg in new.items()
+        if channels.wants_channels(cfg)
+        and (
+            "channels" not in cfg
+            or not isinstance(old.get(nid), dict)
+            or str(old[nid].get("host") or "") != str(cfg.get("host") or "")
+        )
+    ]
+    found = await asyncio.gather(*(channels.probe(str(new[nid]["host"])) for nid in to_probe))
+    for nid, hit in zip(to_probe, found, strict=True):
+        new[nid]["channels"] = channels.merge_found(new[nid], hit)
+    data["nodes"] = new
     config_store.write_yaml(_NODES_PATH, data, "gui:put_nodes")
+    ha_node_triggers.request_reload()  # P138: HA button triggers follow the saved nodes
     try:
         async with _httpx.AsyncClient(timeout=3) as _c:
             await _c.post(
@@ -2618,12 +2842,252 @@ async def api_put_nodes(payload: dict, _u=Depends(_require_admin)):
     return {"ok": True}
 
 
+# P138: the voice pipeline's silence and ducking settings (voice_settings.yaml had no GUI before).
+_VOICE_PIPELINE_FIELDS = {
+    # field: (section, key, type, min, max, default) — for str: min = the allowed values
+    "end_of_speech": ("stt", "end_of_speech", str, ("auto", "fixed"), None, "auto"),
+    "silence_seconds": ("stt", "silence_threshold_seconds", float, 0.3, 5.0, 1.5),
+    "silence_amplitude": ("stt", "silence_amplitude_threshold", float, 0.001, 0.5, 0.05),
+    "max_record_seconds": ("stt", "max_record_seconds", int, 3, 60, 10),
+    "duck_on_listen": ("duck", "on_listen", bool, None, None, True),
+    "duck_volume": ("duck", "volume", float, 0.0, 1.0, 0.2),
+    "duck_mpd": ("duck", "mpd", bool, None, None, True),
+}
+
+
+def _voice_pipeline_view(data: dict) -> dict:
+    out = {}
+    for field, (section, key, typ, _lo, _hi, default) in _VOICE_PIPELINE_FIELDS.items():
+        val = (data.get(section) or {}).get(key, default)
+        if typ is str:
+            out[field] = val if val in _lo else default
+            continue
+        try:
+            out[field] = typ(val)
+        except (TypeError, ValueError):
+            out[field] = default
+    return out
+
+
+@router.get("/api/settings/voice_pipeline")
+def api_get_voice_pipeline(_u=Depends(_require_admin)):
+    try:
+        data = yaml.safe_load(_VOICE_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:
+        data = {}
+    return _voice_pipeline_view(data)
+
+
+@router.put("/api/settings/voice_pipeline")
+async def api_put_voice_pipeline(payload: dict, _u=Depends(_require_admin)):
+    unknown = set(payload) - set(_VOICE_PIPELINE_FIELDS)
+    if unknown:
+        raise HTTPException(400, f"Unknown field(s): {', '.join(sorted(unknown))}")
+    data = config_store.load_for_update(_VOICE_SETTINGS_PATH)
+    for field, raw in payload.items():
+        section, key, typ, lo, hi, _default = _VOICE_PIPELINE_FIELDS[field]
+        if typ is bool:
+            if not isinstance(raw, bool):
+                raise HTTPException(400, f"{field} must be true or false")
+            val = raw
+        elif typ is str:
+            if raw not in lo:
+                raise HTTPException(400, f"{field} must be one of: {', '.join(lo)}")
+            val = raw
+        else:
+            try:
+                val = typ(raw)
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(400, f"{field} must be a number") from exc
+            if not lo <= val <= hi:
+                raise HTTPException(400, f"{field} must be between {lo} and {hi}")
+        sec = data.get(section)
+        if not isinstance(sec, dict):
+            sec = {}
+        sec[key] = val
+        data[section] = sec
+    config_store.write_yaml(_VOICE_SETTINGS_PATH, data, "gui:put_voice_pipeline")
+    try:
+        async with _httpx.AsyncClient(timeout=3) as _c:
+            await _c.post(
+                f"{get_service('internal', 'voice_bridge')}/reload_voice_settings",
+                headers=service_headers(),
+            )
+    except Exception:
+        pass
+    return {"ok": True, **_voice_pipeline_view(dict(data))}
+
+
+@router.get("/api/settings/nodes/status")
+async def api_nodes_status(_u=Depends(_require_admin)):
+    """N29: is each node reachable now — the Nodes page's WiFi icon (polled while the page is open, cached 20 s)."""
+    try:
+        data = yaml.safe_load(_NODES_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:
+        data = {}
+    return {"nodes": await node_status.node_statuses(data.get("nodes") or {})}
+
+
+# P138 4b: the KTSB Direct node's microphone (voice_settings.yaml audio.mic_device — had no GUI before).
+_MIC_NAME_MAX = 200
+
+
+@router.get("/api/settings/nodes/direct_audio")
+async def api_get_direct_audio(_u=Depends(_require_admin)):
+    """The microphones the voice bridge finds on this machine, and which one is chosen (null = system default)."""
+    try:
+        data = yaml.safe_load(_VOICE_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:
+        data = {}
+    audio = data.get("audio") or {}
+    view = {
+        "mic_device": audio.get("mic_device"),
+        "mic_sample_rate": audio.get("mic_sample_rate"),
+        "inputs": [],
+        "error": "",
+    }
+    try:
+        async with _httpx.AsyncClient(timeout=6) as _c:
+            r = await _c.get(
+                f"{get_service('internal', 'voice_bridge')}/audio_devices",
+                headers=service_headers(),
+            )
+            r.raise_for_status()
+            found = r.json()
+        view["inputs"] = found.get("inputs") or []
+        view["error"] = found.get("error") or ""
+    except Exception:
+        view["error"] = "bridge_unreachable"
+    return view
+
+
+@router.put("/api/settings/nodes/direct_audio")
+async def api_put_direct_audio(payload: dict, _u=Depends(_require_admin)):
+    """Choose the KTSB Direct mic by name (null/"" = system default). The rate follows the device; the bridge
+    re-reads it for the next press, no restart."""
+    if set(payload) - {"mic_device"}:
+        raise HTTPException(400, "Only 'mic_device' can be set")
+    dev = payload.get("mic_device")
+    if dev in ("", None):
+        dev = None
+    elif isinstance(dev, bool) or not isinstance(dev, str | int):
+        raise HTTPException(400, "mic_device must be a device name, an index or null")
+    elif isinstance(dev, str) and (len(dev) > _MIC_NAME_MAX or any(ord(c) < 32 for c in dev)):
+        raise HTTPException(400, "mic_device name is not valid")
+    elif isinstance(dev, int) and not 0 <= dev <= 512:
+        raise HTTPException(400, "mic_device index is out of range")
+    data = config_store.load_for_update(_VOICE_SETTINGS_PATH)
+    audio = data.get("audio")
+    if not isinstance(audio, dict):
+        audio = {}
+    audio["mic_device"] = dev
+    audio["mic_sample_rate"] = None  # the chosen device's own rate
+    data["audio"] = audio
+    config_store.write_yaml(_VOICE_SETTINGS_PATH, data, "gui:put_direct_audio")
+    try:
+        async with _httpx.AsyncClient(timeout=3) as _c:
+            await _c.post(
+                f"{get_service('internal', 'voice_bridge')}/reload_voice_settings",
+                headers=service_headers(),
+            )
+    except Exception:
+        pass
+    return {"ok": True, "mic_device": dev}
+
+
+@router.get("/api/settings/nodes/triggers/status")
+def api_node_triggers_status(_u=Depends(_require_admin)):
+    """P138: whether the HA trigger listener is connected, and per node whether HA accepted its trigger."""
+    return ha_node_triggers.status()
+
+
+@router.post("/api/settings/nodes/triggers/learn")
+async def api_node_triggers_learn(_u=Depends(_require_admin)):
+    """P138 «Lær»: wait up to 20 s for the next button press in HA and return a trigger block for it."""
+    try:
+        return await ha_node_triggers.learn()
+    except Exception as exc:
+        return {"ok": False, "reason": "error", "error": str(exc)}
+
+
+@router.post("/api/settings/nodes/{node_id}/webhook")
+async def api_node_webhook(node_id: str, payload: dict | None = None, _u=Depends(_require_admin)):
+    """P138 webhook fallback: {"action": "new"} makes a fresh random token for the node (old one stops working),
+    {"action": "remove"} turns the webhook off. Returns the URL and token the GUI shows in a ready HA automation."""
+    action = (payload or {}).get("action", "new")
+    data = config_store.load_for_update(_NODES_PATH)
+    nodes = direct_node.with_direct(data.get("nodes") or {})  # the direct node may not be saved yet
+    if node_id not in nodes or not isinstance(nodes[node_id], dict):
+        raise HTTPException(404, "Unknown node")
+    if action == "remove":
+        nodes[node_id].pop("webhook_token", None)
+        token = ""
+    elif action == "new":
+        token = secrets.token_urlsafe(24)
+        nodes[node_id]["webhook_token"] = token
+    else:
+        raise HTTPException(400, "action must be 'new' or 'remove'")
+    data["nodes"] = nodes
+    config_store.write_yaml(_NODES_PATH, data, f"gui:node_webhook:{action}")
+    bridge = get_service("internal", "voice_bridge") or ""
+    try:
+        async with _httpx.AsyncClient(timeout=3) as _c:
+            await _c.post(f"{bridge}/reload_nodes", headers=service_headers())
+    except Exception:
+        pass
+    port = urlparse(bridge).port or 8011
+    url = f"http://{media_host()}:{port}/trigger/{node_id}"
+    return {"ok": True, "token": token, "url": url}
+
+
 @router.post("/api/settings/nodes/{node_id}/test_display")
 async def api_test_display_node(node_id: str, _u=Depends(_require_admin)):
     result = await send_display(node_id=node_id, text="Kåre display test", title="Kåre", duration=5)
     if result.get("ok"):
-        return {"ok": True, "method": result.get("method")}
+        return {
+            "ok": True,
+            "method": result.get("method"),
+            "channel": result.get("channel"),
+            "tried": result.get("tried") or [],
+        }
     raise HTTPException(500, result.get("error", "Unknown error"))
+
+
+async def _bridge_tv(path: str, payload: dict) -> dict:
+    """P139 phase 5: pairing lives in the voice bridge (it keeps the secrets); the API only forwards."""
+    try:
+        async with _httpx.AsyncClient(timeout=45) as c:
+            r = await c.post(f"{get_service('internal', 'voice_bridge')}{path}", json=payload, headers=service_headers())
+        data = r.json()
+    except Exception as exc:
+        raise HTTPException(502, f"voice bridge: {exc}") from exc
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, data.get("detail") or "voice bridge error")
+    return data
+
+
+@router.post("/api/settings/nodes/{node_id}/pair/{step}")
+async def api_node_pair(node_id: str, step: str, payload: dict | None = None, _u=Depends(_require_admin)):
+    """Pair a TV's remote-control channel: `start` (Android TV shows a code / Samsung shows «Allow?»), `finish` (the
+    code), `status`. The node must be saved first."""
+    if step not in ("start", "finish", "status"):
+        raise HTTPException(400, "step must be start, finish or status")
+    body = {"node": node_id, "code": str((payload or {}).get("code") or "")[:16]}
+    return await _bridge_tv(f"/tv/pair/{step}", body)
+
+
+@router.post("/api/settings/nodes/probe_channels")
+async def api_probe_node_channels(payload: dict, _u=Depends(_require_admin)):
+    """P139 phase 2: which channels a node (the dialog's unsaved form) answers on now. Writes nothing — the dialog
+    shows the result and it is saved with the node. A TV in standby answers on fewer channels than when it is on."""
+    node = payload.get("node")
+    if not isinstance(node, dict):
+        raise HTTPException(400, "'node' must be a mapping")
+    host = str(node.get("host") or "").strip()
+    if not host:
+        raise HTTPException(400, "The node has no host")
+    found = await channels.probe(host)
+    return {"found": found, "channels": channels.merge_found(node, found)}
 
 
 # ── SSH Nodes ──────────────────────────────────────────────────────────────────
@@ -2769,20 +3233,20 @@ def api_onboarding_status(_u=Depends(_require_admin)):
         location_ok = float(lat) != 0.0 and float(lon) != 0.0
     except Exception:
         location_ok = False
-    steps.append({"id": "location", "label": "Lokasjon satt", "complete": location_ok})
+    steps.append({"id": "location", "label": "Location set", "complete": location_ok})
     try:
         users = _list_users()
         has_user = any(u.get("username") != "admin" for u in users)
     except Exception:
         has_user = False
-    steps.append({"id": "user", "label": "Bruker opprettet", "complete": has_user})
+    steps.append({"id": "user", "label": "User created", "complete": has_user})
     try:
         cap = yaml.safe_load(_CAPABILITY_MAP_PATH.read_text(encoding="utf-8")) or {}
         profile_ok = bool(cap.get("distribution_profile", ""))
     except Exception:
         profile_ok = False
     steps.append(
-        {"id": "distribution", "label": "Distribusjonsprofil valgt", "complete": profile_ok}
+        {"id": "distribution", "label": "Distribution profile chosen", "complete": profile_ok}
     )
     try:
         svc = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
@@ -2803,7 +3267,7 @@ def api_onboarding_status(_u=Depends(_require_admin)):
 
 
 @router.post("/api/settings/test-connection")
-async def api_test_connection(payload: dict, _u=Depends(_require_auth)):
+async def api_test_connection(payload: dict, _u=Depends(_require_admin)):
     url = payload.get("url", "").strip()
     if not url:
         raise HTTPException(400, "URL is required")
@@ -2843,6 +3307,61 @@ async def api_put_agent_tools(data: dict, _u=Depends(_require_admin)):
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# Model guard (P142 D7): the enforcer box between KTSB and the LLM. GET = every detector with, per
+# caller profile, its default and effective mode + hit counts from enforcement.log; PUT = modes
+# keyed «profile:detector» (Phase 3 — a rule can be on in chat and shadow in Mechanic). Only
+# overrides of a default are stored (settings.yaml model_enforcer.modes), so a later change of a
+# default reaches installs that never touched that switch.
+def _enforcer_defaults() -> dict[str, str]:
+    return {
+        mode_key(p["profile"], d["name"]): p["default_mode"]
+        for d in detector_catalog()
+        for p in d["profiles"]
+    }
+
+
+@router.get("/api/settings/model-enforcer")
+async def api_get_model_enforcer(_u=Depends(_require_admin)):
+    try:
+        data = yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:
+        data = {}
+    overrides = ((data.get("model_enforcer") or {}).get("modes")) or {}
+    if not isinstance(overrides, dict):
+        overrides = {}
+    detectors = detector_catalog()
+    for d in detectors:
+        for p in d["profiles"]:
+            m = overrides.get(mode_key(p["profile"], d["name"]))
+            p["mode"] = m if m in MODES else p["default_mode"]
+    stats = await asyncio.to_thread(enforcement_stats)
+    return {"modes": list(MODES), "detectors": detectors, "stats": stats}
+
+
+@router.put("/api/settings/model-enforcer")
+async def api_put_model_enforcer(payload: dict, _u=Depends(_require_admin)):
+    modes = payload.get("modes")
+    if not isinstance(modes, dict):
+        raise HTTPException(400, "modes must be an object {'profile:detector': off|shadow|on}")
+    defaults = _enforcer_defaults()
+    unknown = [k for k in modes if k not in defaults]
+    bad = [k for k, v in modes.items() if v not in MODES]
+    if unknown or bad:
+        raise HTTPException(400, f"unknown switches: {unknown}; invalid modes for: {bad}")
+    try:
+        data = config_store.load_for_update(_SETTINGS_PATH)
+        current = (data.get("model_enforcer") or {}).get("modes") or {}
+        merged = {**(current if isinstance(current, dict) else {}), **modes}
+        stored = {k: v for k, v in merged.items() if k in defaults and v != defaults[k]}
+        if not isinstance(data.get("model_enforcer"), dict):
+            data["model_enforcer"] = {}
+        data["model_enforcer"]["modes"] = stored
+        config_store.write_yaml(_SETTINGS_PATH, data, "gui:put_model_enforcer")
+    except Exception as e:
+        raise HTTPException(500, f"Could not write settings.yaml: {e}") from e
+    return {"ok": True, "stored": stored}
 
 
 # Meeting roles: Mechanic only. Miss Kåre has one locked personality (P115 Phase 1 / P99) —
@@ -2955,9 +3474,7 @@ async def api_get_inner_voices(_u=Depends(_require_admin)):
             "interval_seconds": cfg.get("jang", {}).get("interval_seconds", 600),
             "max_tokens": cfg.get("jang", {}).get("max_tokens", 2048),
             "turns_back": cfg.get("jang", {}).get("turns_back", 3),
-            "inner_thoughts_retention_hours": cfg.get("jang", {}).get(
-                "inner_thoughts_retention_hours", 24
-            ),
+            # P150: inner thoughts are kept by size (Settings → Logs/Storage), no longer by hours
         },
         "node_label": svc.get("inner_voices", {}).get("node_label", "Local"),
         "push_token": svc.get("inner_voices", {}).get("push_token", ""),
@@ -2981,6 +3498,11 @@ async def api_put_inner_voices(payload: dict, _u=Depends(_require_admin)):
     if unknown:
         raise HTTPException(400, f"Unknown fields: {unknown}")
 
+    for k in ("jing_push_url", "jang_push_url"):  # J25: empty, or an http(s) URL — a typo must not silently stop thoughts
+        v = str(payload.get(k, "") or "").strip()
+        if k in payload and v and not _re.match(r"^https?://[^\s/]+", v):
+            raise HTTPException(400, f"{k} must be empty or start with http:// or https://")
+
     svc = config_store.load_for_update(_SERVICES_PATH)
     jing_svc = svc.setdefault("jing", {})
     jang_svc = svc.setdefault("jang", {})
@@ -3003,7 +3525,7 @@ async def api_put_inner_voices(payload: dict, _u=Depends(_require_admin)):
         if f"{name}_model_path" in payload:
             sub["model_path"] = str(payload[f"{name}_model_path"])
         if f"{name}_push_url" in payload:
-            sub["push_url"] = str(payload[f"{name}_push_url"])
+            sub["push_url"] = str(payload[f"{name}_push_url"] or "").strip()
 
     if "node_label" in payload:
         iv_svc["node_label"] = str(payload["node_label"])
@@ -3052,6 +3574,34 @@ async def api_inner_voices_push(payload: dict, request: Request):
     return {"ok": True}
 
 
+def _inner_voice_token_ok(presented: str) -> bool:
+    """The shared Jing/Jang token from services.yaml (GUI: Settings → inner voices). No token configured → refused."""
+    try:
+        svc = yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return False
+    expected = (svc.get("inner_voices", {}).get("push_token") or "").strip()
+    return bool(expected) and hmac.compare_digest((presented or "").encode(), expected.encode())
+
+
+@router.get("/api/inner-voices/context")
+async def api_inner_voices_context(request: Request, source: str = "", since: float = 0.0, lang: str = ""):
+    """J21b reader 3: what an inner voice may know about the people the cameras saw since `since` — pseudonym ids,
+    kind, camera and place, never a name; an opted-out person is only «a person». GET only, same token as the push
+    (Bearer header), fails closed. `available` false → module 0 holds nothing (the voice uses its own fallback)."""
+    auth = request.headers.get("authorization", "")
+    if not _inner_voice_token_ok(auth[7:].strip() if auth.lower().startswith("bearer ") else ""):
+        raise HTTPException(401, "Invalid or missing push token")
+    if source not in ("jing", "jang"):
+        raise HTTPException(403, "source must be 'jing' or 'jang'")
+    lang = lang if lang in ("nb", "en", "de") else _get_lang()
+    if not await asyncio.to_thread(frigate_query.available):
+        return {"available": False, "people": []}
+    since = max(float(since or 0.0), time.time() - 6 * 3600)  # never more than six hours back
+    lines = await asyncio.to_thread(inner_context.people, since, lang)
+    return {"available": True, "people": lines}
+
+
 # ── Notification settings ──────────────────────────────────────────────────────
 
 _NOTIF_DEFAULTS: dict = {
@@ -3060,6 +3610,53 @@ _NOTIF_DEFAULTS: dict = {
     "normalcy_min_confidence": 0.0,
     "normalcy_cameras": [],
 }
+
+
+@router.get("/api/settings/screens")
+async def api_get_screens(_u=Depends(_require_admin)):
+    """P151 (D11): Settings → Screens — the one switch for KTSB's screen page, live-camera minutes, Frigate RTSP port."""
+    s = (yaml.safe_load(_SETTINGS_PATH.read_text(encoding="utf-8")) or {}).get("screens") or {}
+    fr = (yaml.safe_load(_SERVICES_PATH.read_text(encoding="utf-8")) or {}).get("frigate") or {}
+    return {"enabled": screen_core.enabled(s), "live_minutes": screen_core.live_minutes(None, s),
+            "rtsp_port": int(fr.get("rtsp_port") or 8554)}
+
+
+@router.put("/api/settings/screens")
+async def api_put_screens(payload: dict, _u=Depends(_require_admin)):
+    """Takes effect at once — the bridge and Kåre's tools read the file live (rule 25)."""
+    try:
+        minutes = float(payload.get("live_minutes", screen_core.DEFAULT_LIVE_MINUTES))
+        port = int(payload.get("rtsp_port", 8554))
+    except (TypeError, ValueError) as e:
+        raise HTTPException(400, "live_minutes and rtsp_port must be numbers") from e
+    if not 0.5 <= minutes <= screen_core.MAX_LIVE_MINUTES or not 1 <= port <= 65535:
+        raise HTTPException(400, f"live_minutes 0.5–{screen_core.MAX_LIVE_MINUTES:g}, rtsp_port 1–65535")
+
+    def fn(d: dict) -> dict:
+        s = d.setdefault("screens", {})
+        if "enabled" in payload:
+            s["enabled"] = bool(payload["enabled"])
+        s["live_minutes"] = minutes
+        return d
+
+    config_store.update_yaml(_SETTINGS_PATH, fn, "gui:put_screens")
+    if "rtsp_port" in payload:
+        def fr(d: dict) -> dict:
+            d.setdefault("frigate", {})["rtsp_port"] = port
+            return d
+
+        config_store.update_yaml(_SERVICES_PATH, fr, "gui:put_screens_rtsp_port")
+    return {"ok": True}
+
+
+@router.post("/api/settings/nodes/{node_id}/screen/{step}")
+async def api_node_screen(node_id: str, step: str, payload: dict | None = None, _u=Depends(_require_admin)):
+    """P151: the node dialog's «Screen page» — `status` (address, paired, seen), `pair` (the code on the TV), `unpair`.
+    The bridge keeps the pairing; the API only forwards."""
+    if step not in ("status", "pair", "unpair"):
+        raise HTTPException(400, "step must be status, pair or unpair")
+    body = {"node": node_id, "code": str((payload or {}).get("code") or "")[:8]}
+    return await _bridge_tv(f"/screen/{step}", body)
 
 
 @router.get("/api/settings/notifications")

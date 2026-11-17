@@ -1,9 +1,11 @@
 import asyncio
 import json as _json
+import re
 from pathlib import Path
 
 import yaml
 
+from kaare_core import receipts
 from kaare_core.config import ADMIN_ONLY_TOOLS
 from kaare_core.crypto import unseal
 from kaare_core.memory.long_term import USER_GLOBAL, get_ltm
@@ -150,17 +152,36 @@ def _read_inner_thoughts(lang: str = "nb") -> str:
     return content if content else t("mem_no_inner_thoughts", lang)
 
 
-def _read_reflection(date: str | None = None, lang: str = "nb") -> str:
+REFLECTIONS_DIR = Path("/kaare/state/memory/reflections")  # J22: shared (old, before per-user) files + <user>/ folders
+REFLECTION_LATEST = Path("/kaare/state/memory/reflection_latest.md")  # the shared latest (from before the per-user folders)
+_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_USER = re.compile(r"^[^/\\.][^/\\]{0,63}$")
+
+
+def _own_reflection_dir(user_id: str) -> Path | None:
+    """The caller's own folder — never another user's, never a path trick ('global' and '' have none)."""
+    if not user_id or user_id == "global" or not _USER.fullmatch(user_id) or ".." in user_id:
+        return None
+    d = REFLECTIONS_DIR / user_id
+    return d if d.is_dir() else None
+
+
+def _read_reflection(date: str | None = None, lang: str = "nb", user_id: str = "") -> str:
+    """J22: the caller's own meetings (`reflections/<user>/`) and the old shared ones (`reflections/*.md`, before the
+    per-user folders). Nobody reads another user's meetings through Kåre — the GUI with PIN is admin's way (as today)."""
+    own = _own_reflection_dir(user_id)
     if date:
-        path = Path(f"/kaare/state/memory/reflections/{date}.md")
-        if not path.exists():
-            available = sorted(Path("/kaare/state/memory/reflections").glob("*.md"))
-            dates = (
-                ", ".join(p.stem for p in available[-5:]) if available else t("mem_no_dates", lang)
-            )
+        if not _DATE.fullmatch(str(date)):
+            date = "?"
+        candidates = ([own / f"{date}.md"] if own else []) + [REFLECTIONS_DIR / f"{date}.md"]
+        path = next((p for p in candidates if date != "?" and p.is_file()), None)
+        if path is None:
+            available = sorted({p.stem for d in ([own] if own else []) + [REFLECTIONS_DIR]
+                                for p in d.glob("[0-9][0-9][0-9][0-9]-*.md")}, reverse=True)
+            dates = ", ".join(available[:8]) if available else t("mem_no_dates", lang)
             return t("mem_no_reflection", lang, date=date, dates=dates)
     else:
-        path = Path("/kaare/state/memory/reflection_latest.md")
+        path = own / "latest.md" if own and (own / "latest.md").is_file() else REFLECTION_LATEST
         if not path.exists():
             return t("mem_no_reflection_file", lang)
     try:
@@ -246,7 +267,7 @@ async def _search_memory(
         return t("mem_search_error", lang, error=e)
 
 
-def _verify_interactions(ids, verdict: str, user_id: str, lang: str = "nb") -> str:
+def _verify_interactions(ids, verdict: str, user_id: str, lang: str = "nb", receipt_who: str | None = None) -> str:
     if not ids:
         return t("mem_no_ids", lang)
     uid = user_id if user_id else USER_GLOBAL
@@ -260,7 +281,12 @@ def _verify_interactions(ids, verdict: str, user_id: str, lang: str = "nb") -> s
             "denied": t("mem_verdict_denied", lang),
             "test": t("mem_verdict_test", lang),
         }
-        return f"{updated} {verdict_labels.get(verdict, verdict)}: {ids_int}"
+        reply = f"{updated} {verdict_labels.get(verdict, verdict)}: {ids_int}"
+        if not updated:
+            return reply
+        return reply + receipts.suffix("memory_verdict", ref="interactions:" + ",".join(map(str, ids_int)),
+                                       what=t("rcpt_memory_what", lang, n=updated, verdict=verdict_labels.get(verdict, verdict)),
+                                       where=t("rcpt_memory_where", lang, user=uid), who=receipt_who, lang=lang)
     except Exception as e:
         return t("mem_mark_error", lang, error=e)
 
@@ -338,6 +364,7 @@ async def dispatch(name: str, arguments: dict) -> str:
                 verdict=arguments.get("dom", "verified"),
                 user_id=arguments.get("_user_id", ""),
                 lang=lang,
+                receipt_who=arguments.get("_user_id") or "global",
             )
         if action in ("fetch_stm", "hent_gammel_stm"):
             return _get_stm_history(
@@ -353,7 +380,7 @@ async def dispatch(name: str, arguments: dict) -> str:
         date = arguments.get("date")
         if meeting_type == "development":
             return _read_dev_meeting(date, lang=lang)
-        return _read_reflection(date, lang=lang)
+        return _read_reflection(date, lang=lang, user_id=arguments.get("_user_id", ""))
 
     if name in ("inner_thoughts", "les_indre_tanker"):
         return _read_inner_thoughts(lang=lang)

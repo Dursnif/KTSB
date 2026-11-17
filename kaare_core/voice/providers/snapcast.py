@@ -26,12 +26,12 @@ class SnapcastProvider(BaseVoiceProvider):
         self._config = config
         self._media_base_url = media_base_url
 
-    async def speak(self, wav_path: Path, node_config: dict) -> None:
+    async def speak(self, wav_path: Path, node_config: dict) -> bool:
         host = node_config.get("host", "")
         port = int(node_config.get("api_port", 4953))
         if not host:
             log.error("Snapcast provider: mangler host i node-config")
-            return
+            return False
 
         try:
             _, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=5.0)
@@ -43,7 +43,7 @@ class SnapcastProvider(BaseVoiceProvider):
                 port,
                 exc,
             )
-            return
+            return False
 
         try:
             with wave.open(str(wav_path), "rb") as wf:
@@ -70,8 +70,10 @@ class SnapcastProvider(BaseVoiceProvider):
                         break
                     writer.write(frames)
                     await writer.drain()
+            return True
         except Exception as exc:
             log.error("Snapcast: feil ved sending til %s:%s — %s", host, port, exc)
+            return False
         finally:
             writer.close()
             try:
