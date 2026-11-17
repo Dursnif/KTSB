@@ -111,6 +111,7 @@ def init_db() -> None:
         _migrate(conn)
         conn.commit()
         _ensure_admin(conn)
+        _heal_locked_out_first_admin(conn)
         _ensure_system_identities(conn)
     finally:
         conn.close()
@@ -204,6 +205,9 @@ def _ensure_admin(conn: sqlite3.Connection) -> None:
             pin="1234",
             avatar="🛡️",
             must_change_pin=True,
+            # DT04-S05u: the first-start PIN never expires — an expired one locked a new install out for good (no
+            # other admin). It works only from the local network until it is changed (router_users login).
+            pin_expires=False,
         )
 
         logging.getLogger(__name__).warning(
@@ -290,7 +294,7 @@ def validate_pin_strength(pin: str) -> tuple[bool, str]:
 
 
 def _create_user_conn(
-    conn, *, username, display_name, role, pin, avatar="", must_change_pin=False
+    conn, *, username, display_name, role, pin, avatar="", must_change_pin=False, pin_expires=True
 ) -> dict:
     if role not in PERSON_ROLES:
         raise ValueError(f"Ugyldig rolle: {role}")
@@ -301,7 +305,7 @@ def _create_user_conn(
     ts = datetime.now(UTC).isoformat(timespec="seconds")
     pin_hash = hash_pin(pin)
     expires = None
-    if must_change_pin:
+    if must_change_pin and pin_expires:
         expires = (datetime.now(UTC) + timedelta(hours=TEMP_PIN_TTL_HOURS)).isoformat(
             timespec="seconds"
         )
@@ -593,6 +597,43 @@ def update_pin(username: str, new_pin: str) -> bool:
         return conn.execute("SELECT changes()").fetchone()[0] > 0
     finally:
         conn.close()
+
+
+def is_first_start_pin(username: str) -> bool:
+    """True for the first-start admin's default PIN: must be changed, and no expiry. Every temporary PIN an admin gives
+    (create_user, generate_temp_pin) carries an expiry, so «must change + no expiry» is only ever this one."""
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT must_change_pin, pin_expires_at FROM users WHERE username=?", (username,)
+        ).fetchone()
+        return bool(row and row["must_change_pin"] and not row["pin_expires_at"])
+    finally:
+        conn.close()
+
+
+def _heal_locked_out_first_admin(conn: sqlite3.Connection) -> None:
+    """DT04-S05u: an install made before this fix whose default admin passed its 1-hour expiry is locked out for good.
+    Heal it once at start — only when it is exactly that case: the built-in `admin` still has the public PIN 1234, has
+    never changed it, and no other admin exists. Nothing is widened: the PIN is public anyway, and from now on it works
+    only from the local network until it is changed."""
+    row = conn.execute(
+        "SELECT pin_hash, must_change_pin, pin_expires_at FROM users WHERE username='admin' AND role='admin'"
+    ).fetchone()
+    if not row or not row["must_change_pin"] or not row["pin_expires_at"]:
+        return
+    try:
+        if datetime.now(UTC) <= datetime.fromisoformat(row["pin_expires_at"]):
+            return
+    except ValueError:
+        return
+    others = conn.execute("SELECT COUNT(*) FROM users WHERE role='admin' AND username != 'admin'").fetchone()[0]
+    if others or not verify_pin("1234", row["pin_hash"]):
+        return
+    conn.execute("UPDATE users SET pin_expires_at=NULL WHERE username='admin'")
+    conn.commit()
+    logger.warning("[USERS] default admin was locked out by an expired first-start PIN — expiry removed (DT04-S05u); "
+                   "the PIN 1234 works only from the local network until it is changed")
 
 
 def check_pin_expired(username: str) -> bool:

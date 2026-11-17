@@ -2,7 +2,7 @@
 
 ![Version](https://img.shields.io/github/v/tag/dursnif/KTSB?label=version&sort=semver)
 ![License](https://img.shields.io/badge/license-Personal%20Use-blue)
-![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fdursnif%2Fktsb-blue)
+![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fdursnif%2Fkaare-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-dursnif-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/dursnif)
 
@@ -20,7 +20,8 @@ The creator of KTSB didn't know how to code either — still doesn't, and has ne
 
 KTSB is built for **the average user**, not the terminal-comfortable developer: full access to the most advanced AI agent features spoken about today — completely free for private use, entirely local, and managed 100% through a beautiful, intuitive web GUI.
 
-No terminal required after the initial setup. No configuration files to edit manually.
+No terminal required after the initial setup, and no configuration files to edit — except two optional extras:
+HTTPS for voice from other devices and the VPN each need a line or two in `.env`.
 
 KTSB fits seamlessly alongside your existing **Home Assistant** and **Frigate** setup, running on its own dedicated machine and connecting to both over the network — each system keeps doing what it already does best.
 
@@ -57,9 +58,11 @@ The main agent maintains a short-term memory of your recent conversations and a 
 ### A team of AI assistants
 Behind the scenes, the main agent has a small team working alongside it:
 
-- **Miss Kåre** — a quiet evaluator who reviews the main agent's answers before they reach you
+- **Miss Kåre** — a quiet evaluator who reads the main agent's answers and adds a short comment when something
+  touches her
 - **Mechanic** — a technical assistant for deep-dives, system inspection, and complex problems
-- **Miss Library** — searches a local Wikipedia corpus and the web for factual answers
+- **Miss Library** — searches the web (and an optional local Wikipedia corpus — not part of the Docker install yet)
+  for factual answers
 - **Jing and Jang** — background inner voices that process and reflect while you are not watching
 
 Every night (03:00 by default, set under **Settings → Reflection**) a night sequence runs in order: memory compression, a weekly review of what the main agent believes about the world, a reflection meeting that reviews the day, and a dev slot that investigates problems with read-only tools and leaves proposals for an admin to confirm in chat. Nothing changes without that confirmation.
@@ -76,14 +79,37 @@ KTSB uses **Ollama** for local LLM inference out of the box. No cloud account re
 
 ## What you need
 
-KTSB runs via **Docker**, which means it works on Linux, Windows, and macOS without installing anything else manually.
+KTSB runs via **Docker**, so it needs nothing else installed by hand. It is tested on Windows 11 and runs every day on
+Linux; macOS should work the same way but has not been tested (see *What's actually been tested*).
 
-| | Minimum | Recommended |
-|---|---|---|
-| **OS** | Linux, Windows 10/11, macOS | Linux (native Docker, fastest) |
-| **RAM** | 8 GB | 16 GB+ |
-| **Disk** | 20 GB free | 60 GB+ (for AI models) |
-| **GPU** | Not required (basic mode) | NVIDIA with 24 GB+ VRAM (full main agent, 27B) |
+What you need comes in two parts: KTSB itself, which is small, and the language model it talks with, which is not.
+The model can run on the same machine or on another machine in your network (**Settings → LLM**).
+
+**1. KTSB itself — without a language model: under 1 GB RAM and under one CPU core, also during a chat.** Measured on
+our Windows 11 + Docker Desktop test machine, default profile `medium`, the 13 KTSB containers without a language
+model (median of three rounds at idle; during three chats with tool calls, sampled every 2 seconds):
+
+| | KTSB alone |
+|---|---|
+| **RAM** | about **0.7–0.8 GB** at idle, about **0.85 GB** at the peak of a chat (the API is the largest, ~170 MB) |
+| **CPU** | under 1 % at idle; about half of one core at the peak of a chat |
+| **Disk** | about **6 GB** for the images + about **1 GB** for the data folder at the start (mostly the vector database reserving room for its empty collections) |
+| **GPU** | none |
+| **OS** | Linux or Windows 10/11 with Docker; macOS not tested |
+
+The `full` profile (semantic search model and speech models loaded at start) uses more — not measured. Camera image
+analysis is off in the shipped settings, so the load of the camera pipe is not measured either.
+
+**2. The language model.** What it needs depends on the model you pick — the sizes are in the table under
+[Choosing an AI model](#choosing-an-ai-model) (the default 9B is about 6.6 GB, the 27B about 17 GB). Its RAM or GPU
+memory comes on top of KTSB's when it runs on the same machine. Measured: the built-in Ollama with the 9B on the CPU
+(32k context) holds about **8 GB RAM** while the model is loaded and uses every core it can get while it answers (8 on
+our test machine). The 27B on a GPU has not been measured in Docker. A 24 GB+ NVIDIA GPU runs the 27B, the full main agent;
+without a GPU the 9B runs on the CPU, slowly (see below).
+
+**Everything on one machine with the built-in Ollama and the 9B:** about **30 GB** free disk (images about 15 GB with
+Ollama + the 6.6 GB model + data). With the model on another machine, KTSB needs its own ~7 GB plus room for what it
+stores over time.
 
 ### What to expect from the model you run
 
@@ -93,7 +119,8 @@ Be honest with yourself about this one — it decides what the main agent can do
 - **9B or smaller (the default on a fresh install) — basic mode.** Conversation works. Tool use is unreliable: it may skip a search, pick the wrong tool, or claim to know things it has no source for. Speed on CPU only, measured on two machines: on our development machine (12–18 threads in use) the first answer after start takes several minutes, later answers about a minute; on an 8-core laptop (Ryzen 7 8745H, no GPU) it took about 6 minutes to read one search result and about 13 minutes for one question with web search (our Windows test, November 2026). Speed depends heavily on the CPU; without a GPU the 9B is a way to try KTSB, not KTSB.
 - **Cloud** — only for explicit «ask online» questions today; it does not run the main agent's tools.
 
-A smaller model is a way to try KTSB, not the finished experience. A tuned KTSB-sized small model is on the roadmap.
+A smaller model is a way to try KTSB, not the finished experience. A tuned KTSB-sized small model is an idea we are
+working towards — not a promise.
 
 **No Home Assistant or Frigate?** That is fine too. KTSB works as a standalone AI assistant and you can add integrations whenever you are ready.
 
@@ -101,53 +128,54 @@ A smaller model is a way to try KTSB, not the finished experience. A tuned KTSB-
 
 ### What's actually been tested
 
-This is a one-person hobby project, not a company with a QA team. Here is what we actually ran, and — just as
-important — what we did not.
+This is a one-person hobby project, not a company with a QA team. In short — the full log is linked at the end.
 
-**Where it runs every day:** the developer's own house, on Linux with two NVIDIA GPUs. That install runs
-**directly on the machine (systemd), not in Docker**, with the 27B main agent described under *What we run
-ourselves*. Every feature in this release has run there first.
+**Where it runs every day:** the developer's own house, on Linux with two NVIDIA GPUs and the 27B main agent —
+**directly on the machine (systemd), not in Docker**. Every feature runs there first.
 
-**How we tested the Docker release:** on a separate Windows 11 PC with Docker Desktop (WSL2), an AMD laptop
-CPU, 32 GB RAM and **no dedicated GPU**, in October 2026, before this release:
+**How v1.11.0 was tested:** on a separate Windows 11 PC with Docker Desktop, an AMD laptop CPU, 32 GB RAM and **no
+GPU Docker can use**, in November 2026, with the 9B on that CPU and the house's 27B over the network:
 
-- upgrading a real v1.9 install (data, users and settings kept) and a fresh install from scratch
-- the default 9B model on that CPU, and a 27B main agent running on another machine in the same network
-- backup → wipe → restore, a server using its own Ollama instead of the built-in one, several users at once
-- all containers starting at once on old and new configs, and two settings saved at the same moment
-- an attempt to get in from another machine on the network: login limits, default PIN, open endpoints, ports
-- the night sequence started by hand and started by itself
-- voice in the browser over HTTPS through the bundled Caddy
+- a fresh install from the release bundle, the model download from the GUI, and starting with Home Assistant,
+  Frigate, MQTT or a sound device missing (no crash loops, honest messages)
+- notes, lists, timers, web search, law lookup, roles, backup/restore and the night sequence — checked against the
+  stored files and logs, not only the replies
+- the camera pipe against a real Frigate: episodes, «Was it you?» cards, see-vs-analyse per role
+- speech, pictures, live camera and recipes on a Google TV and a Nest Hub, also while YouTube plays
+- the three personality levels on the same 12 prompts (Minimal 4/12, Standard 11/12, Complete 10/12 tools called)
+- a security sweep of every API route, without a login and as a teen
+- the signed images and release bundle checked with cosign
 
-More than 30 real bugs were found this way and fixed before the release, four of them security holes. The
-fixes are in the release notes. The last check ran on the release-candidate images from GitHub, on the same
-PC: an upgraded v1.9 install and a fresh install from the release file. It found one more bug — `setup.ps1`
-did not start in Windows PowerShell 5.1, the version Windows ships with (also in v1.9) — fixed in this release.
+**The update button** was tested for real: a v1.10.3 install with data was updated to v1.11.0 from the Maintenance
+page in about two minutes — signatures checked, no rollback, all data, users and settings kept. On upgrade, child and
+teen roles gain «see stored camera pictures» (untick under Users if you don't want that).
 
-**What we have not tested:**
+**Not tested:** macOS · a GPU inside Docker · real Plex playback, a Samsung screen page and a
+microphone satellite on the Docker install · weeks of running in Docker.
 
-- **macOS** — never installed on a Mac. It is Docker, so it should work, but nobody has checked — and from
-  reading the code, `setup.sh` uses Linux-only shell features that macOS's default shell lacks.
-- **A GPU in Docker from a fresh install** — the GPU machine runs KTSB outside Docker. The Docker test PC has no
-  NVIDIA GPU, so `setup.sh`'s GPU setup and Ollama on a GPU inside Docker are untested.
-- **The update button from one release to the next** — we tested it with stand-in releases; the first real
-  update happens when the next release comes out. If it fails, it rolls back to the version you had.
-- **Pulling a model from the GUI on a fresh Docker install** — our test reused models already downloaded.
-- **Long-term running** — the new memory drawers, answer checks and dev-slot themes have run for days, not
-  weeks. The dev slot itself ran 8 nights in the developer's house; in Docker the night sequence has only run a
-  few nights.
+**Known issues:**
 
-**Known issues in this release:**
-
-- On CPU only, the 9B backup model can time out (120 s) when it starts cold, so the fallback fails. Without a GPU, answers that use web search can take over ten minutes on a laptop.
+- The «Minimal» personality is much weaker at tools; new installs start at «Complete».
+- On CPU only, the 9B backup model can time out (120 s) on a cold start, and answers with web search can take over ten
+  minutes on a laptop.
+- Volume on a Cast screen by name needs Home Assistant for now.
+- A TV returned to its home screen after live camera is called «standby» in the reply.
+- A timer can promise to speak on an install with no speaker; it then comes to the chat instead, with the reason.
 - Right after you switch language, the main agent may keep answering in the old one for a while.
-- A 27B model can say it did something without doing it, or write a tool call as plain text instead of running
-  it. The answer check now asks the model to retry when it sees a tool call written as text (and shows an honest
-  «not done» if the retry fails too); it catches the common phrasings, not all.
-- In onboarding, «External LLM server» sets every role to the Ollama API. For vLLM, LM Studio or another
+- In onboarding, «External LLM server» sets every role to the Ollama API — for vLLM, LM Studio or another
   OpenAI-compatible server, change the provider afterwards under **Settings → LLM / Models**.
-- A per-user reply language is not active yet: everyone gets the household language unless they ask otherwise.
-- After an update, reload the page if the GUI still looks like the old version (the browser may cache it).
+
+**Fixed in v1.11.1 — if you are on v1.11.0:**
+
+- **«Go back to v1.10.3» on the Maintenance page leaves the GUI waiting forever.** v1.11.0 wrote a setting that v1.10.3
+  misreads, so its browser page is blocked. Update to v1.11.1 before you go back. If it already happened: open
+  `configs/settings.yaml`, delete the line `cors_origins:` and the line `- "same-host"` under it, then run
+  `docker compose restart kaare-api`.
+- **A fresh v1.11.0 install can lock you out** («Temporary PIN has expired») if the first login comes more than an hour
+  after setup. In v1.11.1 the default PIN no longer expires, and an install that is already locked out is let in again
+  when v1.11.1 starts: set `KTSB_VERSION=v1.11.1` in `.env`, then run `docker compose pull` and `docker compose up -d`.
+
+**Full test log, including October's round and how to check the signatures yourself: [docs/testing.md](docs/testing.md).**
 
 If you hit a problem, especially on macOS or a GPU install, [open an issue](https://github.com/Dursnif/KTSB/issues).
 
@@ -242,6 +270,8 @@ Log in with the default admin credentials:
 | `admin` | `1234` |
 
 > ⚠️ **You will be forced to change the PIN on first login.** Do not skip this — the default PIN is public knowledge.
+> Until you change it, the default PIN works only from your home network (not over VPN or from outside). It does not
+> expire, so there is no hurry.
 
 The onboarding wizard walks you through the rest — no config files to edit manually:
 
@@ -268,7 +298,7 @@ To create one: in Home Assistant, click your profile picture in the bottom-left 
 
 Paste the URL and token into **Integrations → Home Assistant** in KTSB and save. That is it.
 
-**Setting up device names** — the main agent understands room names and device nicknames you define yourself. Open the **Aliases** page to map your own names (like *"the bedroom lamp"*) to Home Assistant entity IDs. The alias editor has a search function to help you find the right entity.
+**Setting up device names** — the main agent understands room names and device nicknames you define yourself. Open the **Rooms and aliases** page to map your own names (like *"the bedroom lamp"*) to Home Assistant entity IDs. The alias editor has a search function to help you find the right entity.
 
 ---
 
@@ -364,6 +394,11 @@ COMPOSE_PROFILES=ollama,medium
 ## Remote access (VPN)
 
 To access KTSB securely from outside your home network, enable the built-in WireGuard VPN service.
+
+> ⚠️ **Not tested with the wg-easy version KTSB now pins (15).** wg-easy 15 is a rewrite: by its own documentation it
+> no longer reads `WG_HOST` / `PASSWORD_HASH` and sets the host and admin password in a browser wizard on first
+> start instead. The steps below were written for the older wg-easy and may not work as written. Until this is
+> checked, follow [wg-easy's own documentation](https://wg-easy.github.io/wg-easy/) for the first start.
 
 **Requirements:** a public hostname (DuckDNS recommended — you can reuse `KAARE_DOMAIN`) and UDP port 51820 open in your router.
 
@@ -464,8 +499,7 @@ Some things do go out with the default settings, because the feature cannot work
 - **Update check** — when an admin opens the Maintenance page, KTSB asks GitHub whether a newer release exists.
 - **First voice start** (`full` profile) — the speech models download from Hugging Face.
 
-One more, which is not needed and will go: the web interface loads its fonts from **Google Fonts**, so your
-browser contacts Google when you open KTSB. The next release ships the fonts with KTSB itself.
+The web interface's fonts ship with KTSB itself — opening the GUI contacts no font service.
 
 Everything else that reaches the internet — cloud model, image generation, Brave Search, Norwegian law, tide
 data, model downloads, a HTTPS certificate — happens only after you switch it on or click it. The full list,

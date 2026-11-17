@@ -120,7 +120,8 @@ async def api_update_status(_u=Depends(_require_admin)):
 
 @router.post("/api/update/check")
 async def api_update_check(body: CheckRequest, _u=Depends(_require_admin)):
-    return await _ask_updater("check", force=body.force)
+    # DT04-S05v: the updater falls back on this when .env holds no readable version (never offers a downgrade)
+    return await _ask_updater("check", force=body.force, running=get_version())
 
 
 @router.post("/api/update/start")

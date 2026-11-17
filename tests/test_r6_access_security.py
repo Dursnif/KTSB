@@ -82,6 +82,7 @@ def login_client(monkeypatch, net):
     router_users._login_failures.clear()
     monkeypatch.setattr(router_users, "login", lambda u, p: None)  # every PIN wrong
     monkeypatch.setattr(router_users.store, "check_pin_expired", lambda u: False)
+    monkeypatch.setattr(router_users.store, "is_first_start_pin", lambda u: False)  # S05u check, store mocked as above
     app = FastAPI()
     app.include_router(router_users.router)
     yield app

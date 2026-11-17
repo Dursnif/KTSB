@@ -913,6 +913,12 @@ export type UpdateState = {
   error?: string;
   result?: string;
   steps?: UpdateStep[];
+  // DT04-S05r/S05t (updater v1.11.1+): who rolled back, why (code), and whether configs were set back
+  rollback_kind?: string;
+  reason_code?: string;
+  failed_step?: string;
+  left_version?: string;
+  configs_restored?: string;
 };
 export type UpdateStatus = {
   docker: boolean;
@@ -927,14 +933,16 @@ export type UpdateStatus = {
 export type UpdateCheck = {
   ok: boolean;
   current: string;
+  current_unknown?: boolean; // DT04-S05v: no readable running version — nothing is offered
   available?: boolean;
   latest?: { version: string; published: string; notes: string; url: string } | null;
   checked?: string;
   error?: string;
 };
 
-export async function apiUpdateStatus(): Promise<UpdateStatus> {
-  const { data } = await api.get("/api/update/status");
+// timeoutMs (DT04-S05s): a stopped API on Docker Desktop makes calls hang instead of failing — give up after this long.
+export async function apiUpdateStatus(timeoutMs?: number): Promise<UpdateStatus> {
+  const { data } = await api.get("/api/update/status", timeoutMs ? { timeout: timeoutMs } : undefined);
   return data;
 }
 

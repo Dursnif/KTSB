@@ -333,26 +333,30 @@ def list_releases() -> list[dict]:
     return out
 
 
-def check(force: bool = False) -> dict:
+def check(force: bool = False, running: str = "") -> dict:
+    """`running` = the version the API's own image reports. DT04-S05v: when .env holds no version we can read (a test
+    tag, or empty with images on :latest), every release looked newer and an older one was offered — a downgrade.
+    Now the running image's version is used, and with no known version nothing is offered (`current_unknown`)."""
     test_ok = include_test_versions()  # a changed setting must not wait for the 6 h cache
     if (not force and _check_cache["result"] and time.time() - _check_cache["at"] < CHECK_CACHE_S
-            and _check_cache.get("test") == test_ok):
+            and _check_cache.get("test") == test_ok and _check_cache.get("running") == running):
         return _check_cache["result"]
-    cur = current_version()
+    cur = current_version() or (running if parse_version(running) else "")
     try:
         releases = list_releases()
     except Exception as e:
         return {"ok": False, "current": cur, "error": f"could not reach GitHub: {e}"}
     newest = releases[0] if releases else None
-    available = bool(newest and (not parse_version(cur) or parse_version(newest["version"]) > parse_version(cur)))
+    available = bool(newest and parse_version(cur) and parse_version(newest["version"]) > parse_version(cur))
     result = {
         "ok": True,
         "current": cur,
+        "current_unknown": not parse_version(cur),
         "latest": newest and {k: newest[k] for k in ("version", "published", "notes", "url")},
         "available": available,
         "checked": _now(),
     }
-    _check_cache.update(at=time.time(), result=result, test=test_ok)
+    _check_cache.update(at=time.time(), result=result, test=test_ok, running=running)
     return result
 
 
@@ -459,11 +463,72 @@ def _copy_bundle(src: Path, dst: Path) -> None:
             shutil.copytree(src / name, dst / name)
 
 
+CONFIG_DIR = HOME / "configs"
+PREV_CONFIGS = PREV_DIR / "configs"
+_CONFIG_SKIP = {".history"}  # the GUI's own version history stays as it is
+
+
 def save_previous() -> None:
     shutil.rmtree(PREV_DIR, ignore_errors=True)
     PREV_DIR.mkdir(parents=True)
     _copy_bundle(HOME, PREV_DIR)
     shutil.copy2(HOME / ".env", PREV_DIR / ".env")
+    # DT04-S05r: the new version migrates configs/ on its first start, and an older version can misread what it wrote
+    # (v1.10.3 read `cors_origins: ["same-host"]` literally → GUI blocked). Keep configs/ exactly as they are now — before
+    # any migration — so a rollback can put them back. state/ (the data) is never copied or restored.
+    if CONFIG_DIR.is_dir():
+        shutil.copytree(CONFIG_DIR, PREV_CONFIGS, ignore=lambda d, names: [n for n in names if n in _CONFIG_SKIP])
+
+
+SNAPSHOT_ROOT = CONFIG_DIR / ".history" / "_snapshots"
+_SNAP_RE = re.compile(r"^(\d{8}T\d{12}Z)_pre-migrate-v\d+$")
+_SNAP_SLACK_S = 5  # clock rounding between the updater's folder time and the snapshot's name
+
+
+def _first_premigrate_snapshot() -> Path | None:
+    """The first «pre-migrate» snapshot taken after the switch: the new version's migration copies configs/ before it
+    changes anything, so that copy is exactly what the old version left. Later ones (after a restore, another
+    migration) and earlier ones (before this update) are not it. The switch time = when the previous folder was made."""
+    try:
+        switch = PREV_DIR.stat().st_mtime - _SNAP_SLACK_S
+        found = []
+        for d in SNAPSHOT_ROOT.iterdir():
+            m = _SNAP_RE.match(d.name)
+            if not (m and d.is_dir()):
+                continue
+            ts = datetime.strptime(m.group(1), "%Y%m%dT%H%M%S%fZ").replace(tzinfo=UTC).timestamp()
+            if ts >= switch:
+                found.append((ts, d))
+        return min(found)[1] if found else None
+    except (OSError, ValueError):
+        return None
+
+
+def _restore_configs() -> str:
+    """Put the configs from before the update back, file by file (temp + os.replace). Source: the updater's own copy
+    taken at the switch; if a previous was kept by an older updater (no copy), the first pre-migrate snapshot after the
+    switch. Files the newer version added are left (an older version ignores them).
+    Returns «restored», «restored_from_premigrate» or «missing»."""
+    src_root, result = PREV_CONFIGS, "restored"
+    if not src_root.is_dir():
+        snap = _first_premigrate_snapshot()
+        if snap is None:
+            return "missing"
+        src_root, result = snap, "restored_from_premigrate"
+        audit("config_restore_source", f"no copy with the previous version — using snapshot {snap.name}")
+    for src in sorted(src_root.rglob("*")):
+        rel = src.relative_to(src_root)
+        if rel.parts and rel.parts[0] in _CONFIG_SKIP:
+            continue
+        dst = CONFIG_DIR / rel
+        if src.is_dir():
+            dst.mkdir(parents=True, exist_ok=True)
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dst.with_name(dst.name + ".ktsb-restore")
+        shutil.copy2(src, tmp)
+        os.replace(tmp, dst)
+    return result
 
 
 def restore_previous() -> None:
@@ -611,7 +676,8 @@ def do_update(version: str) -> None:
         log.error("update to %s failed: %s", version, msg)
         audit("update_failed", f"to={version} error={msg}")
         if switched:
-            _rollback(reason=msg, target=from_version)
+            failed_step = read_state().get("phase", "")
+            _rollback(reason=msg, target=from_version, kind="auto", reason_code="step_failed", failed_step=failed_step)
         else:
             write_state(phase="failed", error=msg, result="failed", finished=_now())
         return
@@ -622,10 +688,25 @@ def do_update(version: str) -> None:
     self_update_if_needed(version)
 
 
-def _rollback(reason: str, target: str) -> None:
+def _rollback(reason: str, target: str, kind: str = "auto", reason_code: str = "step_failed",
+              failed_step: str = "") -> None:
+    """kind «auto» = a failed update put back by the updater; «admin» = an admin chose to go back (DT04-S05t).
+    `reason_code` is what the GUI translates; `error` keeps the raw English text for logs."""
     step("rollback", f"putting the previous version back ({reason})")
+    write_state(rollback_kind=kind, reason_code=reason_code, failed_step=failed_step, configs_restored="")
+    configs = "missing"
     try:
         restore_previous()
+        try:
+            configs = _restore_configs()
+            log.info("rollback: configs %s from the copy taken before the update", configs)
+            if configs == "missing":
+                audit("config_restore_missing", "no config copy kept with the previous version — configs left as they are")
+        except Exception as e:  # the rollback goes on, but never silently
+            configs = f"failed: {e}"
+            log.error("rollback: configs could not be restored: %s", e)
+            audit("config_restore_failed", str(e))
+        write_state(configs_restored=configs)
         start_services()
         health(target)
     except Exception as e:
@@ -633,17 +714,20 @@ def _rollback(reason: str, target: str) -> None:
         log.error(msg)
         audit("rollback_failed", msg)
         write_state(phase="failed", error=msg, result="rollback_failed", finished=_now())
+        _check_cache.update(at=0.0, result=None)
         return
-    audit("rollback_done", f"back on {target or 'previous'}; cause: {reason}")
+    audit("rollback_done", f"back on {target or 'previous'}; cause: {reason}; configs: {configs}")
     write_state(phase="rolled_back", error=reason, result="rolled_back", finished=_now())
+    _check_cache.update(at=0.0, result=None)  # S05r: the cached «current» was the version we just left
 
 
 def do_manual_rollback() -> None:
     st = read_state()
     target = st.get("from_version", "")
-    write_state(phase="rollback", started=_now(), error="", result="", target=target, steps=[])
+    left = current_version()
+    write_state(phase="rollback", started=_now(), error="", result="", target=target, left_version=left, steps=[])
     audit("rollback_started", f"to={target or 'previous'} (admin)")
-    _rollback(reason="requested by an admin", target=target)
+    _rollback(reason="requested by an admin", target=target, kind="admin", reason_code="admin_request")
 
 
 def resume_after_restart() -> None:
@@ -657,7 +741,8 @@ def resume_after_restart() -> None:
     elif phase in _MID_PHASES:
         log.warning("restarted during '%s' — rolling back", phase)
         with _job_lock:
-            _rollback(reason=f"the updater was restarted during '{phase}'", target=st.get("from_version", ""))
+            _rollback(reason=f"the updater was restarted during '{phase}'", target=st.get("from_version", ""),
+                      kind="auto", reason_code="interrupted", failed_step=phase)
     elif phase in ("preflight", "download", "verify_bundle"):
         write_state(phase="failed", error="interrupted before anything was changed", result="failed")
 
@@ -694,7 +779,7 @@ def handle(req: dict) -> dict:
             "state": read_state(),
         }
     if cmd == "check":
-        return check(force=bool(req.get("force")))
+        return check(force=bool(req.get("force")), running=str(req.get("running") or ""))
     if cmd == "update":
         version = str(req.get("version", ""))
         if not parse_version(version):

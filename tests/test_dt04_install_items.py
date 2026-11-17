@@ -99,8 +99,12 @@ def test_missing_or_broken_setting_falls_back_to_same_host_not_everyone(tmp_path
 
 
 def test_template_ships_same_host():
-    tpl = yaml.safe_load((ROOT / "configs_default/settings.yaml").read_text(encoding="utf-8"))
-    assert tpl["cors_origins"] == ["same-host"]
+    # DT04-S05r: was `tpl["cors_origins"] == ["same-host"]`. The default now lives in code (an older version misread the
+    # value after a rollback); what a fresh install gets is unchanged: same-host.
+    tpl_path = ROOT / "configs_default/settings.yaml"
+    tpl = yaml.safe_load(tpl_path.read_text(encoding="utf-8"))
+    assert "cors_origins" not in tpl
+    assert cors.read_origins(tpl_path) == ["same-host"]
 
 
 def test_an_install_with_the_old_shipped_star_is_moved_once():

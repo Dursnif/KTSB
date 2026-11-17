@@ -1569,7 +1569,18 @@
         "rollback": "Setter forrige versjon tilbake"
       },
       "test_versions": "Ta med testversjoner",
-      "test_versions_hint": "Viser også testversjoner (rc) i «Oppdater KTSB» — før en vanlig versjon slippes. De er signert og sjekkes som vanlige versjoner, men er mindre testet. Av som standard. Gjelder fra neste «Se etter oppdatering»."
+      "test_versions_hint": "Viser også testversjoner (rc) i «Oppdater KTSB» — før en vanlig versjon slippes. De er signert og sjekkes som vanlige versjoner, men er mindre testet. Av som standard. Gjelder fra neste «Se etter oppdatering».",
+      "rolled_back_admin": "Du gikk tilbake til {{version}} fra {{from}}.",
+      "cause_step_failed": "steget «{{step}}» feilet",
+      "cause_interrupted": "oppdateringstjenesten ble startet på nytt under «{{step}}»",
+      "configs_restored": "Innstillingene er satt tilbake slik de var før oppdateringen (endringer gjort etter oppdateringen er også tatt bort).",
+      "configs_missing": "Innstillingene ble ikke satt tilbake — det fantes ingen kopi fra før oppdateringen. Den eldre versjonen kan lese noen av dem annerledes.",
+      "configs_failed": "Innstillingene kunne ikke settes tilbake: {{error}}",
+      "no_answer": "KTSB har ikke svart på over ett minutt.",
+      "no_answer_blocked": "KTSB svarer, men nettleseren slipper ikke svaret inn (CORS). Sjekk cors_origins i configs/settings.yaml, eller åpne GUI-et på samme adresse som før.",
+      "no_answer_down": "KTSB svarer ikke i det hele tatt. Den kan fortsatt starte opp — eller en tjeneste har stoppet. Se «docker compose ps» i installasjonsmappa.",
+      "no_answer_unknown": "Grunnen er ikke kjent.",
+      "current_unknown": "Kan ikke se hvilken versjon som kjører, så ingen oppdatering tilbys (det kunne vært en nedgradering). Kjør setup.sh / setup.ps1 én gang i installasjonsmappa."
     }
   },
   "dashboard": {
@@ -2951,7 +2962,8 @@
       "item_5": "Sikkerhetskopier — Opprett navngitte sikkerhetskopipunkter av hele installasjonen (databaser, minne, brukernøkler og innstillinger). Gjenopprett fra et lagret punkt (krever PIN) eller last ned som zip. Maks 5 punkter lagres. Langtidsminnet tar med samtaler, kunnskap, Kåres skuffer, Frigate-minnet og seerhistorikken; Bilder tar med de beholdte Frigate-episodebildene (vanlige deteksjonsbilder er cache og følger ikke med). ⚠ Factory reset tilbakestiller alt til standard — krever PIN-bekreftelse. Systemnøkkelen følger aldri med i en backup: gjenoppretter du på en ny maskin, må hver bruker logge inn med PIN én gang før bakgrunnsjobbene (refleksjon, nattjobb) får tilgang til dataene deres igjen.",
       "item_6": "Oppdater KTSB (Docker) — ser etter nyere versjoner på GitHub og installerer dem med ett klikk (krever PIN). Før oppdateringen lagres et backup-punkt automatisk (vises som «automatisk» i backup-listen, teller ikke mot de 5). Nye images sjekkes mot KTSBs signatur før de tas i bruk. Starter ikke alt riktig, settes forrige versjon tilbake av seg selv; dataene dine endres ikke av en oppdatering. Krever at setup.sh / setup.ps1 er kjørt i installasjonsmappa. Kjører ikke mens nattsekvensen pågår.",
       "item_7": "Ta med testversjoner (Ekspert) — under «Oppdater KTSB». Av som standard: bare vanlige versjoner tilbys. På: også testversjoner (rc) som slippes før en vanlig versjon; de er signert og sjekkes likt, men mindre testet. Kjører du en testversjon, tilbys den vanlige versjonen uansett.",
-      "item_8": "Etter lagring sier innstillingssidene om endringen er i bruk med en gang («Lagret og i bruk»), eller om en tjeneste må startes på nytt — da vises navnet på tjenesten og en lenke hit, til Tjenesterestart."
+      "item_8": "Etter lagring sier innstillingssidene om endringen er i bruk med en gang («Lagret og i bruk»), eller om en tjeneste må startes på nytt — da vises navnet på tjenesten og en lenke hit, til Tjenesterestart.",
+      "item_9": "Gå tilbake til forrige versjon — under «Oppdater KTSB». Setter forrige versjon og innstillingene fra før oppdateringen tilbake (endringer gjort i innstillingene etter oppdateringen tas også bort); dataene dine røres ikke. Kortet sier om innstillingene ble satt tilbake. Svarer ikke KTSB etter en oppdatering eller tilbakerulling, slutter kortet å vente etter ett minutt, sier hvorfor hvis nettleseren kan se det, og viser «Last siden på nytt»."
     },
     "verktoy": {
       "title": "Verktøy",

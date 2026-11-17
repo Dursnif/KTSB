@@ -16,6 +16,7 @@ import {
   type UpdateStatus, type UpdateCheck,
 } from "@/services/api";
 import { toggled } from "@/lib/collections";
+import { rollbackHeadline, rollbackCause, configsLine, cardMode, ConnectionWatch, pollLoop, CALL_TIMEOUT_MS } from "@/lib/updateReport";
 import { SettingsLevelProvider } from "@/contexts/SettingsLevelContext";
 import { ExpertOnly } from "./settings/shared";
 
@@ -543,6 +544,11 @@ function UpdateCard() {
   const [check, setCheck] = useState<UpdateCheck | null>(null);
   const [checking, setChecking] = useState(false);
   const [lostContact, setLostContact] = useState(false);
+  // S05s: the watch knows when contact was lost (first failure or timed-out call); the probe says why (answers but
+  // blocked = CORS / no answer at all). A 1 s clock moves the view on even when every call hangs.
+  const watch = useRef(new ConnectionWatch(CALL_TIMEOUT_MS));
+  const probe = useRef<"opaque" | "error" | null>(null);
+  const [verdict, setVerdict] = useState<"waiting" | "blocked" | "down" | "unknown">("waiting");
   const [notesOpen, setNotesOpen] = useState(false);
   const [modal, setModal] = useState<null | "update" | "rollback">(null);
   const [pin, setPin] = useState("");
@@ -557,14 +563,16 @@ function UpdateCard() {
     KNOWN_UPDATE_ERRORS.has(detail) ? t(`system.update.err_${detail.replace(/ /g, "_")}`) : (detail || t("system.update.err_generic"));
 
   const loadStatus = useCallback(async () => {
+    const id = watch.current.begin(Date.now());
     try {
-      const s = await apiUpdateStatus();
+      const s = await apiUpdateStatus(CALL_TIMEOUT_MS);
+      watch.current.settle(id, true, Date.now());
       setStatus(s);
-      setLostContact(false);
+      setLostContact(false); probe.current = null; setVerdict("waiting");
       return s;
     } catch (e) {
-      if (apiIsDown(e)) setLostContact(true);
-      else { setStatus(UPDATER_UNREACHABLE); setLostContact(false); }
+      if (apiIsDown(e)) { watch.current.settle(id, false, Date.now()); setLostContact(true); }
+      else { watch.current.settle(id, true, Date.now()); setStatus(UPDATER_UNREACHABLE); setLostContact(false); }
       return null;
     }
   }, []);
@@ -577,21 +585,47 @@ function UpdateCard() {
   }, []);
 
   useEffect(() => {
-    apiUpdateStatus().then(
-      s => {
-        setStatus(s);
-        if (s.reachable && !s.problem) void doCheck(false);
-      },
-      e => { if (apiIsDown(e)) setLostContact(true); else setStatus(UPDATER_UNREACHABLE); },
-    );
-  }, [doCheck]);
+    const id = setTimeout(() => {
+      void loadStatus().then(s => { if (s && s.reachable && !s.problem) void doCheck(false); });
+    }, 0);
+    return () => clearTimeout(id);
+  }, [loadStatus, doCheck]);
 
-  // Follow a running update (and keep trying while the API restarts).
+  // Follow a running update (and keep trying while the API restarts) — one call at a time, 3 s apart (S05s: a fixed
+  // interval stacked hanging calls until the browser's six connections per host were taken).
   useEffect(() => {
     if (!active && !lostContact) return;
-    const id = setInterval(() => { void loadStatus(); }, 3000);
-    return () => clearInterval(id);
+    let stop = false;
+    void pollLoop(loadStatus, () => new Promise(res => setTimeout(res, 3000)), () => stop);
+    return () => { stop = true; };
   }, [active, lostContact, loadStatus]);
+
+  // S05s: a 1 s clock independent of the calls — a call that hangs counts as failed after CALL_TIMEOUT_MS, and the
+  // «does not answer» view comes LOST_LIMIT_MS after the first failure, whether or not any call ever finishes.
+  const watching = !status || active || lostContact;
+  useEffect(() => {
+    if (!watching) return;
+    let lastProbe = 0;
+    const id = setInterval(() => {
+      const t = Date.now();
+      watch.current.tick(t);
+      if (!watch.current.lost) return;
+      setLostContact(true);
+      const v = watch.current.verdict(t, probe.current);
+      setVerdict(v);
+      // After the limit, ask the server without CORS every 15 s with its own 8 s limit: an opaque answer = up but the
+      // browser blocks it; a network error or timeout = nothing answers.
+      if (v !== "waiting" && t - lastProbe >= 15_000) {
+        lastProbe = t;
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), CALL_TIMEOUT_MS);
+        fetch(`${API_BASE}/api/show`, { mode: "no-cors", cache: "no-store", signal: ctl.signal })
+          .then(() => { probe.current = "opaque"; }, () => { probe.current = "error"; })
+          .finally(() => clearTimeout(timer));
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [watching]);
 
   const openModal = (kind: "update" | "rollback") => { setModal(kind); setPin(""); setPinError(""); setMsg(null); };
   const closeModal = () => { setModal(null); setPin(""); setPinError(""); };
@@ -620,19 +654,27 @@ function UpdateCard() {
   const steps = st?.steps ?? [];
 
   let body: React.ReactNode;
-  if (!status && !lostContact) {
-    body = <p style={{ color: "#666", fontSize: 13 }}><Loader2 className="h-3 w-3 animate-spin" style={{ display: "inline" }} /> {t("system.update.loading")}</p>;
-  } else if (status && !status.docker) {
+  const mode = cardMode(status, lostContact);
+  if (mode === "not_docker") {
     body = <p style={{ color: "#888", fontSize: 13 }}>{t("system.update.not_docker")}</p>;
-  } else if (status && !status.reachable && !lostContact) {
+  } else if (mode === "loading") {
+    body = <p style={{ color: "#666", fontSize: 13 }}><Loader2 className="h-3 w-3 animate-spin" style={{ display: "inline" }} /> {t("system.update.loading")}</p>;
+  } else if (mode === "unreachable") {
     body = <p style={{ color: "#f59e0b", fontSize: 13 }}>{t("system.update.unreachable")}</p>;
-  } else if (status?.problem) {
-    body = <p style={{ color: "#f59e0b", fontSize: 13 }}>{errorText(status.problem)}</p>;
+  } else if (mode === "problem") {
+    body = <p style={{ color: "#f59e0b", fontSize: 13 }}>{errorText(status?.problem ?? "")}</p>;
   } else {
     body = (
       <>
         {/* Running an update: live steps */}
-        {(active || lostContact) && (
+        {lostContact && verdict !== "waiting" && (
+          <div style={{ marginBottom: 12 }}>
+            <p style={{ color: "#f59e0b", fontSize: 13 }}>{t("system.update.no_answer")}</p>
+            <p style={{ color: "#888", fontSize: 12, marginTop: 4 }}>{t(`system.update.no_answer_${verdict}`)}</p>
+            <button type="button" onClick={() => window.location.reload()} style={{ color: "#a78bfa", textDecoration: "underline", background: "none", border: 0, cursor: "pointer", fontSize: 13, marginTop: 6, padding: 0 }}>{t("system.update.reload")}</button>
+          </div>
+        )}
+        {(active || lostContact) && verdict === "waiting" && (
           <div style={{ marginBottom: 12 }}>
             <p style={{ color: "#a78bfa", fontSize: 13, marginBottom: 8 }}>
               <Loader2 className="h-3 w-3 animate-spin" style={{ display: "inline", marginRight: 6 }} />
@@ -653,13 +695,27 @@ function UpdateCard() {
             <button type="button" onClick={() => window.location.reload()} style={{ color: "#a78bfa", textDecoration: "underline", background: "none", border: 0, cursor: "pointer", fontSize: 13 }}>{t("system.update.reload")}</button>
           </p>
         )}
-        {!active && !lostContact && st?.result === "rolled_back" && (
-          <div style={{ marginBottom: 12 }}>
-            <p style={{ color: "#f59e0b", fontSize: 13 }}>{t("system.update.rolled_back", { version: st.from_version || "—" })}</p>
-            <p style={{ color: "#666", fontSize: 12, marginTop: 4 }}>{t("system.update.cause")}: <span style={{ fontFamily: "monospace" }}>{st.error}</span></p>
-            <p style={{ color: "#666", fontSize: 12, marginTop: 4 }}>{t("system.update.data_hint")}</p>
-          </div>
-        )}
+        {!active && !lostContact && st?.result === "rolled_back" && (() => {
+          // S05t: an admin's own rollback is not «the update failed»; causes come as codes with nb/en/de text
+          const head = rollbackHeadline(st);
+          const cause = rollbackCause(st);
+          const cfg = configsLine(st);
+          return (
+            <div style={{ marginBottom: 12 }}>
+              <p style={{ color: st.rollback_kind === "admin" ? "#aaa" : "#f59e0b", fontSize: 13 }}>{t(head.key, head.vars)}</p>
+              {cause && (
+                <p style={{ color: "#666", fontSize: 12, marginTop: 4 }}>
+                  {t("system.update.cause")}:{" "}
+                  {"raw" in cause
+                    ? <span style={{ fontFamily: "monospace" }}>{cause.raw}</span>
+                    : t(cause.key, { step: t(cause.vars?.step ?? "") })}
+                </p>
+              )}
+              {cfg && <p style={{ color: cfg.key === "system.update.configs_restored" ? "#666" : "#f59e0b", fontSize: 12, marginTop: 4 }}>{t(cfg.key, cfg.vars)}</p>}
+              <p style={{ color: "#666", fontSize: 12, marginTop: 4 }}>{t("system.update.data_hint")}</p>
+            </div>
+          );
+        })()}
         {!active && !lostContact && st?.result === "failed" && (
           <div style={{ marginBottom: 12 }}>
             <p style={{ color: "#f87171", fontSize: 13 }}>{t("system.update.failed")}</p>
@@ -698,7 +754,8 @@ function UpdateCard() {
                 )}
               </div>
             )}
-            {check?.ok && !check.available && <p style={{ color: "#4caf50", fontSize: 12, marginBottom: 10 }}>✓ {t("system.update.up_to_date")}</p>}
+            {check?.ok && !check.available && !check.current_unknown && <p style={{ color: "#4caf50", fontSize: 12, marginBottom: 10 }}>✓ {t("system.update.up_to_date")}</p>}
+            {check?.ok && check.current_unknown && <p style={{ color: "#f59e0b", fontSize: 12, marginBottom: 10 }}>{t("system.update.current_unknown")}</p>}
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <Button size="sm" variant="outline" onClick={() => doCheck(true)} disabled={checking || working} className="gap-2">

@@ -55,4 +55,7 @@ def test_cards_pass_applies(rel, call):
 
 def test_forklaringer_lists_item_8():
     src = (SRC / "pages/admin/settings/TabForklaringer.tsx").read_text(encoding="utf-8")
-    assert 'items("vedlikehold", 8)' in src
+    # Was `items("vedlikehold", 8)` exactly; v1.11.1 added item_9 (rollback / «KTSB does not answer»). Item 8 must
+    # still be shown: the count must be at least 8.
+    m = re.search(r'items\("vedlikehold", (\d+)\)', src)
+    assert m and int(m.group(1)) >= 8

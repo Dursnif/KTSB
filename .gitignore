@@ -18,6 +18,7 @@ configs/*.save.*
 configs/kare_ha_bridgealiases.yaml.txt
 configs/prism/
 docs/*.md
+!docs/testing.md
 docs/claude/
 .env
 

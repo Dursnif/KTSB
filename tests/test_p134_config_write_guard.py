@@ -25,7 +25,12 @@ SKIP_PARTS = {
     "firmware",
 }
 STORE = ROOT / "kaare_core" / "config_store.py"
-ALLOWLIST: set[str] = set()  # "path/to/file.py:line" — keep empty
+# "path/to/file.py:line" — keep empty. One exception (DT04-S05r, v1.11.1): the updater runs in its own stdlib-only
+# container (no config_store, no yaml) and, on a rollback, puts back the byte copy of configs/ it took before the update.
+# Keyed (file, function) — a line number broke as soon as the file grew (2026-11-17).
+ALLOWLIST: set[tuple[str, str]] = {
+    ("services/updater/updater.py", "_restore_configs"),
+}
 
 WRITE_ATTRS = {"write_text", "write_bytes", "unlink", "rename", "replace", "touch", "rmdir"}
 SHUTIL = {"copy", "copy2", "copyfile", "move", "copytree", "rmtree"}
@@ -183,15 +188,48 @@ def _hits(tree: ast.Module, src: str) -> list[tuple[int, str]]:
     ]
 
 
+def _function_at(tree: ast.Module, line: int) -> str:
+    """Name of the innermost function whose body holds `line` ("" at module level)."""
+    best, size = "", None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.lineno <= line <= (node.end_lineno or 0):
+            span = (node.end_lineno or 0) - node.lineno
+            if size is None or span < size:
+                best, size = node.name, span
+    return best
+
+
+def _violations(rel: str, src: str) -> list[str]:
+    tree = ast.parse(src)
+    out = []
+    for line, tgt in _hits(tree, src):
+        fn = _function_at(tree, line)
+        if (rel, fn) not in ALLOWLIST:
+            out.append(f"{rel}:{line} ({fn or 'module'})  {tgt}")
+    return out
+
+
 def test_no_module_but_config_store_writes_configs():
     violations = []
     for p in _files():
-        src = p.read_text(encoding="utf-8")
-        for where_tgt in _hits(ast.parse(src), src):
-            where = f"{p.relative_to(ROOT)}:{where_tgt[0]}"
-            if where not in ALLOWLIST:
-                violations.append(f"{where}  {where_tgt[1]}")
+        violations += _violations(str(p.relative_to(ROOT)), p.read_text(encoding="utf-8"))
     assert not violations, "write into configs/ outside config_store:\n" + "\n".join(violations)
+
+
+_UPDATER_LIKE = (
+    "import os, shutil\nfrom pathlib import Path\nCONFIG_DIR = Path('/x/configs')\n"
+    + "\n" * 40  # the allowed function far from any fixed line number
+    + "def _restore_configs():\n    tmp = CONFIG_DIR / 'a.tmp'\n    shutil.copy2('s', tmp)\n    os.replace(tmp, CONFIG_DIR / 'a')\n"
+    + "def other():\n    (CONFIG_DIR / 'b.yaml').write_text('x')\n"
+)
+
+
+def test_updater_exception_is_bound_to_the_function_not_the_line():
+    """The one exception is (file, function): a write in the updater's _restore_configs passes wherever it sits in the
+    file; the same write in any other function of that file is still caught."""
+    found = _violations("services/updater/updater.py", _UPDATER_LIKE)
+    assert [f for f in found if "_restore_configs" in f] == []
+    assert any("other" in f for f in found), found
 
 
 def test_guard_catches_the_old_patterns(tmp_path):

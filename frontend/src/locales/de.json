@@ -1569,7 +1569,18 @@
         "rollback": "Stelle die vorherige Version wieder her"
       },
       "test_versions": "Testversionen einbeziehen",
-      "test_versions_hint": "Zeigt in «KTSB aktualisieren» auch Testversionen (rc) — bevor eine reguläre Version erscheint. Sie sind signiert und werden wie reguläre Versionen geprüft, aber weniger getestet. Standardmäßig aus. Gilt ab dem nächsten «Nach Aktualisierung suchen»."
+      "test_versions_hint": "Zeigt in «KTSB aktualisieren» auch Testversionen (rc) — bevor eine reguläre Version erscheint. Sie sind signiert und werden wie reguläre Versionen geprüft, aber weniger getestet. Standardmäßig aus. Gilt ab dem nächsten «Nach Aktualisierung suchen».",
+      "rolled_back_admin": "Du bist von {{from}} zu {{version}} zurückgegangen.",
+      "cause_step_failed": "der Schritt «{{step}}» ist fehlgeschlagen",
+      "cause_interrupted": "der Update-Dienst wurde während «{{step}}» neu gestartet",
+      "configs_restored": "Die Einstellungen sind wieder wie vor dem Update (Änderungen nach dem Update sind ebenfalls zurückgenommen).",
+      "configs_missing": "Die Einstellungen wurden nicht zurückgesetzt — es gab keine Kopie von vor dem Update. Die ältere Version liest manche davon eventuell anders.",
+      "configs_failed": "Die Einstellungen konnten nicht zurückgesetzt werden: {{error}}",
+      "no_answer": "KTSB antwortet seit über einer Minute nicht.",
+      "no_answer_blocked": "KTSB antwortet, aber der Browser lässt die Antwort nicht durch (CORS). Prüfe cors_origins in configs/settings.yaml oder öffne die GUI unter derselben Adresse wie vorher.",
+      "no_answer_down": "KTSB antwortet gar nicht. Es startet eventuell noch — oder ein Dienst ist gestoppt. Siehe «docker compose ps» im Installationsordner.",
+      "no_answer_unknown": "Der Grund ist nicht bekannt.",
+      "current_unknown": "Es ist nicht erkennbar, welche Version läuft, daher wird kein Update angeboten (es könnte ein Downgrade sein). Führe setup.sh / setup.ps1 einmal im Installationsordner aus."
     }
   },
   "dashboard": {
@@ -2951,7 +2962,8 @@
       "item_5": "Sicherungen — Benannte Sicherungspunkte der vollständigen Installation erstellen (Datenbanken, Gedächtnis, Benutzerschlüssel und Einstellungen). Von einem gespeicherten Punkt wiederherstellen (PIN erforderlich) oder als ZIP herunterladen. Max. 5 Punkte gespeichert. Das Langzeitgedächtnis enthält Gespräche, Wissen, Kåres Schubladen, das Frigate-Gedächtnis und den Wiedergabeverlauf; Bilder enthält die behaltenen Frigate-Episodenbilder (normale Erkennungsbilder sind Cache und nicht enthalten). ⚠ Factory-Reset setzt alles auf Werkseinstellungen zurück — erfordert PIN-Bestätigung. Der Systemschlüssel ist nie Teil eines Backups: Wenn Sie auf einem neuen Rechner wiederherstellen, muss sich jeder Nutzer einmal mit seiner PIN anmelden, bevor die Hintergrundjobs (Reflexion, Nachtjob) wieder auf seine Daten zugreifen können.",
       "item_6": "KTSB aktualisieren (Docker) — sucht auf GitHub nach neueren Versionen und installiert sie mit einem Klick (PIN erforderlich). Vorher wird automatisch ein Sicherungspunkt gespeichert (in der Sicherungsliste als «automatisch» markiert, zählt nicht zu den 5). Neue Images werden vor der Nutzung gegen die KTSB-Signatur geprüft. Startet etwas nicht richtig, wird die vorherige Version von selbst wiederhergestellt; eine Aktualisierung verändert Ihre Daten nie. Setzt voraus, dass setup.sh / setup.ps1 im Installationsordner ausgeführt wurde. Läuft nicht, während die Nachtsequenz läuft.",
       "item_7": "Testversionen einbeziehen (Experte) — unter «KTSB aktualisieren». Standardmäßig aus: nur reguläre Versionen werden angeboten. An: auch Testversionen (rc), die vor einer regulären Version erscheinen; sie sind signiert und werden gleich geprüft, aber weniger getestet. Läuft eine Testversion, wird die reguläre Version in jedem Fall angeboten.",
-      "item_8": "Nach dem Speichern zeigen die Einstellungsseiten, ob die Änderung sofort aktiv ist («Gespeichert und aktiv») oder ein Dienst neu gestartet werden muss — dann erscheinen der Name des Dienstes und ein Link hierher, zum Dienstneustart."
+      "item_8": "Nach dem Speichern zeigen die Einstellungsseiten, ob die Änderung sofort aktiv ist («Gespeichert und aktiv») oder ein Dienst neu gestartet werden muss — dann erscheinen der Name des Dienstes und ein Link hierher, zum Dienstneustart.",
+      "item_9": "Zur vorherigen Version zurück — unter «KTSB aktualisieren». Setzt die vorherige Version und die Einstellungen von vor dem Update zurück (Einstellungsänderungen nach dem Update werden ebenfalls zurückgenommen); deine Daten bleiben unberührt. Die Karte sagt, ob die Einstellungen zurückgesetzt wurden. Antwortet KTSB nach einem Update oder Zurückgehen nicht, hört die Karte nach einer Minute auf zu warten, sagt den Grund, wenn der Browser ihn erkennt, und zeigt «Seite neu laden»."
     },
     "verktoy": {
       "title": "Werkzeuge",

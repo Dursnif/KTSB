@@ -340,6 +340,17 @@ def cors_same_host(data: dict, defaults: dict) -> list[str]:
     return []
 
 
+def cors_default_in_code(data: dict, defaults: dict) -> list[str]:
+    """settings.yaml (DT04-S05r): «same-host» is now the default in code (`kaare_core.cors.DEFAULT`), not a value in the
+    file. v1.10.3 read `cors_origins: ["same-host"]` as a literal origin, sent no CORS header and its GUI hung after a
+    rollback. Exactly that default is removed, so an older version finds no key and uses its own default; any list the
+    user wrote (also one that names same-host next to other origins) is kept."""
+    if data.get("cors_origins") == ["same-host"]:
+        del data["cors_origins"]
+        return ["cors_origins: default «same-host» removed from the file (the default lives in code)"]
+    return []
+
+
 def camera_see_and_analyse(data: dict, defaults: dict) -> list[str]:
     """tool_permissions.yaml (N41): the camera is split into SEE (`camera`) and a NEW analysis (`camera_analyse` flag).
     A role that already had `camera` keeps analysing (nothing is taken away by the upgrade); child and teen get `camera`
@@ -379,6 +390,7 @@ STEPS: list[Step] = [
     Step(11, "face_sensor_words", "frigate_user.yaml", _s11_face_sensor_words),
     Step(12, "cors_same_host", "settings.yaml", cors_same_host),
     Step(13, "camera_see_and_analyse", "tool_permissions.yaml", camera_see_and_analyse),
+    Step(14, "cors_default_in_code", "settings.yaml", cors_default_in_code),
 ]
 LATEST = STEPS[-1].number
 

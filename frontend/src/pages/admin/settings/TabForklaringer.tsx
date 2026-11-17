@@ -307,7 +307,7 @@ export default function TabForklaringer() {
 
         {sec("vedlikehold", GROUP_COLORS.admin, <>
           <Body text={t("forklaringer.vedlikehold.body")} />
-          <Items items={items("vedlikehold", 8)} />
+          <Items items={items("vedlikehold", 9)} />
         </>)}
 
         {sec("verktoy", GROUP_COLORS.admin, <>

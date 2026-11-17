@@ -1,0 +1,30 @@
+KTSB vX.Y.Z — <Month>: <the 3–4 headings from the commit title>
+
+<Only when this release covers more than one tag: «This covers vX.Y.0 and vX.Y.Z. Coming from vA.B, you get both in one update.»>
+
+Before you update
+- <How the update was tested, and from which version: time taken, data kept. Write only what was really tested.>
+- A save point is made first; if the new version does not start, the old one comes back by itself.
+- Your settings are kept. New settings get their default; nothing you set is overwritten.
+- <Every change a migration makes on its own, as the code does it (read config_migrations.py, not the plan text).>
+- <Every rights or security change that gives or takes away access for someone, and where to change it.>
+- <Manual steps, if any.>
+
+New in vX.Y.Z
+- <5–7 lines, one per area: what an admin will notice, and the exact GUI path.>
+
+Fixed in vX.Y.Z
+- <3–5 bugs from the previous release that users could have hit.>
+
+Not tested yet: <honest list>
+
+Full list of changes: github.com/Dursnif/KTSB/releases
+
+---
+Rules (delete everything from the line above before use; the update panel shows this file as raw text):
+- English, plain text: no **, #, backticks or link syntax. Plain «- » lines are fine. One line per point.
+- Most important first: only the top of the panel (240 px) shows without scrolling.
+- Cover every tag since the last monthly release: an admin jumps straight to the newest one and never sees the notes in between.
+- 250–450 words for one release; up to about 650 when it covers two. Every line must exist in the commit message. Name settings by their GUI path; a file only when there is no GUI place.
+- No plan IDs, no personal data, no promises.
+- The build reads docs/release-notes/<tag>.txt for the GitHub release text.

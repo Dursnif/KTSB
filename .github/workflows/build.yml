@@ -256,7 +256,15 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           PRE=""
           case "${TAG}" in *-*) PRE="--prerelease" ;; esac
+          # Release text for the GUI's update panel: docs/release-notes/<tag>.txt; an rc tag without its own file uses
+          # the final version's (testers read what the release will say). The name comes from the tag, so TEMPLATE.txt
+          # is never read. No file → GitHub's generated notes as before.
+          NOTES=(--generate-notes)
+          for f in "docs/release-notes/${TAG}.txt" "docs/release-notes/${TAG%%-*}.txt"; do
+            if [ -s "${f}" ]; then NOTES=(--notes-file "${f}"); break; fi
+          done
+          echo "release notes: ${NOTES[*]}"
           gh release view "${TAG}" >/dev/null 2>&1 \
-            || gh release create "${TAG}" --verify-tag --title "${TAG}" --generate-notes ${PRE}
+            || gh release create "${TAG}" --verify-tag --title "${TAG}" "${NOTES[@]}" ${PRE}
           gh release upload "${TAG}" "dist/ktsb-docker-${TAG}.tar.gz" \
             "dist/ktsb-docker-${TAG}.tar.gz.sigstore.json" dist/SHA256SUMS --clobber

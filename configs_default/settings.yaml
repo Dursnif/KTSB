@@ -77,12 +77,11 @@ git_repo_path: /kaare
 # JWT token expiry in hours. Default 4 hours.
 token_expiry_hours: 4
 
-# Which web pages may call the API from a browser (CORS). "same-host" = a page served from the same machine name or
-# address the browser used for the API — KTSB's own GUI. Add exact origins for your own pages, e.g.:
+# Which web pages may call the API from a browser (CORS). Not set = "same-host": a page served from the same machine
+# name or address the browser used for the API — KTSB's own GUI (the default lives in code, so an older KTSB version
+# never reads a value it does not understand). Add exact origins for your own pages, e.g.:
 # cors_origins: ["same-host", "https://dashboard.example.com"]
 # ["*"] lets every website call the API from a browser in your home — not recommended. Restart the API after a change.
-cors_origins:
-  - "same-host"
 
 network:
   # Clients on these subnets count as «local» (home). The setup wizard suggests your own /24;

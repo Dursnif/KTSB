@@ -40,6 +40,7 @@ from kaare_core.users.auth import (
     create_token,
     end_session,
     get_all_last_seen,
+    get_network_context,
     is_user_online,
     login,
     require_admin,
@@ -176,6 +177,15 @@ def api_list_personalities(_u: dict = Depends(require_admin)):
 async def api_login(req: LoginRequest, request: Request):
     client_ip = _client_ip_of(request)
     _check_login_rate(client_ip, req.username)
+    # DT04-S05u: the first-start admin PIN (public: 1234) never expires, so it works only from the local network until
+    # it is changed — never over VPN or from outside.
+    if store.is_first_start_pin(req.username) and get_network_context(client_ip) != "local":
+        _record_login_fail(client_ip, req.username)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The default PIN works only from the home network until it is changed. Log in from a device on "
+            "the same network as KTSB and choose a new PIN.",
+        )
     # Sjekk om midlertidig PIN har utløpt før vi prøver å logge inn
     if store.check_pin_expired(req.username):
         _record_login_fail(client_ip, req.username)

@@ -72,7 +72,7 @@ optional voice output on any speaker on the network.
 
 ## 2. Smart Home Control
 
-**Where:** Any user message; aliases configured in Settings → Aliases
+**Where:** Any user message; aliases configured on the **Rooms and aliases** page (admin menu)
 
 The main agent connects to Home Assistant and can control anything HA knows about: lights, locks,
 thermostats, covers, media players, scenes, and scripts.
@@ -84,7 +84,7 @@ thermostats, covers, media players, scenes, and scripts.
 4. The main agent confirms the result in its reply
 
 **Alias system:**
-You define your own room names and device nicknames in Settings → Aliases. These map
+You define your own room names and device nicknames on the **Rooms and aliases** page. These map
 names in any language to Home Assistant entity IDs. The main agent can therefore understand
 *"the lamp in the corner of the bedroom"* without any training — you add the alias once.
 
@@ -972,7 +972,7 @@ manual YAML editing required after the initial install.
 | Dashboard | Live service status, active users, onboarding checklist |
 | Users | Grouped into «Default users» (built-in Administrator, Household, Unknown person) and the users you create (by role and name); create / edit / delete users, PIN management, VPN client QR codes, voice enrollment, tool permission matrix, parent/child linking |
 | Settings | 13 configuration areas (see below) |
-| Aliases | Map device names to HA entity IDs; manage room groupings |
+| Rooms and aliases | Map device names to HA entity IDs; manage room groupings |
 | Nodes | Configure voice and display output nodes (14 types: 6 audio-only, 7 multi audio+display, 1 display-only) |
 | Tools | SSH node management (add/edit/delete/test, linux and HA OS presets, sudo config); active timers with per-user counts and configurable max; tool execution log (last 80 entries, live, colour-coded by source) |
 | Reflections | Reflection meeting notes by date, dev-slot morning reports with live progress per step, topic submission, PIN-protected user views |

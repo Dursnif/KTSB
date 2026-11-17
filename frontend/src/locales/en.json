@@ -1569,7 +1569,18 @@
         "rollback": "Putting the previous version back"
       },
       "test_versions": "Include test versions",
-      "test_versions_hint": "Also shows test versions (rc) in «Update KTSB» — before a regular release comes out. They are signed and checked like regular releases, but less tested. Off by default. Applies from the next «Check for updates»."
+      "test_versions_hint": "Also shows test versions (rc) in «Update KTSB» — before a regular release comes out. They are signed and checked like regular releases, but less tested. Off by default. Applies from the next «Check for updates».",
+      "rolled_back_admin": "You went back to {{version}} from {{from}}.",
+      "cause_step_failed": "the step «{{step}}» failed",
+      "cause_interrupted": "the update service was restarted during «{{step}}»",
+      "configs_restored": "Settings are back as they were before the update (changes made after the update are undone too).",
+      "configs_missing": "Settings were not set back — there was no copy from before the update. The older version may read some of them differently.",
+      "configs_failed": "Settings could not be set back: {{error}}",
+      "no_answer": "KTSB has not answered for over a minute.",
+      "no_answer_blocked": "KTSB answers, but the browser does not let the answer in (CORS). Check cors_origins in configs/settings.yaml, or open the GUI at the same address as before.",
+      "no_answer_down": "KTSB does not answer at all. It may still be starting — or a service has stopped. See «docker compose ps» in the install folder.",
+      "no_answer_unknown": "The reason is not known.",
+      "current_unknown": "Cannot see which version is running, so no update is offered (it could be a downgrade). Run setup.sh / setup.ps1 once in the install folder."
     }
   },
   "dashboard": {
@@ -2951,7 +2962,8 @@
       "item_5": "Backups — Create named backup points of the full installation (databases, memory, user keys and configuration). Restore from a saved point (PIN required) or download as ZIP. Max 5 points stored. Long-term memory includes conversations, knowledge, Kåre's drawers, the Frigate memory and the watch history; Images includes the kept Frigate episode frames (ordinary detection snapshots are cache and are not included). ⚠ Factory reset restores everything to defaults — requires PIN confirmation. The system key is never part of a backup: if you restore onto a new machine, each user has to log in with their PIN once before the background jobs (reflection, night job) can reach their data again.",
       "item_6": "Update KTSB (Docker) — checks GitHub for newer versions and installs them with one click (PIN required). A backup point is saved automatically first (shown as «automatic» in the backup list, not counted against the 5). New images are checked against KTSB's signature before they are used. If something does not start properly, the previous version is put back on its own; an update never changes your data. Requires setup.sh / setup.ps1 to have been run in the install folder. Does not run while the night sequence is running.",
       "item_7": "Include test versions (Expert) — below «Update KTSB». Off by default: only regular releases are offered. On: also test versions (rc) that come out before a regular release; they are signed and checked the same way, but less tested. When you run a test version, the regular release is offered either way.",
-      "item_8": "After saving, the settings pages say whether the change is in use at once («Saved and in use») or a service has to be restarted — then the service's name is shown with a link here, to Service restart."
+      "item_8": "After saving, the settings pages say whether the change is in use at once («Saved and in use») or a service has to be restarted — then the service's name is shown with a link here, to Service restart.",
+      "item_9": "Go back to the previous version — under «Update KTSB». Puts the previous version and the settings from before the update back (setting changes made after the update are undone too); your data is not touched. The card says whether the settings were set back. If KTSB does not answer after an update or rollback, the card stops waiting after one minute, says why when the browser can tell, and shows «Reload the page»."
     },
     "verktoy": {
       "title": "Tools",

@@ -1,0 +1,37 @@
+KTSB v1.11.1 — November: camera memory, voice nodes, screens, honest receipts
+
+This covers v1.11.0 and v1.11.1. Coming from v1.10, you get both in one update.
+
+Before you update
+- Tested for real from v1.10.3: the Update button took about two minutes and kept all data. A save point is made first; if the new version does not start, the old one comes back by itself.
+- Your settings are kept. New settings get their default; nothing you set is overwritten.
+- Camera access per role changes once. Every role that already had the camera keeps it, including analysis. Children and teens are given the right to see stored camera pictures and conclusions, but not to start a new analysis. If you don't want that, untick it in the role table on the Users page.
+- Only KTSB's own GUI may call the API from a browser by default. A page on another host that calls the API must be listed under cors_origins in configs/settings.yaml; a list you made yourself is kept.
+- Household members who are not admin can no longer read settings, addresses or tokens.
+- The page you update from is the old version's, so it may keep spinning while KTSB restarts. Give it a few minutes, then reload the page. If it still looks like the old version, reload with Ctrl+F5 (Cmd+Shift+R on a Mac).
+
+New in v1.11.0
+- Camera memory: KTSB keeps what the cameras saw, encrypted (on for new installs; an existing install keeps its own setting under Integrations → Frigate → Modules). Ask «when was X here last» or «what happened at the door today».
+- «Was it you?» questions go privately to the person the face sensors named. Each user has «Frigate may track me».
+- Screens and TV: pictures and live camera on TVs and Nest screens, YouTube, NRK and Plex by name, TV remote control.
+- Voice nodes: a smart button or Home Assistant event can start listening; audio and image out per node; built-in «KTSB Direct» node.
+- Rooms: one room register from Home Assistant, new «Rooms and aliases» page.
+- Settings: Home Assistant, MQTT, Frigate and Plex moved to the new «Integrations» page. Saved settings are used at once, or the page names the service to restart.
+- Storage is kept by size, not age: limits per type under Settings → Logs/Storage.
+
+Fixed in v1.11.0
+- Kåre no longer repeats Home Assistant's «OK» for a device it does not have.
+- Every save returns a receipt from code, and never says «saved» when the write failed.
+- Learning answers were lost on restart.
+- Camera snapshots arrived empty.
+
+Fixed in v1.11.1
+- Going back to the previous version from the Maintenance page now puts your settings back as they were before the update, so the GUI works after going back. Your data is never touched, and the card says whether settings were set back.
+- The update card no longer waits forever when KTSB stops answering (seen with Docker Desktop on Windows): after about a minute it says KTSB does not answer, why if the browser can tell, and offers «Reload the page».
+- The update card never offers an older version as an update, and says so plainly when it cannot tell which version is running.
+- Going back yourself reads «You went back to X from Y»; an automatic rollback names the step that failed.
+- The first admin PIN no longer expires after one hour (a fresh install could lock its only admin out). It works only from the local network until you change it, and an install that is already locked out is let in again at start.
+
+Not tested yet: Windows setup with an NVIDIA card, Plex playback in Docker, and going back from v1.11.1 on Windows. VPN: wg-easy 15 is not tested with KTSB; see the README before you set it up.
+
+Full list of changes: github.com/Dursnif/KTSB/releases
